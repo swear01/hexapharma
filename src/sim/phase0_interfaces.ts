@@ -292,6 +292,7 @@ export const DEFAULT_CATALOG: readonly MachineCatalogEntry[] = [
   { typeId: "push2", transform: { kind: "translate", delta: { x: 2, y: 0 }, relation: "forward" }, cost: 2, orientable: true },
   { typeId: "pull", transform: { kind: "translate", delta: { x: 1, y: 0 }, relation: "reverse" }, cost: 1, orientable: true },
   { typeId: "shear", transform: { kind: "translate", delta: { x: 1, y: 0 }, relation: "perpendicular" }, cost: 2, orientable: true },
+  { typeId: "skew", transform: { kind: "translate", delta: { x: 1, y: 0 }, relation: "offset" }, cost: 2, orientable: true },
   { typeId: "dilute", transform: { kind: "scale", num: 1, den: 2 }, cost: 3, orientable: false },
   { typeId: "swap01", transform: { kind: "swap", a: 0, b: 1 }, cost: 1, orientable: false },
 ];
