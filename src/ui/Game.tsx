@@ -97,7 +97,7 @@ export function Game() {
     // The factory layout the save records: the current one, else the compiled
     // recipe, else an empty 1×1 grid (no production line yet).
     const fac: FactoryLayout =
-      factory ?? (recipe ? compileTemplate(recipe) : { width: 1, height: 1, tiles: [{ kind: "empty" }] });
+      factory ?? (recipe ? compileTemplate(recipe) : { width: 1, height: 1, tiles: [{ kind: "empty" }], machines: [] });
     return {
       genOptions,
       economy,

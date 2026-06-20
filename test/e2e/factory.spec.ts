@@ -1,4 +1,12 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
+
+/** Parse the "num/den" throughput rate shown in the status bar into a number. */
+async function rate(page: Page): Promise<number> {
+  const txt = (await page.getByTestId("factory-rate").textContent())?.trim() ?? "0";
+  const m = /^(-?\d+)\s*\/\s*(\d+)$/.exec(txt);
+  if (!m) return Number(txt);
+  return Number(m[1]) / Number(m[2]);
+}
 
 test("HexaPharma Factory runs the belt sim and produces units", async ({ page }) => {
   await page.goto("/");
@@ -14,8 +22,9 @@ test("HexaPharma Factory runs the belt sim and produces units", async ({ page })
   await expect(page.getByTestId("factory-step")).toBeVisible();
   await expect(page.getByTestId("factory-reset")).toBeVisible();
 
-  // The default factory reports a bottleneck (slow pull) and a throughput rate.
-  await expect(page.getByTestId("factory-bottleneck")).toHaveText(/pull/i);
+  // The default line reports a real machine bottleneck (id + type) and a rate.
+  await expect(page.getByTestId("factory-bottleneck")).toContainText(/#\d+\s*\(/);
+  await expect(page.getByTestId("factory-rate")).toHaveText(/^\d+\/\d+$/);
 
   const tick = page.getByTestId("factory-tick");
   await expect(tick).toHaveText("0");
@@ -36,29 +45,63 @@ test("HexaPharma Factory runs the belt sim and produces units", async ({ page })
   await page.screenshot({ path: "test/e2e/__screenshots__/factory.png", fullPage: true });
 });
 
-test("Factory editing places a parallel machine to relieve the bottleneck", async ({ page }) => {
+test("real parallelism: splitter→two machines→merger out-produces a single machine", async ({ page }) => {
   await page.goto("/");
   await page.getByTestId("view-factory").click();
 
-  // Default bottleneck is the slow pull (speed 3) ⇒ rate limited to 1/3.
-  await expect(page.getByTestId("factory-bottleneck")).toHaveText(/pull/i);
-  await expect(page.getByTestId("factory-rate")).toHaveText("1/3");
+  // Load the SINGLE-machine preset (one speed-3 machine) and read its steady rate.
+  await page.getByTestId("preset-single").click();
+  await expect(page.getByTestId("factory-tick")).toHaveText("0");
+  const single = await rate(page);
+  expect(single).toBeGreaterThan(0);
 
-  // Select the pull machine brush at speed 1 and place a parallel copy.
-  await page.getByTestId("brush-machine-pull").click();
-  await expect(page.getByTestId("brush-selected")).toContainText("pull");
-  await page.getByTestId("brush-speed").fill("1");
+  // Single preset is machine-limited: one machine is the bottleneck.
+  await expect(page.getByTestId("factory-bottleneck")).toContainText(/#\d+\s*\(/);
 
-  // Click a cell on a lower row to add a second pull stage (parallel copy).
+  // Load the PARALLEL preset (splitter → two machines → merger) and read its rate.
+  await page.getByTestId("preset-parallel").click();
+  await expect(page.getByTestId("factory-tick")).toHaveText("0");
+  const parallel = await rate(page);
+
+  // Real parallelism: two machines on the same feed beat one (~2×, MEASURED by the sim).
+  expect(parallel).toBeGreaterThan(single * 1.5);
+
+  // And the parallel layout actually produces units when run.
+  await page.getByTestId("factory-play").click();
+  await expect(page.getByTestId("factory-produced")).not.toHaveText("0", { timeout: 10_000 });
+  await page.getByTestId("factory-pause").click();
+});
+
+test("Factory editing places a machine + a tile via the palette", async ({ page }) => {
+  await page.goto("/");
+  await page.getByTestId("view-factory").click();
+
   const canvas = page.locator("[data-testid='factory-canvas'] canvas");
   const box = await canvas.boundingBox();
   if (!box) throw new Error("no canvas box");
-  // Cell math mirrors the renderer: PAD=12, CELL=56. Row 3 (y), col 3 (x).
-  const x = box.x + (12 + 3 * 56 + 28);
-  const y = box.y + (12 + 3 * 56 + 28);
-  await page.mouse.click(x, y);
+  // Cell center math mirrors the renderer: PAD=12, CELL=56 → center = 12 + c*56 + 28.
+  const center = (c: number) => 12 + c * 56 + 28;
 
-  // Pull stage now 1/3 + 1/1 = 4/3, so it's no longer the bottleneck: the rate
-  // rises to 1 (limited by the speed-1 stages / source) and bottleneck clears.
-  await expect(page.getByTestId("factory-rate")).toHaveText("1/1");
+  // Select a machine type (its footprint = its shape) and rotate the footprint.
+  await page.getByTestId("brush-machine-pull").click();
+  await expect(page.getByTestId("brush-selected")).toContainText("pull");
+  await page.getByTestId("brush-footrot").click();
+  await expect(page.getByTestId("brush-footrot")).toContainText("footRot: 1");
+  await page.getByTestId("brush-speed").fill("1");
+
+  // Click an empty cell on a lower row to place the machine (added to layout.machines).
+  await page.mouse.click(box.x + center(3), box.y + center(3));
+  // Editing re-inits the sim → tick resets to 0.
+  await expect(page.getByTestId("factory-tick")).toHaveText("0");
+
+  // Place a belt tile too (direction toggle works for tiles).
+  await page.getByTestId("brush-belt").click();
+  await page.getByTestId("brush-rotate").click(); // → S
+  await expect(page.getByTestId("brush-rotate")).toContainText("S");
+  await page.mouse.click(box.x + center(4), box.y + center(3));
+  await expect(page.getByTestId("factory-tick")).toHaveText("0");
+
+  // The sim still steps after edits (no crash; counter advances).
+  await page.getByTestId("factory-step").click();
+  await expect(page.getByTestId("factory-tick")).toHaveText("1");
 });

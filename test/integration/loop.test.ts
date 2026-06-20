@@ -58,7 +58,7 @@ describe("integration: explore → research → produce → sell → patent → 
     expect(fs.nextUnitId).toBe(fs.produced.length + fs.units.length); // no spawn/vanish
 
     // throughput is reported
-    const tp = analyzeThroughput(layout);
+    const tp = analyzeThroughput(layout, level.mm);
     expect(tp.rateDen).toBeGreaterThan(0);
   });
 

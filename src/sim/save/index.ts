@@ -6,6 +6,9 @@ import type {
   FactoryLayout,
   FactoryTile,
   FactoryMachineDef,
+  PlacedMachine,
+  MachineShape,
+  Port,
   RngState,
   SerializeGameFn,
   DeserializeGameFn,
@@ -208,11 +211,20 @@ function parseTile(v: unknown, path: string): FactoryTile {
       };
     case "sink":
       return { kind: "sink" };
-    case "machine":
+    case "splitter":
       return {
-        kind: "machine",
-        def: parseMachineDef(o.def, `${path}.def`),
+        kind: "splitter",
         inDir: parseDir(o.inDir, `${path}.inDir`),
+        outDirs: reqArray(o.outDirs, `${path}.outDirs`).map((d, i) =>
+          parseDir(d, `${path}.outDirs[${i}]`),
+        ),
+      };
+    case "merger":
+      return {
+        kind: "merger",
+        inDirs: reqArray(o.inDirs, `${path}.inDirs`).map((d, i) =>
+          parseDir(d, `${path}.inDirs[${i}]`),
+        ),
         outDir: parseDir(o.outDir, `${path}.outDir`),
       };
     default:
@@ -239,6 +251,37 @@ function parseMachineDef(v: unknown, path: string): FactoryMachineDef {
   };
 }
 
+function parsePort(v: unknown, path: string): Port {
+  const o = reqObject(v, path);
+  return { cell: parseVec2(o.cell, `${path}.cell`), side: parseDir(o.side, `${path}.side`) };
+}
+
+function parseShape(v: unknown, path: string): MachineShape {
+  const o = reqObject(v, path);
+  return {
+    cells: reqArray(o.cells, `${path}.cells`).map((c, i) => parseVec2(c, `${path}.cells[${i}]`)),
+    inPorts: reqArray(o.inPorts, `${path}.inPorts`).map((p, i) => parsePort(p, `${path}.inPorts[${i}]`)),
+    outPorts: reqArray(o.outPorts, `${path}.outPorts`).map((p, i) =>
+      parsePort(p, `${path}.outPorts[${i}]`),
+    ),
+  };
+}
+
+function parsePlacedMachine(v: unknown, path: string): PlacedMachine {
+  const o = reqObject(v, path);
+  const footRot = reqInt(o.footRot, `${path}.footRot`);
+  if (footRot !== 0 && footRot !== 1 && footRot !== 2 && footRot !== 3) {
+    throw new SaveError(`${path}.footRot: expected 0..3, got ${footRot}`);
+  }
+  return {
+    id: reqInt(o.id, `${path}.id`),
+    def: parseMachineDef(o.def, `${path}.def`),
+    anchor: parseVec2(o.anchor, `${path}.anchor`),
+    footRot,
+    shape: parseShape(o.shape, `${path}.shape`),
+  };
+}
+
 function parseFactory(v: unknown): FactoryLayout {
   const o = reqObject(v, "factory");
   const width = reqInt(o.width, "factory.width");
@@ -249,10 +292,13 @@ function parseFactory(v: unknown): FactoryLayout {
       `factory.tiles: length ${tiles.length} !== width*height (${width}*${height}=${width * height})`,
     );
   }
+  const parsedTiles = tiles.map((t, i) => parseTile(t, `factory.tiles[${i}]`));
+  const machines = reqArray(o.machines, "factory.machines");
   return {
     width,
     height,
-    tiles: tiles.map((t, i) => parseTile(t, `factory.tiles[${i}]`)),
+    tiles: parsedTiles,
+    machines: machines.map((m, i) => parsePlacedMachine(m, `factory.machines[${i}]`)),
   };
 }
 

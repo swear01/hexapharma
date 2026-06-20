@@ -297,12 +297,17 @@ export const DEFAULT_CATALOG: readonly MachineCatalogEntry[] = [
   { typeId: "swap01", transform: { kind: "swap", a: 0, b: 1 }, cost: 1, orientable: false },
 ];
 
-// ═══════════════════════════════ Phase 2 — factory ═══════════════════════════════
-// Tick-based, deterministic belt+machine simulation. A "unit" is a drug in transit
-// carrying its multi-map DrugState; machines apply their drug-graph transform to it.
-// Invariants: mass conservation, no spawn/vanish, throughput consistency
-// (steady-state output rate = bottleneck machine rate), deadlock detection,
-// determinism (replay → identical hash, INV-15).
+// ═══════════════════════════════ Phase 2 — factory (spatial packing + throughput) ═══════════════════════════════
+// Tick-based deterministic sim. A "unit" is a drug in transit carrying its multi-map
+// DrugState. Machines are MULTI-CELL, MULTI-PORT placed entities (in FactoryLayout.machines,
+// NOT tiles); belts / splitters / mergers route units between machine ports → real
+// fan-out/fan-in so parallel machines actually raise throughput.
+// Invariants: mass conservation, no spawn/vanish, throughput consistency (steady-state
+// output = real bottleneck under parallelism), deadlock detection, determinism (INV-15).
+//
+// EFFECT vs PACKING: a machine's `def.orientation` (recipe-locked) determines the DRUG
+// EFFECT; its `footRot` (placement) only rotates the footprint/ports for spatial packing
+// and NEVER changes the effect — so packing + belt routing preserve the cure (INV-7).
 
 /** Cardinal direction on the square grid (y-down): 0=E, 1=S, 2=W, 3=N. */
 export type Dir = 0 | 1 | 2 | 3;
@@ -316,31 +321,69 @@ export interface FactoryMachineDef {
   readonly speed: number; // ticks to process one unit (integer >= 1; larger = slower = bottleneck)
 }
 
+/** A port on a machine's LOCAL cell, facing `side` (the side units enter/leave through). */
+export interface Port {
+  readonly cell: Vec2;
+  readonly side: Dir;
+}
+
+/** A machine's spatial template in LOCAL coords (anchor at (0,0)), before placement. */
+export interface MachineShape {
+  readonly cells: readonly Vec2[]; // occupied cells
+  readonly inPorts: readonly Port[]; // entry ports
+  readonly outPorts: readonly Port[]; // exit ports
+}
+
 /**
- * A factory grid tile. Machines are 1×1 in Phase 2 (footprint/shape comes later).
- * `source` emits one fresh unit (carrying the level's start DrugState) every `period`
- * ticks out of its `dir` side; `sink` consumes arriving units (their final DrugState
- * is recorded as produced output).
+ * A machine placed on the factory grid. `footRot` rotates the footprint cells + ports
+ * about the anchor (0..3 quarter-turns) for spatial packing ONLY; the effect-determining
+ * drug orientation lives in `def.orientation` and is independent (INV-7).
+ * Phase 2: one unit in process per machine at a time (capacity 1) — parallelism comes
+ * from placing multiple machines fed by a splitter.
+ */
+export interface PlacedMachine {
+  readonly id: number;
+  readonly def: FactoryMachineDef;
+  readonly anchor: Vec2; // world cell of the shape's local (0,0)
+  readonly footRot: Rotation; // packing rotation of the footprint/ports (not the effect)
+  readonly shape: MachineShape;
+}
+
+/**
+ * Belt-grid tiles. Machines are NOT tiles — they live in `FactoryLayout.machines` and
+ * occupy cells via their (rotated) footprint. `source` emits a fresh unit every `period`
+ * ticks out its `dir` side; `sink` consumes arriving units. A `splitter` routes its one
+ * input to its outputs round-robin (deterministic); a `merger` pulls from its inputs by
+ * fixed priority (inDirs order). Belts/splitters/mergers/sinks accept from any incoming
+ * side they declare; capacity is 1 unit per tile (the belt throughput cap).
  */
 export type FactoryTile =
   | { readonly kind: "empty" }
   | { readonly kind: "belt"; readonly dir: Dir }
+  | { readonly kind: "splitter"; readonly inDir: Dir; readonly outDirs: readonly Dir[] }
+  | { readonly kind: "merger"; readonly inDirs: readonly Dir[]; readonly outDir: Dir }
   | { readonly kind: "source"; readonly dir: Dir; readonly period: number }
-  | { readonly kind: "sink" }
-  | { readonly kind: "machine"; readonly def: FactoryMachineDef; readonly inDir: Dir; readonly outDir: Dir };
+  | { readonly kind: "sink" };
 
 export interface FactoryLayout {
   readonly width: number;
   readonly height: number;
   readonly tiles: readonly FactoryTile[]; // length width*height; index = y*width + x
+  readonly machines: readonly PlacedMachine[]; // multi-cell machines occupying grid cells
 }
 
-/** A drug in transit. `proc` = ticks already spent in the current machine (0 on belts). */
+/**
+ * A drug in transit. On a belt: `machineId = null`, `proc = 0`, `pos` = the belt cell.
+ * Inside a machine: `machineId` = that machine's id, `proc` counts up to its `speed`,
+ * `pos` = the machine's (world) input-port cell it entered through. On completion the
+ * transform is applied once and the unit leaves via an output port onto the belt.
+ */
 export interface Unit {
   readonly id: number;
   readonly pos: Vec2;
   readonly drug: DrugState;
   readonly proc: number;
+  readonly machineId: number | null;
 }
 
 export interface FactoryState {
@@ -359,16 +402,19 @@ export type InitFactoryFn = (layout: FactoryLayout, mm: MultiMap, start: DrugSta
 /** Advance the factory one tick: deterministic, pure (returns a new state). */
 export type StepFactoryFn = (layout: FactoryLayout, mm: MultiMap, s: FactoryState) => FactoryState;
 
-/** Steady-state throughput report. */
+/** Steady-state throughput report (MEASURED by simulating a window — not a heuristic). */
 export interface ThroughputReport {
-  /** Units produced per tick at steady state (rational: num/den). */
+  /** Units produced per tick at steady state (rational: num/den, reduced). */
   readonly rateNum: number;
   readonly rateDen: number;
-  /** typeId of the limiting (slowest effective) machine stage, or null if none. */
-  readonly bottleneck: MachineTypeId | null;
+  /** id of the limiting machine (highest sustained occupancy), or null if none/source-limited. */
+  readonly bottleneck: number | null;
+  /** typeId of the limiting machine, for display. */
+  readonly bottleneckType: MachineTypeId | null;
 }
 
-export type AnalyzeThroughputFn = (layout: FactoryLayout) => ThroughputReport;
+/** Measure steady-state throughput + bottleneck by running the sim a bounded window. */
+export type AnalyzeThroughputFn = (layout: FactoryLayout, mm: MultiMap) => ThroughputReport;
 
 // ── state.ts: deterministic whole-sim state + replay (INV-15) ──
 
@@ -390,11 +436,53 @@ export type ReplayFactoryFn = (
 
 // ── recipe: Template ↔ factory line ──
 
-/** Compile a recipe template into a straight source→machines→sink line. */
+/** Compile a recipe template into a packed, belt-routed source→machines→sink layout. */
 export type CompileTemplateFn = (template: Template) => FactoryLayout;
 
 /** Run a layout to completion for one unit and report its cure/side-effect Outcome. */
 export type FactoryOutcomeFn = (layout: FactoryLayout, mm: MultiMap, start: DrugState) => Outcome;
+
+// ── shared machine shapes (footprint + ports per machine type) ──
+
+const SH_E: Dir = 0;
+const SH_S: Dir = 1;
+const SH_W: Dir = 2;
+
+/** 1×1 cell, in on the west side, out on the east side. */
+export const SHAPE_1x1: MachineShape = {
+  cells: [{ x: 0, y: 0 }],
+  inPorts: [{ cell: { x: 0, y: 0 }, side: SH_W }],
+  outPorts: [{ cell: { x: 0, y: 0 }, side: SH_E }],
+};
+/** 2×1 horizontal: in west of left cell, out east of right cell. */
+export const SHAPE_2x1: MachineShape = {
+  cells: [{ x: 0, y: 0 }, { x: 1, y: 0 }],
+  inPorts: [{ cell: { x: 0, y: 0 }, side: SH_W }],
+  outPorts: [{ cell: { x: 1, y: 0 }, side: SH_E }],
+};
+/** L-tromino: in west of (0,0), out south of (1,1). */
+export const SHAPE_L: MachineShape = {
+  cells: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }],
+  inPorts: [{ cell: { x: 0, y: 0 }, side: SH_W }],
+  outPorts: [{ cell: { x: 1, y: 1 }, side: SH_S }],
+};
+/** 2×2 block: in west of (0,0), out east of (1,0). */
+export const SHAPE_2x2: MachineShape = {
+  cells: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }],
+  inPorts: [{ cell: { x: 0, y: 0 }, side: SH_W }],
+  outPorts: [{ cell: { x: 1, y: 0 }, side: SH_E }],
+};
+
+/** Canonical footprint per machine type (each type has a fixed shape, Big-Pharma style). */
+export const DEFAULT_SHAPES: Readonly<Record<MachineTypeId, MachineShape>> = {
+  push: SHAPE_1x1,
+  push2: SHAPE_2x1,
+  pull: SHAPE_1x1,
+  shear: SHAPE_L,
+  skew: SHAPE_1x1,
+  dilute: SHAPE_2x2,
+  swap01: SHAPE_2x1,
+};
 
 // ═══════════════════════════════ Phase 3 — economy / patent / save ═══════════════════════════════
 

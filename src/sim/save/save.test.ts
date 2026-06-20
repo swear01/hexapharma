@@ -1,11 +1,6 @@
 import { describe, it, expect } from "vitest";
-import type {
-  GameState,
-  GenOptions,
-  FactoryLayout,
-  FactoryTile,
-} from "../phase0_interfaces";
-import { DEFAULT_CATALOG, IDENTITY } from "../phase0_interfaces";
+import type { GameState, GenOptions, FactoryLayout } from "../phase0_interfaces";
+import { DEFAULT_CATALOG, IDENTITY, SHAPE_1x1, SHAPE_2x1 } from "../phase0_interfaces";
 import {
   serializeGame,
   deserializeGame,
@@ -29,30 +24,26 @@ function genOptions(seed: number): GenOptions {
   };
 }
 
-function machineTile(): FactoryTile {
-  return {
-    kind: "machine",
-    def: {
-      typeId: "push",
-      transform: { kind: "translate", delta: { x: 1, y: 0 }, relation: "forward" },
-      orientation: IDENTITY,
-      cost: 1,
-      speed: 2,
-    },
-    inDir: 2,
-    outDir: 0,
-  };
-}
-
 function factory(): FactoryLayout {
-  // 3x1 line: source -> machine -> sink
+  // 3x1 line: source -> [1x1 machine @ (1,0)] -> sink
   return {
     width: 3,
     height: 1,
-    tiles: [
-      { kind: "source", dir: 0, period: 4 },
-      machineTile(),
-      { kind: "sink" },
+    tiles: [{ kind: "source", dir: 0, period: 4 }, { kind: "empty" }, { kind: "sink" }],
+    machines: [
+      {
+        id: 0,
+        def: {
+          typeId: "push",
+          transform: { kind: "translate", delta: { x: 1, y: 0 }, relation: "forward" },
+          orientation: IDENTITY,
+          cost: 1,
+          speed: 2,
+        },
+        anchor: { x: 1, y: 0 },
+        footRot: 0,
+        shape: SHAPE_1x1,
+      },
     ],
   };
 }
@@ -83,7 +74,7 @@ describe("serializeGame / deserializeGame round-trip", () => {
       { ...baseGame(), economy: { cash: -250, sold: [{ disease: 9, count: 100 }] }, rng: { s: 0 } },
     ],
     [
-      "factory with scale + swap machines and belts",
+      "factory with splitter/merger + a scale machine (footRot, 2x1)",
       {
         ...baseGame(),
         factory: {
@@ -91,9 +82,13 @@ describe("serializeGame / deserializeGame round-trip", () => {
           height: 2,
           tiles: [
             { kind: "source", dir: 1, period: 3 },
-            { kind: "belt", dir: 2 },
+            { kind: "splitter", inDir: 2, outDirs: [0, 1] },
+            { kind: "merger", inDirs: [2, 3], outDir: 0 },
+            { kind: "sink" },
+          ],
+          machines: [
             {
-              kind: "machine",
+              id: 0,
               def: {
                 typeId: "dilute",
                 transform: { kind: "scale", num: 1, den: 2 },
@@ -101,17 +96,17 @@ describe("serializeGame / deserializeGame round-trip", () => {
                 cost: 3,
                 speed: 5,
               },
-              inDir: 3,
-              outDir: 1,
+              anchor: { x: 0, y: 1 },
+              footRot: 2,
+              shape: SHAPE_2x1,
             },
-            { kind: "sink" },
           ],
         },
       },
     ],
     [
-      "factory all-empty",
-      { ...baseGame(), factory: { width: 1, height: 1, tiles: [{ kind: "empty" }] } },
+      "factory all-empty (no machines)",
+      { ...baseGame(), factory: { width: 1, height: 1, tiles: [{ kind: "empty" }], machines: [] } },
     ],
   ];
 

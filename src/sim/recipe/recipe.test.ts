@@ -13,8 +13,9 @@ import type {
   FactoryTile,
   FactoryLayout,
   FactoryMachineDef,
+  PlacedMachine,
 } from "../phase0_interfaces";
-import { CellKind, IDENTITY, DEFAULT_CATALOG } from "../phase0_interfaces";
+import { CellKind, IDENTITY, DEFAULT_CATALOG, SHAPE_1x1 } from "../phase0_interfaces";
 import { initialState, applyTemplate, evaluate } from "../drug-graph";
 import { replayFactory } from "../state";
 import { compileTemplate, factoryOutcome } from "./index";
@@ -22,7 +23,6 @@ import { compileTemplate, factoryOutcome } from "./index";
 // ───────────────────────────── fixture helpers ─────────────────────────────
 
 const E: Dir = 0;
-const W: Dir = 2;
 const idx = (w: number, x: number, y: number): number => y * w + x;
 
 /** An NxN map, all-Empty, fully revealed, with given start + origin. */
@@ -95,31 +95,34 @@ function fixture(): { mm: MultiMap; start: ReturnType<typeof initialState> } {
 
 const ori = (rot: Rotation, flip = false): Orientation => ({ rot, flip });
 
-// ───────────────────────── manual layout builders (for rearrange) ─────────────────────────
+// ───────────────────────── manual layout builder (for rearrange) ─────────────────────────
+// New model: machines are 1×1 PlacedMachines in machines[]; their cell is an "empty"
+// tile fed from the west and emitting east. `gap` controls how many belt tiles sit
+// after each machine — a different belt routing that must NOT change the effect (INV-7).
 
-function machineTile(step: Machine): FactoryTile {
-  const def: FactoryMachineDef = {
+function defOf(step: Machine): FactoryMachineDef {
+  return {
     typeId: step.typeId,
     transform: step.transform,
     orientation: step.orientation,
     cost: 0,
     speed: 1,
   };
-  return { kind: "machine", def, inDir: W, outDir: E };
 }
 
-/** Lay machines on row 0 with `gap` east-belt tiles BETWEEN each machine. */
 function spacedLine(template: Template, gap: number): FactoryLayout {
-  const tiles: FactoryTile[] = [];
-  tiles.push({ kind: "source", dir: E, period: 1 });
+  const tiles: FactoryTile[] = [{ kind: "source", dir: E, period: 1 }];
+  const machines: PlacedMachine[] = [];
   template.steps.forEach((step, i) => {
-    tiles.push(machineTile(step));
-    if (i < template.steps.length - 1) {
-      for (let g = 0; g < gap; g++) tiles.push({ kind: "belt", dir: E });
-    }
+    tiles.push({ kind: "belt", dir: E }); // feed belt (west of the machine)
+    const machX = tiles.length;
+    tiles.push({ kind: "empty" }); // machine cell
+    machines.push({ id: i, def: defOf(step), anchor: { x: machX, y: 0 }, footRot: 0, shape: SHAPE_1x1 });
+    const g = Math.max(1, gap); // ≥1 belt east of each machine so its output has somewhere to go
+    for (let j = 0; j < g; j++) tiles.push({ kind: "belt", dir: E });
   });
   tiles.push({ kind: "sink" });
-  return { width: tiles.length, height: 1, tiles };
+  return { width: tiles.length, height: 1, tiles, machines };
 }
 
 // ──────────────────────────────── tests ────────────────────────────────
@@ -134,10 +137,7 @@ describe("compileTemplate / factoryOutcome", () => {
         translate({ x: 1, y: 0 }, "forward", IDENTITY, "push"),
       ),
     },
-    {
-      name: "offset (skew) machine",
-      t: tpl(translate({ x: 1, y: 0 }, "offset", IDENTITY, "skew")),
-    },
+    { name: "offset (skew) machine", t: tpl(translate({ x: 1, y: 0 }, "offset", IDENTITY, "skew")) },
     {
       name: "perpendicular (shear) + rotation",
       t: tpl(translate({ x: 1, y: 0 }, "perpendicular", ori(1), "shear")),
@@ -150,34 +150,29 @@ describe("compileTemplate / factoryOutcome", () => {
     },
   ];
 
-  it("compiles a straight source->machines->sink line in order", () => {
+  it("compiles a source->machines->sink line in order (machines in machines[])", () => {
     const t = samples[1]!.t;
     const layout = compileTemplate(t);
     expect(layout.height).toBe(1);
-    expect(layout.width).toBe(t.steps.length + 2);
+    expect(layout.width).toBe(2 * t.steps.length + 3);
     expect(layout.tiles[0]).toMatchObject({ kind: "source" });
     expect(layout.tiles[layout.width - 1]).toMatchObject({ kind: "sink" });
+    expect(layout.machines.length).toBe(t.steps.length);
     for (let i = 0; i < t.steps.length; i++) {
-      const tile = layout.tiles[i + 1]!;
-      expect(tile.kind).toBe("machine");
-      if (tile.kind === "machine") {
-        expect(tile.def.typeId).toBe(t.steps[i]!.typeId);
-        expect(tile.inDir).toBe(W);
-        expect(tile.outDir).toBe(E);
-        expect(tile.def.speed).toBe(1);
-      }
+      const pm = layout.machines[i]!;
+      expect(pm.def.typeId).toBe(t.steps[i]!.typeId);
+      expect(pm.def.speed).toBe(1);
+      expect(pm.shape).toBe(SHAPE_1x1);
     }
   });
 
   it("derives cost from DEFAULT_CATALOG (fallback 0)", () => {
     const layout = compileTemplate(tpl(translate({ x: 1, y: 0 }, "forward", IDENTITY, "push")));
-    const tile = layout.tiles[1]!;
     const pushCost = DEFAULT_CATALOG.find((e) => e.typeId === "push")!.cost;
-    if (tile.kind === "machine") expect(tile.def.cost).toBe(pushCost);
+    expect(layout.machines[0]!.def.cost).toBe(pushCost);
 
     const unknown = compileTemplate(tpl(translate({ x: 1, y: 0 }, "forward", IDENTITY, "mystery")));
-    const ut = unknown.tiles[1]!;
-    if (ut.kind === "machine") expect(ut.def.cost).toBe(0);
+    expect(unknown.machines[0]!.def.cost).toBe(0);
   });
 
   for (const { name, t } of samples) {
@@ -185,7 +180,7 @@ describe("compileTemplate / factoryOutcome", () => {
       const { mm: map, start } = fixture();
       const layout = compileTemplate(t);
 
-      const cap = (layout.width + 1) * 4 + 8;
+      const cap = (layout.width + 1) * 6 + 16;
       const ran = replayFactory(layout, map, start, cap);
       const produced = ran.produced[0];
       expect(produced).toBeDefined();
@@ -232,8 +227,8 @@ describe("rearrange-invariance (INV-7 at the factory level)", () => {
     it(`belt spacing does not change the effect (${name})`, () => {
       const { mm: map, start } = fixture();
 
-      const compact = compileTemplate(t); // back-to-back
-      const spaced = spacedLine(t, 3); // belts between machines
+      const compact = compileTemplate(t); // back-to-back (1 belt between)
+      const spaced = spacedLine(t, 3); // more belts between machines
 
       const outCompact = factoryOutcome(compact, map, start);
       const outSpaced = factoryOutcome(spaced, map, start);
@@ -243,9 +238,8 @@ describe("rearrange-invariance (INV-7 at the factory level)", () => {
       expect(outSpaced).toEqual(pure);
       expect(outSpaced).toEqual(outCompact);
 
-      // Final drug positions also coincide.
-      const dCompact = replayFactory(compact, map, start, (compact.width + 1) * 4 + 8).produced[0];
-      const dSpaced = replayFactory(spaced, map, start, (spaced.width + 1) * 4 + 8).produced[0];
+      const dCompact = replayFactory(compact, map, start, (compact.width + 1) * 6 + 16).produced[0];
+      const dSpaced = replayFactory(spaced, map, start, (spaced.width + 1) * 6 + 16).produced[0];
       expect(dSpaced!.pos).toEqual(dCompact!.pos);
       expect(dSpaced!.failed).toEqual(dCompact!.failed);
     });
@@ -270,20 +264,13 @@ describe("determinism", () => {
     fc.assert(
       fc.property(
         fc.array(
-          fc.oneof(
-            fc.record({
-              dx: fc.integer({ min: -2, max: 2 }),
-              dy: fc.integer({ min: -2, max: 2 }),
-              rel: fc.constantFrom<TranslateRelation>(
-                "forward",
-                "reverse",
-                "perpendicular",
-                "offset",
-              ),
-              rot: fc.constantFrom<Rotation>(0, 1, 2, 3),
-              flip: fc.boolean(),
-            }),
-          ),
+          fc.record({
+            dx: fc.integer({ min: -2, max: 2 }),
+            dy: fc.integer({ min: -2, max: 2 }),
+            rel: fc.constantFrom<TranslateRelation>("forward", "reverse", "perpendicular", "offset"),
+            rot: fc.constantFrom<Rotation>(0, 1, 2, 3),
+            flip: fc.boolean(),
+          }),
           { minLength: 1, maxLength: 6 },
         ),
         (specs) => {

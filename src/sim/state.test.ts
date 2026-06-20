@@ -8,15 +8,15 @@ import type {
   FactoryMachineDef,
   FactoryTile,
   FactoryLayout,
+  PlacedMachine,
   Transform,
 } from "./phase0_interfaces";
-import { IDENTITY } from "./phase0_interfaces";
+import { IDENTITY, SHAPE_1x1 } from "./phase0_interfaces";
 import { initialState } from "./drug-graph";
 import { hashFactory, replayFactory } from "./state";
 import { initFactory, stepFactory } from "./factory-sim";
 
 const E: Dir = 0;
-const W: Dir = 2;
 
 function emptyMap(n: number, start: Vec2): EffectMap {
   const len = n * n;
@@ -43,16 +43,19 @@ function machineDef(typeId: string, speed: number): FactoryMachineDef {
 }
 
 function lineLayout(period: number, speed: number): FactoryLayout {
-  const legend: Record<string, FactoryTile> = {
-    ">": { kind: "source", dir: E, period },
-    "-": { kind: "belt", dir: E },
-    A: { kind: "machine", def: machineDef("m", speed), inDir: W, outDir: E },
-    "#": { kind: "sink" },
-  };
-  const row = ">--A--#";
-  const tiles: FactoryTile[] = [];
-  for (const ch of row) tiles.push(legend[ch] ?? { kind: "empty" });
-  return { width: row.length, height: 1, tiles };
+  // source(0)E -> belt(1)E -> machine@(2,0) -> belt(3)E -> sink(4).
+  // The machine lives in machines[] (not a tile); its cell (2,0) is "empty" in tiles.
+  const tiles: FactoryTile[] = [
+    { kind: "source", dir: E, period },
+    { kind: "belt", dir: E },
+    { kind: "empty" },
+    { kind: "belt", dir: E },
+    { kind: "sink" },
+  ];
+  const machines: PlacedMachine[] = [
+    { id: 0, def: machineDef("m", speed), anchor: { x: 2, y: 0 }, footRot: 0, shape: SHAPE_1x1 },
+  ];
+  return { width: 5, height: 1, tiles, machines };
 }
 
 describe("hashFactory", () => {

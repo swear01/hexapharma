@@ -1,5 +1,6 @@
 import type {
   Dir,
+  Rotation,
   DrugState,
   DiseaseId,
   SideEffectId,
@@ -7,32 +8,31 @@ import type {
   Outcome,
   FactoryTile,
   FactoryLayout,
+  PlacedMachine,
   FactoryMachineDef,
   CompileTemplateFn,
   FactoryOutcomeFn,
 } from "../phase0_interfaces";
-import { CellKind, DEFAULT_CATALOG } from "../phase0_interfaces";
+import { CellKind, DEFAULT_CATALOG, SHAPE_1x1 } from "../phase0_interfaces";
 import { replayFactory } from "../state";
 
 // ════════════════════════════════ recipe ════════════════════════════════
 //
-// compileTemplate lays a Template as a single straight horizontal line on row 0:
+// compileTemplate lays a Template as a straight 1×1-machine line on row 0:
 //
-//   source(E) , machine_0 , machine_1 , ... , machine_{k-1} , sink
+//   source , belt , m0 , belt , m1 , belt , ... , m_{k-1} , belt , sink
 //
-// The source emits every tick (period 1) eastward; each machine takes its in
-// from the west and sends its out to the east, so a unit flows strictly
-// left→right and traverses the machines in template order before the sink.
-// Machines sit back-to-back (no belt tiles) — this is one valid layout; the
-// rearrange-invariance tests prove that inserting belts or routing detours that
-// preserve machine order never changes the effect (INV-7 at the factory level).
+// Each machine is a 1×1 PlacedMachine (in `machines[]`; its cell is an "empty"
+// tile) taking input from the west belt and emitting east. This is the recipe's
+// canonical *logical* realization — guaranteed valid + simple. The real shaped
+// (Tetris) packing is the player's job in the Factory UI; rearrange-invariance
+// (INV-7) means belt routing / spacing never changes the effect — only machine
+// order + each machine's drug orientation do.
 //
-// factoryOutcome runs the compiled layout via replayFactory until one unit
-// reaches the sink (bounded tick cap), then reads that unit's final DrugState
-// against the maps to produce the cure/side-effect/failure Outcome.
+// factoryOutcome runs the layout via replayFactory until a unit reaches the sink,
+// then reads its final DrugState into a cure/side-effect/failure Outcome.
 
 const E: Dir = 0;
-const W: Dir = 2;
 
 function catalogCost(typeId: string): number {
   for (const entry of DEFAULT_CATALOG) {
@@ -43,31 +43,39 @@ function catalogCost(typeId: string): number {
 
 export const compileTemplate: CompileTemplateFn = (template) => {
   const k = template.steps.length;
-  // source + k machines + sink, all on one row.
-  const width = k + 2;
-  const tiles: FactoryTile[] = new Array<FactoryTile>(width);
+  // width = source + (belt, machine)*k + belt + sink = 2k + 3.
+  const width = 2 * k + 3;
+  const tiles: FactoryTile[] = new Array<FactoryTile>(width).fill({ kind: "empty" });
+  const machines: PlacedMachine[] = [];
 
   tiles[0] = { kind: "source", dir: E, period: 1 };
-
   for (let i = 0; i < k; i++) {
+    const beltX = 1 + 2 * i;
+    const machX = 2 + 2 * i;
+    tiles[beltX] = { kind: "belt", dir: E };
+    tiles[machX] = { kind: "empty" }; // machine cell (machine lives in machines[])
     const step = template.steps[i];
-    if (step === undefined) {
-      tiles[i + 1] = { kind: "empty" };
-      continue;
+    if (step !== undefined) {
+      const def: FactoryMachineDef = {
+        typeId: step.typeId,
+        transform: step.transform,
+        orientation: step.orientation,
+        cost: catalogCost(step.typeId),
+        speed: 1,
+      };
+      machines.push({
+        id: i,
+        def,
+        anchor: { x: machX, y: 0 },
+        footRot: 0 as Rotation,
+        shape: SHAPE_1x1,
+      });
     }
-    const def: FactoryMachineDef = {
-      typeId: step.typeId,
-      transform: step.transform,
-      orientation: step.orientation,
-      cost: catalogCost(step.typeId),
-      speed: 1,
-    };
-    tiles[i + 1] = { kind: "machine", def, inDir: W, outDir: E };
   }
-
+  tiles[width - 2] = { kind: "belt", dir: E };
   tiles[width - 1] = { kind: "sink" };
 
-  return { width, height: 1, tiles };
+  return { width, height: 1, tiles, machines };
 };
 
 /** Read a final DrugState against the maps into an Outcome (mirrors drug-graph.evaluate). */
@@ -76,7 +84,6 @@ function outcomeOf(mm: MultiMap, drug: DrugState): Outcome {
   if (drug.failed) {
     return { failed: true, final: finalPos, cured: [], sideEffects: [] };
   }
-
   const cured: DiseaseId[] = [];
   const sideEffects: SideEffectId[] = [];
   for (let i = 0; i < mm.maps.length; i++) {
@@ -93,26 +100,18 @@ function outcomeOf(mm: MultiMap, drug: DrugState): Outcome {
       if (id !== undefined && id >= 0) sideEffects.push(id);
     }
   }
-
   return { failed: false, final: finalPos, cured, sideEffects };
 }
 
-/**
- * Bounded tick budget: every machine has speed 1, the line is `width` tiles, and
- * the source emits every tick, so the first unit reaches the sink in O(width)
- * ticks. We pad generously to absorb any belt detours in non-compiled layouts.
- */
+/** Generous bounded tick budget: speed-1 machines on a width-O(k) line produce in O(width) ticks. */
 function tickCap(layout: FactoryLayout): number {
-  return (layout.width + layout.height) * 4 + 8;
+  return (layout.width + layout.height) * 6 + 16;
 }
 
 export const factoryOutcome: FactoryOutcomeFn = (layout, mm, start) => {
-  const cap = tickCap(layout);
-  const final = replayFactory(layout, mm, start, cap);
-  const produced = final.produced;
-  const first = produced[0];
+  const final = replayFactory(layout, mm, start, tickCap(layout));
+  const first = final.produced[0];
   if (first === undefined) {
-    // No unit reached the sink within the cap (a compiled line always produces).
     return { failed: true, final: [], cured: [], sideEffects: [] };
   }
   return outcomeOf(mm, first);
