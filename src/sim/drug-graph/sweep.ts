@@ -25,16 +25,29 @@ function cellAt(map: EffectMap, x: number, y: number): number {
 }
 
 /**
- * Walk an integer line from `from` to `target` one cell at a time using
- * deterministic Bresenham, applying drug-sweep rules to each entered cell:
+ * Apply the drug-sweep rule to one entered cell, mutating `entered`/`pos`/`failed`.
+ * Returns a status describing whether the walk should continue.
+ */
+type EnterStatus = "advance" | "stop" | "fail";
+
+/**
+ * Walk an integer line from `from` to `target` one cell at a time using a
+ * deterministic SUPERCOVER traversal (every grid cell the straight segment
+ * between the two cell centers passes through), applying drug-sweep rules to
+ * each entered cell in order:
  *  - out of bounds OR Wall  -> STOP; rest at the last valid cell; failed stays as-is.
  *  - Hazard                 -> mark failed; STOP after entering it.
  *  - otherwise              -> advance and continue.
  * Reaching `target` unobstructed rests at `target`.
  *
- * NOTE (Phase 0): on pure diagonals Bresenham may pass through a shared edge and
- * skip the orthogonally-adjacent corner cells; that is accepted for Phase 0. For
- * axis-aligned vectors this reduces to straight stepping with no skips.
+ * Corner convention (perfect-diagonal lattice crossings): both orthogonally
+ * grazed cells are visited BEFORE the diagonal cell, in deterministic order
+ * (the x-step neighbor, then the y-step neighbor). A hazard in either grazed
+ * cell fails the drug; a wall/OOB in either grazed cell stops the sweep before
+ * the diagonal (you cannot squeeze diagonally between two blocking corners).
+ *
+ * For axis-aligned vectors this reduces to straight stepping with no grazed
+ * neighbors, byte-identical to the old straight-stepping behavior.
  */
 export function sweep(map: EffectMap, from: Vec2, target: Vec2): SweepResult {
   const entered: Vec2[] = [];
@@ -49,35 +62,74 @@ export function sweep(map: EffectMap, from: Vec2, target: Vec2): SweepResult {
   const adx = Math.abs(dx);
   const ady = Math.abs(dy);
 
-  let x = from.x;
-  let y = from.y;
-  let err = adx - ady;
-
-  // Bound the loop by the Chebyshev distance to the target; we break out on
-  // arrival or obstruction, so this is a safety ceiling, not the exit path.
-  const maxSteps = Math.max(adx, ady);
-  for (let step = 0; step < maxSteps; step++) {
-    const e2 = 2 * err;
-    if (e2 > -ady) {
-      err -= ady;
-      x += sx;
-    }
-    if (e2 < adx) {
-      err += adx;
-      y += sy;
-    }
-
-    if (!inBounds(map, x, y) || cellAt(map, x, y) === CellKind.Wall) {
-      // Stop before the obstruction; rest at the last valid cell.
-      return { pos, failed: false, entered };
-    }
-
+  // Try to enter a single cell, recording it and updating pos/failed.
+  // Returns the resulting walk status without mutating on a stop.
+  const enter = (x: number, y: number): EnterStatus => {
+    if (!inBounds(map, x, y) || cellAt(map, x, y) === CellKind.Wall) return "stop";
     const here: Vec2 = { x, y };
     entered.push(here);
     pos = here;
+    return cellAt(map, x, y) === CellKind.Hazard ? "fail" : "advance";
+  };
 
-    if (cellAt(map, x, y) === CellKind.Hazard) {
-      return { pos, failed: true, entered };
+  let x = from.x;
+  let y = from.y;
+
+  // Supercover via integer cross-multiplication. We track how far along x and
+  // along y the next cell boundary lies, scaled by (adx*ady) to stay integral:
+  //   tMaxX = (steps taken in x + 1) * ady   — distance to next vertical boundary
+  //   tMaxY = (steps taken in y + 1) * adx   — distance to next horizontal boundary
+  // Equality (tMaxX === tMaxY) is an exact lattice-corner crossing.
+  let tMaxX = ady; // after 1 x-step
+  let tMaxY = adx; // after 1 y-step
+  let nx = adx; // remaining x steps
+  let ny = ady; // remaining y steps
+
+  while (nx > 0 || ny > 0) {
+    if (nx > 0 && (ny === 0 || tMaxX < tMaxY)) {
+      // Cross a vertical boundary first: pure x step.
+      x += sx;
+      const st = enter(x, y);
+      if (st === "stop") return { pos, failed: false, entered };
+      if (st === "fail") return { pos, failed: true, entered };
+      tMaxX += ady;
+      nx--;
+    } else if (ny > 0 && (nx === 0 || tMaxY < tMaxX)) {
+      // Cross a horizontal boundary first: pure y step.
+      y += sy;
+      const st = enter(x, y);
+      if (st === "stop") return { pos, failed: false, entered };
+      if (st === "fail") return { pos, failed: true, entered };
+      tMaxY += adx;
+      ny--;
+    } else {
+      // Exact lattice-corner crossing. Conservatively graze BOTH orthogonal
+      // neighbors (x-step neighbor first, then y-step neighbor) before the
+      // diagonal cell. A wall/OOB in either grazed cell blocks the squeeze.
+      const gxX = x + sx;
+      const gxY = y;
+      const gyX = x;
+      const gyY = y + sy;
+
+      const sxStatus = enter(gxX, gxY);
+      if (sxStatus === "stop") return { pos, failed: false, entered };
+      if (sxStatus === "fail") return { pos, failed: true, entered };
+
+      const syStatus = enter(gyX, gyY);
+      if (syStatus === "stop") return { pos, failed: false, entered };
+      if (syStatus === "fail") return { pos, failed: true, entered };
+
+      // Both corners clear: step diagonally into the shared cell.
+      x += sx;
+      y += sy;
+      const st = enter(x, y);
+      if (st === "stop") return { pos, failed: false, entered };
+      if (st === "fail") return { pos, failed: true, entered };
+
+      tMaxX += ady;
+      tMaxY += adx;
+      nx--;
+      ny--;
     }
   }
 

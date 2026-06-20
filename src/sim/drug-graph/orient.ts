@@ -14,6 +14,11 @@ export function perpCW(v: Vec2): Vec2 {
   return { x: z(-v.y), y: v.x };
 }
 
+/** +45° diagonal skew: skew(x,y) = (x - y, x + y). */
+export function skew(v: Vec2): Vec2 {
+  return { x: z(v.x - v.y), y: z(v.x + v.y) };
+}
+
 /** One 90° clockwise quarter-turn in a y-down grid: (x,y) -> (-y, x). */
 function rotCW(v: Vec2): Vec2 {
   return { x: z(-v.y), y: v.x };
@@ -35,9 +40,16 @@ export const orient: OrientFn = (v, o) => {
  *  - forward:       orient(delta, o)
  *  - reverse:       orient(negate(delta), o)
  *  - perpendicular: orient(perpCW(delta), o)
+ *  - offset:        orient(skew(delta), o)
  */
 export const effectiveDelta: EffectiveDeltaFn = (delta, relation, o) => {
   const base: Vec2 =
-    relation === "reverse" ? negate(delta) : relation === "perpendicular" ? perpCW(delta) : delta;
+    relation === "reverse"
+      ? negate(delta)
+      : relation === "perpendicular"
+        ? perpCW(delta)
+        : relation === "offset"
+          ? skew(delta)
+          : delta;
   return orient(base, o);
 };

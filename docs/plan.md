@@ -11,7 +11,7 @@
   - 工具鏈：TS/vitest/fast-check/eslint（含 sim 確定性 guard）；`npm run check`（tsc + lint + vitest + e2e）。
   - `phase0_interfaces.ts` 凍結契約（型別 + 簽名 + INV-1..15 + DEFAULT_CATALOG）。
   - `rng`（mulberry32，唯一隨機源）+ `hash`（FNV-1a，replay/determinism）。
-  - `drug-graph`（orient/sweep/applyStep/evaluate/revealAlong；46 tests，INV-1..8）。
+  - `drug-graph`（orient/sweep/applyStep/evaluate/revealAlong；supercover 對角掃動；translate 四關係 順逆垂直偏移；INV-1..8）。
   - `solver`（多圖 BFS 最小解；INV-13；dev/test 限定）。
   - `mapgen`（建構式生成 + 難度評分 + 指數定價；INV-9..12）。
   - CLI `tools/headless-sim.ts`（gen/run）。
