@@ -5,10 +5,15 @@
  * states (via the sim functions), and the revealed MultiMap. It hands plain sim
  * state to the dumb PixiJS renderer (src/render). NO sweep/evaluate logic lives
  * here — we only CALL the sim. See AGENTS.md layering rule.
+ *
+ * The level is produced by mapgen `generate()` from a seed (no hand fixture), so
+ * the Lab plays the real cross-map-tension levels. A debug "Reveal level" toggle
+ * paints a fully-revealed COPY of the MultiMap (sim state is untouched).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   MultiMap,
+  EffectMap,
   DrugState,
   Machine,
   Template,
@@ -17,10 +22,37 @@ import type {
   Orientation,
   MachineCatalogEntry,
   Transform,
+  DiseaseId,
+  GeneratedLevel,
 } from "../sim/phase0_interfaces";
+import { DEFAULT_CATALOG } from "../sim/phase0_interfaces";
 import { applyStep, evaluate, revealAlong } from "../sim/drug-graph";
+import { generate } from "../sim/mapgen";
 import { createLabRenderer, type LabRenderer } from "../render/labRenderer";
-import { mm, start, targets, catalog } from "../fixtures/sampleLevel";
+
+// ───────────────────────────── level generation ─────────────────────────────
+
+const catalog: readonly MachineCatalogEntry[] = DEFAULT_CATALOG;
+
+/** Mapgen options for the Lab. Small enough to generate in well under ~1s. */
+function genLevel(seed: number): GeneratedLevel {
+  return generate({
+    seed,
+    nMaps: 2,
+    width: 12,
+    height: 12,
+    catalog: DEFAULT_CATALOG,
+    diseaseCount: 2,
+    difficulty: { min: 4, max: 12 },
+  });
+}
+
+/** A COPY of the MultiMap with all fog cleared — debug-only render aid (no sim mutation). */
+function revealedCopy(mm: MultiMap): MultiMap {
+  return {
+    maps: mm.maps.map((m): EffectMap => ({ ...m, fog: new Uint8Array(m.fog.length).fill(1) })),
+  };
+}
 
 // ───────────────────────────── helpers (display only) ─────────────────────────────
 
@@ -63,13 +95,22 @@ export function App() {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<LabRenderer | null>(null);
 
+  // The generated level (regenerated on New level / Random).
+  const [seedInput, setSeedInput] = useState<number>(1);
+  const [level, setLevel] = useState<GeneratedLevel>(() => genLevel(1));
+  const { mm, start } = level;
+  const targets = useMemo<readonly DiseaseId[]>(() => level.diseases.map((d) => d.id), [level]);
+
+  // Debug aid: show the full map ignoring fog (pure render; never touches sim).
+  const [reveal, setReveal] = useState<boolean>(false);
+
   // Player-built recipe.
   const [steps, setSteps] = useState<readonly Machine[]>([]);
   // Pending orientation for the NEXT orientable translate machine added.
   const [rot, setRot] = useState<Rotation>(0);
   const [flip, setFlip] = useState<boolean>(false);
 
-  // What the renderer currently shows.
+  // What the renderer currently shows (the revealed-by-play MultiMap + drug state).
   const [shownMap, setShownMap] = useState<MultiMap>(mm);
   const [shownDrug, setShownDrug] = useState<DrugState>(start);
 
@@ -81,10 +122,13 @@ export function App() {
     if (outcome === null || outcome.failed) return false;
     const cured = new Set(outcome.cured);
     return targets.every((t) => cured.has(t));
-  }, [outcome]);
+  }, [outcome, targets]);
 
   // Cancel token so a Reset (or unmount) stops an in-flight animation.
   const runIdRef = useRef(0);
+
+  // The map handed to the renderer: a fully-revealed copy when the debug toggle is on.
+  const renderMap = useMemo(() => (reveal ? revealedCopy(shownMap) : shownMap), [reveal, shownMap]);
 
   // ── mount / unmount the Pixi renderer ─────────────────────────────────────
   useEffect(() => {
@@ -107,12 +151,14 @@ export function App() {
       rendererRef.current = null;
       if (local) local.destroy();
     };
-  }, []);
+    // mm/start identity changes only when a new level is generated; remount the
+    // renderer then so the canvas is resized for the new level shape.
+  }, [mm, start]);
 
-  // ── repaint whenever shown state changes ──────────────────────────────────
+  // ── repaint whenever shown state (or reveal toggle) changes ────────────────
   useEffect(() => {
-    rendererRef.current?.render(shownMap, shownDrug);
-  }, [shownMap, shownDrug]);
+    rendererRef.current?.render(renderMap, shownDrug);
+  }, [renderMap, shownDrug]);
 
   // ── palette / template editing ────────────────────────────────────────────
   const addMachine = useCallback(
@@ -176,7 +222,7 @@ export function App() {
       }
     };
     window.setTimeout(tick, 260);
-  }, [running, steps]);
+  }, [running, steps, mm, start]);
 
   // ── Reset: back to start, fog restored, empty template ────────────────────
   const reset = useCallback(() => {
@@ -188,6 +234,21 @@ export function App() {
     setOutcome(null);
     setShownMap(mm);
     setShownDrug(start);
+  }, [mm, start]);
+
+  // ── New level: regenerate from a seed and reset all play state ────────────
+  const loadSeed = useCallback((seed: number) => {
+    runIdRef.current++; // cancel any in-flight animation
+    const next = genLevel(seed);
+    setSeedInput(seed);
+    setLevel(next);
+    setRunning(false);
+    setSteps([]);
+    setRot(0);
+    setFlip(false);
+    setOutcome(null);
+    setShownMap(next.mm);
+    setShownDrug(next.start);
   }, []);
 
   // ───────────────────────────── render ─────────────────────────────
@@ -217,6 +278,63 @@ export function App() {
         Place machines into a template, then Run to sweep the drug across both effect
         maps. Cure all targets ({targets.join(", ")}) to win.
       </p>
+
+      {/* level controls */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          flexWrap: "wrap",
+          marginBottom: 12,
+        }}
+      >
+        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+          Seed
+          <input
+            type="number"
+            value={seedInput}
+            onChange={(e) => setSeedInput(Number(e.target.value))}
+            data-testid="seed-input"
+            style={{ width: 90, padding: "5px 6px", border: "1px solid #b8c2cc", borderRadius: 6, fontSize: 13 }}
+          />
+        </label>
+        <button
+          type="button"
+          onClick={() => loadSeed(seedInput)}
+          style={btn}
+          data-testid="new-level"
+        >
+          New level
+        </button>
+        <button
+          type="button"
+          onClick={() => loadSeed(seedInput + 1)}
+          style={btn}
+          data-testid="random-level"
+        >
+          Random (seed+1)
+        </button>
+        <label
+          style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, marginLeft: 8 }}
+        >
+          <input
+            type="checkbox"
+            checked={reveal}
+            onChange={(e) => setReveal(e.target.checked)}
+            data-testid="reveal"
+          />
+          Reveal level (debug)
+        </label>
+      </div>
+
+      {/* level info */}
+      <div data-testid="level-info" style={{ fontSize: 12, color: "#5a6470", marginBottom: 10 }}>
+        seed {level.seed} ·{" "}
+        {level.diseases
+          .map((d) => `disease ${d.id} (map ${d.map}): difficulty ${d.difficulty}, price ${d.basePrice}`)
+          .join(" · ")}
+      </div>
 
       {/* canvas */}
       <div

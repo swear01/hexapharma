@@ -1,6 +1,8 @@
 import { test, expect } from "@playwright/test";
 
-test("HexaPharma Lab loads, runs a template, and reports an outcome", async ({ page }) => {
+test("HexaPharma Lab loads a generated level, runs a template, and reports an outcome", async ({
+  page,
+}) => {
   await page.goto("/");
 
   // Heading + canvas present.
@@ -8,12 +10,20 @@ test("HexaPharma Lab loads, runs a template, and reports an outcome", async ({ p
   const canvas = page.locator("[data-testid='lab-canvas'] canvas");
   await expect(canvas).toBeVisible();
 
+  // Generated-level info should render (seed + per-disease difficulty/price).
+  await expect(page.getByTestId("level-info")).toContainText(/seed/i);
+
+  // Reveal the level so it's testable without blind exploration.
+  await page.getByTestId("reveal").check();
+
   const status = page.getByTestId("status");
   const before = (await status.textContent())?.trim() ?? "";
 
-  // Build a tiny template from the palette, then Run.
+  // Build a tiny template from the palette (incl. the offset `skew` machine), then Run.
   await page.getByTestId("palette-push").click();
+  await page.getByTestId("palette-skew").click();
   await expect(page.getByTestId("template-list")).toContainText("push");
+  await expect(page.getByTestId("template-list")).toContainText("skew");
 
   await page.getByTestId("run").click();
 
@@ -23,6 +33,16 @@ test("HexaPharma Lab loads, runs a template, and reports an outcome", async ({ p
   await expect(status).toContainText(/Run complete|WIN|FAILED/i, { timeout: 10_000 });
 
   await page.screenshot({ path: "test/e2e/__screenshots__/lab.png", fullPage: true });
+});
+
+test("New level regenerates from the seed input", async ({ page }) => {
+  await page.goto("/");
+  const info = page.getByTestId("level-info");
+  await expect(info).toContainText("seed 1");
+
+  await page.getByTestId("seed-input").fill("7");
+  await page.getByTestId("new-level").click();
+  await expect(info).toContainText("seed 7");
 });
 
 test("Reset clears the template back to empty", async ({ page }) => {

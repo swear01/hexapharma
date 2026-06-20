@@ -19,8 +19,7 @@
 | `src/sim/patent/` | 📋 Phase 3 | 天賦樹（含解鎖新成分地圖） |
 | `src/sim/save/` | 📋 Phase 3 | 序列化/反序列化（多存檔 + 回溯） |
 | `src/render/labRenderer.ts` | ✅ | PixiJS v8 Lab 渲染器（只讀 sim、並列畫多圖）。Factory/Shop 渲染 Phase 2/3 補 |
-| `src/ui/` | ✅/🔧 | React：`App.tsx` Lab（✅）；Factory / Shop / Patents / 選單（Phase 2/3） |
-| `src/fixtures/` | ✅ | 給 render/UI 用的關卡 fixture（可解性以 solver 驗證） |
+| `src/ui/` | ✅/🔧 | React：`App.tsx` Lab（✅，由 mapgen `generate()` 依 seed 產生關卡，含 reveal debug 開關）；Factory / Shop / Patents / 選單（Phase 2/3） |
 | `src/main.tsx` | ✅ | React 進入點（掛載 `App`） |
 | `test/e2e/` | ✅ | Playwright headless + 截圖（`__screenshots__/` 為輸出 artifact，已 gitignore；未來 toHaveScreenshot baseline 才提交） |
 | `test/integration/` | 📋 Phase 2+ | 跨模組、無畫面（模板→產線→結算） |

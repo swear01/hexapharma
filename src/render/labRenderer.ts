@@ -71,6 +71,13 @@ function drawMap(map: EffectMap, ox: number, oy: number, g: Graphics, fogG: Grap
       const py = oy + y * CELL;
       g.rect(px, py, CELL, CELL).fill({ color });
       g.rect(px, py, CELL, CELL).stroke({ color: GRID_LINE, width: 1 });
+      // Mark Cure cells with a bright target ring so players can spot goals.
+      if (kind === CellKind.Cure) {
+        const ccx = px + CELL / 2;
+        const ccy = py + CELL / 2;
+        g.circle(ccx, ccy, CELL * 0.3).stroke({ color: 0xffffff, width: 2 });
+        g.circle(ccx, ccy, CELL * 0.12).fill({ color: 0xffffff });
+      }
       // Fog overlay on hidden cells (fog === 0 means hidden/fogged).
       if ((map.fog[i] ?? 0) === 0) {
         fogG.rect(px, py, CELL, CELL).fill({ color: FOG_COLOR, alpha: FOG_ALPHA });
