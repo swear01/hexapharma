@@ -1,8 +1,9 @@
 /**
  * HexaPharma — mapgen.
  *
- * Constructive level generation with genuine CROSS-MAP TENSION + per-disease
- * difficulty scoring + pricing. Satisfies INV-9 (constructive solvability),
+ * Constructive level generation for N ∈ {2,3,4} effect maps with genuine
+ * CROSS-MAP TENSION + per-disease difficulty scoring + pricing. Satisfies INV-9
+ * (constructive solvability),
  * INV-10 (generation determinism), INV-11 (difficulty bounds), INV-12 (pricing
  * consistency) and the NEW cross-map tension invariant: every accepted level has
  * at least one disease whose canonical solver solution must DECOUPLE the maps.
@@ -31,6 +32,23 @@
  *
  * `DiseaseSpec.difficulty`/`cost`/`reference` all come from the solver's canonical
  * solution, so they agree by construction.
+ *
+ * N-MAP GENERALITY + SIZE/PERF GUIDANCE:
+ *   The generator is uniform in `nMaps`: it builds `nMaps` maps each with a DISTINCT
+ *   corner origin (distinct for the supported N ≤ 4), round-robins diseases onto
+ *   distinct maps (`d % nMaps`), and drops the tension hazard at every cure's (cx,cy)
+ *   on EVERY other map. The acceptance oracle is unchanged: solvable for every
+ *   disease, all difficulties in band, INV-9, and ≥1 canonical solution decouples.
+ *   Because `scale` pulls EACH map toward its OWN origin, decoupling stays reachable
+ *   at any N (it does not rely on the 2-map-only `swap01`).
+ *
+ *   The solver is a BFS over (W·H)^N position tuples, so the only thing that scales
+ *   badly with N is MAP SIZE. Keep maps small as N grows:
+ *     N=2 : up to ~16×16 (the default/CLI config) is fine.
+ *     N=3 : ~7×7 with a modest band (e.g. [3,12]).
+ *     N=4 : ~6×6 with a modest band (e.g. [3,12]).
+ *   Larger N or larger maps blow up the (W·H)^N state space and the per-attempt
+ *   solver re-checks; the bounded reject loop will simply exhaust and throw.
  */
 import type {
   Vec2,
@@ -168,9 +186,11 @@ function maxStep(movers: readonly AxisMover[], axis: "x" | "y"): number {
 /**
  * Distinct per-map origins — the lever that makes decoupling possible (a `scale`
  * pulls each map toward a DIFFERENT origin, so positions diverge). The drug always
- * starts at (0,0); origins walk the OTHER three corners so map 0 (origin (0,0)) and
- * every other map disagree. With more maps than corners the pattern repeats on the
- * interior, which still keeps neighbouring origins distinct enough to decouple.
+ * starts at (0,0); the four grid corners are handed out by map index, so for the
+ * supported range N ∈ {2,3,4} every map gets a DISTINCT origin (and map 0's origin
+ * (0,0) differs from the start-trapping tension hazards on the others). For N > 4
+ * (out of the supported band) corners are reused via mod 4 — origins are no longer
+ * guaranteed distinct, but the contract only promises N ≤ 4.
  */
 function originFor(mapIndex: MapIndex, width: number, height: number): Vec2 {
   const corners: readonly Vec2[] = [

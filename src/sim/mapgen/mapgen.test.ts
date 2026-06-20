@@ -33,6 +33,25 @@ function smallOpts(seed: number, over: Partial<GenOptions> = {}): GenOptions {
   };
 }
 
+/**
+ * N-map options. The solver is a BFS over (W·H)^N, so map size must shrink as N
+ * grows to keep the per-attempt re-checks fast: N=3 at 7×7, N=4 at 6×6, both with a
+ * modest band. diseaseCount defaults to nMaps so each disease gets its own map.
+ */
+function nMapOpts(seed: number, nMaps: number, over: Partial<GenOptions> = {}): GenOptions {
+  const dims = nMaps >= 4 ? 6 : 7;
+  return {
+    seed,
+    nMaps,
+    width: dims,
+    height: dims,
+    catalog: DEFAULT_CATALOG,
+    diseaseCount: nMaps,
+    difficulty: { min: 3, max: 12 },
+    ...over,
+  };
+}
+
 /** A "decoupling step" — a move that can make the maps' positions diverge. */
 function solutionDecouples(sol: Solution): boolean {
   return sol.template.steps.some((m) => {
@@ -217,6 +236,66 @@ describe("mapgen cross-map tension (decoupling required)", () => {
     const origins = level.mm.maps.map((m) => `${m.origin.x},${m.origin.y}`);
     expect(new Set(origins).size).toBe(level.mm.maps.length);
   });
+});
+
+// ───────────────────────────── N-map generation (N=3, N=4) ─────────────────────────────
+
+describe("mapgen N-map generation (N=3, N=4)", () => {
+  for (const nMaps of [3, 4]) {
+    it(`generates valid, decoupling, deterministic levels at N=${nMaps} (several seeds)`, () => {
+      fc.assert(
+        fc.property(fc.integer({ min: 0, max: 50_000 }), (seed) => {
+          const opts = nMapOpts(seed, nMaps);
+          const level = generate(opts);
+          const start = initialState(level.mm);
+
+          // Right number of maps + diseases.
+          expect(level.mm.maps.length).toBe(nMaps);
+          expect(level.diseases.length).toBe(nMaps);
+
+          // Distinct origins across ALL maps (the decoupling precondition).
+          const origins = level.mm.maps.map((m) => `${m.origin.x},${m.origin.y}`);
+          expect(new Set(origins).size).toBe(nMaps);
+
+          // Diseases sit on distinct maps (round-robin onto its own map).
+          const mapsUsed = level.diseases.map((d) => d.map);
+          expect(new Set(mapsUsed).size).toBe(nMaps);
+
+          let decoupling = 0;
+          for (const d of level.diseases) {
+            // INV-9: each reference cures, never fails, and its node carries the Cure.
+            const out = evaluate(level.mm, start, d.reference);
+            expect(out.failed).toBe(false);
+            expect(out.cured).toContain(d.id);
+            expect(cureAt(level, d.map, d.node.x, d.node.y, d.id)).toBe(true);
+
+            // INV-11: difficulty in band.
+            expect(d.difficulty).toBeGreaterThanOrEqual(opts.difficulty.min);
+            expect(d.difficulty).toBeLessThanOrEqual(opts.difficulty.max);
+
+            // Canonical solver agrees, and we count decoupling diseases.
+            const sol = solve(level.mm, start, {
+              catalog: opts.catalog,
+              maxDepth: opts.difficulty.max + 2,
+              targets: [d.id],
+            });
+            expect(sol).not.toBeNull();
+            if (sol !== null && solutionDecouples(sol)) decoupling += 1;
+          }
+
+          // Cross-map tension predicate: ≥1 disease's canonical solution decouples.
+          expect(decoupling).toBeGreaterThanOrEqual(1);
+
+          // INV-10: regeneration is field-equal (all N maps) + identical diseases.
+          const again = generate(opts);
+          expect(multiMapFieldEqual(level.mm, again.mm)).toBe(true);
+          expect(level.diseases).toEqual(again.diseases);
+          expect(level.start).toEqual(again.start);
+        }),
+        { numRuns: nMaps >= 4 ? 6 : 8 },
+      );
+    });
+  }
 });
 
 // ───────────────────────────── INV-10: generation determinism ─────────────────────────────
