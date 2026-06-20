@@ -395,3 +395,93 @@ export type CompileTemplateFn = (template: Template) => FactoryLayout;
 
 /** Run a layout to completion for one unit and report its cure/side-effect Outcome. */
 export type FactoryOutcomeFn = (layout: FactoryLayout, mm: MultiMap, start: DrugState) => Outcome;
+
+// ═══════════════════════════════ Phase 3 — economy / patent / save ═══════════════════════════════
+
+// ── economy ──
+// Anti-degeneracy: per-disease revenue DIMINISHES with prior sales (so spamming
+// one drug self-limits), while different diseases sell independently (parallel
+// demand rewards diversifying). All integer/deterministic.
+
+/** Cumulative units sold for one disease (drives diminishing returns). */
+export interface SoldCount {
+  readonly disease: DiseaseId;
+  readonly count: number;
+}
+
+export interface EconomyState {
+  readonly cash: number;
+  readonly sold: readonly SoldCount[]; // per-disease cumulative sales (deterministic order)
+}
+
+/** Net for selling ONE produced unit that cures `disease`. */
+export interface SaleResult {
+  readonly econ: EconomyState;
+  readonly revenue: number; // gross paid for this unit (after per-disease diminishing)
+  readonly net: number; // revenue − productionCost − sideEffectPenalty
+}
+
+/**
+ * Sell one produced unit. Gross revenue for the Nth unit of a disease is
+ * basePrice scaled by a diminishing factor in N (monotonically non-increasing,
+ * with a floor); net subtracts productionCost + sideEffectPenalty. Updates cash + sold.
+ * A failed/uncured unit earns nothing (caller passes a valid cure).
+ */
+export type SellUnitFn = (
+  econ: EconomyState,
+  disease: DiseaseId,
+  basePrice: number,
+  productionCost: number,
+  sideEffectPenalty: number,
+) => SaleResult;
+
+/** Gross price the next (count-th) unit of a disease would fetch — for UI/preview. */
+export type NextUnitPriceFn = (basePrice: number, alreadySold: number) => number;
+
+// ── patent (talent tree) ──
+
+export type PatentEffect =
+  | { readonly kind: "unlockMachine"; readonly typeId: MachineTypeId }
+  | { readonly kind: "expandFactory"; readonly dw: number; readonly dh: number }
+  | { readonly kind: "revealAid"; readonly amount: number }
+  | { readonly kind: "unlockMap" }; // unlock a new ingredient map (go deeper)
+
+export interface PatentNode {
+  readonly id: string;
+  readonly cost: number; // cash to unlock
+  readonly requires: readonly string[]; // prerequisite node ids
+  readonly effect: PatentEffect;
+}
+
+export interface PatentState {
+  readonly unlocked: readonly string[]; // node ids, in unlock order
+}
+
+export type CanUnlockFn = (tree: readonly PatentNode[], state: PatentState, cash: number, id: string) => boolean;
+
+/** Unlock a node: returns new PatentState + cash spent (throws/no-ops if not allowed — define). */
+export type UnlockPatentFn = (
+  tree: readonly PatentNode[],
+  state: PatentState,
+  cash: number,
+  id: string,
+) => { patents: PatentState; cash: number };
+
+// ── top-level game state + save ──
+
+/**
+ * Whole-game state. The current level is stored as its seed + GenOptions and
+ * regenerated deterministically on load (mapgen is seed-pure), so save never has
+ * to serialize typed arrays. One save = one seed (D12).
+ */
+export interface GameState {
+  readonly genOptions: GenOptions; // regenerates the current MultiMap + diseases
+  readonly economy: EconomyState;
+  readonly patents: PatentState;
+  readonly factory: FactoryLayout; // current production line
+  readonly rng: RngState; // for any further seeded draws (e.g. next map)
+}
+
+/** Serialize/deserialize a GameState. Round-trip: deserialize(serialize(g)) deep-equals g. */
+export type SerializeGameFn = (g: GameState) => string;
+export type DeserializeGameFn = (s: string) => GameState;
