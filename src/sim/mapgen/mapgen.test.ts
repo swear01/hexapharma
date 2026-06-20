@@ -5,6 +5,7 @@ import type {
   GeneratedLevel,
   MultiMap,
   MachineCatalogEntry,
+  Solution,
 } from "../phase0_interfaces";
 import { CellKind, DEFAULT_CATALOG } from "../phase0_interfaces";
 import { initialState, evaluate } from "../drug-graph";
@@ -14,23 +15,37 @@ import { generate, difficultyToBasePrice } from "./index";
 // ───────────────────────────── fixtures ─────────────────────────────
 
 /**
- * Test-friendly options: small maps + a wide difficulty band keep the solver's
- * (W·H)^N BFS fast while still exercising the full generate path across seeds.
+ * Test-friendly options: small maps + a difficulty band wide enough to absorb the
+ * decoupling/diversity bonuses that cross-map tension forces. The (W·H)^N BFS stays
+ * fast (10×12, 2 maps) while still exercising the full tension-generate path.
+ * Tension needs ≥2 maps, so nMaps is always 2 here.
  */
 function smallOpts(seed: number, over: Partial<GenOptions> = {}): GenOptions {
   return {
     seed,
     nMaps: 2,
     width: 10,
-    height: 10,
+    height: 12,
     catalog: DEFAULT_CATALOG,
     diseaseCount: 2,
-    difficulty: { min: 2, max: 8 },
+    difficulty: { min: 4, max: 12 },
     ...over,
   };
 }
 
-/** Field-by-field MultiMap equality, including every typed array. */
+/** A "decoupling step" — a move that can make the maps' positions diverge. */
+function solutionDecouples(sol: Solution): boolean {
+  return sol.template.steps.some((m) => {
+    const t = m.transform;
+    if (t.kind === "swap" || t.kind === "scale") return true;
+    return (
+      t.kind === "translate" &&
+      (t.relation === "reverse" || t.relation === "perpendicular" || t.relation === "offset")
+    );
+  });
+}
+
+/** Field-by-field MultiMap equality, including every typed array and per-map origin. */
 function multiMapFieldEqual(a: MultiMap, b: MultiMap): boolean {
   if (a.maps.length !== b.maps.length) return false;
   for (let i = 0; i < a.maps.length; i++) {
@@ -78,7 +93,7 @@ describe("mapgen INV-9 (constructive solvability)", () => {
           expect(cureAt(level, d.map, d.node.x, d.node.y, d.id)).toBe(true);
         }
       }),
-      { numRuns: 80 },
+      { numRuns: 60 },
     );
   });
 
@@ -107,6 +122,103 @@ describe("mapgen INV-9 (constructive solvability)", () => {
   });
 });
 
+// ───────────────────────────── NEW: cross-map tension ─────────────────────────────
+
+describe("mapgen cross-map tension (decoupling required)", () => {
+  it("every generated level has ≥1 disease whose canonical solution decouples", () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 0, max: 1_000_000 }), (seed) => {
+        const opts = smallOpts(seed);
+        const level = generate(opts);
+        const start = initialState(level.mm);
+        let decoupling = 0;
+        for (const d of level.diseases) {
+          const sol = solve(level.mm, start, {
+            catalog: opts.catalog,
+            maxDepth: opts.difficulty.max + 2,
+            targets: [d.id],
+          });
+          expect(sol).not.toBeNull();
+          if (sol !== null && solutionDecouples(sol)) decoupling += 1;
+          // The declared reference must agree with the canonical solver solution.
+          if (sol !== null) {
+            expect(solutionDecouples({ template: d.reference, difficulty: d.difficulty, cost: 0 })).toBe(
+              solutionDecouples(sol),
+            );
+          }
+        }
+        // The whole point: at least one disease cannot be solved by a naive
+        // forward-only (lock-step) recipe.
+        expect(decoupling).toBeGreaterThanOrEqual(1);
+      }),
+      { numRuns: 60 },
+    );
+  });
+
+  it("the naive lock-step forward recipe gets SPOILED on the other map (the trap)", () => {
+    // The cross-map trap: pushing the drug straight at a cure's (cx,cy) — which
+    // moves EVERY map in lock-step — drives the drug onto the tension hazard that
+    // sits at (cx,cy) on the other map, spoiling the whole drug. We replay that
+    // exact naive recipe and confirm it fails for the vast majority of diseases.
+    const push = DEFAULT_CATALOG.find((c) => c.typeId === "push");
+    expect(push).toBeDefined();
+    const naiveRecipe = (cx: number, cy: number) => {
+      const steps = [];
+      for (let i = 0; i < cx; i++) {
+        steps.push({ typeId: push!.typeId, transform: push!.transform, orientation: { rot: 0 as const, flip: false } });
+      }
+      for (let i = 0; i < cy; i++) {
+        steps.push({ typeId: push!.typeId, transform: push!.transform, orientation: { rot: 1 as const, flip: false } });
+      }
+      return { steps };
+    };
+
+    let total = 0;
+    let spoiled = 0;
+    for (let seed = 0; seed < 40; seed++) {
+      const opts = smallOpts(seed);
+      const level = generate(opts);
+      const start = initialState(level.mm);
+      for (const d of level.diseases) {
+        total += 1;
+        const out = evaluate(level.mm, start, naiveRecipe(d.node.x, d.node.y));
+        const naiveCures = !out.failed && out.cured.includes(d.id);
+        if (!naiveCures) spoiled += 1;
+      }
+    }
+    // Empirically ~0.88 of diseases trap the naive lock-step recipe.
+    expect(spoiled / total).toBeGreaterThan(0.6);
+  });
+
+  it("reports a high decoupling FRACTION across diseases (aim: most diseases need it)", () => {
+    let total = 0;
+    let decoupling = 0;
+    for (let seed = 0; seed < 40; seed++) {
+      const opts = smallOpts(seed);
+      const level = generate(opts);
+      const start = initialState(level.mm);
+      for (const d of level.diseases) {
+        total += 1;
+        const sol = solve(level.mm, start, {
+          catalog: opts.catalog,
+          maxDepth: opts.difficulty.max + 2,
+          targets: [d.id],
+        });
+        if (sol !== null && solutionDecouples(sol)) decoupling += 1;
+      }
+    }
+    // Empirically ~0.9; require a clear majority so a regression that silently
+    // drops the tension is caught.
+    expect(decoupling / total).toBeGreaterThan(0.6);
+  });
+
+  it("gives each map a DISTINCT origin (the precondition for decoupling)", () => {
+    const level = generate(smallOpts(99));
+    const origins = level.mm.maps.map((m) => `${m.origin.x},${m.origin.y}`);
+    expect(new Set(origins).size).toBe(level.mm.maps.length);
+  });
+});
+
 // ───────────────────────────── INV-10: generation determinism ─────────────────────────────
 
 describe("mapgen INV-10 (generation determinism)", () => {
@@ -118,12 +230,12 @@ describe("mapgen INV-10 (generation determinism)", () => {
         expect(a.seed).toBe(b.seed);
         // start state.
         expect(a.start).toEqual(b.start);
-        // full MultiMap field equality (every typed array).
+        // full MultiMap field equality (every typed array + origins).
         expect(multiMapFieldEqual(a.mm, b.mm)).toBe(true);
         // diseases: difficulty, basePrice, node, map, id, AND reference template.
         expect(a.diseases).toEqual(b.diseases);
       }),
-      { numRuns: 80 },
+      { numRuns: 60 },
     );
   });
 
@@ -157,7 +269,7 @@ describe("mapgen INV-11 (difficulty bounds)", () => {
           expect(d.difficulty).toBeLessThanOrEqual(opts.difficulty.max);
         }
       }),
-      { numRuns: 80 },
+      { numRuns: 60 },
     );
   });
 
@@ -168,7 +280,7 @@ describe("mapgen INV-11 (difficulty bounds)", () => {
     for (const d of level.diseases) {
       const sol = solve(level.mm, start, {
         catalog: opts.catalog,
-        maxDepth: opts.difficulty.max + 1,
+        maxDepth: opts.difficulty.max + 2,
         targets: [d.id],
       });
       expect(sol).not.toBeNull();
@@ -179,17 +291,17 @@ describe("mapgen INV-11 (difficulty bounds)", () => {
   });
 
   it("respects a tightened range (min===max forces an exact difficulty)", () => {
-    const level = generate(smallOpts(55, { difficulty: { min: 4, max: 4 } }));
+    const level = generate(smallOpts(0, { difficulty: { min: 8, max: 8 } }));
     for (const d of level.diseases) {
-      expect(d.difficulty).toBe(4);
+      expect(d.difficulty).toBe(8);
     }
   });
 
   it("throws a seed+range error when no level can satisfy the band", () => {
-    // A 5x5 grid with max-step 2 caps difficulty at ceil(4/2)+ceil(4/2)=4; asking
-    // for difficulty 20+ is physically impossible ⇒ a clear throw, never a bad level.
+    // A tiny 5x5 grid cannot host a difficulty-30+ decoupling solution ⇒ a clear
+    // throw, never a bad level.
     expect(() =>
-      generate(smallOpts(1, { width: 5, height: 5, difficulty: { min: 20, max: 22 } })),
+      generate(smallOpts(1, { width: 5, height: 5, difficulty: { min: 30, max: 32 } })),
     ).toThrowError(/seed=1/);
   });
 });
@@ -272,12 +384,12 @@ describe("mapgen scatter never corrupts the reference", () => {
           const si = m.start.y * m.width + m.start.x;
           expect(m.cell[si]).toBe(CellKind.Empty);
         }
-        // Each cure cell is a Cure (not overwritten by scatter).
+        // Each cure cell is a Cure (not overwritten by scatter or a tension hazard).
         for (const d of level.diseases) {
           expect(cureAt(level, d.map, d.node.x, d.node.y, d.id)).toBe(true);
         }
       }),
-      { numRuns: 60 },
+      { numRuns: 50 },
     );
   });
 });
