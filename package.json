@@ -1,0 +1,30 @@
+{
+  "name": "hexapharma",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "license": "Unlicense",
+  "description": "Big Pharma 的工廠 + Potion Craft 的地圖：確定性 sim core 的 2D 自動化／鍊金遊戲",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "check": "tsc --noEmit && npm run lint && vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "sim": "tsx tools/headless-sim.ts"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.0.0",
+    "eslint": "^10.5.0",
+    "fast-check": "^4.8.0",
+    "globals": "^17.6.0",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.61.1",
+    "vitest": "^4.1.9"
+  }
+}
