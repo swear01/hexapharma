@@ -52,3 +52,11 @@ Sim Core（純 TS） →  ★ tick-based、固定 seed、完全可 headless 測 
 ```
 npm run check   # tsc --noEmit && lint && vitest run && playwright test --headless
 ```
+
+## 真人測試
+
+需要真人測試 / demo 時，dev／preview server 一律開在 **`0.0.0.0:53346`**（`--host 0.0.0.0 --port 53346 --strictPort`）。Oracle Cloud 上只對這個 port 開了白名單，換 port 從外部連不上。
+
+## License
+
+[The Unlicense](LICENSE) — 釋出至公有領域（public domain），最大開放、無任何條件。
