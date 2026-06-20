@@ -12,14 +12,14 @@
 | drug-graph | `src/sim/drug-graph/` | integrator（agent 交付） | ✅ 完成（46 tests, INV-1..8） |
 | solver | `src/sim/solver/` | integrator（agent 交付） | ✅ 完成（INV-13） |
 | mapgen | `src/sim/mapgen/` | integrator（agent 交付） | ✅ 完成（INV-9..12 + 定價） |
-| render | `src/render/` | integrator（agent 交付） | ✅ 完成（PixiJS v8 Lab 渲染器） |
-| ui | `src/ui/` | integrator（agent 交付） | ✅ 完成（React Lab；e2e 綠；:53346 serves 200） |
-| factory-sim | `src/sim/factory-sim/` | （未分派） | Phase 2 |
-| recipe | `src/sim/recipe/` | （未分派） | Phase 2 |
-| economy | `src/sim/economy/` | （未分派） | Phase 3 |
-| patent | `src/sim/patent/` | （未分派） | Phase 3 |
-| save | `src/sim/save/` | （未分派） | Phase 3 |
-| state.ts（完整 SimState/replay）| `src/sim/state.ts` | （未分派） | Phase 2+（目前用 hash.ts 支撐 replay/determinism）|
+| factory-sim | `src/sim/factory-sim/` | integrator（agent 交付） | ✅ 完成（tick sim / throughput / bottleneck / deadlock） |
+| recipe | `src/sim/recipe/` | integrator（agent 交付） | ✅ 完成（模板→產線 + 重排不變 INV-7） |
+| state.ts | `src/sim/state.ts` | integrator（agent 交付） | ✅ 完成（hashFactory / replayFactory，INV-15） |
+| economy | `src/sim/economy/` | integrator（agent 交付） | ✅ 完成（遞減定價 + 反退化 + 帳務守恆） |
+| save | `src/sim/save/` | integrator（agent 交付） | ✅ 完成（round-trip + 多存檔/回溯） |
+| patent | `src/sim/patent/` | integrator（agent 交付） | ✅ 完成（天賦樹 + 解鎖新地圖） |
+| render | `src/render/` | integrator（agent 交付） | ✅ 完成（Lab + Factory 渲染器） |
+| ui | `src/ui/` | integrator（agent 交付） | ✅ 完成（Lab/Factory/Shop/Patents + 完整循環 + 存讀檔；:53346） |
 
 ## 規則
 

@@ -28,6 +28,9 @@
 
 ## Recently Done
 
+- **Phase 3 — 經濟/存讀檔/專利 + 完整循環** ✅：economy（遞減定價+反退化+帳務守恆）、save（round-trip+多存檔/回溯）、patent（天賦樹+解鎖新地圖）、循環 UI（Lab→Factory→Shop→Patents）。headless 整合測試跑通整條循環。
+- **Phase 2 — 工廠吞吐配平** ✅：factory-sim（tick/throughput/bottleneck/deadlock）、state.ts（replay INV-15）、recipe（模板→產線+重排不變 INV-7）、Factory 視覺。
+- **核心修正** ✅：補回 offset（第四種關係）+ supercover 對角掃動；求解器複合難度；**mapgen 跨圖張力**（最佳解須解耦）；Lab 玩生成關卡。
 - **Phase 1 — 最小可見（:53346）** ✅：PixiJS v8 並列畫 2 圖（四特徵 + 迷霧 + 藥物 token）、React 研究室 UI（機器 palette + 旋轉/flip + template 編輯 + Run 動畫 + 結果橫幅）、雙圖同步掃動、Playwright headless smoke + 截圖。手動可解一條雙圖藥方達 WIN。
 - **Phase 0 — 多圖效果引擎 + 機器變換 + 生成/求解** ✅：drug-graph / solver / mapgen / rng / hash + 凍結契約 + CLI；INV-1..14 全綠（76 sim tests）；CLI gen/run 驗證可解+難度+定價+逐位元確定性。
 - 工具鏈：TS6 / Vite8 / React19 / PixiJS8 / vitest4(+fast-check) / Playwright；`npm run check` = tsc + lint(+sim 確定性 guard) + vitest + e2e。
