@@ -15,8 +15,9 @@ import type {
   FactoryMachineDef,
   PlacedMachine,
 } from "../phase0_interfaces";
-import { CellKind, IDENTITY, DEFAULT_CATALOG, SHAPE_1x1 } from "../phase0_interfaces";
+import { CellKind, IDENTITY, DEFAULT_CATALOG, DEFAULT_SHAPES, SHAPE_1x1 } from "../phase0_interfaces";
 import { initialState, applyTemplate, evaluate } from "../drug-graph";
+import { worldCells } from "../factory-geom";
 import { replayFactory } from "../state";
 import { compileTemplate, factoryOutcome } from "./index";
 
@@ -142,29 +143,87 @@ describe("compileTemplate / factoryOutcome", () => {
       name: "perpendicular (shear) + rotation",
       t: tpl(translate({ x: 1, y: 0 }, "perpendicular", ori(1), "shear")),
     },
-    { name: "scale (dilute)", t: tpl(scale(1, 2)) },
+    { name: "scale (dilute, 2×2)", t: tpl(scale(1, 2)) },
+    { name: "shear (L) machine", t: tpl(translate({ x: 1, y: 0 }, "perpendicular", IDENTITY, "shear")) },
+    { name: "swap01 (offset 2×1)", t: tpl(swap(0, 1)) },
     { name: "swap then push", t: tpl(swap(0, 1), translate({ x: 1, y: 0 }, "forward")) },
+    {
+      name: "mixed: push2 → dilute → swap → shear",
+      t: tpl(
+        translate({ x: 2, y: 0 }, "forward", IDENTITY, "push2"),
+        scale(1, 2),
+        swap(0, 1),
+        translate({ x: 1, y: 0 }, "perpendicular", ori(1), "shear"),
+      ),
+    },
     {
       name: "cure-landing line (map0 5,5 -> 8,5)",
       t: tpl(translate({ x: 3, y: 0 }, "forward", IDENTITY, "push")),
     },
   ];
 
-  it("compiles a source->machines->sink line in order (machines in machines[])", () => {
+  it("compiles a belt-routed source→machines→sink layout (machines in machines[])", () => {
     const t = samples[1]!.t;
     const layout = compileTemplate(t);
-    expect(layout.height).toBe(1);
-    expect(layout.width).toBe(2 * t.steps.length + 3);
-    expect(layout.tiles[0]).toMatchObject({ kind: "source" });
-    expect(layout.tiles[layout.width - 1]).toMatchObject({ kind: "sink" });
+    // A real (possibly multi-row) canvas with a source, a sink and one machine per step.
+    expect(layout.width).toBeGreaterThan(0);
+    expect(layout.height).toBeGreaterThan(0);
+    expect(layout.tiles.length).toBe(layout.width * layout.height);
+    expect(layout.tiles.some((tile) => tile.kind === "source")).toBe(true);
+    expect(layout.tiles.some((tile) => tile.kind === "sink")).toBe(true);
     expect(layout.machines.length).toBe(t.steps.length);
     for (let i = 0; i < t.steps.length; i++) {
       const pm = layout.machines[i]!;
-      expect(pm.def.typeId).toBe(t.steps[i]!.typeId);
+      const typeId = t.steps[i]!.typeId;
+      expect(pm.def.typeId).toBe(typeId);
       expect(pm.def.speed).toBe(1);
-      expect(pm.shape).toBe(SHAPE_1x1);
+      // REAL shape used — the type's canonical footprint, not a flattened 1×1.
+      expect(pm.shape).toBe(DEFAULT_SHAPES[typeId] ?? SHAPE_1x1);
     }
   });
+
+  for (const { name, t } of samples) {
+    it(`uses the real footprint shape per step + no overlapping cells (${name})`, () => {
+      const layout = compileTemplate(t);
+
+      // Every machine carries its type's canonical footprint.
+      layout.machines.forEach((pm, i) => {
+        const typeId = t.steps[i]!.typeId;
+        expect(pm.shape).toBe(DEFAULT_SHAPES[typeId] ?? SHAPE_1x1);
+      });
+
+      // No overlaps: machine world-cells and every non-empty tile cell are pairwise disjoint.
+      const seen = new Set<number>();
+      const claim = (x: number, y: number): void => {
+        const key = y * layout.width + x;
+        expect(seen.has(key)).toBe(false);
+        seen.add(key);
+      };
+      for (const pm of layout.machines) {
+        for (const c of worldCells(pm)) claim(c.x, c.y);
+      }
+      for (let y = 0; y < layout.height; y++) {
+        for (let x = 0; x < layout.width; x++) {
+          const tile = layout.tiles[y * layout.width + x]!;
+          if (tile.kind === "empty") continue;
+          claim(x, y); // belt / splitter / merger / source / sink
+        }
+      }
+    });
+
+    it(`produces a unit within a bounded replay, no deadlock (${name})`, () => {
+      const { mm: map, start } = fixture();
+      const layout = compileTemplate(t);
+      const cap = (layout.width + layout.height) * 6 + 16;
+      const ran = replayFactory(layout, map, start, cap);
+      expect(ran.deadlocked).toBe(false);
+      expect(ran.produced[0]).toBeDefined();
+    });
+
+    it(`compiles deterministically (${name})`, () => {
+      expect(compileTemplate(t)).toEqual(compileTemplate(t));
+    });
+  }
 
   it("derives cost from DEFAULT_CATALOG (fallback 0)", () => {
     const layout = compileTemplate(tpl(translate({ x: 1, y: 0 }, "forward", IDENTITY, "push")));
@@ -180,7 +239,7 @@ describe("compileTemplate / factoryOutcome", () => {
       const { mm: map, start } = fixture();
       const layout = compileTemplate(t);
 
-      const cap = (layout.width + 1) * 6 + 16;
+      const cap = (layout.width + layout.height) * 6 + 16;
       const ran = replayFactory(layout, map, start, cap);
       const produced = ran.produced[0];
       expect(produced).toBeDefined();

@@ -1,10 +1,7 @@
 import type {
   Dir,
-  Vec2,
-  Rotation,
   DrugState,
   Machine,
-  Port,
   PlacedMachine,
   FactoryTile,
   FactoryLayout,
@@ -16,6 +13,8 @@ import type {
   MachineTypeId,
 } from "../phase0_interfaces";
 import { applyStep, initialState } from "../drug-graph";
+import type { WorldPort } from "../factory-geom";
+import { worldCells, worldInPorts, worldOutPorts } from "../factory-geom";
 
 // ════════════════════════════════ conventions ════════════════════════════════
 //
@@ -97,42 +96,12 @@ function tileAt(layout: FactoryLayout, x: number, y: number): FactoryTile | unde
   return layout.tiles[y * layout.width + x];
 }
 
-/** Rotate a LOCAL vector `rot` quarter-turns CW (y-down): (x,y)->(-y,x). */
-function rotateVec(v: Vec2, rot: Rotation): Vec2 {
-  let x = v.x;
-  let y = v.y;
-  for (let i = 0; i < rot; i++) {
-    const nx = -y;
-    const ny = x;
-    x = nx;
-    y = ny;
-  }
-  return { x, y };
-}
-
-/** A port placed in world coords. */
-interface WorldPort {
-  readonly x: number;
-  readonly y: number;
-  readonly side: Dir;
-}
-
 /** A machine's resolved world geometry. */
 interface MachineGeom {
   readonly id: number;
   readonly machine: PlacedMachine;
   readonly inPorts: readonly WorldPort[];
   readonly outPorts: readonly WorldPort[];
-}
-
-function worldCell(m: PlacedMachine, c: Vec2): Vec2 {
-  const r = rotateVec(c, m.footRot);
-  return { x: r.x + m.anchor.x, y: r.y + m.anchor.y };
-}
-
-function worldPort(m: PlacedMachine, p: Port): WorldPort {
-  const c = worldCell(m, p.cell);
-  return { x: c.x, y: c.y, side: ((p.side + m.footRot) & 3) as Dir };
 }
 
 /** Precomputed machine layout for a tick: cell ownership + per-machine port geom. */
@@ -152,12 +121,11 @@ function buildMachineIndex(layout: FactoryLayout): MachineIndex {
   const inPortAt = new Map<number, { machineId: number; side: Dir }[]>();
 
   for (const m of layout.machines) {
-    for (const c of m.shape.cells) {
-      const wc = worldCell(m, c);
+    for (const wc of worldCells(m)) {
       cellOwner.set(wc.y * width + wc.x, m.id);
     }
-    const inPorts = m.shape.inPorts.map((p) => worldPort(m, p));
-    const outPorts = m.shape.outPorts.map((p) => worldPort(m, p));
+    const inPorts = worldInPorts(m);
+    const outPorts = worldOutPorts(m);
     geom.set(m.id, { id: m.id, machine: m, inPorts, outPorts });
     for (const wp of inPorts) {
       const idx = wp.y * width + wp.x;

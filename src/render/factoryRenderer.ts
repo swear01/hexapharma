@@ -16,14 +16,12 @@
 import { Application, Container, Graphics, Text } from "pixi.js";
 import type {
   Dir,
-  Vec2,
-  Rotation,
-  Port,
   PlacedMachine,
   FactoryTile,
   FactoryLayout,
   FactoryState,
 } from "../sim/phase0_interfaces";
+import { worldCells, worldInPorts, worldOutPorts } from "../sim/factory-geom";
 
 // ───────────────────────────── layout constants ─────────────────────────────
 
@@ -64,37 +62,6 @@ function canvasSize(layout: FactoryLayout): { width: number; height: number } {
     width: PAD * 2 + layout.width * CELL,
     height: PAD * 2 + layout.height * CELL,
   };
-}
-
-// ───────────────────────────── machine geometry (mirrors the sim) ─────────────────────────────
-
-/** Rotate a LOCAL vector `rot` quarter-turns CW (y-down): (x,y)->(-y,x). */
-function rotateVec(v: Vec2, rot: Rotation): Vec2 {
-  let x = v.x;
-  let y = v.y;
-  for (let i = 0; i < rot; i++) {
-    const nx = -y;
-    const ny = x;
-    x = nx;
-    y = ny;
-  }
-  return { x, y };
-}
-
-function worldCell(m: PlacedMachine, c: Vec2): Vec2 {
-  const r = rotateVec(c, m.footRot);
-  return { x: r.x + m.anchor.x, y: r.y + m.anchor.y };
-}
-
-interface WorldPort {
-  readonly x: number;
-  readonly y: number;
-  readonly side: Dir;
-}
-
-function worldPort(m: PlacedMachine, p: Port): WorldPort {
-  const c = worldCell(m, p.cell);
-  return { x: c.x, y: c.y, side: ((p.side + m.footRot) & 3) as Dir };
 }
 
 // ───────────────────────────── drawing helpers ─────────────────────────────
@@ -201,8 +168,7 @@ function drawMachine(m: PlacedMachine, isBottleneck: boolean, ctx: DrawCtx): voi
   // body: fill + outline every occupied cell (the footprint).
   let minX = Infinity;
   let minY = Infinity;
-  for (const c of m.shape.cells) {
-    const wc = worldCell(m, c);
+  for (const wc of worldCells(m)) {
     const px = PAD + wc.x * CELL;
     const py = PAD + wc.y * CELL;
     cells.rect(px + 2, py + 2, CELL - 4, CELL - 4).fill({ color: fill }).stroke({ color: border, width: borderW });
@@ -211,12 +177,10 @@ function drawMachine(m: PlacedMachine, isBottleneck: boolean, ctx: DrawCtx): voi
   }
 
   // port notches: green = input, red = output.
-  for (const p of m.shape.inPorts) {
-    const wp = worldPort(m, p);
+  for (const wp of worldInPorts(m)) {
     drawPortNotch(cells, PAD + wp.x * CELL + CELL / 2, PAD + wp.y * CELL + CELL / 2, wp.side, PORT_IN);
   }
-  for (const p of m.shape.outPorts) {
-    const wp = worldPort(m, p);
+  for (const wp of worldOutPorts(m)) {
     drawPortNotch(cells, PAD + wp.x * CELL + CELL / 2, PAD + wp.y * CELL + CELL / 2, wp.side, PORT_OUT);
   }
 

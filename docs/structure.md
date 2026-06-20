@@ -13,8 +13,9 @@
 | `src/sim/rng/` | ✅ | 自有 seeded PRNG（**唯一隨機來源**，mapgen 也走它） |
 | `src/sim/hash.ts` | ✅ | FNV-1a（replay/determinism） |
 | `src/sim/state.ts` | ✅ | `hashFactory` / `replayFactory`（FNV-1a over FactoryState；init+step 組合；交付 INV-15） |
-| `src/sim/factory-sim/` | ✅ | belt / machine（cost·速度·口）/ tick（process→move→emit→deadlock）/ throughput / bottleneck·deadlock。機器形狀仍為 1×1（footprint 後續） |
-| `src/sim/recipe/` | 🔧 Phase 2 | 模板 ↔ 產線轉換 + 重排驗證（保持朝向+順序 → 效果不變） |
+| `src/sim/factory-geom.ts` | ✅ | 共用工廠幾何（純）：`rotateVec` / `worldCells` / `worldInPorts` / `worldOutPorts`——把 PlacedMachine 的 LOCAL shape 依 footRot（CW, y-down）+ anchor 解到世界座標，port side =(localSide+footRot)&3。factory-sim 與 factoryRenderer 同源引用（不再各自重複幾何） |
+| `src/sim/factory-sim/` | ✅ | belt / machine（cost·速度·口）/ tick（process→move→emit→deadlock）/ throughput / bottleneck·deadlock。機器世界幾何走 `factory-geom` |
+| `src/sim/recipe/` | ✅ Phase 2 | 模板 → 真實形狀（DEFAULT_SHAPES）+ belt 佈線產線：每步取型別 footprint、正規化 footRot（首個 input port 朝 W）、左→右擺放於 spine、以確定性 BFS（鄰序 E,S,W,N）佈 belt 連 source→m0→…→sink（相鄰口直接交接免 belt）+ 重排驗證（保持朝向+順序 → 效果不變，INV-7） |
 | `src/sim/economy/` | 📋 Phase 3 | 訂單/庫存/結算 + 難度分→基礎藥價 + 反退化 |
 | `src/sim/patent/` | 📋 Phase 3 | 天賦樹（含解鎖新成分地圖） |
 | `src/sim/save/` | 📋 Phase 3 | 序列化/反序列化（多存檔 + 回溯） |
