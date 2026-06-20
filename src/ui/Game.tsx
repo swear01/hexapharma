@@ -98,6 +98,21 @@ function genLevel(opts: GenOptions): GeneratedLevel {
   return generate(opts);
 }
 
+/**
+ * Starting cash. Defaults to START_CASH; a `?cash=` query param (integer) overrides it
+ * so e2e / playtests can afford patents directly. Mirrors the `?seed=`/`?nmaps=` parse.
+ */
+function initialCash(): number {
+  if (typeof window !== "undefined") {
+    const raw = new URLSearchParams(window.location.search).get("cash");
+    if (raw !== null) {
+      const c = Number(raw);
+      if (Number.isInteger(c)) return c;
+    }
+  }
+  return START_CASH;
+}
+
 // ───────────────────────────── persistent fog (UI view-state) ─────────────────────────────
 //
 // Genuine exploration: the Game keeps ONE Uint8Array per map (0 = fogged, 1 =
@@ -182,7 +197,7 @@ export function Game() {
   const [genOptions, setGenOptions] = useState<GenOptions>(() => initialGenOptions());
   const level = useMemo<GeneratedLevel>(() => genLevel(genOptions), [genOptions]);
 
-  const [economy, setEconomy] = useState<EconomyState>({ cash: START_CASH, sold: [] });
+  const [economy, setEconomy] = useState<EconomyState>(() => ({ cash: initialCash(), sold: [] }));
   const [patents, setPatents] = useState<PatentState>({ unlocked: [] });
   const [recipe, setRecipe] = useState<Template | null>(null);
   const [factory, setFactory] = useState<FactoryLayout | null>(null);

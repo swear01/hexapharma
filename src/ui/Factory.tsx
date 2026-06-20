@@ -146,13 +146,24 @@ function defaultLayout(): FactoryLayout {
   return { width: GRID_W, height: GRID_H, tiles, machines };
 }
 
-/** Lay a compiled recipe line on a roomy grid (all speed 1), space below for parallels. */
+/**
+ * Lay the WHOLE compiled recipe on a roomy grid (all speed 1). compileTemplate now
+ * returns a real-shaped, multi-row layout (L / 2×2 machines routed on lower rows), so
+ * we copy its full tiles + machines verbatim onto a canvas at least GRID_W×GRID_H —
+ * leaving empty space below/right for the player to add parallels. The compiled
+ * geometry (incl. lower-row belts + multi-cell machines) renders + runs intact.
+ */
 function recipeLayout(recipe: Template): FactoryLayout {
   const line = compileTemplate(recipe);
   const w = Math.max(GRID_W, line.width);
-  const tiles = emptyTiles(w, GRID_H);
-  for (let x = 0; x < line.width; x++) tiles[x] = line.tiles[x]!;
-  return { width: w, height: GRID_H, tiles, machines: line.machines.slice() };
+  const h = Math.max(GRID_H, line.height);
+  const tiles = emptyTiles(w, h);
+  for (let y = 0; y < line.height; y++) {
+    for (let x = 0; x < line.width; x++) {
+      tiles[y * w + x] = line.tiles[y * line.width + x]!;
+    }
+  }
+  return { width: w, height: h, tiles, machines: line.machines.slice() };
 }
 
 /** Preset: single speed-3 push on one row (the slow baseline). Rate ≈ 1/3. */

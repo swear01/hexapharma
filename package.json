@@ -16,6 +16,7 @@
     "test:watch": "vitest",
     "e2e": "playwright test",
     "sim": "tsx tools/headless-sim.ts",
+    "balance": "tsx tools/balance.ts",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview"

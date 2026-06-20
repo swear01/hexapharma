@@ -110,6 +110,18 @@ export function App({ level, fog, onReveal, onSaveRecipe }: AppProps) {
   const { mm, start } = level;
   const targets = useMemo<readonly DiseaseId[]>(() => level.diseases.map((d) => d.id), [level]);
 
+  // Revealed cells across all maps (sum of fog===1) and the total — a stable signal
+  // (non-flaky) that exploration / reveal-aid grew the explored area.
+  const revealedCount = useMemo(() => {
+    let revealed = 0;
+    let total = 0;
+    for (const arr of fog) {
+      total += arr.length;
+      for (let k = 0; k < arr.length; k++) if (arr[k] === 1) revealed++;
+    }
+    return { revealed, total };
+  }, [fog]);
+
   // Debug aid: show the full map ignoring fog (pure render; never touches sim/fog).
   const [reveal, setReveal] = useState<boolean>(false);
 
@@ -337,7 +349,11 @@ export function App({ level, fog, onReveal, onSaveRecipe }: AppProps) {
 
       {/* level info */}
       <div data-testid="level-info" style={{ fontSize: 12, color: "#5a6470", marginBottom: 10 }}>
-        seed {level.seed} ·{" "}
+        seed {level.seed} · <span data-testid="map-count">{mm.maps.length} maps</span> ·{" "}
+        <span data-testid="revealed-count">
+          revealed {revealedCount.revealed}/{revealedCount.total}
+        </span>{" "}
+        ·{" "}
         {level.diseases
           .map((d) => `disease ${d.id} (map ${d.map}): difficulty ${d.difficulty}, price ${d.basePrice}`)
           .join(" · ")}
