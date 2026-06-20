@@ -204,6 +204,112 @@ describe("solver minimality (BFS shortest path)", () => {
   });
 });
 
+// ───────────────────────────── composite difficulty ─────────────────────────────
+
+describe("solver composite difficulty (steps + diversity + decoupling)", () => {
+  it("forward-only single-type stays at difficulty == steps (no bonuses)", () => {
+    // 3 unit forward pushes, one machine type ⇒ diversity 0, decoupling 0.
+    const m = cure(emptyMap(8, 8, { x: 0, y: 0 }), 3, 0, 42);
+    const M = mm(m);
+    const start = initialState(M);
+    const sol = solve(M, start, opts(PUSH_ONLY, 10, [42]));
+    expect(sol).not.toBeNull();
+    expect(sol!.template.steps).toHaveLength(3);
+    expect(sol!.difficulty).toBe(3); // 3 + 0 + 0
+  });
+
+  it("a swap step adds decouplingBonus (+2): difficulty == steps + 2", () => {
+    // The 1-step swap solution from the minimality suite: steps 1, single type,
+    // but swap is a decoupling move ⇒ difficulty = 1 + 0 + 2 = 3.
+    const m0 = cure(emptyMap(6, 6, { x: 0, y: 0 }), 5, 0, 11);
+    const m1 = emptyMap(6, 6, { x: 5, y: 0 });
+    const M = mm(m0, m1);
+    const start = initialState(M);
+    const sol = solve(M, start, opts(PUSH_AND_SWAP, 10, [11]));
+    expect(sol).not.toBeNull();
+    expect(sol!.template.steps).toHaveLength(1);
+    expect(sol!.template.steps[0]!.transform.kind).toBe("swap");
+    expect(sol!.difficulty).toBe(3); // 1 step + 0 diversity + 2 decoupling
+  });
+
+  it("mixing two machine types adds diversityBonus", () => {
+    // Cure at (3,0): forward push (cost1, +x) reaches it in 3 steps with ONE type.
+    // Add a push3 (+3) so the shortest STEP path is push3 then... no, set target
+    // to x=4: push3 (1 step to x=3) + push (1 step to x=4) = 2 steps, TWO types.
+    // A single push would be 4 steps; a single push3 overshoots. So BFS picks the
+    // 2-step mixed path: diversity = 1, both forward ⇒ decoupling 0.
+    const catalog: readonly MachineCatalogEntry[] = [
+      ...PUSH_ONLY,
+      {
+        typeId: "push3",
+        transform: { kind: "translate", delta: { x: 3, y: 0 }, relation: "forward" },
+        cost: 3,
+        orientable: true,
+      },
+    ];
+    const m = cure(emptyMap(8, 8, { x: 0, y: 0 }), 4, 0, 5);
+    const M = mm(m);
+    const start = initialState(M);
+    const sol = solve(M, start, opts(catalog, 10, [5]));
+    expect(sol).not.toBeNull();
+    expect(sol!.template.steps).toHaveLength(2);
+    const types = new Set(sol!.template.steps.map((s) => s.typeId));
+    expect(types.size).toBe(2);
+    expect(sol!.difficulty).toBe(3); // 2 steps + 1 diversity + 0 decoupling
+  });
+
+  it("offset (diagonal) machine reaches an off-axis target in fewer steps, soundly", () => {
+    // Target at (3,3). An offset machine with delta (1,0) skews to (1,1) — a
+    // diagonal step — so 3 steps reach (3,3). Axis-only (push) would need 6 steps.
+    const OFFSET_AND_PUSH: readonly MachineCatalogEntry[] = [
+      ...PUSH_ONLY,
+      {
+        typeId: "skew",
+        transform: { kind: "translate", delta: { x: 1, y: 0 }, relation: "offset" },
+        cost: 2,
+        orientable: true,
+      },
+    ];
+    const m = cure(emptyMap(8, 8, { x: 0, y: 0 }), 3, 3, 7);
+    const M = mm(m);
+    const start = initialState(M);
+    const sol = solve(M, start, opts(OFFSET_AND_PUSH, 12, [7]));
+    expect(sol).not.toBeNull();
+    // Sound (INV-13): cures and never fails.
+    assertCures(M, start, sol!, [7]);
+    // Beats the axis-only lower bound of 6 unit pushes.
+    expect(sol!.template.steps.length).toBeLessThan(6);
+    // The diagonal route uses offset steps.
+    const usesOffset = sol!.template.steps.some(
+      (s) => s.transform.kind === "translate" && s.transform.relation === "offset",
+    );
+    expect(usesOffset).toBe(true);
+    // 3 offset steps: 3 + 0 diversity + 2 decoupling = 5.
+    expect(sol!.template.steps).toHaveLength(3);
+    expect(sol!.difficulty).toBe(5);
+  });
+
+  it("difficulty is deterministic across repeated solves (incl. composite value)", () => {
+    const OFFSET_AND_PUSH: readonly MachineCatalogEntry[] = [
+      ...PUSH_ONLY,
+      {
+        typeId: "skew",
+        transform: { kind: "translate", delta: { x: 1, y: 0 }, relation: "offset" },
+        cost: 2,
+        orientable: true,
+      },
+    ];
+    const m = cure(emptyMap(8, 8, { x: 0, y: 0 }), 3, 3, 7);
+    const M = mm(m);
+    const start = initialState(M);
+    const a = solve(M, start, opts(OFFSET_AND_PUSH, 12, [7]));
+    const b = solve(M, start, opts(OFFSET_AND_PUSH, 12, [7]));
+    expect(a).not.toBeNull();
+    expect(a).toEqual(b);
+    expect(a!.difficulty).toBe(b!.difficulty);
+  });
+});
+
 // ───────────────────────────── null when unsolvable ─────────────────────────────
 
 describe("solver returns null when no solution exists", () => {

@@ -192,11 +192,29 @@ export const solve: SolveFn = (mm, start, opts) => {
   return null;
 };
 
+/** True for the "non-naive" moves that create cross-map tension (decouplingBonus). */
+function isDecouplingStep(machine: Machine): boolean {
+  const t = machine.transform;
+  if (t.kind === "swap" || t.kind === "scale") return true;
+  return (
+    t.kind === "translate" &&
+    (t.relation === "reverse" || t.relation === "perpendicular" || t.relation === "offset")
+  );
+}
+
 /**
  * Build + verify the Solution. The verification re-runs evaluate() and asserts
- * INV-13 (the returned template cures all targets and never fails). difficulty is
- * the minimal step count (BFS depth at first reach); cost is the summed catalog
- * cost of the chosen machines.
+ * INV-13 (the returned template cures all targets and never fails). cost is the
+ * summed catalog cost of the chosen machines.
+ *
+ * difficulty is a deterministic composite of the single chosen (first-BFS) path:
+ *   difficulty = steps + diversityBonus + decouplingBonus
+ *     steps           = minimal BFS depth (dominant term).
+ *     diversityBonus  = (distinct typeIds used) − 1.
+ *     decouplingBonus = 2 if any step is a swap, a scale, or a translate whose
+ *                       relation ∈ {reverse, perpendicular, offset}; else 0.
+ * A forward-only single-machine-type solution stays at difficulty == steps;
+ * a zero-step solution stays at 0.
  */
 function finalize(
   mm: MultiMap,
@@ -206,7 +224,12 @@ function finalize(
 ): Solution {
   const template: Template = { steps: path.map((cm) => cm.machine) };
   const cost = path.reduce((acc, cm) => acc + cm.cost, 0);
-  const difficulty = path.length;
+
+  const steps = path.length;
+  const distinctTypes = new Set(path.map((cm) => cm.machine.typeId));
+  const diversityBonus = steps === 0 ? 0 : distinctTypes.size - 1;
+  const decouplingBonus = path.some((cm) => isDecouplingStep(cm.machine)) ? 2 : 0;
+  const difficulty = steps + diversityBonus + decouplingBonus;
 
   // INV-13 soundness assertion: the result must actually cure the targets safely.
   const out = evaluate(mm, start, template);
