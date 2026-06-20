@@ -114,14 +114,15 @@ export interface DrugState {
 /**
  * How a translate machine's physical orientation maps to its effect direction.
  * Heterogeneous relations are what stop a finished blueprint from being blindly
- * rotated onto a new target (INV-8).
+ * rotated onto a new target (INV-8). The four classes match design D11 (順/逆/垂直/偏移):
  *  - "forward":       effect delta = orient(delta, o)
  *  - "reverse":       effect delta = orient(negate(delta), o)
- *  - "perpendicular": effect delta = orient(perpCW(delta), o)   where perpCW(x,y) = (-y, x)
- * (The design's "offset" class is realized as a "forward" machine with a
- *  non-axis-aligned base delta, so it needs no separate relation.)
+ *  - "perpendicular": effect delta = orient(perpCW(delta), o)         where perpCW(x,y) = (-y, x)
+ *  - "offset":        effect delta = orient(skew(delta), o)           where skew(x,y) = (x - y, x + y)
+ *                     (a +45° diagonal skew: an axis delta like (a,0) becomes the diagonal (a,a),
+ *                      so offset machines move the drug diagonally — the sweep is supercover.)
  */
-export type TranslateRelation = "forward" | "reverse" | "perpendicular";
+export type TranslateRelation = "forward" | "reverse" | "perpendicular" | "offset";
 
 export type Transform =
   | {
