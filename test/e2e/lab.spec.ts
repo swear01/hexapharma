@@ -35,14 +35,9 @@ test("HexaPharma Lab loads a generated level, runs a template, and reports an ou
   await page.screenshot({ path: "test/e2e/__screenshots__/lab.png", fullPage: true });
 });
 
-test("New level regenerates from the seed input", async ({ page }) => {
+test("The Lab plays the game's current level", async ({ page }) => {
   await page.goto("/");
-  const info = page.getByTestId("level-info");
-  await expect(info).toContainText("seed 1");
-
-  await page.getByTestId("seed-input").fill("7");
-  await page.getByTestId("new-level").click();
-  await expect(info).toContainText("seed 7");
+  await expect(page.getByTestId("level-info")).toContainText("seed 14");
 });
 
 test("Reset clears the template back to empty", async ({ page }) => {

@@ -27,25 +27,11 @@ import type {
 } from "../sim/phase0_interfaces";
 import { DEFAULT_CATALOG } from "../sim/phase0_interfaces";
 import { applyStep, evaluate, revealAlong } from "../sim/drug-graph";
-import { generate } from "../sim/mapgen";
 import { createLabRenderer, type LabRenderer } from "../render/labRenderer";
 
 // ───────────────────────────── level generation ─────────────────────────────
 
 const catalog: readonly MachineCatalogEntry[] = DEFAULT_CATALOG;
-
-/** Mapgen options for the Lab. Small enough to generate in well under ~1s. */
-function genLevel(seed: number): GeneratedLevel {
-  return generate({
-    seed,
-    nMaps: 2,
-    width: 12,
-    height: 12,
-    catalog: DEFAULT_CATALOG,
-    diseaseCount: 2,
-    difficulty: { min: 4, max: 12 },
-  });
-}
 
 /** A COPY of the MultiMap with all fog cleared — debug-only render aid (no sim mutation). */
 function revealedCopy(mm: MultiMap): MultiMap {
@@ -91,13 +77,16 @@ function outcomeText(outcome: Outcome | null, won: boolean): string {
 
 // ───────────────────────────── component ─────────────────────────────
 
-export function App() {
+interface AppProps {
+  readonly level: GeneratedLevel;
+  /** Called with the winning template when the player saves a cure to the Factory. */
+  readonly onSaveRecipe: (winning: Template) => void;
+}
+
+export function App({ level, onSaveRecipe }: AppProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<LabRenderer | null>(null);
 
-  // The generated level (regenerated on New level / Random).
-  const [seedInput, setSeedInput] = useState<number>(1);
-  const [level, setLevel] = useState<GeneratedLevel>(() => genLevel(1));
   const { mm, start } = level;
   const targets = useMemo<readonly DiseaseId[]>(() => level.diseases.map((d) => d.id), [level]);
 
@@ -122,6 +111,14 @@ export function App() {
     if (outcome === null || outcome.failed) return false;
     const cured = new Set(outcome.cured);
     return targets.every((t) => cured.has(t));
+  }, [outcome, targets]);
+
+  // A recipe is shippable once it cures at least one target (cross-map tension
+  // means a single drug usually cures one disease; each is a sellable product).
+  const canShip = useMemo(() => {
+    if (outcome === null || outcome.failed) return false;
+    const targetSet = new Set(targets);
+    return outcome.cured.some((c) => targetSet.has(c));
   }, [outcome, targets]);
 
   // Cancel token so a Reset (or unmount) stops an in-flight animation.
@@ -236,20 +233,17 @@ export function App() {
     setShownDrug(start);
   }, [mm, start]);
 
-  // ── New level: regenerate from a seed and reset all play state ────────────
-  const loadSeed = useCallback((seed: number) => {
-    runIdRef.current++; // cancel any in-flight animation
-    const next = genLevel(seed);
-    setSeedInput(seed);
-    setLevel(next);
+  // ── new level handed down by the Game (e.g. new-map patent): reset play state ──
+  useEffect(() => {
+    runIdRef.current++;
     setRunning(false);
     setSteps([]);
     setRot(0);
     setFlip(false);
     setOutcome(null);
-    setShownMap(next.mm);
-    setShownDrug(next.start);
-  }, []);
+    setShownMap(mm);
+    setShownDrug(start);
+  }, [mm, start]);
 
   // ───────────────────────────── render ─────────────────────────────
 
@@ -290,34 +284,6 @@ export function App() {
         }}
       >
         <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
-          Seed
-          <input
-            type="number"
-            value={seedInput}
-            onChange={(e) => setSeedInput(Number(e.target.value))}
-            data-testid="seed-input"
-            style={{ width: 90, padding: "5px 6px", border: "1px solid #b8c2cc", borderRadius: 6, fontSize: 13 }}
-          />
-        </label>
-        <button
-          type="button"
-          onClick={() => loadSeed(seedInput)}
-          style={btn}
-          data-testid="new-level"
-        >
-          New level
-        </button>
-        <button
-          type="button"
-          onClick={() => loadSeed(seedInput + 1)}
-          style={btn}
-          data-testid="random-level"
-        >
-          Random (seed+1)
-        </button>
-        <label
-          style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, marginLeft: 8 }}
-        >
           <input
             type="checkbox"
             checked={reveal}
@@ -326,6 +292,22 @@ export function App() {
           />
           Reveal level (debug)
         </label>
+        {canShip && (
+          <button
+            type="button"
+            onClick={() => onSaveRecipe({ steps })}
+            style={{
+              ...btn,
+              background: "#15724a",
+              color: "#fff",
+              borderColor: "#0f5c3a",
+              fontWeight: 700,
+            }}
+            data-testid="save-recipe"
+          >
+            {won ? "Save recipe → Factory (cures all)" : "Save recipe → Factory"}
+          </button>
+        )}
       </div>
 
       {/* level info */}

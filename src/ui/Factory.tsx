@@ -29,22 +29,7 @@ import type {
 import { DEFAULT_CATALOG, IDENTITY } from "../sim/phase0_interfaces";
 import { initFactory, stepFactory, analyzeThroughput } from "../sim/factory-sim";
 import { compileTemplate } from "../sim/recipe";
-import { generate } from "../sim/mapgen";
 import { createFactoryRenderer, type FactoryRenderer } from "../render/factoryRenderer";
-
-// ───────────────────────────── level ─────────────────────────────
-
-function genLevel(seed: number): GeneratedLevel {
-  return generate({
-    seed,
-    nMaps: 2,
-    width: 12,
-    height: 12,
-    catalog: DEFAULT_CATALOG,
-    diseaseCount: 2,
-    difficulty: { min: 4, max: 12 },
-  });
-}
 
 // ───────────────────────────── default layout ─────────────────────────────
 
@@ -94,6 +79,27 @@ function defaultLayout(): FactoryLayout {
     }
   }
   return { width: GRID_W, height: GRID_H, tiles };
+}
+
+/**
+ * Lay a compiled recipe line onto a roomy grid (source → machines → sink on one
+ * row, all at speed 1), leaving space below for parallel paths. Falls back to the
+ * fixture default if the recipe is empty/too wide for the grid.
+ */
+function recipeLayout(recipe: Template): FactoryLayout {
+  const line = compileTemplate(recipe);
+  const w = Math.max(GRID_W, line.width);
+  const tiles = emptyTiles(w, GRID_H);
+  const row = 1;
+  for (let x = 0; x < line.width; x++) {
+    const t = line.tiles[x]!;
+    if (t.kind === "machine") {
+      tiles[row * w + x] = { kind: "machine", def: { ...t.def, speed: 1 }, inDir: W, outDir: E };
+    } else {
+      tiles[row * w + x] = t;
+    }
+  }
+  return { width: w, height: GRID_H, tiles };
 }
 
 // ───────────────────────────── palette / editing ─────────────────────────────
@@ -165,16 +171,33 @@ function cellFromCanvas(layout: FactoryLayout, px: number, py: number): { x: num
 
 const TICK_MS = 220;
 
-export function Factory() {
+interface FactoryProps {
+  readonly level: GeneratedLevel;
+  /** The winning recipe from the Lab (drives the default layout), or null. */
+  readonly recipe: Template | null;
+  /** The shared/persisted factory layout, or null to use the recipe/fixture default. */
+  readonly factory: FactoryLayout | null;
+  /** Lift the current layout into the shared game state. */
+  readonly onFactoryChange: (layout: FactoryLayout) => void;
+  /** Report newly produced units (delta since the last report) to the Game inventory. */
+  readonly onProduced: (count: number) => void;
+}
+
+/** Pick the starting layout: the persisted one, else the recipe line, else the fixture. */
+function startingLayout(factory: FactoryLayout | null, recipe: Template | null): FactoryLayout {
+  if (factory !== null) return factory;
+  if (recipe !== null && recipe.steps.length > 0) return recipeLayout(recipe);
+  return defaultLayout();
+}
+
+export function Factory({ level, recipe, factory, onFactoryChange, onProduced }: FactoryProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<FactoryRenderer | null>(null);
 
-  const [seedInput, setSeedInput] = useState<number>(1);
-  const [level, setLevel] = useState<GeneratedLevel>(() => genLevel(1));
   const { mm, start } = level;
 
-  const [layout, setLayout] = useState<FactoryLayout>(() => defaultLayout());
-  const [state, setState] = useState<FactoryState>(() => initFactory(defaultLayout(), mm, start));
+  const [layout, setLayout] = useState<FactoryLayout>(() => startingLayout(factory, recipe));
+  const [state, setState] = useState<FactoryState>(() => initFactory(startingLayout(factory, recipe), mm, start));
   const [playing, setPlaying] = useState<boolean>(false);
 
   // editing brush + parameters
@@ -187,6 +210,9 @@ export function Factory() {
   layoutRef.current = layout;
   const mmRef = useRef(mm);
   mmRef.current = mm;
+
+  // produced units already reported to the Game (so we only report the delta).
+  const reportedRef = useRef(0);
 
   const throughput = useMemo(() => analyzeThroughput(layout), [layout]);
 
@@ -231,6 +257,25 @@ export function Factory() {
     if (state.deadlocked && playing) setPlaying(false);
   }, [state.deadlocked, playing]);
 
+  // ── report newly produced units to the Game inventory (delta only) ──
+  useEffect(() => {
+    const total = state.produced.length;
+    if (total > reportedRef.current) {
+      onProduced(total - reportedRef.current);
+      reportedRef.current = total;
+    }
+  }, [state.produced.length, onProduced]);
+
+  // ── a new recipe / deeper level arrives: rebuild the line + reset the sim ──
+  useEffect(() => {
+    const next = startingLayout(factory, recipe);
+    setLayout(next);
+    setPlaying(false);
+    reportedRef.current = 0;
+    setState(initFactory(next, mm, start));
+    // intentionally keyed on recipe + level identity (not the editable factory).
+  }, [recipe, mm, start, factory]);
+
   // ── controls ──
   const stepOnce = useCallback(() => {
     setState((s) => stepFactory(layoutRef.current, mmRef.current, s));
@@ -238,16 +283,9 @@ export function Factory() {
 
   const reset = useCallback(() => {
     setPlaying(false);
+    reportedRef.current = 0;
     setState(initFactory(layoutRef.current, mmRef.current, start));
   }, [start]);
-
-  const loadSeed = useCallback((seed: number) => {
-    const next = genLevel(seed);
-    setSeedInput(seed);
-    setLevel(next);
-    setPlaying(false);
-    setState(initFactory(layoutRef.current, next.mm, next.start));
-  }, []);
 
   // ── editing: click a cell to paint the current brush ──
   const onCanvasClick = useCallback(
@@ -262,11 +300,13 @@ export function Factory() {
       const tile = makeTile(brush, brushDir, brushSpeed);
       const nextLayout = setTile(layout, cell.x, cell.y, tile);
       setLayout(nextLayout);
+      onFactoryChange(nextLayout);
       // editing the grid resets the running sim (positions may now be invalid).
       setPlaying(false);
+      reportedRef.current = 0;
       setState(initFactory(nextLayout, mmRef.current, start));
     },
-    [layout, brush, brushDir, brushSpeed, start],
+    [layout, brush, brushDir, brushSpeed, start, onFactoryChange],
   );
 
   // ───────────────────────────── render ─────────────────────────────
@@ -300,21 +340,11 @@ export function Factory() {
         parallel path of the same machine type to raise throughput.
       </p>
 
-      {/* level controls */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
-        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
-          Seed
-          <input
-            type="number"
-            value={seedInput}
-            onChange={(e) => setSeedInput(Number(e.target.value))}
-            data-testid="factory-seed-input"
-            style={{ width: 90, padding: "5px 6px", border: "1px solid #b8c2cc", borderRadius: 6, fontSize: 13 }}
-          />
-        </label>
-        <button type="button" onClick={() => loadSeed(seedInput)} style={btn} data-testid="factory-new-level">
-          New level
-        </button>
+      {/* recipe status */}
+      <div data-testid="factory-recipe" style={{ fontSize: 12, color: "#5a6470", marginBottom: 12 }}>
+        {recipe === null
+          ? "No saved recipe — build a cure in the Lab and Save recipe → Factory, or hand-build a line below."
+          : `Producing the saved recipe (${recipe.steps.length} step${recipe.steps.length === 1 ? "" : "s"}). Each unit that reaches the sink is added to your inventory for the Shop.`}
       </div>
 
       {/* run controls */}
