@@ -12,8 +12,8 @@
 | drug-graph | `src/sim/drug-graph/` | integrator（agent 交付） | ✅ 完成（46 tests, INV-1..8） |
 | solver | `src/sim/solver/` | integrator（agent 交付） | ✅ 完成（INV-13） |
 | mapgen | `src/sim/mapgen/` | integrator（agent 交付） | ✅ 完成（INV-9..12 + 定價） |
-| render | `src/render/` | integrator（agent 交付中） | 🔧 Phase 1 進行中（:53346 視覺） |
-| ui | `src/ui/` | integrator（agent 交付中） | 🔧 Phase 1 進行中 |
+| render | `src/render/` | integrator（agent 交付） | ✅ 完成（PixiJS v8 Lab 渲染器） |
+| ui | `src/ui/` | integrator（agent 交付） | ✅ 完成（React Lab；e2e 綠；:53346 serves 200） |
 | factory-sim | `src/sim/factory-sim/` | （未分派） | Phase 2 |
 | recipe | `src/sim/recipe/` | （未分派） | Phase 2 |
 | economy | `src/sim/economy/` | （未分派） | Phase 3 |

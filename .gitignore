@@ -12,7 +12,9 @@ coverage/
 test-results/
 playwright-report/
 playwright/.cache/
-# note: test/e2e/__screenshots__/ baselines ARE committed — do not ignore
+# e2e screenshot artifacts (page.screenshot output) — regenerated each run.
+# When real toHaveScreenshot visual-regression baselines are added, force-add them.
+test/e2e/__screenshots__/
 
 # logs
 *.log
