@@ -296,3 +296,102 @@ export const DEFAULT_CATALOG: readonly MachineCatalogEntry[] = [
   { typeId: "dilute", transform: { kind: "scale", num: 1, den: 2 }, cost: 3, orientable: false },
   { typeId: "swap01", transform: { kind: "swap", a: 0, b: 1 }, cost: 1, orientable: false },
 ];
+
+// ═══════════════════════════════ Phase 2 — factory ═══════════════════════════════
+// Tick-based, deterministic belt+machine simulation. A "unit" is a drug in transit
+// carrying its multi-map DrugState; machines apply their drug-graph transform to it.
+// Invariants: mass conservation, no spawn/vanish, throughput consistency
+// (steady-state output rate = bottleneck machine rate), deadlock detection,
+// determinism (replay → identical hash, INV-15).
+
+/** Cardinal direction on the square grid (y-down): 0=E, 1=S, 2=W, 3=N. */
+export type Dir = 0 | 1 | 2 | 3;
+
+/** A machine as placed in the factory: a drug-transform + throughput attributes. */
+export interface FactoryMachineDef {
+  readonly typeId: MachineTypeId;
+  readonly transform: Transform; // applied to a unit's DrugState when processing completes
+  readonly orientation: Orientation; // for translate
+  readonly cost: number; // processing cost charged per unit produced
+  readonly speed: number; // ticks to process one unit (integer >= 1; larger = slower = bottleneck)
+}
+
+/**
+ * A factory grid tile. Machines are 1×1 in Phase 2 (footprint/shape comes later).
+ * `source` emits one fresh unit (carrying the level's start DrugState) every `period`
+ * ticks out of its `dir` side; `sink` consumes arriving units (their final DrugState
+ * is recorded as produced output).
+ */
+export type FactoryTile =
+  | { readonly kind: "empty" }
+  | { readonly kind: "belt"; readonly dir: Dir }
+  | { readonly kind: "source"; readonly dir: Dir; readonly period: number }
+  | { readonly kind: "sink" }
+  | { readonly kind: "machine"; readonly def: FactoryMachineDef; readonly inDir: Dir; readonly outDir: Dir };
+
+export interface FactoryLayout {
+  readonly width: number;
+  readonly height: number;
+  readonly tiles: readonly FactoryTile[]; // length width*height; index = y*width + x
+}
+
+/** A drug in transit. `proc` = ticks already spent in the current machine (0 on belts). */
+export interface Unit {
+  readonly id: number;
+  readonly pos: Vec2;
+  readonly drug: DrugState;
+  readonly proc: number;
+}
+
+export interface FactoryState {
+  readonly tick: number;
+  readonly units: readonly Unit[];
+  readonly nextUnitId: number;
+  /** Final DrugState of every unit that has reached a sink, in arrival order. */
+  readonly produced: readonly DrugState[];
+  /** True once the sim detects no unit can make progress and buffers are blocked. */
+  readonly deadlocked: boolean;
+}
+
+/** Build the initial factory state (tick 0, no units) for a layout + level. */
+export type InitFactoryFn = (layout: FactoryLayout, mm: MultiMap, start: DrugState) => FactoryState;
+
+/** Advance the factory one tick: deterministic, pure (returns a new state). */
+export type StepFactoryFn = (layout: FactoryLayout, mm: MultiMap, s: FactoryState) => FactoryState;
+
+/** Steady-state throughput report. */
+export interface ThroughputReport {
+  /** Units produced per tick at steady state (rational: num/den). */
+  readonly rateNum: number;
+  readonly rateDen: number;
+  /** typeId of the limiting (slowest effective) machine stage, or null if none. */
+  readonly bottleneck: MachineTypeId | null;
+}
+
+export type AnalyzeThroughputFn = (layout: FactoryLayout) => ThroughputReport;
+
+// ── state.ts: deterministic whole-sim state + replay (INV-15) ──
+
+/** A recorded input event for replay (factory layout is fixed; events drive the run). */
+export interface ReplayInput {
+  readonly ticks: number; // advance this many ticks
+}
+
+/** Deterministic content hash of a FactoryState (for replay equality, INV-15). */
+export type HashFactoryFn = (s: FactoryState) => number;
+
+/** Run `ticks` ticks from init and return the final state — same inputs ⇒ same hash. */
+export type ReplayFactoryFn = (
+  layout: FactoryLayout,
+  mm: MultiMap,
+  start: DrugState,
+  ticks: number,
+) => FactoryState;
+
+// ── recipe: Template ↔ factory line ──
+
+/** Compile a recipe template into a straight source→machines→sink line. */
+export type CompileTemplateFn = (template: Template) => FactoryLayout;
+
+/** Run a layout to completion for one unit and report its cure/side-effect Outcome. */
+export type FactoryOutcomeFn = (layout: FactoryLayout, mm: MultiMap, start: DrugState) => Outcome;

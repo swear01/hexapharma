@@ -11,9 +11,9 @@
 | `src/sim/mapgen/` | ✅ | 建構式多圖生成 + 難度評分（種子決定）+ 基礎藥價 |
 | `src/sim/solver/` | ✅ | 多圖 BFS 搜尋（**僅難度評分 + AI 測試**，D14） |
 | `src/sim/rng/` | ✅ | 自有 seeded PRNG（**唯一隨機來源**，mapgen 也走它） |
-| `src/sim/hash.ts` | ✅ | FNV-1a（replay/determinism；完整 `state.ts` 在 Phase 2 補上） |
-| `src/sim/state.ts` | 🔧 Phase 2 | `SimState` / `step` / `hash` / `replay`（隨 factory tick loop 一起做，交付 INV-15） |
-| `src/sim/factory-sim/` | 🔧 Phase 2 | belt / machine（cost·速度·形狀·口）/ tick / throughput / bottleneck·deadlock |
+| `src/sim/hash.ts` | ✅ | FNV-1a（replay/determinism） |
+| `src/sim/state.ts` | ✅ | `hashFactory` / `replayFactory`（FNV-1a over FactoryState；init+step 組合；交付 INV-15） |
+| `src/sim/factory-sim/` | ✅ | belt / machine（cost·速度·口）/ tick（process→move→emit→deadlock）/ throughput / bottleneck·deadlock。機器形狀仍為 1×1（footprint 後續） |
 | `src/sim/recipe/` | 🔧 Phase 2 | 模板 ↔ 產線轉換 + 重排驗證（保持朝向+順序 → 效果不變） |
 | `src/sim/economy/` | 📋 Phase 3 | 訂單/庫存/結算 + 難度分→基礎藥價 + 反退化 |
 | `src/sim/patent/` | 📋 Phase 3 | 天賦樹（含解鎖新成分地圖） |
