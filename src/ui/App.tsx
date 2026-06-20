@@ -7,8 +7,14 @@
  * here — we only CALL the sim. See AGENTS.md layering rule.
  *
  * The level is produced by mapgen `generate()` from a seed (no hand fixture), so
- * the Lab plays the real cross-map-tension levels. A debug "Reveal level" toggle
- * paints a fully-revealed COPY of the MultiMap (sim state is untouched).
+ * the Lab plays the real cross-map-tension levels.
+ *
+ * FOG = genuine exploration. The Game owns a PERSISTENT per-map fog (Uint8Array,
+ * accumulated across runs); the Lab overlays it onto the MultiMap it hands the
+ * renderer, so unrevealed cells render as UNKNOWN. Each Run reveals cells via the
+ * sim (`revealAlong`) and reports them up (`onReveal`) to be unioned into that
+ * persistent fog — Reset keeps what's explored. A debug "Reveal all" toggle paints
+ * a fully-revealed COPY for convenience (sim + persistent fog untouched).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
@@ -33,10 +39,20 @@ import { createLabRenderer, type LabRenderer } from "../render/labRenderer";
 
 const catalog: readonly MachineCatalogEntry[] = DEFAULT_CATALOG;
 
-/** A COPY of the MultiMap with all fog cleared — debug-only render aid (no sim mutation). */
-function revealedCopy(mm: MultiMap): MultiMap {
+/**
+ * A display COPY of `mm` whose each map's `fog` is the persistent exploration fog
+ * (or fully-revealed when `revealAll`). We never mutate the sim's fog arrays — the
+ * renderer reads `map.fog`, drawing fogged cells as UNKNOWN. The persistent arrays
+ * are sized to the level by the Game; fall back to the sim's own fog if a map is
+ * momentarily missing (e.g. a frame during a level swap).
+ */
+function withFog(mm: MultiMap, fog: readonly Uint8Array[], revealAll: boolean): MultiMap {
   return {
-    maps: mm.maps.map((m): EffectMap => ({ ...m, fog: new Uint8Array(m.fog.length).fill(1) })),
+    maps: mm.maps.map((m, i): EffectMap => {
+      if (revealAll) return { ...m, fog: new Uint8Array(m.fog.length).fill(1) };
+      const f = fog[i];
+      return f !== undefined && f.length === m.fog.length ? { ...m, fog: f } : m;
+    }),
   };
 }
 
@@ -79,18 +95,22 @@ function outcomeText(outcome: Outcome | null, won: boolean): string {
 
 interface AppProps {
   readonly level: GeneratedLevel;
+  /** Persistent exploration fog (one Uint8Array per map), owned by the Game. */
+  readonly fog: readonly Uint8Array[];
+  /** Report a run's revealed cells (a `revealAlong` MultiMap) for unioning into the fog. */
+  readonly onReveal: (revealed: MultiMap) => void;
   /** Called with the winning template when the player saves a cure to the Factory. */
   readonly onSaveRecipe: (winning: Template) => void;
 }
 
-export function App({ level, onSaveRecipe }: AppProps) {
+export function App({ level, fog, onReveal, onSaveRecipe }: AppProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<LabRenderer | null>(null);
 
   const { mm, start } = level;
   const targets = useMemo<readonly DiseaseId[]>(() => level.diseases.map((d) => d.id), [level]);
 
-  // Debug aid: show the full map ignoring fog (pure render; never touches sim).
+  // Debug aid: show the full map ignoring fog (pure render; never touches sim/fog).
   const [reveal, setReveal] = useState<boolean>(false);
 
   // Player-built recipe.
@@ -99,8 +119,7 @@ export function App({ level, onSaveRecipe }: AppProps) {
   const [rot, setRot] = useState<Rotation>(0);
   const [flip, setFlip] = useState<boolean>(false);
 
-  // What the renderer currently shows (the revealed-by-play MultiMap + drug state).
-  const [shownMap, setShownMap] = useState<MultiMap>(mm);
+  // The animating drug token state (fog is external/persistent, not stored here).
   const [shownDrug, setShownDrug] = useState<DrugState>(start);
 
   // Result of the last Run.
@@ -124,8 +143,14 @@ export function App({ level, onSaveRecipe }: AppProps) {
   // Cancel token so a Reset (or unmount) stops an in-flight animation.
   const runIdRef = useRef(0);
 
-  // The map handed to the renderer: a fully-revealed copy when the debug toggle is on.
-  const renderMap = useMemo(() => (reveal ? revealedCopy(shownMap) : shownMap), [reveal, shownMap]);
+  // The map handed to the renderer = the level overlaid with the persistent fog
+  // (or fully revealed when the debug toggle is on).
+  const renderMap = useMemo(() => withFog(mm, fog, reveal), [mm, fog, reveal]);
+  // Latest fogged map + drug for the async mount paint (avoids a one-frame unfogged flash).
+  const renderMapRef = useRef(renderMap);
+  renderMapRef.current = renderMap;
+  const shownDrugRef = useRef(shownDrug);
+  shownDrugRef.current = shownDrug;
 
   // ── mount / unmount the Pixi renderer ─────────────────────────────────────
   useEffect(() => {
@@ -140,7 +165,7 @@ export function App({ level, onSaveRecipe }: AppProps) {
       local = r;
       rendererRef.current = r;
       if (mountRef.current) mountRef.current.appendChild(r.canvas);
-      r.render(mm, start);
+      r.render(renderMapRef.current, shownDrugRef.current);
     })();
     return () => {
       disposed = true;
@@ -191,9 +216,9 @@ export function App({ level, onSaveRecipe }: AppProps) {
     setOutcome(null);
 
     const t: Template = { steps };
-    // Reveal fog along every sweep path (sim does the work).
-    const revealed = revealAlong(mm, start, t);
-    setShownMap(revealed);
+    // Reveal fog along every sweep path (sim does the work); the Game unions the
+    // revealed cells into the PERSISTENT exploration fog (do not mutate sim arrays).
+    onReveal(revealAlong(mm, start, t));
     setShownDrug(start);
 
     // Precompute the per-step drug states by folding applyStep (sim only).
@@ -219,9 +244,9 @@ export function App({ level, onSaveRecipe }: AppProps) {
       }
     };
     window.setTimeout(tick, 260);
-  }, [running, steps, mm, start]);
+  }, [running, steps, mm, start, onReveal]);
 
-  // ── Reset: back to start, fog restored, empty template ────────────────────
+  // ── Reset: clear the TEMPLATE + token; KEEP what's been explored (fog persists) ──
   const reset = useCallback(() => {
     runIdRef.current++; // cancel any in-flight animation
     setRunning(false);
@@ -229,11 +254,11 @@ export function App({ level, onSaveRecipe }: AppProps) {
     setRot(0);
     setFlip(false);
     setOutcome(null);
-    setShownMap(mm);
     setShownDrug(start);
-  }, [mm, start]);
+  }, [start]);
 
   // ── new level handed down by the Game (e.g. new-map patent): reset play state ──
+  // (The persistent fog is reset by the Game; here we only clear the template/token.)
   useEffect(() => {
     runIdRef.current++;
     setRunning(false);
@@ -241,7 +266,6 @@ export function App({ level, onSaveRecipe }: AppProps) {
     setRot(0);
     setFlip(false);
     setOutcome(null);
-    setShownMap(mm);
     setShownDrug(start);
   }, [mm, start]);
 
@@ -269,8 +293,9 @@ export function App({ level, onSaveRecipe }: AppProps) {
     >
       <h1 style={{ margin: "0 0 4px" }}>HexaPharma Lab</h1>
       <p style={{ margin: "0 0 14px", color: "#5a6470" }}>
-        Place machines into a template, then Run to sweep the drug across both effect
-        maps. Cure all targets ({targets.join(", ")}) to win.
+        The maps start FOGGED (shown as “?”). Place machines into a template, then Run
+        to sweep the drug across the effect maps — each run reveals the cells it passes
+        (exploration persists). Cure all targets ({targets.join(", ")}) to win.
       </p>
 
       {/* level controls */}
@@ -290,7 +315,7 @@ export function App({ level, onSaveRecipe }: AppProps) {
             onChange={(e) => setReveal(e.target.checked)}
             data-testid="reveal"
           />
-          Reveal level (debug)
+          Reveal all (debug)
         </label>
         {canShip && (
           <button

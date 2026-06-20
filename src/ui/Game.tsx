@@ -11,7 +11,7 @@
  * Factory → Sell in the Shop for cash → buy Patents (incl. a new, deeper map) →
  * continue.
  */
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
   Template,
   GenOptions,
@@ -21,11 +21,13 @@ import type {
   FactoryLayout,
   GameState,
   DiseaseId,
+  MultiMap,
 } from "../sim/phase0_interfaces";
 import { DEFAULT_CATALOG } from "../sim/phase0_interfaces";
 import { generate } from "../sim/mapgen";
 import { evaluate, initialState } from "../sim/drug-graph";
 import { compileTemplate } from "../sim/recipe";
+import { activeEffects, DEFAULT_PATENTS } from "../sim/patent";
 import {
   serializeGame,
   deserializeGame,
@@ -42,21 +44,120 @@ import { Patents } from "./Patents";
 const START_CASH = 200;
 const SAVE_SLOT = "hexapharma.save.slot0";
 
+/**
+ * Map dimension for a level with `nMaps` maps. The solver runs during generate and
+ * is a BFS over (W·H)^N tuples, so maps must SHRINK as N grows to stay tractable:
+ * N=2 stays larger, N=3 → ~7×7, N=4 → ~6×6 (matches the mapgen size guidance).
+ */
+function dimsForN(nMaps: number): number {
+  if (nMaps >= 4) return 6;
+  if (nMaps === 3) return 7;
+  return 12;
+}
+
 /** Default mapgen options for a fresh game (small enough to generate well under ~1s). */
-export function defaultGenOptions(seed: number): GenOptions {
+export function defaultGenOptions(seed: number, nMaps = 2): GenOptions {
+  const dim = dimsForN(nMaps);
   return {
     seed,
-    nMaps: 2,
-    width: 12,
-    height: 12,
+    nMaps,
+    width: dim,
+    height: dim,
     catalog: DEFAULT_CATALOG,
     diseaseCount: 2,
     difficulty: { min: 4, max: 12 },
   };
 }
 
+/**
+ * Initial options for the game. Defaults to seed 14, N=2; a `?nmaps=` (2..4) and/or
+ * `?seed=` query param overrides the STARTING level so a deeper (N≥3) layout can be
+ * loaded directly (e.g. for the N-map render test / a deep-map playtest). The default
+ * player path to deeper maps is still the new-map patent.
+ */
+function initialGenOptions(): GenOptions {
+  let seed = 14;
+  let nMaps = 2;
+  if (typeof window !== "undefined") {
+    const q = new URLSearchParams(window.location.search);
+    const rawSeed = q.get("seed");
+    if (rawSeed !== null) {
+      const s = Number(rawSeed);
+      if (Number.isInteger(s)) seed = s;
+    }
+    const rawN = q.get("nmaps");
+    if (rawN !== null) {
+      const n = Number(rawN);
+      if (Number.isInteger(n) && n >= 2 && n <= 4) nMaps = n;
+    }
+  }
+  return defaultGenOptions(seed, nMaps);
+}
+
 function genLevel(opts: GenOptions): GeneratedLevel {
   return generate(opts);
+}
+
+// ───────────────────────────── persistent fog (UI view-state) ─────────────────────────────
+//
+// Genuine exploration: the Game keeps ONE Uint8Array per map (0 = fogged, 1 =
+// revealed) that PERSISTS across Lab runs/resets. Each Run unions the cells the sim
+// reports revealed (`revealAlong`) into it; reveal-aid patents pre-reveal a radius
+// around each start. We never mutate the sim's own fog arrays — these are our own.
+
+/** Fresh all-fogged arrays (all 0) sized to a level's maps. */
+function freshFog(mm: MultiMap): Uint8Array[] {
+  return mm.maps.map((m) => new Uint8Array(m.width * m.height));
+}
+
+/** OR `src` fog (the sim-revealed MultiMap) into the persistent `dst`; returns new arrays if anything changed. */
+function unionFog(dst: readonly Uint8Array[], src: MultiMap): Uint8Array[] | null {
+  let changed = false;
+  const out = dst.map((arr, i) => {
+    const from = src.maps[i]?.fog;
+    if (from === undefined) return arr;
+    let copy: Uint8Array | null = null;
+    for (let k = 0; k < arr.length; k++) {
+      if ((from[k] ?? 0) === 1 && arr[k] === 0) {
+        if (copy === null) copy = Uint8Array.from(arr);
+        copy[k] = 1;
+        changed = true;
+      }
+    }
+    return copy ?? arr;
+  });
+  return changed ? out : null;
+}
+
+/**
+ * Reveal a Chebyshev radius `r` (in cells) around each map's `start` into a COPY of
+ * the persistent fog. Deterministic; idempotent (only sets bits). r <= 0 is a no-op.
+ */
+function revealAidFog(fog: readonly Uint8Array[], mm: MultiMap, r: number): Uint8Array[] | null {
+  if (r <= 0) return null;
+  let changed = false;
+  const out = fog.map((arr, i) => {
+    const map = mm.maps[i];
+    if (map === undefined) return arr;
+    const { x: sx, y: sy } = map.start;
+    let copy: Uint8Array | null = null;
+    for (let dy = -r; dy <= r; dy++) {
+      const y = sy + dy;
+      if (y < 0 || y >= map.height) continue;
+      for (let dx = -r; dx <= r; dx++) {
+        const x = sx + dx;
+        if (x < 0 || x >= map.width) continue;
+        const k = y * map.width + x;
+        if (arr[k] === 0) {
+          if (copy === null) copy = Uint8Array.from(arr);
+          copy[k] = 1;
+          changed = true;
+        }
+      }
+    }
+    return copy ?? arr;
+  });
+  return changed ? out : null;
 }
 
 /** Cumulative recipe step cost = production cost per produced unit (cold path). */
@@ -78,7 +179,7 @@ export function Game() {
   const [tab, setTab] = useState<Tab>("lab");
 
   // ── the one shared game state ──
-  const [genOptions, setGenOptions] = useState<GenOptions>(() => defaultGenOptions(14));
+  const [genOptions, setGenOptions] = useState<GenOptions>(() => initialGenOptions());
   const level = useMemo<GeneratedLevel>(() => genLevel(genOptions), [genOptions]);
 
   const [economy, setEconomy] = useState<EconomyState>({ cash: START_CASH, sold: [] });
@@ -88,9 +189,37 @@ export function Game() {
   // produced units per disease id, not yet sold.
   const [inventory, setInventory] = useState<Record<DiseaseId, number>>({});
 
+  // Persistent exploration fog (one Uint8Array per map), accumulated across runs.
+  const [fog, setFog] = useState<readonly Uint8Array[]>(() => freshFog(level.mm));
+
   // rewind history of whole-game snapshots.
   const [history, setHistory] = useState<readonly GameState[]>([]);
   const [saveMsg, setSaveMsg] = useState<string>("");
+
+  // Patent effects (reveal-aid amount, etc.) summarized from the unlocked nodes.
+  const eff = useMemo(() => activeEffects(DEFAULT_PATENTS, patents), [patents]);
+
+  // A NEW level (different mm identity) starts fresh fog, immediately seeded with the
+  // current reveal-aid radius around each start (deterministic). Loading/regenerating
+  // a level swaps `level`, so this resets exploration correctly.
+  // Depends ONLY on the level identity (not revealAid) so a later patent unlock never
+  // wipes accumulated exploration; the next effect folds revealAid growth in-place.
+  useEffect(() => {
+    const base = freshFog(level.mm);
+    const aided = revealAidFog(base, level.mm, eff.revealAid);
+    setFog(aided ?? base);
+  }, [level.mm]);
+
+  // When reveal-aid grows (a patent unlock) on the SAME level, union the new radius
+  // into the existing fog without un-exploring anything.
+  useEffect(() => {
+    setFog((f) => revealAidFog(f, level.mm, eff.revealAid) ?? f);
+  }, [eff.revealAid, level.mm]);
+
+  // Union the cells a Lab run revealed (sim `revealAlong` output) into persistent fog.
+  const revealFromRun = useCallback((revealed: MultiMap) => {
+    setFog((f) => unionFog(f, revealed) ?? f);
+  }, []);
 
   // ── build the contract GameState value from the current React state ──
   const buildGameState = useCallback((): GameState => {
@@ -149,18 +278,20 @@ export function Game() {
     [],
   );
 
-  // ── Patents → unlock; the new-map patent regenerates a deeper level ──
+  // ── Patents → unlock; the new-map patent regenerates a DEEPER level ──
+  // Deeper = one more ingredient map (capped at 4); dims shrink with N so the solver
+  // (run during generate) stays tractable. Recipe/factory/inventory reset + the level
+  // swap re-fogs via the level effect; cash + patents are kept.
   const onPatents = useCallback(
     (nextPatents: PatentState, nextCash: number, regenDeeper: boolean) => {
       setPatents(nextPatents);
       setEconomy((e) => ({ ...e, cash: nextCash }));
       if (regenDeeper) {
-        setGenOptions((g) => ({
-          ...g,
-          seed: g.seed + 1,
-          width: g.width + 2,
-          height: g.height + 2,
-        }));
+        setGenOptions((g) => {
+          const nMaps = Math.min(4, g.nMaps + 1);
+          const dim = dimsForN(nMaps);
+          return { ...g, seed: g.seed + 1, nMaps, width: dim, height: dim };
+        });
         setRecipe(null);
         setFactory(null);
         setInventory({});
@@ -286,7 +417,9 @@ export function Game() {
       </div>
 
       <div style={{ paddingTop: 16 }}>
-        {tab === "lab" && <App level={level} onSaveRecipe={saveRecipe} />}
+        {tab === "lab" && (
+          <App level={level} fog={fog} onReveal={revealFromRun} onSaveRecipe={saveRecipe} />
+        )}
         {tab === "factory" && (
           <Factory level={level} recipe={recipe} factory={factory} onFactoryChange={setFactory} onProduced={addProduced} />
         )}

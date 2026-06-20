@@ -28,6 +28,9 @@
 
 ## Recently Done
 
+- **設計對齊大改** ✅：把工廠那半做真——機器多格形狀 + 多 port + footRot 空間打包、傳送帶 splitter/merger 真分流匯流、真並聯吞吐（measured，非 heuristic）；**真迷霧探索**（節點藏霧中、掃動揭露、揭露持久累積、reveal-aid 專利）；**3–4 圖**生成+渲染（預設 2，unlockMap 加深）。契約/factory-sim/state/recipe/save/Factory UI 全面重寫，195 vitest + 10 e2e 綠。
+
+
 - **Phase 3 — 經濟/存讀檔/專利 + 完整循環** ✅：economy（遞減定價+反退化+帳務守恆）、save（round-trip+多存檔/回溯）、patent（天賦樹+解鎖新地圖）、循環 UI（Lab→Factory→Shop→Patents）。headless 整合測試跑通整條循環。
 - **Phase 2 — 工廠吞吐配平** ✅：factory-sim（tick/throughput/bottleneck/deadlock）、state.ts（replay INV-15）、recipe（模板→產線+重排不變 INV-7）、Factory 視覺。
 - **核心修正** ✅：補回 offset（第四種關係）+ supercover 對角掃動；求解器複合難度；**mapgen 跨圖張力**（最佳解須解耦）；Lab 玩生成關卡。
