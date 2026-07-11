@@ -149,7 +149,7 @@ test("recovery salvages a valid canonical head when only its history is corrupt"
   await page.reload();
 
   await expect(page.getByTestId("save-msg")).toContainText(/checkpoint is invalid/i);
-  await expect(page.getByTestId("recover-storage")).toContainText(/validated timeline/i);
+  await expect(page.getByTestId("recover-storage")).toHaveAttribute("aria-label", /validated timeline/i);
   await page.getByTestId("recover-storage").click();
   await page.getByTestId("load").click();
   await expect(page.getByTestId("cash")).toHaveText("9919");

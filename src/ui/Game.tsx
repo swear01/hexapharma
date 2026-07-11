@@ -83,6 +83,16 @@ type Tab = "lab" | "factory" | "shop" | "patents";
 
 export function Game() {
   const [tab, setTab] = useState<Tab>("lab");
+  const [visited, setVisited] = useState<Record<Tab, boolean>>({
+    lab: true,
+    factory: false,
+    shop: false,
+    patents: false,
+  });
+  const openTab = useCallback((next: Tab) => {
+    setVisited((current) => current[next] ? current : { ...current, [next]: true });
+    setTab(next);
+  }, []);
   const [game, setGame] = useState<GameState>(() =>
     createGameState(initialGenOptions(), queryInt("cash", START_CASH), queryInt("research", 0, 0)),
   );
@@ -141,8 +151,8 @@ export function Game() {
   }, []);
 
   const saveRecipe = useCallback((recipe: Template) => {
-    if (dispatch({ kind: "saveRecipe", recipe })) setTab("factory");
-  }, [dispatch]);
+    if (dispatch({ kind: "saveRecipe", recipe })) openTab("factory");
+  }, [dispatch, openTab]);
 
   const explore = useCallback((template: Template) => {
     dispatch({ kind: "runLab", template });
@@ -257,63 +267,66 @@ export function Game() {
     }
   }, [game, slotRecovery]);
 
-  const tabStyle: React.CSSProperties = {
-    padding: "8px 18px",
-    border: "1px solid #b8c2cc",
-    borderBottom: "none",
-    borderRadius: "8px 8px 0 0",
-    background: "#eef2f6",
-    cursor: "pointer",
-    fontSize: 14,
-    fontFamily: "Arial, sans-serif",
-    fontWeight: 600,
-    color: "#475260",
-  };
-  const activeTab: React.CSSProperties = { background: "#fff", color: "#1d6fe0" };
-  const bar: React.CSSProperties = {
-    padding: "6px 10px",
-    border: "1px solid #b8c2cc",
-    borderRadius: 6,
-    background: "#fff",
-    cursor: "pointer",
-    fontSize: 13,
-  };
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target;
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLSelectElement ||
+        target instanceof HTMLTextAreaElement ||
+        (target instanceof HTMLElement && target.isContentEditable)
+      ) {
+        return;
+      }
+      const viewByKey: Partial<Record<string, Tab>> = {
+        F1: "lab",
+        F2: "factory",
+        F3: "shop",
+        F4: "patents",
+      };
+      const view = viewByKey[event.key];
+      if (view !== undefined) {
+        event.preventDefault();
+        openTab(view);
+        return;
+      }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        save();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [openTab, save]);
 
-  const tabBtn = (id: Tab, label: string) => (
+  const tabBtn = (id: Tab, label: string, glyph: string, hotkey: string) => (
     <button
       type="button"
-      onClick={() => setTab(id)}
-      style={{ ...tabStyle, ...(tab === id ? activeTab : {}) }}
+      onClick={() => openTab(id)}
+      className={`nav-button${tab === id ? " is-active" : ""}`}
       data-testid={`view-${id}`}
+      aria-current={tab === id ? "page" : undefined}
+      title={`${label} (${hotkey})`}
     >
-      {label}
+      <span className="nav-glyph" aria-hidden="true">{glyph}</span>
+      <span className="nav-label">{label}</span>
+      <span className="hotkey">{hotkey}</span>
     </button>
   );
 
   return (
-    <div style={{ maxWidth: 980, margin: "0 auto", padding: 16, fontFamily: "Arial, sans-serif" }}>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          flexWrap: "wrap",
-          marginBottom: 12,
-          padding: "8px 12px",
-          border: "1px solid #d9e0e7",
-          borderRadius: 8,
-          background: "#f7fafc",
-        }}
-      >
-        <strong style={{ fontSize: 16, color: "#15724a" }}>
-          Cash: <span data-testid="cash">{game.economy.cash}</span>
-        </strong>
-        <strong style={{ fontSize: 14, color: "#5a4b9c" }}>
-          R&amp;D: <span data-testid="research">{game.economy.research}</span>
-        </strong>
-        <span style={{ flex: 1 }} />
-        <label style={{ fontSize: 12 }}>
-          Slot{" "}
+    <div className="game-shell" data-testid="game-shell">
+      <header className="top-hud" data-testid="top-hud">
+        <div className="brand-mark">HexaPharma</div>
+        <div className="resource-strip" aria-label="Factory resources">
+          <span className="resource-chip">Cash <strong data-testid="cash">{game.economy.cash}</strong></span>
+          <span className="resource-chip">R&amp;D <strong data-testid="research">{game.economy.research}</strong></span>
+          <span className="resource-chip">Stock <strong>{game.inventory.length}</strong></span>
+          <span className="resource-chip">Seed <strong>{game.genOptions.seed}</strong></span>
+        </div>
+        <div className="system-strip" aria-label="Save controls">
+          <label className="save-slot-control" title="Save slot">
+            <span className="sr-only">Slot</span>
           <select
             data-testid="save-slot"
             defaultValue={0}
@@ -327,47 +340,37 @@ export function Game() {
               <option key={slot} value={slot}>{slot + 1}</option>
             ))}
           </select>
-        </label>
-        <button type="button" onClick={save} style={bar} data-testid="save">Save</button>
-        <button type="button" onClick={load} style={bar} data-testid="load">Load</button>
-        <button type="button" onClick={doRewind} style={bar} data-testid="rewind" disabled={historyCount < 2}>
-          Rewind
-        </button>
+          </label>
+          <button type="button" onClick={save} className="hud-button" data-testid="save" title="Save (Ctrl+S)" aria-label="Save game">▣</button>
+          <button type="button" onClick={load} className="hud-button" data-testid="load" title="Load" aria-label="Load game">↥</button>
+          <button type="button" onClick={doRewind} className="hud-button" data-testid="rewind" disabled={historyCount < 2} title="Rewind" aria-label="Rewind save history">↶</button>
         {canRecover && (
-          <button type="button" onClick={recoverStorage} style={bar} data-testid="recover-storage">
-            {slotRecovery === null ? "Replace invalid slot with current game" : "Recover validated timeline"}
+          <button
+            type="button"
+            onClick={recoverStorage}
+            className="hud-button is-warning"
+            data-testid="recover-storage"
+            title={slotRecovery === null ? "Replace invalid slot with current game" : "Recover validated timeline"}
+            aria-label={slotRecovery === null ? "Replace invalid slot with current game" : "Recover validated timeline"}
+          >
+            !
           </button>
         )}
-        <span
-          data-testid="save-msg"
-          role="status"
-          aria-live="polite"
-          style={{ fontSize: 12, color: "#5a6470" }}
-        >
-          {saveMsg}
-        </span>
-      </div>
-
-      {intentError !== "" && (
-        <div
-          role="alert"
-          data-testid="game-intent-error"
-          style={{ marginBottom: 10, color: "#a32222", fontWeight: 600 }}
-        >
-          {intentError}
         </div>
-      )}
+      </header>
 
-      <div style={{ display: "flex", gap: 6, borderBottom: "1px solid #b8c2cc" }}>
-        {tabBtn("lab", "Lab")}
-        {tabBtn("factory", "Factory")}
-        {tabBtn("shop", "Shop")}
-        {tabBtn("patents", "Patents")}
-      </div>
+      <nav className="nav-rail" data-testid="nav-rail" aria-label="Game views">
+        {tabBtn("lab", "Lab", "⌬", "F1")}
+        {tabBtn("factory", "Factory", "▦", "F2")}
+        {tabBtn("shop", "Market", "¤", "F3")}
+        {tabBtn("patents", "R&D", "⌁", "F4")}
+      </nav>
 
-      <div style={{ paddingTop: 16 }}>
-        {tab === "lab" && (
+      <main className="game-stage" data-testid="game-stage">
+        <section className="view-layer" hidden={tab !== "lab"}>
+        {visited.lab && (
           <App
+            active={tab === "lab"}
             level={level}
             fog={game.fog}
             catalog={catalog}
@@ -375,8 +378,11 @@ export function Game() {
             onSaveRecipe={saveRecipe}
           />
         )}
-        {tab === "factory" && (
+        </section>
+        <section className="view-layer" hidden={tab !== "factory"}>
+        {visited.factory && (
           <Factory
+            active={tab === "factory"}
             level={level}
             recipe={game.recipe}
             factory={game.factory}
@@ -390,7 +396,9 @@ export function Game() {
             onReset={resetFactory}
           />
         )}
-        {tab === "shop" && (
+        </section>
+        <section className="view-layer" hidden={tab !== "shop"}>
+        {visited.shop && (
           <Shop
             level={level}
             economy={game.economy}
@@ -398,14 +406,26 @@ export function Game() {
             onSell={sellProducts}
           />
         )}
-        {tab === "patents" && (
+        </section>
+        <section className="view-layer" hidden={tab !== "patents"}>
+        {visited.patents && (
           <Patents
+            active={tab === "patents"}
             economy={game.economy}
             patents={game.patents}
             onUnlock={unlock}
           />
         )}
-      </div>
+        </section>
+        <div className="message-layer" aria-live="polite">
+          {intentError !== "" && (
+            <div role="alert" data-testid="game-intent-error" className="game-alert">{intentError}</div>
+          )}
+          <span data-testid="save-msg" role="status" className={saveMsg === "" ? "sr-only" : "game-toast"}>
+            {saveMsg}
+          </span>
+        </div>
+      </main>
     </div>
   );
 }

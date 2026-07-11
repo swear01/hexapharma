@@ -262,7 +262,7 @@ test("a cured sink output that diverges from the saved recipe is counted as wast
   await page.getByTestId("load").click();
   await page.getByTestId("view-factory").click();
   await expect(page.getByTestId("factory-recipe")).not.toContainText(/Producing the saved recipe/i);
-  await expect(page.getByTestId("factory-recipe")).toContainText(/diverges/i);
+  await expect(page.getByTestId("factory-validity")).toContainText(/diverges/i);
   await page.getByTestId("factory-play").click();
   await expect(page.getByTestId("factory-produced")).not.toHaveText("0", { timeout: 10_000 });
   await page.getByTestId("factory-pause").click();

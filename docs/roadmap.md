@@ -24,7 +24,7 @@
 - **完成定義**：可循環 vertical slice（探索→研發→量產配平→賣→投專利/解新地圖→更深）；多存檔回溯正常；驗證「狂產單一藥物 ≠ 簡單最佳解」
 
 ### Phase 3 之後（進行中 / Next）
-- **In Progress**：真人完整循環玩測、實際淨利/吞吐/難度平衡、視覺/UX review。strict mutable factory runtime、存檔 authority 與 bundle split 已完成，不再列為技術債。
+- **In Progress**：真人完整循環玩測、實際淨利/吞吐/難度平衡與正式美術內容。strict mutable factory runtime、存檔 authority、bundle split 與工廠遊戲式 interaction redesign 已完成，不再列為技術債。
 - **Post-MVP / Next**：內容量產（更多疾病/原料/機器變換/footprint = 純資料工作）、正式美術與上架打磨。這些是未來內容 roadmap，不是目前 vertical-slice correctness gap。3–4 圖功能已完成，當前仍需的是人工可玩性、平衡與出貨 UX 判斷。
 
 ## Recently Done
@@ -34,6 +34,7 @@
 - **build、UI authority 與 renderer lifecycle** ✅：renderer dynamic import/error可見；Lab無stale outcome，Factory分標sink outcomes/waste。diagnostics在init/tick前驗100,000,000-unit layout-work cap，避免大layout同步鎖UI；exhaustion顯示alert，throughput真deadlock回`0/1`與null bottleneck。Lab動態縮cell、canvas ≤980×980；production-preview守2-map/4-map最大。chunks <500 kB；StrictMode teardown安全。
 - **持久化/analysis regression coverage** ✅：checkpoint tests守raw-work preflight、normalization-aware same-origin lineage、different-run canonical replacement、mixed-legacy invalid/head-only recovery與24,500-item compact/full-wire-cap分離；Playwright守Factory analysis alert；production-preview實際載入2-map最寬與4-map最大Game-authorized 32×32 map。
 - **固定視覺回歸** ✅：Lab fogged + Factory reset 的 Playwright `toHaveScreenshot` expected baselines 已納入本輪工作成果與 e2e pixel diff；在目前未 commit 工作樹不宣稱已提交。
+- **直接操作 UI** ✅：全螢幕 shell、HUD、F1–F4 rail、hotbars、inspectors、Market cards、Patent lattice；Factory 支援 drag build/erase、touch tap/pan、wheel zoom、Q/R/H/V、clipboard 與 50-step history。active-view key isolation、modal focus、compact HUD／world reachability與 chrome click-through 由 Playwright 守住；Before／After 與競品差異見 `ui-interaction.md`。
 - **設計對齊大改** ✅：把工廠那半做真——機器多格形狀 + 多 port + footRot 空間打包、傳送帶 splitter/merger 真分流匯流、真並聯吞吐（measured，非 heuristic）；真迷霧探索（節點藏霧中、掃動揭露、揭露持久累積、reveal-aid 專利）；3–4 圖生成+渲染（預設 2，map patents 加深）。
 
 - **Phase 3 — 經濟/存讀檔/專利 + 完整循環** ✅：economy（遞減定價+反退化+帳務守恆）、save（round-trip+多存檔/回溯）、patent（天賦樹+解鎖新地圖）、循環 UI（Lab→Factory→Shop→Patents）。headless 整合測試跑通整條循環。

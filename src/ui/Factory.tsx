@@ -44,6 +44,21 @@ import { initFactory, analyzeThroughput } from "../sim/factory-sim";
 import { compileTemplate, factoryOutcome } from "../sim/recipe";
 import { evaluate } from "../sim/drug-graph";
 import type { FactoryRenderer } from "../render/factoryRenderer";
+import {
+  appendUniqueCells,
+  clampCamera,
+  createEditorHistory,
+  panCamera,
+  pushEditorHistory,
+  rasterizeGridLine,
+  redoEditorHistory,
+  screenToGrid,
+  undoEditorHistory,
+  zoomCameraAt,
+  type Camera,
+  type EditorHistory,
+  type GridCell,
+} from "./factoryEditor";
 
 // ───────────────────────────── directions ─────────────────────────────
 
@@ -230,6 +245,13 @@ type Brush =
   | { kind: "erase" }
   | { kind: "machine"; typeId: MachineTypeId };
 
+interface ClipboardBrush {
+  readonly brush: Brush;
+  readonly dir: Dir;
+  readonly footRot: Rotation;
+  readonly effectOrientation: Orientation;
+}
+
 const DIR_LABEL: Record<Dir, string> = { 0: "→ E", 1: "↓ S", 2: "← W", 3: "↑ N" };
 
 /** A belt-grid tile for the current brush + direction (machines handled separately). */
@@ -252,6 +274,31 @@ function makeTile(brush: Brush, dir: Dir): FactoryTile | null {
     case "machine":
       return null; // machines are placed into layout.machines, not tiles
   }
+}
+
+function brushAt(layout: FactoryLayout, cell: GridCell): ClipboardBrush | null {
+  const machine = machineAt(layout, cell.x, cell.y);
+  if (machine !== undefined) {
+    return {
+      brush: { kind: "machine", typeId: machine.def.typeId },
+      dir: E,
+      footRot: machine.footRot,
+      effectOrientation: machine.def.orientation,
+    };
+  }
+  const tile = layout.tiles[cell.y * layout.width + cell.x];
+  if (tile === undefined || tile.kind === "empty") return null;
+  const dir = tile.kind === "belt" || tile.kind === "source"
+    ? tile.dir
+    : tile.kind === "splitter"
+      ? tile.outDirs[0] ?? E
+      : tile.kind === "merger" ? tile.outDir : E;
+  return {
+    brush: { kind: tile.kind },
+    dir,
+    footRot: 0,
+    effectOrientation: IDENTITY,
+  };
 }
 
 /** Apply a click at (x,y) with the current brush, returning a new layout. */
@@ -285,6 +332,8 @@ function paint(
   if (brush.kind === "erase") {
     // remove any machine covering the cell AND clear the tile.
     const hit = machineAt(layout, x, y);
+    const currentTile = layout.tiles[y * layout.width + x];
+    if (hit === undefined && currentTile?.kind === "empty") return layout;
     const machines = hit ? layout.machines.filter((m) => m.id !== hit.id) : layout.machines;
     const tiles = layout.tiles.slice();
     tiles[y * layout.width + x] = { kind: "empty" };
@@ -295,29 +344,23 @@ function paint(
   if (tile === null) return layout;
   // painting a tile onto a machine cell first removes that machine.
   const hit = machineAt(layout, x, y);
+  const currentTile = layout.tiles[y * layout.width + x];
+  if (hit === undefined && JSON.stringify(currentTile) === JSON.stringify(tile)) return layout;
   const machines = hit ? layout.machines.filter((m) => m.id !== hit.id) : layout.machines;
   const tiles = layout.tiles.slice();
   tiles[y * layout.width + x] = tile;
   return { ...layout, tiles, machines };
 }
 
-// ───────────────────────────── geometry: canvas → grid ─────────────────────────────
-
 const CELL = 56;
 const PAD = 12;
-
-function cellFromCanvas(layout: FactoryLayout, px: number, py: number): { x: number; y: number } | null {
-  const gx = Math.floor((px - PAD) / CELL);
-  const gy = Math.floor((py - PAD) / CELL);
-  if (gx < 0 || gy < 0 || gx >= layout.width || gy >= layout.height) return null;
-  return { x: gx, y: gy };
-}
 
 // ───────────────────────────── component ─────────────────────────────
 
 const TICK_MS = 220;
 
 interface FactoryProps {
+  readonly active: boolean;
   readonly level: GeneratedLevel;
   /** The winning recipe from the Lab (drives the default layout), or null. */
   readonly recipe: Template | null;
@@ -347,6 +390,7 @@ function startingLayout(
 }
 
 export function Factory({
+  active,
   level,
   recipe,
   factory,
@@ -360,6 +404,7 @@ export function Factory({
   onReset,
 }: FactoryProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
+  const frameRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<FactoryRenderer | null>(null);
   const [rendererError, setRendererError] = useState<string | null>(null);
 
@@ -376,6 +421,41 @@ export function Factory({
   const [footRot, setFootRot] = useState<Rotation>(0);
   const [effectRot, setEffectRot] = useState<Rotation>(0);
   const [effectFlip, setEffectFlip] = useState(false);
+  const [clipboardLabel, setClipboardLabel] = useState("empty");
+  const [hoverCell, setHoverCell] = useState<GridCell | null>(null);
+  const [camera, setCamera] = useState<Camera>({ x: 0, y: 0, zoom: 1 });
+  const cameraRef = useRef(camera);
+  cameraRef.current = camera;
+  const [history, setHistory] = useState<EditorHistory<FactoryLayout>>(() =>
+    createEditorHistory(layout)
+  );
+  const historyRef = useRef(history);
+  historyRef.current = history;
+  const lastCommittedKeyRef = useRef<string | null>(null);
+  const clipboardRef = useRef<ClipboardBrush | null>(null);
+  const gestureRef = useRef<{
+    readonly pointerId: number;
+    readonly mode: "paint" | "erase";
+    readonly base: FactoryLayout;
+    readonly cells: readonly GridCell[];
+    readonly last: GridCell;
+  } | null>(null);
+  const panGestureRef = useRef<{
+    readonly pointerId: number;
+    readonly clientX: number;
+    readonly clientY: number;
+    readonly startX: number;
+    readonly startY: number;
+  } | null>(null);
+  const touchGestureRef = useRef<{
+    readonly pointerId: number;
+    readonly clientX: number;
+    readonly clientY: number;
+    readonly startX: number;
+    readonly startY: number;
+    readonly cell: GridCell | null;
+    moved: boolean;
+  } | null>(null);
 
   // keep the latest layout/level in refs so the play timer reads fresh values.
   const layoutRef = useRef(layout);
@@ -428,17 +508,54 @@ export function Factory({
   useEffect(() => {
     const next = startingLayout(factory, recipe, entitledWidth, entitledHeight);
     setPlaying(false);
-    if (factory !== null || onFactoryChange(next)) setLayout(next);
+    if (factory !== null || onFactoryChange(next)) {
+      setLayout(next);
+      const key = JSON.stringify(next);
+      if (lastCommittedKeyRef.current !== key) {
+        const resetHistory = createEditorHistory(next);
+        historyRef.current = resetHistory;
+        setHistory(resetHistory);
+      }
+      lastCommittedKeyRef.current = null;
+    }
   }, [recipe, mm, start, factory, entitledWidth, entitledHeight, onFactoryChange]);
 
-  // re-init the running sim for a fresh layout (shared by editing + presets + reset).
-  const reinit = useCallback(
+  const commitLayout = useCallback(
     (next: FactoryLayout) => {
       setPlaying(false);
-      if (onFactoryChange(next)) setLayout(next);
+      if (next === layoutRef.current) return false;
+      if (!onFactoryChange(next)) return false;
+      lastCommittedKeyRef.current = JSON.stringify(next);
+      setLayout(next);
+      const nextHistory = pushEditorHistory(historyRef.current, next);
+      historyRef.current = nextHistory;
+      setHistory(nextHistory);
+      return true;
     },
     [onFactoryChange],
   );
+
+  const restoreHistory = useCallback((next: EditorHistory<FactoryLayout>) => {
+    if (next === historyRef.current || !onFactoryChange(next.present)) return;
+    lastCommittedKeyRef.current = JSON.stringify(next.present);
+    historyRef.current = next;
+    setHistory(next);
+    setLayout(next.present);
+    setPlaying(false);
+  }, [onFactoryChange]);
+
+  const undoLayout = useCallback(() => {
+    restoreHistory(undoEditorHistory(historyRef.current));
+  }, [restoreHistory]);
+
+  const redoLayout = useCallback(() => {
+    restoreHistory(redoEditorHistory(historyRef.current));
+  }, [restoreHistory]);
+
+  const rotateActiveBrush = useCallback(() => {
+    if (brush.kind === "machine") setFootRot((value) => ((value + 1) & 3) as Rotation);
+    else setBrushDir((value) => ((value + 1) & 3) as Dir);
+  }, [brush.kind]);
 
   // ── mount / unmount the Pixi renderer ──
   const stateRef = useRef(state);
@@ -509,277 +626,497 @@ export function Factory({
     onReset();
   }, [onReset]);
 
-  // ── editing: click a cell to paint the current brush ──
-  const onCanvasClick = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
+  const updateCamera = useCallback((change: (current: Camera) => Camera) => {
+    setCamera((current) => {
+      const requested = change(current);
       const canvas = rendererRef.current?.canvas;
-      if (!canvas) return;
+      const frame = frameRef.current;
+      if (canvas === undefined || frame === null) {
+        return clampCamera(requested, {
+          minX: -10_000,
+          maxX: 10_000,
+          minY: -10_000,
+          maxY: 10_000,
+          minZoom: 0.65,
+          maxZoom: 2.25,
+        });
+      }
       const rect = canvas.getBoundingClientRect();
-      const px = ((e.clientX - rect.left) / rect.width) * canvas.width;
-      const py = ((e.clientY - rect.top) / rect.height) * canvas.height;
-      const cell = cellFromCanvas(layout, px, py);
-      if (!cell) return;
-      reinit(paint(layout, cell.x, cell.y, brush, brushDir, footRot, { rot: effectRot, flip: effectFlip }));
-    },
-    [layout, brush, brushDir, footRot, effectRot, effectFlip, reinit],
-  );
+      const frameRect = frame.getBoundingClientRect();
+      const baseWidth = rect.width / current.zoom;
+      const baseHeight = rect.height / current.zoom;
+      const baseLeft = rect.left - current.x;
+      const baseTop = rect.top - current.y;
+      const visibleEdge = 80;
+      return clampCamera(requested, {
+        minX: frameRect.left + visibleEdge - baseLeft - baseWidth * requested.zoom,
+        maxX: frameRect.right - visibleEdge - baseLeft,
+        minY: frameRect.top + visibleEdge - baseTop - baseHeight * requested.zoom,
+        maxY: frameRect.bottom - visibleEdge - baseTop,
+        minZoom: 0.65,
+        maxZoom: 2.25,
+      });
+    });
+  }, []);
 
-  // ───────────────────────────── styles ─────────────────────────────
+  const pointerCell = useCallback((clientX: number, clientY: number): GridCell | null => {
+    const canvas = rendererRef.current?.canvas;
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    const current = cameraRef.current;
+    const baseWidth = rect.width / current.zoom;
+    const baseHeight = rect.height / current.zoom;
+    const baseRect = {
+      left: rect.left - current.x,
+      top: rect.top - current.y,
+      width: baseWidth,
+      height: baseHeight,
+    };
+    const cell = screenToGrid(
+      { x: clientX, y: clientY },
+      baseRect,
+      { width: baseWidth, height: baseHeight },
+      current,
+      {
+        cellSize: CELL * baseWidth / canvas.width,
+        origin: {
+          x: PAD * baseWidth / canvas.width,
+          y: PAD * baseHeight / canvas.height,
+        },
+      },
+    );
+    const layout = layoutRef.current;
+    return cell.x < 0 || cell.y < 0 || cell.x >= layout.width || cell.y >= layout.height
+      ? null
+      : cell;
+  }, []);
 
-  const btn: React.CSSProperties = {
-    padding: "6px 10px",
-    border: "1px solid #b8c2cc",
-    borderRadius: 6,
-    background: "#fff",
-    cursor: "pointer",
-    fontSize: 13,
-  };
-  const sectionTitle: React.CSSProperties = { margin: "0 0 6px", fontSize: 14, color: "#475260" };
-  const active: React.CSSProperties = { background: "#1d6fe0", color: "#fff", border: "1px solid #1862c6" };
+  const onCanvasPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === "touch" && event.button === 0) {
+      event.preventDefault();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      touchGestureRef.current = {
+        pointerId: event.pointerId,
+        clientX: event.clientX,
+        clientY: event.clientY,
+        startX: camera.x,
+        startY: camera.y,
+        cell: pointerCell(event.clientX, event.clientY),
+        moved: false,
+      };
+      return;
+    }
+    if (event.button === 1 || (event.button === 0 && event.shiftKey)) {
+      event.preventDefault();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      panGestureRef.current = {
+        pointerId: event.pointerId,
+        clientX: event.clientX,
+        clientY: event.clientY,
+        startX: camera.x,
+        startY: camera.y,
+      };
+      return;
+    }
+    if (event.button !== 0 && event.button !== 2) return;
+    const cell = pointerCell(event.clientX, event.clientY);
+    if (cell === null) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setHoverCell(cell);
+    gestureRef.current = {
+      pointerId: event.pointerId,
+      mode: event.button === 2 ? "erase" : "paint",
+      base: layoutRef.current,
+      cells: [cell],
+      last: cell,
+    };
+  }, [camera.x, camera.y, pointerCell]);
+
+  const onCanvasPointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const touchGesture = touchGestureRef.current;
+    if (touchGesture?.pointerId === event.pointerId) {
+      const dx = event.clientX - touchGesture.clientX;
+      const dy = event.clientY - touchGesture.clientY;
+      if (touchGesture.moved || Math.hypot(dx, dy) >= 6) {
+        touchGesture.moved = true;
+        updateCamera((current) => panCamera(
+          { x: touchGesture.startX, y: touchGesture.startY, zoom: current.zoom },
+          { x: dx, y: dy },
+        ));
+      }
+      setHoverCell(pointerCell(event.clientX, event.clientY));
+      return;
+    }
+    const panGesture = panGestureRef.current;
+    if (panGesture?.pointerId === event.pointerId) {
+      updateCamera((current) => panCamera(
+        { x: panGesture.startX, y: panGesture.startY, zoom: current.zoom },
+        { x: event.clientX - panGesture.clientX, y: event.clientY - panGesture.clientY },
+      ));
+      return;
+    }
+    const cell = pointerCell(event.clientX, event.clientY);
+    setHoverCell(cell);
+    const gesture = gestureRef.current;
+    if (cell === null || gesture?.pointerId !== event.pointerId) return;
+    gestureRef.current = {
+      ...gesture,
+      cells: appendUniqueCells(gesture.cells, rasterizeGridLine(gesture.last, cell)),
+      last: cell,
+    };
+  }, [pointerCell, updateCamera]);
+
+  const finishCanvasGesture = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const touchGesture = touchGestureRef.current;
+    if (touchGesture?.pointerId === event.pointerId) {
+      touchGestureRef.current = null;
+      if (!touchGesture.moved && touchGesture.cell !== null) {
+        commitLayout(paint(
+          layoutRef.current,
+          touchGesture.cell.x,
+          touchGesture.cell.y,
+          brush,
+          brushDir,
+          footRot,
+          { rot: effectRot, flip: effectFlip },
+        ));
+      }
+      return;
+    }
+    const panGesture = panGestureRef.current;
+    if (panGesture?.pointerId === event.pointerId) {
+      panGestureRef.current = null;
+      return;
+    }
+    const gesture = gestureRef.current;
+    if (gesture?.pointerId !== event.pointerId) return;
+    gestureRef.current = null;
+    const activeBrush: Brush = gesture.mode === "erase" ? { kind: "erase" } : brush;
+    let next = gesture.base;
+    for (const cell of gesture.cells) {
+      next = paint(next, cell.x, cell.y, activeBrush, brushDir, footRot, {
+        rot: effectRot,
+        flip: effectFlip,
+      });
+    }
+    commitLayout(next);
+  }, [brush, brushDir, commitLayout, effectFlip, effectRot, footRot]);
+
+  const onCanvasWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const canvas = rendererRef.current?.canvas;
+    if (canvas === undefined) return;
+    const rect = canvas.getBoundingClientRect();
+    const current = cameraRef.current;
+    const baseLeft = rect.left - current.x;
+    const baseTop = rect.top - current.y;
+    updateCamera((value) => zoomCameraAt(
+      value,
+      { x: event.clientX - baseLeft, y: event.clientY - baseTop },
+      value.zoom * Math.exp(-event.deltaY * 0.0015),
+      { minZoom: 0.65, maxZoom: 2.25 },
+    ));
+  }, [updateCamera]);
+
+  const pickHovered = useCallback(() => {
+    if (hoverCell === null) return;
+    const picked = brushAt(layout, hoverCell);
+    if (picked === null) return;
+    setBrush(picked.brush);
+    setBrushDir(picked.dir);
+    setFootRot(picked.footRot);
+    setEffectRot(picked.effectOrientation.rot);
+    setEffectFlip(picked.effectOrientation.flip);
+  }, [hoverCell, layout]);
+
+  const copyHovered = useCallback((cut: boolean) => {
+    if (hoverCell === null) return;
+    const copied = brushAt(layoutRef.current, hoverCell);
+    if (copied === null) return;
+    clipboardRef.current = copied;
+    setClipboardLabel(copied.brush.kind === "machine" ? copied.brush.typeId : copied.brush.kind);
+    if (cut) {
+      commitLayout(paint(layoutRef.current, hoverCell.x, hoverCell.y, { kind: "erase" }, E, 0, IDENTITY));
+    }
+  }, [commitLayout, hoverCell]);
+
+  const pasteHovered = useCallback(() => {
+    const copied = clipboardRef.current;
+    if (copied === null || hoverCell === null) return;
+    commitLayout(paint(
+      layoutRef.current,
+      hoverCell.x,
+      hoverCell.y,
+      copied.brush,
+      copied.dir,
+      copied.footRot,
+      copied.effectOrientation,
+    ));
+  }, [commitLayout, hoverCell]);
+
+  useEffect(() => {
+    if (!active) return;
+    const tileBrushes: readonly Brush[] = [
+      { kind: "belt" },
+      { kind: "splitter" },
+      { kind: "merger" },
+      { kind: "source" },
+      { kind: "sink" },
+      { kind: "erase" },
+    ];
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target;
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLSelectElement ||
+        target instanceof HTMLTextAreaElement ||
+        (target instanceof HTMLElement && target.isContentEditable)
+      ) {
+        return;
+      }
+      const lower = event.key.toLowerCase();
+      if ((event.ctrlKey || event.metaKey) && lower === "z") {
+        event.preventDefault();
+        if (event.shiftKey) redoLayout();
+        else undoLayout();
+      } else if ((event.ctrlKey || event.metaKey) && lower === "y") {
+        event.preventDefault();
+        redoLayout();
+      } else if ((event.ctrlKey || event.metaKey) && lower === "c") {
+        event.preventDefault();
+        copyHovered(false);
+      } else if ((event.ctrlKey || event.metaKey) && lower === "x") {
+        event.preventDefault();
+        copyHovered(true);
+      } else if ((event.ctrlKey || event.metaKey) && lower === "v") {
+        event.preventDefault();
+        pasteHovered();
+      } else if (/^Digit[1-6]$/.test(event.code)) {
+        event.preventDefault();
+        setBrush(tileBrushes[Number(event.code.slice(5)) - 1] ?? { kind: "belt" });
+      } else if (/^Digit[7-9]$/.test(event.code) || event.code === "Digit0") {
+        event.preventDefault();
+        const slot = event.code === "Digit0" ? 3 : Number(event.code.slice(5)) - 7;
+        const entry = catalog[slot];
+        if (entry !== undefined) setBrush({ kind: "machine", typeId: entry.typeId });
+      } else if (lower === "r") {
+        event.preventDefault();
+        rotateActiveBrush();
+      } else if (lower === "h") {
+        event.preventDefault();
+        if (brush.kind === "machine" && entryOf(brush.typeId).orientable) {
+          setEffectFlip((value) => !value);
+        }
+      } else if (lower === "v") {
+        event.preventDefault();
+        if (brush.kind === "machine" && entryOf(brush.typeId).orientable) {
+          setEffectRot((value) => ((value + 1) & 3) as Rotation);
+        }
+      } else if (lower === "q") {
+        event.preventDefault();
+        pickHovered();
+      } else if (event.code === "Space") {
+        event.preventDefault();
+        setPlaying((value) => !value && !state.deadlocked);
+      } else if (event.key === ".") {
+        event.preventDefault();
+        if (!playing) stepOnce();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [active, catalog, copyHovered, pasteHovered, pickHovered, playing, redoLayout, rotateActiveBrush, state.deadlocked, stepOnce, undoLayout]);
 
   const brushIsMachine = brush.kind === "machine";
+  const brushAcceptsEffectOrientation = brush.kind === "machine" &&
+    entryOf(brush.typeId).orientable && entryOf(brush.typeId).transform.kind === "translate";
   const brushLabel = brush.kind === "machine" ? `machine: ${brush.typeId}` : brush.kind;
-
   const rate = throughput === null
     ? "unavailable"
     : throughput.rateDen === 0 ? "0" : `${throughput.rateNum}/${throughput.rateDen}`;
+  const hoveredMachine = hoverCell === null ? undefined : machineAt(layout, hoverCell.x, hoverCell.y);
+  const hoveredTile = hoverCell === null
+    ? undefined
+    : layout.tiles[hoverCell.y * layout.width + hoverCell.x];
+  const hoverKind = hoveredMachine === undefined
+    ? hoveredTile?.kind ?? "outside"
+    : `machine:${hoveredMachine.def.typeId}`;
+  const hoverPlacementValid = hoverCell === null || brush.kind === "erase"
+    ? true
+    : paint(layout, hoverCell.x, hoverCell.y, brush, brushDir, footRot, {
+        rot: effectRot,
+        flip: effectFlip,
+      }) !== layout;
+  const ghostCells = hoverCell === null
+    ? []
+    : brush.kind === "machine"
+      ? DEFAULT_SHAPES[brush.typeId]!.cells.map((cell) => {
+          const rotated = rotateVec(cell, footRot);
+          return { x: hoverCell.x + rotated.x, y: hoverCell.y + rotated.y };
+        })
+      : [hoverCell];
 
-  const tileBrushBtn = (kind: Brush["kind"] & ("belt" | "splitter" | "merger" | "source" | "sink" | "erase"), label: string) => (
+  const tileBrushBtn = (
+    kind: Brush["kind"] & ("belt" | "splitter" | "merger" | "source" | "sink" | "erase"),
+    label: string,
+    symbol: string,
+    hotkey: string,
+  ) => (
     <button
       type="button"
       onClick={() => setBrush({ kind })}
-      style={{ ...btn, ...(brush.kind === kind ? active : {}) }}
+      className={`tool-slot${brush.kind === kind ? " is-selected" : ""}`}
+      aria-pressed={brush.kind === kind}
       data-testid={`brush-${kind}`}
+      title={`${label} (${hotkey})`}
     >
-      {label}
+      <span className="tool-symbol" aria-hidden="true">{symbol}</span>
+      <span className="tool-name">{label}</span>
+      <span className="hotkey">{hotkey}</span>
     </button>
   );
 
   return (
-    <div style={{ fontFamily: "Arial, sans-serif", color: "#1d242c", maxWidth: 980, margin: "0 auto" }}>
-      <h1 style={{ margin: "0 0 4px" }}>HexaPharma Factory</h1>
-      <p style={{ margin: "0 0 14px", color: "#5a6470" }}>
-        Units flow source → machines → sink. Machines are multi-cell shapes you place,
-        rotate (footRot) and wire with belts, splitters and mergers. Play to run the belt
-        sim; the bottleneck machine is outlined in red. Split one feed across two machines
-        with a splitter + merger and watch throughput rise — real parallelism.
-      </p>
-
-      {/* recipe status */}
-      <div data-testid="factory-recipe" style={{ fontSize: 12, color: "#5a6470", marginBottom: 12 }}>
-        {recipe === null
-          ? "No saved recipe — build a cure in the Lab and Save recipe → Factory, or hand-build a line below."
-          : sampleAnalysis.error !== null
-            ? `A saved recipe contract is active (${recipe.steps.length} step${recipe.steps.length === 1 ? "" : "s"}), but its bounded sink sample is unavailable. Live matching outcomes remain authoritative; mismatches are waste.`
-          : recipeValid === false
-            ? `A saved recipe contract is active (${recipe.steps.length} step${recipe.steps.length === 1 ? "" : "s"}), but the current layout's bounded sink sample diverges. Only live matching outcomes enter inventory; mismatches are waste.`
-            : `The current layout's bounded sink sample matches the saved recipe (${recipe.steps.length} step${recipe.steps.length === 1 ? "" : "s"}). Live matching outcomes enter inventory; mismatches are waste.`}
-      </div>
-      <div
-        data-testid="factory-validity"
-        style={{ fontSize: 12, color: recipeValid === false ? "#a11d1d" : "#15724a", marginBottom: 10 }}
-      >
-        {sampleAnalysis.error !== null
-          ? "The bounded sink sample is unavailable; live product validation remains authoritative."
-          : recipeValid === null
-          ? "No recipe contract. Sink output is treated as waste."
-          : recipeValid
-            ? "A bounded sink sample matches the saved recipe; live product validation remains authoritative."
-            : "The bounded sink sample diverges from the saved recipe; live mismatches are waste."}
-      </div>
-
-      {/* run controls */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-        <button
-          type="button"
-          onClick={() => setPlaying(true)}
-          disabled={playing || state.deadlocked}
-          style={{ ...btn, ...(playing ? active : {}) }}
-          data-testid="factory-play"
-        >
-          ▶ Play
-        </button>
-        <button type="button" onClick={() => setPlaying(false)} disabled={!playing} style={btn} data-testid="factory-pause">
-          ❚❚ Pause
-        </button>
-        <button type="button" onClick={stepOnce} disabled={playing} style={btn} data-testid="factory-step">
-          ▶| Step
-        </button>
-        <button type="button" onClick={reset} style={btn} data-testid="factory-reset">
-          ⟲ Reset
-        </button>
-        <span style={{ width: 12 }} />
-        <button
-          type="button"
-          onClick={() => reinit(fitPreset(singlePreset(), layout.width, layout.height))}
-          style={btn}
-          data-testid="preset-single"
-        >
-          Preset: single
-        </button>
-        <button
-          type="button"
-          onClick={() => reinit(fitPreset(parallelPreset(), layout.width, layout.height))}
-          style={btn}
-          data-testid="preset-parallel"
-        >
-          Preset: parallel
-        </button>
-      </div>
-
-      {/* status */}
-      <div
-        data-testid="factory-status"
-        role="status"
-        style={{
-          margin: "0 0 12px",
-          padding: "10px 12px",
-          borderRadius: 8,
-          fontSize: 14,
-          fontWeight: 600,
-          background: state.deadlocked ? "#fdeaea" : "#eef2f6",
-          color: state.deadlocked ? "#a11d1d" : "#3a4450",
-          border: `1px solid ${state.deadlocked ? "#f3c4c4" : "#d9e0e7"}`,
-        }}
-      >
-        tick <span data-testid="factory-tick">{state.tick}</span> · total sink outcomes{" "}
-        <span data-testid="factory-produced">{state.producedTotal}</span> (includes waste) · waste{" "}
-        <span data-testid="factory-waste">{factoryWaste}</span> · throughput{" "}
-        <span data-testid="factory-rate">{rate}</span> units/tick · bottleneck{" "}
-        <span data-testid="factory-bottleneck">
-          {throughput === null
-            ? "unavailable"
-            : throughput.bottleneck === null
-              ? "none"
-              : `#${throughput.bottleneck} (${throughput.bottleneckType})`}
-        </span>
-        {state.deadlocked ? " · DEADLOCKED" : ""}
-      </div>
-
-      {analysisError !== "" && (
-        <div
-          role="alert"
-          data-testid="factory-analysis-error"
-          style={{ color: "#a11d1d", marginBottom: 10, fontSize: 13 }}
-        >
-          {analysisError}
-        </div>
-      )}
-
-      {/* canvas (click to edit) */}
-      {rendererError !== null && (
-        <div
-          role="alert"
-          data-testid="factory-render-error"
-          style={{ color: "#a11d1d", marginBottom: 10, fontSize: 13 }}
-        >
-          {rendererError}
-        </div>
-      )}
-      <div
-        ref={mountRef}
-        onClick={onCanvasClick}
-        data-testid="factory-canvas"
-        style={{
-          display: "inline-block",
-          border: "1px solid #d4dce4",
-          borderRadius: 8,
-          overflow: "hidden",
-          lineHeight: 0,
-          cursor: "crosshair",
-        }}
-      />
-
-      {/* palette / editing */}
-      <div style={{ display: "flex", gap: 24, flexWrap: "wrap", marginTop: 14 }}>
-        <div style={{ flex: "1 1 320px" }}>
-          <h2 style={sectionTitle}>Tile palette (click a cell to place)</h2>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-            {tileBrushBtn("belt", "Belt")}
-            {tileBrushBtn("splitter", "Splitter")}
-            {tileBrushBtn("merger", "Merger")}
-            {tileBrushBtn("source", "Source")}
-            {tileBrushBtn("sink", "Sink")}
-            {tileBrushBtn("erase", "Erase")}
+    <div className="game-view factory-workspace" data-testid="factory-workspace">
+      <div className="world-layout">
+        <section className="world-viewport factory-world" aria-label="Factory construction workspace">
+          {rendererError !== null && <div role="alert" data-testid="factory-render-error" className="game-alert factory-render-alert">{rendererError}</div>}
+          <div className="transport-bar" aria-label="Factory transport controls">
+            <button type="button" onClick={() => setPlaying(true)} disabled={playing || state.deadlocked} className={playing ? "is-active" : ""} data-testid="factory-play">▶</button>
+            <button type="button" onClick={() => setPlaying(false)} disabled={!playing} data-testid="factory-pause">Ⅱ</button>
+            <button type="button" onClick={stepOnce} disabled={playing} data-testid="factory-step">▶|</button>
+            <button type="button" onClick={reset} data-testid="factory-reset">↺</button>
+            <button type="button" onClick={() => setCamera({ x: 0, y: 0, zoom: 1 })} data-testid="factory-camera-reset" aria-label="Reset factory camera">⌖</button>
+            <output className="zoom-readout" data-testid="factory-zoom">{Math.round(camera.zoom * 100)}%</output>
           </div>
 
-          <div style={{ marginTop: 12 }}>
-            <h2 style={sectionTitle}>Machine types (footprint = its shape)</h2>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-              {DEFAULT_CATALOG.map((entry) => {
-                const unlocked = catalog.some((candidate) => candidate.typeId === entry.typeId);
-                return (
+          <div
+            className="factory-canvas-frame"
+            ref={frameRef}
+            data-testid="factory-canvas"
+            onPointerDown={onCanvasPointerDown}
+            onPointerMove={onCanvasPointerMove}
+            onPointerUp={finishCanvasGesture}
+            onPointerCancel={(event) => {
+              if (gestureRef.current?.pointerId === event.pointerId) gestureRef.current = null;
+              if (panGestureRef.current?.pointerId === event.pointerId) panGestureRef.current = null;
+              if (touchGestureRef.current?.pointerId === event.pointerId) touchGestureRef.current = null;
+            }}
+            onWheel={onCanvasWheel}
+            onContextMenu={(event) => event.preventDefault()}
+          >
+            <div className="factory-canvas-transform" style={{ transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})` }}>
+              <div ref={mountRef} className="factory-canvas-mount" />
+              {ghostCells.map((cell) => (
+                <div
+                  key={`${cell.x},${cell.y}`}
+                  className={`factory-ghost${gestureRef.current?.mode === "erase" ? " is-erase" : ""}${hoverPlacementValid ? "" : " is-invalid"}`}
+                  style={{ left: PAD + cell.x * CELL, top: PAD + cell.y * CELL }}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div className="toolbelt" role="toolbar" aria-label="Factory build hotbar" data-testid="factory-toolbelt">
+            {tileBrushBtn("belt", "Belt", "➜", "1")}
+            {tileBrushBtn("splitter", "Split", "⑂", "2")}
+            {tileBrushBtn("merger", "Merge", "⑃", "3")}
+            {tileBrushBtn("source", "Source", "S", "4")}
+            {tileBrushBtn("sink", "Sink", "◎", "5")}
+            {tileBrushBtn("erase", "Erase", "×", "6")}
+            <span className="toolbelt-divider" />
+            {DEFAULT_CATALOG.map((entry) => {
+              const unlocked = catalog.some((candidate) => candidate.typeId === entry.typeId);
+              const shortcutIndex = catalog.findIndex((candidate) => candidate.typeId === entry.typeId);
+              return (
                 <button
                   key={entry.typeId}
                   type="button"
                   onClick={() => setBrush({ kind: "machine", typeId: entry.typeId })}
                   disabled={!unlocked}
-                  style={{
-                    ...btn,
-                    ...(brush.kind === "machine" && brush.typeId === entry.typeId ? active : {}),
-                  }}
+                  className={`tool-slot${brush.kind === "machine" && brush.typeId === entry.typeId ? " is-selected" : ""}${unlocked ? "" : " is-locked"}`}
+                  aria-pressed={brush.kind === "machine" && brush.typeId === entry.typeId}
                   data-testid={`brush-machine-${entry.typeId}`}
+                  title={`${entry.typeId} · ${entry.speed} ticks/unit`}
                 >
-                  {entry.typeId}{unlocked ? "" : " (locked)"}
+                  <span className="tool-symbol">{entry.typeId.slice(0, 2).toUpperCase()}</span>
+                  <span className="tool-name">{entry.typeId}</span>
+                  {shortcutIndex >= 0 && shortcutIndex < 4 && (
+                    <span className="hotkey">{(shortcutIndex + 7) % 10}</span>
+                  )}
                 </button>
-                );
-              })}
-            </div>
+              );
+            })}
           </div>
-        </div>
+        </section>
 
-        <div style={{ flex: "1 1 280px" }}>
-          <h2 style={sectionTitle}>Brush settings</h2>
-          <div style={{ fontSize: 13, color: "#5a6470", marginBottom: 8 }}>
-            Selected: <strong data-testid="brush-selected">{brushLabel}</strong>
+        <aside className="inspector factory-inspector" data-testid="factory-inspector">
+          <div className="panel-kicker">Production floor</div>
+          <h1>HexaPharma Factory</h1>
+          <div className={`factory-metrics${state.deadlocked ? " is-error" : ""}`} data-testid="factory-status" role="status">
+            <div><span>Tick</span><strong data-testid="factory-tick">{state.tick}</strong></div>
+            <div><span>Total sink outcomes (includes waste)</span><strong data-testid="factory-produced">{state.producedTotal}</strong></div>
+            <div><span>Waste</span><strong data-testid="factory-waste">{factoryWaste}</strong></div>
+            <div><span>Throughput</span><strong><span data-testid="factory-rate">{rate}</span>/tick</strong></div>
+            <div><span>Bottleneck</span><strong data-testid="factory-bottleneck">{throughput === null ? "unavailable" : throughput.bottleneck === null ? "none" : `#${throughput.bottleneck} (${throughput.bottleneckType})`}</strong></div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
-            <button
-              type="button"
-              onClick={() => setBrushDir((d) => ((d + 1) & 3) as Dir)}
-              style={btn}
-              data-testid="brush-rotate"
-            >
-              Direction: {DIR_LABEL[brushDir]}
-            </button>
-            <button
-              type="button"
-              onClick={() => setFootRot((r) => ((r + 1) & 3) as Rotation)}
-              style={btn}
-              data-testid="brush-footrot"
-            >
-              footRot: {footRot} × 90°
-            </button>
-            <button
-              type="button"
-              onClick={() => setEffectRot((r) => ((r + 1) & 3) as Rotation)}
-              style={btn}
-              data-testid="brush-effect-rotate"
-            >
-              effectRot: {effectRot} × 90°
-            </button>
-            <button
-              type="button"
-              onClick={() => setEffectFlip((value) => !value)}
-              style={btn}
-              data-testid="brush-effect-flip"
-            >
-              effectFlip: {effectFlip ? "on" : "off"}
-            </button>
+
+          <div className="panel-section hover-inspector">
+            <div className="panel-heading"><h2>Cursor</h2><span className="hotkey">Q pick</span></div>
+            <div data-testid="factory-hover-cell">{hoverCell === null ? "outside" : `${hoverCell.x}, ${hoverCell.y}`}</div>
+            <strong data-testid="factory-hover-kind">{hoverKind}</strong>
           </div>
-          {brushIsMachine && (
-            <div style={{ fontSize: 13, color: "#5a6470" }}>
-              Fixed machine speed: {entryOf(brush.typeId).speed} ticks/unit. effectRot/effectFlip
-              change the drug transform; footRot only packs the footprint.
+
+          <div className="panel-section">
+            <div className="panel-heading"><h2>Build tool</h2><strong data-testid="brush-selected">{brushLabel}</strong></div>
+            <div className="brush-readout" data-testid="brush-direction">
+              {brushIsMachine ? `Footprint ${footRot * 90}°` : `Direction ${DIR_LABEL[brushDir]}`}
             </div>
-          )}
-          <p style={{ fontSize: 12, color: "#8a94a0", marginTop: 14 }}>
-            Tip: the default line has a catalog-defined slow <code>pull</code> bottleneck. Drop a
-            splitter before it, a second <code>pull</code> on the row below, and a merger
-            after — the throughput rate rises. Or hit <strong>Preset: parallel</strong> to
-            see it vs <strong>Preset: single</strong>.
-          </p>
-        </div>
+            <div className="panel-actions">
+              <button type="button" onClick={rotateActiveBrush} className="game-control" data-testid="brush-rotate">R · Rotate</button>
+              <button type="button" onClick={() => setFootRot((value) => ((value + 1) & 3) as Rotation)} disabled={!brushIsMachine} className="game-control" data-testid="brush-footrot">foot {footRot * 90}°</button>
+              <button type="button" onClick={() => setEffectRot((value) => ((value + 1) & 3) as Rotation)} disabled={!brushAcceptsEffectOrientation} className="game-control" data-testid="brush-effect-rotate">V · effect {effectRot * 90}°</button>
+              <button type="button" onClick={() => setEffectFlip((value) => !value)} disabled={!brushAcceptsEffectOrientation} className={`game-control${effectFlip ? " is-active" : ""}`} data-testid="brush-effect-flip">H · flip {effectFlip ? "on" : "off"}</button>
+            </div>
+            {brushIsMachine && <p>Speed {entryOf(brush.typeId).speed} ticks/unit. Footprint rotation and drug effect orientation are independent.</p>}
+          </div>
+
+          <div className="panel-section">
+            <h2>Recipe contract</h2>
+            <div data-testid="factory-recipe">
+              {recipe === null
+                ? "No saved recipe. Sink output is waste until a cure is sent from the Lab."
+                : `Saved recipe · ${recipe.steps.length} steps`}
+            </div>
+            <div className={recipeValid === false ? "is-error-text" : "is-success-text"} data-testid="factory-validity">
+              {sampleAnalysis.error !== null
+                ? "Bounded sample unavailable; live validation remains authoritative."
+                : recipeValid === null
+                  ? "No recipe contract. Sink output is treated as waste."
+                  : recipeValid
+                    ? "Bounded sample matches the saved recipe."
+                    : "Bounded sample diverges; live mismatches are waste."}
+            </div>
+          </div>
+
+          {analysisError !== "" && <div role="alert" data-testid="factory-analysis-error" className="game-alert">{analysisError}</div>}
+
+          <div className="panel-section">
+            <h2>Layout operations</h2>
+            <div className="brush-readout" data-testid="factory-clipboard">Clipboard {clipboardLabel}</div>
+            <div className="panel-actions">
+              <button type="button" onClick={undoLayout} disabled={history.past.length === 0} className="game-control" data-testid="factory-undo">↶ Undo</button>
+              <button type="button" onClick={redoLayout} disabled={history.future.length === 0} className="game-control" data-testid="factory-redo">↷ Redo</button>
+              <button type="button" onClick={() => copyHovered(false)} disabled={hoverCell === null || brushAt(layout, hoverCell) === null} className="game-control" data-testid="factory-copy">Copy</button>
+              <button type="button" onClick={() => copyHovered(true)} disabled={hoverCell === null || brushAt(layout, hoverCell) === null} className="game-control" data-testid="factory-cut">Cut</button>
+              <button type="button" onClick={pasteHovered} disabled={clipboardLabel === "empty" || hoverCell === null} className="game-control" data-testid="factory-paste">Paste</button>
+              <button type="button" onClick={() => commitLayout(fitPreset(singlePreset(), layout.width, layout.height))} className="game-control" data-testid="preset-single">Single</button>
+              <button type="button" onClick={() => commitLayout(fitPreset(parallelPreset(), layout.width, layout.height))} className="game-control" data-testid="preset-parallel">Parallel</button>
+            </div>
+          </div>
+          <div className="key-help"><span className="hotkey">LMB drag</span> build · <span className="hotkey">RMB drag</span> erase · <span className="hotkey">Shift drag</span> pan · <span className="hotkey">Wheel</span> zoom · <span className="hotkey">Ctrl C/X/V</span> clipboard · <span className="hotkey">Ctrl Z/Y</span> history</div>
+        </aside>
       </div>
     </div>
   );

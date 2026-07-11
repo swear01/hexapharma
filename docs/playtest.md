@@ -43,29 +43,30 @@ npm run preview -- --host 0.0.0.0 --port 53346 --strictPort
 
 ### Lab
 
-1. 可先勾選 `Reveal all (debug)`，方便確認地圖；它不會修改權威探索狀態。
-2. 依序加入 `push` 五次，再加入 `swap01` 一次。
-3. 按 `Run`。
-4. 預期結果至少治療 disease 0，且出現 `Save recipe → Factory`。
-5. 按 `Save recipe → Factory`，畫面應切到 Factory，並顯示 saved recipe。
+1. 可先勾選 `Reveal`，方便確認地圖；它不會修改權威探索狀態。
+2. 用底部 hotbar 或數字鍵依序加入 `push` 五次，再加入 `swap01` 一次；`R` 旋轉下一台機器、`H` flip、Backspace 移除最後一步。
+3. 按 `Run` 或 Space；動畫中再次按 Space／`Stop` 應可取消。
+4. 預期結果至少治療 disease 0，且右側 `Run a valid recipe to ship` 變為可按的送廠動作。
+5. 送往 Factory 後，F2 Factory rail 應 active，右側顯示 saved recipe。
 
 ### Factory
 
-1. 按 `Step` 六次，確認 tick 從 0 增加。
-2. 按 `Play`，等 `total sink outcomes`／produced 不再是 0，再按 `Pause`。
-3. 確認 inventory 產生、waste 沒有被誤算成可售藥。
-4. 可比較 `Preset: single` 與 `Preset: parallel`；parallel 的顯示吞吐應較高。
+1. 以底部 1–0 hotbar 選工具；LMB drag 連續建造，RMB drag 拆除，`R` 旋轉，hover 後 `Q` pipette。每次 drag 應只新增一筆 undo。
+2. Shift+LMB／MMB drag 平移，wheel 以游標下方為錨縮放，`⌖` 重置鏡頭；觸控以 tap 放置、drag 平移。鏡頭操作不得修改權威 layout。
+3. hover 物件後驗 `Ctrl+C/X/V` copy／cut／paste，以及 `Ctrl+Z/Y` undo／redo；新 edit 應切斷 redo branch，history 最多 50 筆。
+4. 按 `Step` 六次或使用 `.`，確認 tick 從 0 增加；按 `Play`／Space，等 `total sink outcomes` 不再是 0，再 Pause／Space。
+5. 確認 inventory 產生、waste 沒有被誤算成可售藥；可比較 inspector 底部 `Single` 與 `Parallel`，後者吞吐應較高。
 
-### Shop
+### Market
 
-1. 切到 `Shop`。
+1. 按 F3 或 rail 切到 `Market`；確認介面是 disease cards，不是資料表。
 2. disease 0 的 Inventory 應大於 0。
 3. 按 `Sell 1`：inventory 減少，Cash 增加，R&D 增加 1。
 4. 多生產幾顆後可驗 `Sell all`；它應一次完成，且不能重複出售同一顆實體藥。
 
 ### Patents
 
-1. 切到 `Patents`，確認 available／locked／unlocked 狀態合理。
+1. 按 F4 或 rail 切到 `R&D`，確認 research lattice 的 available／locked／unlocked 狀態合理。
 2. 有至少 80 Cash + 1 R&D 時解鎖 `reveal-aid`。
 3. 回 Lab，起點附近的 revealed 格數應增加。
 
@@ -109,4 +110,3 @@ npm run check
 - 預期結果與實際結果
 - 違反的不變式或第一個壞掉的 tick（若已知）
 - 畫面截圖與瀏覽器 console error（若是 UI 問題）
-

@@ -189,6 +189,7 @@ head單獨存放且pruning不移除；older history受≤20、≤1,250,000 chars
 - **sim core 不 import 任何 Pixi/React/DOM**——這條鐵律讓 core 能在 node 裡 headless 跑，是平行測試與可逆性的根本。
 - **renderer code split / 可見錯誤**：Lab/Factory只type-import renderer，mount時才`await import()` Pixi實作；載入或初始化失敗會顯示error，不以空canvas冒充成功。不使用會破壞Pixi初始化順序的手動vendor groups，也不靠提高warning threshold。Lab按實際map dimensions縮cell，Game canvas限制≤980×980。e2e production-preview先build、在throwaway`127.0.0.1:53348`切四tab，另驗2-map最寬/4-map最大；一般Chromium e2e用dev`:53347`。真人playtest仍只用`0.0.0.0:53346`。
 - **UI 派生狀態不冒充 authority**：Lab 在模板編輯、Run 開始、Reset 與換 level 時清掉舊 outcome，不能拿 stale 結果保存新模板。Factory 的 `producedTotal` 文案是「total sink outcomes（includes waste）」並另列 Game 權威 waste；bounded sample/throughput analysis 只作提示，thrown outcome/observation-budget diagnostic 顯示 `factory-analysis-error` alert（真正 throughput deadlock 是有效 `0/1`且無假瓶頸），live product validation 才決定入庫。
+- **直接操作 UI 契約**：遊戲使用 viewport-filling shell、固定 HUD／F1–F4 nav rail、世界優先的 Lab／Factory、底部 hotbar 與 persistent inspector。Factory 的 layout edit 只透過 `setFactory` intent；一個 pointer gesture 是一筆、最多保留 50 筆 undo history，LMB drag 建造、RMB drag 拆除、觸控 tap 放置／drag 平移、`Q/R/H/V`、`Ctrl+C/X/V` 與 undo/redo 都是同一 editor state 的入口。已造訪 view 保持 mounted 以保留 camera/tool state，但只有 active view 可接收 gameplay keys。詳細 keyboard、responsive、modal 與視覺邊界見 [ui-interaction.md](ui-interaction.md)。
 
 ## 2.3 Sim Core 模組（各有 typed interface + 各自測試）
 

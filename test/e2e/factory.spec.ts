@@ -121,9 +121,9 @@ test("Factory editing places a machine + a tile via the palette", async ({ page 
   await page.getByTestId("brush-machine-pull").click();
   await expect(page.getByTestId("brush-selected")).toContainText("pull");
   await page.getByTestId("brush-effect-rotate").click();
-  await expect(page.getByTestId("brush-effect-rotate")).toContainText("effectRot: 1");
+  await expect(page.getByTestId("brush-effect-rotate")).toContainText("effect 90°");
   await page.getByTestId("brush-footrot").click();
-  await expect(page.getByTestId("brush-footrot")).toContainText("footRot: 1");
+  await expect(page.getByTestId("brush-footrot")).toContainText("foot 90°");
   // Click an empty cell on a lower row to place the machine (added to layout.machines).
   await canvas.click({ position: { x: center(3), y: center(3) } });
   // Editing re-inits the sim → tick resets to 0.
@@ -132,7 +132,7 @@ test("Factory editing places a machine + a tile via the palette", async ({ page 
   // Place a belt tile too (direction toggle works for tiles).
   await page.getByTestId("brush-belt").click();
   await page.getByTestId("brush-rotate").click(); // → S
-  await expect(page.getByTestId("brush-rotate")).toContainText("S");
+  await expect(page.getByTestId("brush-direction")).toContainText("S");
   await canvas.click({ position: { x: center(4), y: center(3) } });
   await expect(page.getByTestId("factory-tick")).toHaveText("0");
 

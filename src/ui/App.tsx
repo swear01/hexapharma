@@ -92,6 +92,7 @@ function outcomeText(outcome: Outcome | null, won: boolean): string {
 // ───────────────────────────── component ─────────────────────────────
 
 interface AppProps {
+  readonly active: boolean;
   readonly level: GeneratedLevel;
   /** Persistent exploration fog (one Uint8Array per map), owned by the Game. */
   readonly fog: readonly Uint8Array[];
@@ -101,7 +102,7 @@ interface AppProps {
   readonly onSaveRecipe: (winning: Template) => void;
 }
 
-export function App({ level, fog, catalog, onExplore, onSaveRecipe }: AppProps) {
+export function App({ active, level, fog, catalog, onExplore, onSaveRecipe }: AppProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<LabRenderer | null>(null);
   const [rendererError, setRendererError] = useState<string | null>(null);
@@ -277,6 +278,13 @@ export function App({ level, fog, catalog, onExplore, onSaveRecipe }: AppProps) 
     window.setTimeout(tick, 260);
   }, [running, steps, mm, start, onExplore]);
 
+  const cancelRun = useCallback(() => {
+    runIdRef.current++;
+    setRunning(false);
+    setOutcome(null);
+    setShownDrug(start);
+  }, [start]);
+
   // ── Reset: clear the TEMPLATE + token; KEEP what's been explored (fog persists) ──
   const reset = useCallback(() => {
     runIdRef.current++; // cancel any in-flight animation
@@ -300,246 +308,154 @@ export function App({ level, fog, catalog, onExplore, onSaveRecipe }: AppProps) 
     setShownDrug(start);
   }, [mm, start]);
 
-  // ───────────────────────────── render ─────────────────────────────
-
-  const btn: React.CSSProperties = {
-    padding: "6px 10px",
-    border: "1px solid #b8c2cc",
-    borderRadius: 6,
-    background: "#fff",
-    cursor: "pointer",
-    fontSize: 13,
-  };
-  const sectionTitle: React.CSSProperties = { margin: "0 0 6px", fontSize: 14, color: "#475260" };
+  useEffect(() => {
+    if (!active) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target;
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLSelectElement ||
+        target instanceof HTMLTextAreaElement ||
+        (target instanceof HTMLElement && target.isContentEditable)
+      ) {
+        return;
+      }
+      if (/^Digit[1-9]$/.test(event.code)) {
+        const index = Number(event.code.slice(5)) - 1;
+        const entry = DEFAULT_CATALOG[index];
+        if (entry !== undefined && catalog.some((candidate) => candidate.typeId === entry.typeId)) {
+          event.preventDefault();
+          addMachine(entry);
+        }
+        return;
+      }
+      if (event.key.toLowerCase() === "r") {
+        event.preventDefault();
+        setRot((value) => ((value + 1) % 4) as Rotation);
+      } else if (event.key.toLowerCase() === "h") {
+        event.preventDefault();
+        setFlip((value) => !value);
+      } else if (event.key === "Backspace" || event.key === "Delete") {
+        event.preventDefault();
+        removeLast();
+      } else if (event.code === "Space") {
+        event.preventDefault();
+        if (running) cancelRun();
+        else run();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [active, addMachine, cancelRun, catalog, removeLast, run, running]);
 
   return (
-    <div
-      style={{
-        fontFamily: "Arial, sans-serif",
-        color: "#1d242c",
-        maxWidth: 980,
-        margin: "0 auto",
-        padding: 16,
-      }}
-    >
-      <h1 style={{ margin: "0 0 4px" }}>HexaPharma Lab</h1>
-      <p style={{ margin: "0 0 14px", color: "#5a6470" }}>
-        The maps start FOGGED (shown as “?”). Place machines into a template, then Run
-        to sweep the drug across the effect maps — each run reveals the cells it passes
-        (exploration persists). Cure all targets ({targets.join(", ")}) to win.
-      </p>
+    <div className="game-view lab-workspace" data-testid="lab-workspace">
+      <div className="world-layout">
+        <section className="world-viewport lab-world" aria-label="Effect map workspace">
+          {rendererError !== null && (
+            <div role="alert" data-testid="lab-render-error" className="game-alert lab-render-alert">
+              {rendererError}
+            </div>
+          )}
+          <div ref={mountRef} data-testid="lab-canvas" className="lab-canvas" />
 
-      {/* level controls */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
-          flexWrap: "wrap",
-          marginBottom: 12,
-        }}
-      >
-        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
-          <input
-            type="checkbox"
-            checked={reveal}
-            onChange={(e) => setReveal(e.target.checked)}
-            data-testid="reveal"
-          />
-          Reveal all (debug)
-        </label>
-        {canShip && (
-          <button
-            type="button"
-            onClick={() => onSaveRecipe({ steps })}
-            style={{
-              ...btn,
-              background: "#15724a",
-              color: "#fff",
-              borderColor: "#0f5c3a",
-              fontWeight: 700,
-            }}
-            data-testid="save-recipe"
-          >
-            {won ? "Save recipe → Factory (cures all)" : "Save recipe → Factory"}
-          </button>
-        )}
-      </div>
+          <div className="transport-bar" aria-label="Lab run controls">
+            <button type="button" onClick={running ? cancelRun : run} disabled={steps.length === 0} className={running ? "is-active" : ""} data-testid="run">
+              {running ? "■ Stop" : "▶ Run"}
+            </button>
+            <button type="button" onClick={reset} data-testid="reset">↺ Reset</button>
+            <label className="debug-toggle">
+              <input type="checkbox" checked={reveal} onChange={(event) => setReveal(event.target.checked)} data-testid="reveal" />
+              Reveal
+            </label>
+          </div>
 
-      {/* level info */}
-      <div data-testid="level-info" style={{ fontSize: 12, color: "#5a6470", marginBottom: 10 }}>
-        seed {level.seed} · <span data-testid="map-count">{mm.maps.length} maps</span> ·{" "}
-        <span data-testid="revealed-count">
-          revealed {revealedCount.revealed}/{revealedCount.total}
-        </span>{" "}
-        ·{" "}
-        {level.diseases
-          .map((d) => `disease ${d.id} (map ${d.map}): difficulty ${d.difficulty}, price ${d.basePrice}`)
-          .join(" · ")}
-      </div>
+          <div className={`lab-status${outcome?.failed ? " is-error" : won ? " is-success" : ""}`} data-testid="status" role="status">
+            {outcomeText(outcome, won)}
+          </div>
 
-      {/* canvas */}
-      {rendererError !== null && (
-        <div
-          role="alert"
-          data-testid="lab-render-error"
-          style={{ color: "#a11d1d", marginBottom: 10, fontSize: 13 }}
-        >
-          {rendererError}
-        </div>
-      )}
-      <div
-        ref={mountRef}
-        data-testid="lab-canvas"
-        style={{
-          display: "inline-block",
-          border: "1px solid #d4dce4",
-          borderRadius: 8,
-          overflow: "hidden",
-          lineHeight: 0,
-        }}
-      />
-
-      {/* status / outcome */}
-      <div
-        data-testid="status"
-        role="status"
-        style={{
-          margin: "12px 0",
-          padding: "10px 12px",
-          borderRadius: 8,
-          fontSize: 15,
-          fontWeight: 600,
-          background: outcome?.failed ? "#fdeaea" : won ? "#e7f7ef" : "#eef2f6",
-          color: outcome?.failed ? "#a11d1d" : won ? "#15724a" : "#3a4450",
-          border: `1px solid ${outcome?.failed ? "#f3c4c4" : won ? "#bce6d2" : "#d9e0e7"}`,
-        }}
-      >
-        {outcomeText(outcome, won)}
-      </div>
-
-      <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
-        {/* palette */}
-        <div style={{ flex: "1 1 320px" }}>
-          <h2 style={sectionTitle}>Machine palette</h2>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-            {DEFAULT_CATALOG.map((entry) => {
+          <div className="toolbelt" role="toolbar" aria-label="Lab machine hotbar" data-testid="lab-toolbelt">
+            {DEFAULT_CATALOG.map((entry, index) => {
               const unlocked = catalog.some((candidate) => candidate.typeId === entry.typeId);
               return (
-              <button
-                key={entry.typeId}
-                type="button"
-                onClick={() => addMachine(entry)}
-                disabled={running || !unlocked}
-                style={btn}
-                title={transformLabel(entry.transform)}
-                data-testid={`palette-${entry.typeId}`}
-              >
-                + {entry.typeId}{unlocked ? "" : " (locked)"}
-              </button>
+                <button
+                  key={entry.typeId}
+                  type="button"
+                  onClick={() => addMachine(entry)}
+                  disabled={running || !unlocked}
+                  className={`tool-slot${unlocked ? "" : " is-locked"}`}
+                  title={`${transformLabel(entry.transform)} · ${index + 1}`}
+                  data-testid={`palette-${entry.typeId}`}
+                >
+                  <span className="tool-symbol" aria-hidden="true">{entry.typeId.slice(0, 2).toUpperCase()}</span>
+                  <span className="tool-name">{entry.typeId}</span>
+                  <span className="hotkey">{index + 1}</span>
+                </button>
               );
             })}
           </div>
+        </section>
 
-          <div style={{ marginTop: 12 }}>
-            <h2 style={sectionTitle}>Orientation (for orientable translate machines)</h2>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <button
-                type="button"
-                onClick={() => setRot((r) => ((r + 1) % 4) as Rotation)}
-                disabled={running}
-                style={btn}
-                data-testid="rotate"
-              >
-                Rotate ↻ ({ROT_LABEL[rot]})
+        <aside className="inspector lab-inspector" data-testid="lab-inspector">
+          <div className="panel-kicker">Research workspace</div>
+          <h1>Effect Atlas</h1>
+          <div data-testid="level-info" className="level-readout">
+            seed {level.seed} · <span data-testid="map-count">{mm.maps.length} maps</span><br />
+            <span data-testid="revealed-count">revealed {revealedCount.revealed}/{revealedCount.total}</span>
+          </div>
+          <div className="disease-stack">
+            {level.diseases.map((disease) => (
+              <div className="disease-chip" key={disease.id}>
+                <strong>D{disease.id}</strong>
+                <span>map {disease.map} · diff {disease.difficulty}</span>
+                <output>{disease.basePrice}</output>
+              </div>
+            ))}
+          </div>
+
+          <div className="panel-section">
+            <div className="panel-heading">
+              <h2>Recipe timeline</h2>
+              <span data-testid="template-count">{steps.length}</span>
+            </div>
+            <ol data-testid="template-list" className="recipe-timeline">
+              {steps.length === 0 ? (
+                <li className="is-empty">Choose a machine from the hotbar.</li>
+              ) : (
+                steps.map((machine, index) => <li key={index}><span>{index + 1}</span>{stepLabel(machine)}</li>)
+              )}
+            </ol>
+            <div className="panel-actions">
+              <button type="button" onClick={removeLast} disabled={running || steps.length === 0} className="game-control" data-testid="remove-last">⌫ Last</button>
+              <button type="button" onClick={clearTemplate} disabled={running || steps.length === 0} className="game-control" data-testid="clear">Clear</button>
+            </div>
+          </div>
+
+          <div className="panel-section">
+            <h2>Next machine orientation</h2>
+            <div className="panel-actions">
+              <button type="button" onClick={() => setRot((value) => ((value + 1) % 4) as Rotation)} disabled={running} className="game-control" data-testid="rotate">
+                R · {ROT_LABEL[rot]}
               </button>
-              <button
-                type="button"
-                onClick={() => setFlip((f) => !f)}
-                disabled={running}
-                style={{ ...btn, background: flip ? "#e7f0ff" : "#fff" }}
-                data-testid="flip"
-              >
-                Flip: {flip ? "on" : "off"}
+              <button type="button" onClick={() => setFlip((value) => !value)} disabled={running} className={`game-control${flip ? " is-active" : ""}`} data-testid="flip">
+                H · Flip {flip ? "on" : "off"}
               </button>
             </div>
           </div>
-        </div>
 
-        {/* template */}
-        <div style={{ flex: "1 1 320px" }}>
-          <h2 style={sectionTitle}>Template ({steps.length} step{steps.length === 1 ? "" : "s"})</h2>
-          <ol
-            data-testid="template-list"
-            style={{
-              margin: 0,
-              paddingLeft: 22,
-              minHeight: 60,
-              maxHeight: 180,
-              overflowY: "auto",
-              fontSize: 13,
-              border: "1px solid #e1e7ed",
-              borderRadius: 6,
-              padding: "8px 8px 8px 28px",
-              background: "#fafcfe",
-            }}
+          <button
+            type="button"
+            onClick={() => onSaveRecipe({ steps })}
+            className="primary-action"
+            data-testid="save-recipe"
+            disabled={!canShip}
           >
-            {steps.length === 0 ? (
-              <li style={{ listStyle: "none", marginLeft: -16, color: "#8a94a0" }}>
-                (empty — add machines from the palette)
-              </li>
-            ) : (
-              steps.map((m, i) => <li key={i}>{stepLabel(m)}</li>)
-            )}
-          </ol>
-          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-            <button
-              type="button"
-              onClick={removeLast}
-              disabled={running || steps.length === 0}
-              style={btn}
-              data-testid="remove-last"
-            >
-              Remove last
-            </button>
-            <button
-              type="button"
-              onClick={clearTemplate}
-              disabled={running || steps.length === 0}
-              style={btn}
-              data-testid="clear"
-            >
-              Clear
-            </button>
-          </div>
-
-          <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-            <button
-              type="button"
-              onClick={run}
-              disabled={running || steps.length === 0}
-              style={{
-                ...btn,
-                background: "#1d6fe0",
-                color: "#fff",
-                borderColor: "#1862c6",
-                fontWeight: 700,
-                padding: "8px 18px",
-              }}
-              data-testid="run"
-            >
-              {running ? "Running…" : "Run"}
-            </button>
-            <button
-              type="button"
-              onClick={reset}
-              style={{ ...btn, padding: "8px 18px" }}
-              data-testid="reset"
-            >
-              Reset
-            </button>
-          </div>
-        </div>
+            {canShip
+              ? won ? "Send complete cure to Factory" : "Send recipe to Factory"
+              : "Run a valid recipe to ship"}
+          </button>
+          <div className="key-help"><span className="hotkey">Space</span> run · <span className="hotkey">R</span> rotate · <span className="hotkey">H</span> mirror · <span className="hotkey">⌫</span> remove</div>
+        </aside>
       </div>
     </div>
   );

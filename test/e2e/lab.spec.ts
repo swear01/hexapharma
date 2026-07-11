@@ -14,8 +14,8 @@ test("HexaPharma Lab loads a generated level, runs a template, and reports an ou
 }) => {
   await page.goto("/");
 
-  // Heading + canvas present.
-  await expect(page.getByRole("heading", { name: /HexaPharma/i })).toBeVisible();
+  // Persistent game shell + Lab canvas present.
+  await expect(page.getByTestId("game-shell")).toBeVisible();
   const canvas = page.locator("[data-testid='lab-canvas'] canvas");
   await expect(canvas).toBeVisible();
 
@@ -75,7 +75,7 @@ test("The Lab is fogged by default; a run reveals cells; reveal-all toggles", as
   expect(differs(beforeRun, afterRun)).toBe(true);
 
   await page.getByTestId("reset").click();
-  await expect(page.getByTestId("template-list")).toContainText("empty");
+  await expect(page.getByTestId("template-list")).toContainText("Choose a machine");
   const afterReset = await canvasShot(canvas);
   // Reset keeps revealed cells: still differs from the original all-fogged view.
   expect(differs(beforeRun, afterReset)).toBe(true);
@@ -103,7 +103,7 @@ test("Reset clears the template back to empty", async ({ page }) => {
   await expect(page.getByTestId("template-list")).toContainText("push2");
 
   await page.getByTestId("reset").click();
-  await expect(page.getByTestId("template-list")).toContainText("empty");
+  await expect(page.getByTestId("template-list")).toContainText("Choose a machine");
 });
 
 test("editing a completed template invalidates its stale outcome", async ({ page }) => {
@@ -114,16 +114,16 @@ test("editing a completed template invalidates its stale outcome", async ({ page
   await expect(page.getByTestId("save-recipe")).toBeVisible({ timeout: 10_000 });
 
   await page.getByTestId("palette-push").click();
-  await expect(page.getByTestId("save-recipe")).toBeHidden();
+  await expect(page.getByTestId("save-recipe")).toBeDisabled();
   await expect(page.getByTestId("status")).toContainText("Build a template");
 
   await page.getByTestId("remove-last").click();
-  await expect(page.getByTestId("save-recipe")).toBeHidden();
+  await expect(page.getByTestId("save-recipe")).toBeDisabled();
   await page.getByTestId("run").click();
   await expect(page.getByTestId("save-recipe")).toBeVisible({ timeout: 10_000 });
 
   await page.getByTestId("clear").click();
-  await expect(page.getByTestId("save-recipe")).toBeHidden();
+  await expect(page.getByTestId("save-recipe")).toBeDisabled();
   await expect(page.getByTestId("status")).toContainText("Build a template");
 });
 

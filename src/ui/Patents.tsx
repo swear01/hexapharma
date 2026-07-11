@@ -6,11 +6,12 @@
  * asks the Game to regenerate a deeper level. Active effects are summarized via
  * `activeEffects`. No unlock logic is reimplemented — the Shop/Patents only CALL sim.
  */
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { EconomyState, PatentState } from "../sim/phase0_interfaces";
 import { DEFAULT_PATENTS, canUnlock, activeEffects } from "../sim/patent";
 
 interface PatentsProps {
+  readonly active: boolean;
   readonly economy: EconomyState;
   readonly patents: PatentState;
   readonly onUnlock: (id: string) => void;
@@ -30,53 +31,66 @@ function effectLabel(node: (typeof DEFAULT_PATENTS)[number]): string {
   }
 }
 
-export function Patents({ economy, patents, onUnlock }: PatentsProps) {
+export function Patents({ active, economy, patents, onUnlock }: PatentsProps) {
   const eff = activeEffects(DEFAULT_PATENTS, patents);
   const [pendingMapUnlock, setPendingMapUnlock] = useState<string | null>(null);
+  const confirmRef = useRef<HTMLButtonElement | null>(null);
+  const cancelRef = useRef<HTMLButtonElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const closeConfirmation = useCallback((restoreFocus = true) => {
+    setPendingMapUnlock(null);
+    if (restoreFocus) window.requestAnimationFrame(() => triggerRef.current?.focus());
+  }, []);
 
-  const btn: React.CSSProperties = {
-    padding: "6px 10px",
-    border: "1px solid #b8c2cc",
-    borderRadius: 6,
-    background: "#fff",
-    cursor: "pointer",
-    fontSize: 13,
-  };
-  const cell: React.CSSProperties = { padding: "8px 10px", borderBottom: "1px solid #eef2f6", fontSize: 13 };
+  useEffect(() => {
+    if (!active) setPendingMapUnlock(null);
+  }, [active]);
+
+  useEffect(() => {
+    if (!active || pendingMapUnlock === null) return;
+    confirmRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeConfirmation();
+      } else if (event.key === "Tab") {
+        event.preventDefault();
+        if (document.activeElement === confirmRef.current) cancelRef.current?.focus();
+        else confirmRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [active, closeConfirmation, pendingMapUnlock]);
 
   return (
-    <div style={{ fontFamily: "Arial, sans-serif", color: "#1d242c", maxWidth: 980, margin: "0 auto" }}>
-      <h1 style={{ margin: "0 0 4px" }}>HexaPharma Patents</h1>
-      <p style={{ margin: "0 0 14px", color: "#5a6470" }}>
-        Spend cash + research to deepen your lab. The <strong>new-map</strong> patents regenerate a
-        bigger, deeper level. This clears the saved recipe, factory layout and runtime,
-        factory waste, inventory, explored fog, and disease sales history; it keeps cash
-        and R&amp;D after the patent cost, unlocked patents, and the next inventory ID.
-      </p>
+    <div className="game-view management-view patents-view">
+      <header className="management-header">
+        <div className="panel-kicker">Research network</div>
+        <h1>Patent Lattice</h1>
+        <p>Invest cash and R&amp;D to unlock machines, factory capacity, exploration aids, and deeper maps.</p>
+        <div data-testid="patents-effects" className="effects-strip">
+          <span>Factory +{eff.factoryDw}w +{eff.factoryDh}h</span>
+          <span>Reveal +{eff.revealAid}</span>
+          <span>Machines {eff.unlockedMachines.length}</span>
+          <span>Deep map {eff.newMapUnlocked ? "online" : "locked"}</span>
+        </div>
+      </header>
 
       {pendingMapUnlock !== null && (
-        <div
-          role="alertdialog"
-          aria-label="Confirm deeper level reset"
-          data-testid="patent-confirmation"
-          style={{
-            maxWidth: 740,
-            marginBottom: 12,
-            padding: "10px 12px",
-            border: "1px solid #e2b35b",
-            borderRadius: 8,
-            background: "#fff7e8",
-            color: "#5c4518",
-            fontSize: 13,
-          }}
-        >
-          <strong>Start a deeper level?</strong> This permanently clears the saved recipe,
-          factory layout and runtime, factory waste, inventory, explored fog, and disease
-          sales history. Cash and R&amp;D after the cost, patents, and the next inventory ID remain.
-          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+        <div className="game-modal-backdrop" onPointerDown={(event) => {
+          if (event.currentTarget === event.target) closeConfirmation();
+        }}>
+          <div role="alertdialog" aria-modal="true" aria-label="Confirm deeper level reset" data-testid="patent-confirmation" className="game-modal">
+            <div className="warning-mark" aria-hidden="true">!</div>
+            <h2>Start a deeper level?</h2>
+            <p>This permanently clears the saved recipe, factory layout and runtime, factory waste, inventory, explored fog, and disease sales history.</p>
+            <p>Cash and R&amp;D after the cost, patents, and the next inventory ID remain.</p>
+            <div className="modal-actions">
             <button
+              ref={confirmRef}
               type="button"
-              style={btn}
+              className="danger-action"
               data-testid={`patent-confirm-${pendingMapUnlock}`}
               onClick={() => {
                 const id = pendingMapUnlock;
@@ -87,67 +101,58 @@ export function Patents({ economy, patents, onUnlock }: PatentsProps) {
               Confirm deeper level
             </button>
             <button
+              ref={cancelRef}
               type="button"
-              style={btn}
+              className="game-control"
               data-testid={`patent-cancel-${pendingMapUnlock}`}
-              onClick={() => setPendingMapUnlock(null)}
+              onClick={() => closeConfirmation()}
             >
               Cancel
             </button>
+            </div>
           </div>
         </div>
       )}
 
-      <div data-testid="patents-effects" style={{ fontSize: 12, color: "#5a6470", marginBottom: 12 }}>
-        Active effects · factory +{eff.factoryDw}w +{eff.factoryDh}h · reveal aid {eff.revealAid} ·
-        machines [{eff.unlockedMachines.join(", ") || "none"}] · new map {eff.newMapUnlocked ? "yes" : "no"}
-      </div>
-
-      <table data-testid="patents-table" style={{ borderCollapse: "collapse", width: "100%", maxWidth: 760 }}>
-        <thead>
-          <tr style={{ textAlign: "left", color: "#475260", fontSize: 12 }}>
-            <th style={cell}>Patent</th>
-            <th style={cell}>Effect</th>
-            <th style={cell}>Cost</th>
-            <th style={cell}>Requires</th>
-            <th style={cell}>State</th>
-            <th style={cell}>Unlock</th>
-          </tr>
-        </thead>
-        <tbody>
+      <div className="patent-grid" data-testid="patent-grid">
+        <div className="patent-grid-contents" data-testid="patents-table">
           {DEFAULT_PATENTS.map((node) => {
             const unlocked = patents.unlocked.includes(node.id);
             const affordable = canUnlock(DEFAULT_PATENTS, patents, economy.cash, economy.research, node.id);
             const stateLabel = unlocked ? "unlocked" : affordable ? "available" : "locked";
             return (
-              <tr key={node.id} data-testid={`patent-row-${node.id}`}>
-                <td style={cell}>{node.id}</td>
-                <td style={cell}>{effectLabel(node)}</td>
-                <td style={cell}>{node.cost} cash + {node.researchCost} R&amp;D</td>
-                <td style={cell}>{node.requires.join(", ") || "—"}</td>
-                <td style={cell} data-testid={`patent-state-${node.id}`}>{stateLabel}</td>
-                <td style={cell}>
+              <article key={node.id} className={`patent-card is-${stateLabel}`} data-testid={`patent-row-${node.id}`}>
+                <div className="patent-node-line" aria-hidden="true" />
+                <div className="patent-card-heading">
+                  <span className="patent-emblem">⌬</span>
+                  <div><h2>{node.id}</h2><small>{effectLabel(node)}</small></div>
+                </div>
+                <div className="patent-requirement">Requires: {node.requires.join(", ") || "root"}</div>
+                <div className="patent-cost">{node.cost} cash · {node.researchCost} R&amp;D</div>
+                <div className={`state-chip is-${stateLabel}`} data-testid={`patent-state-${node.id}`}>{stateLabel}</div>
                   <button
                     type="button"
                     onClick={() => {
                       if (node.effect.kind === "unlockMap") {
+                        triggerRef.current = document.activeElement instanceof HTMLButtonElement
+                          ? document.activeElement
+                          : null;
                         setPendingMapUnlock(node.id);
                       } else {
                         onUnlock(node.id);
                       }
                     }}
                     disabled={unlocked || !affordable}
-                    style={btn}
+                    className={affordable ? "primary-action" : "game-control"}
                     data-testid={`patent-unlock-${node.id}`}
                   >
                     {unlocked ? "Owned" : "Unlock"}
                   </button>
-                </td>
-              </tr>
+              </article>
             );
           })}
-        </tbody>
-      </table>
+        </div>
+      </div>
     </div>
   );
 }

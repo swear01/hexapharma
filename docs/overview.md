@@ -24,7 +24,7 @@ HexaPharma（暫定名）是一款融合兩種玩法的 2D 單人本地遊戲：
 - **經濟 / 進程**：difficulty價格以BigInt exact rational計算；銷售取得cash/R&D，各疾病sold counter使單品遞減，現行無訂單。inventory ≤24,500、bulk ≤100,000 IDs。專利控制機器/揭霧/擴廠/2→3→4圖；手建entitlement是`9×6 + patent delta`，既存尺寸只有patent可改。public patent helpers拒絕invalid tree/state/cash/research，`activeEffects`的factory/reveal aggregate overflow也checked throw。
 - **public core 與 Game/UI bounds**：public mapgen/factory-sim各容許至65,536格；Game map另限每邊32、每圖1,024格，Game factory另限每邊256、總計4,096格。前者保留headless API能力，後者是renderer-safe authority；Lab依實際dimensions縮cell並限制canvas ≤980×980，production preview覆蓋2-map最寬與4-map最大。效果圖`sideEffectId`使用`Int32Array`。
 - **整局狀態 / Save v3**：單一state/head ≤4,096 trace/≤100,000 ticks/≤100,000,000 work，inventory ≤24,500。正常100,000-tick reference約31,000,000。full wire ≤5,000,000 chars才round-trip；full/compact load皆從raw origin+trace preflight後replay。
-- **持久化 / UI**：rewind共用aggregate 12,000 ticks/8,192 entries/100,000,000；compact另限20/1,250,000 chars。`serializeSlots`/`deserializeSlots`同界，deserialize在任何state replay前驗raw list；legacy先history、必要時head-alone。timeline同origin/normalization-aware，跨run replace。Factory diagnostics另有100,000,000 pre-init work cap。
+- **持久化 / UI**：rewind共用aggregate 12,000 ticks/8,192 entries/100,000,000；compact另限20/1,250,000 chars。`serializeSlots`/`deserializeSlots`同界，deserialize在任何state replay前驗raw list；legacy先history、必要時head-alone。timeline同origin/normalization-aware，跨run replace。Factory diagnostics另有100,000,000 pre-init work cap。UI 是全螢幕工廠遊戲 shell；Factory 以畫布直接拖建／拆除、pan／zoom、pipette、clipboard 與 50 步 history 操作，Lab／Market／Patents 分別使用 hotbar+inspector／cards／research lattice；只有 active view 接 gameplay hotkeys。
 - **求解器**：僅供 tests/tools 驗證與稽核；production 建構式 mapgen 不 import 它，遊戲更**絕不**提供一鍵自動解。
 
 ## External Resources

@@ -47,74 +47,57 @@ export function Shop({ level, economy, inventory, onSell }: ShopProps) {
     [inventory, onSell],
   );
 
-  const btn: React.CSSProperties = {
-    padding: "6px 10px",
-    border: "1px solid #b8c2cc",
-    borderRadius: 6,
-    background: "#fff",
-    cursor: "pointer",
-    fontSize: 13,
-  };
-  const cell: React.CSSProperties = { padding: "8px 10px", borderBottom: "1px solid #eef2f6", fontSize: 13 };
-
   return (
-    <div style={{ fontFamily: "Arial, sans-serif", color: "#1d242c", maxWidth: 980, margin: "0 auto" }}>
-      <h1 style={{ margin: "0 0 4px" }}>HexaPharma Shop</h1>
-      <p style={{ margin: "0 0 14px", color: "#5a6470" }}>
-        Sell produced units. Each successive unit of the SAME disease fetches less
-        (diminishing demand), so diversifying your cures pays. Production cost per
-        unit is taken from the machines that physical product actually traversed; side-effects are penalized.
-      </p>
-
-      <table data-testid="shop-table" style={{ borderCollapse: "collapse", width: "100%", maxWidth: 760 }}>
-        <thead>
-          <tr style={{ textAlign: "left", color: "#475260", fontSize: 12 }}>
-            <th style={cell}>Disease</th>
-            <th style={cell}>Base price</th>
-            <th style={cell}>Sold</th>
-            <th style={cell}>Next price</th>
-            <th style={cell}>Inventory</th>
-            <th style={cell}>Sell</th>
-          </tr>
-        </thead>
-        <tbody>
-          {level.diseases.map((d) => {
-            const eligible = inventory.filter((product) => product.outcome.cured.includes(d.id));
+    <div className="game-view management-view market-view">
+      <header className="management-header">
+        <div className="panel-kicker">Commercial operations</div>
+        <h1>Therapeutic Market</h1>
+        <p>Ship physical products into independent disease markets. Repeated sales reduce that market's next price.</p>
+      </header>
+      <div className="market-grid" data-testid="market-grid">
+        <div className="market-grid-contents" data-testid="shop-table">
+          {level.diseases.map((disease) => {
+            const eligible = inventory.filter((product) => product.outcome.cured.includes(disease.id));
             const have = eligible.length;
-            const sold = soldSoFar(economy, d.id);
-            const next = nextUnitPrice(d.basePrice, sold);
+            const sold = soldSoFar(economy, disease.id);
+            const next = nextUnitPrice(disease.basePrice, sold);
             return (
-              <tr key={d.id} data-testid={`shop-row-${d.id}`}>
-                <td style={cell}>{d.id}</td>
-                <td style={cell}>{d.basePrice}</td>
-                <td style={cell} data-testid={`shop-sold-${d.id}`}>{sold}</td>
-                <td style={cell} data-testid={`shop-next-${d.id}`}>{next}</td>
-                <td style={cell} data-testid={`shop-inv-${d.id}`}>{have}</td>
-                <td style={cell}>
+              <article key={disease.id} className={`market-card${have > 0 ? " is-active" : ""}`} data-testid={`shop-row-${disease.id}`}>
+                <div className="market-card-heading">
+                  <span className="disease-emblem">D{disease.id}</span>
+                  <div><h2>Disease {disease.id}</h2><small>Effect map {disease.map} · difficulty {disease.difficulty}</small></div>
+                </div>
+                <div className="market-stats">
+                  <div><span>Base</span><strong>{disease.basePrice}</strong></div>
+                  <div><span>Sold</span><strong data-testid={`shop-sold-${disease.id}`}>{sold}</strong></div>
+                  <div><span>Next</span><strong data-testid={`shop-next-${disease.id}`}>{next}</strong></div>
+                  <div><span>Stock</span><strong data-testid={`shop-inv-${disease.id}`}>{have}</strong></div>
+                </div>
+                <div className="market-actions">
                   <button
                     type="button"
-                    onClick={() => sellOne(d.id)}
+                    onClick={() => sellOne(disease.id)}
                     disabled={have <= 0}
-                    style={btn}
-                    data-testid={`shop-sell-${d.id}`}
+                    className="primary-action"
+                    data-testid={`shop-sell-${disease.id}`}
                   >
-                    Sell 1
-                  </button>{" "}
-                  <button
-                    type="button"
-                    onClick={() => sellAll(d.id)}
-                    disabled={have <= 0}
-                    style={btn}
-                    data-testid={`shop-sell-all-${d.id}`}
-                  >
-                    Sell all
+                    Ship one
                   </button>
-                </td>
-              </tr>
+                  <button
+                    type="button"
+                    onClick={() => sellAll(disease.id)}
+                    disabled={have <= 0}
+                    className="game-control"
+                    data-testid={`shop-sell-all-${disease.id}`}
+                  >
+                    Ship all
+                  </button>
+                </div>
+              </article>
             );
           })}
-        </tbody>
-      </table>
+        </div>
+      </div>
     </div>
   );
 }
