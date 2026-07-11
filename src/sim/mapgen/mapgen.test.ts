@@ -7,10 +7,9 @@ import type {
   GeneratedLevel,
   MultiMap,
   MachineCatalogEntry,
-  Solution,
 } from "../phase0_interfaces";
 import { CellKind, DEFAULT_CATALOG } from "../phase0_interfaces";
-import { initialState, evaluate } from "../drug-graph";
+import { applyStep, initialState, evaluate } from "../drug-graph";
 import { solve } from "../solver";
 import {
   MAX_GENERATION_DIFFICULTY,
@@ -107,10 +106,8 @@ describe("mapgen production boundary", () => {
 // ───────────────────────────── fixtures ─────────────────────────────
 
 /**
- * Test-friendly options: small maps + a difficulty band wide enough to absorb the
- * decoupling/diversity bonuses that cross-map tension forces. The (W·H)^N BFS stays
- * fast (10×12, 2 maps) while still exercising the full tension-generate path.
- * Tension needs ≥2 maps, so nMaps is always 2 here.
+ * Test-friendly options: small maps + a broad constructive difficulty band. The
+ * (W·H)^N solver checks stay fast while exercising multi-map generation.
  */
 function smallOpts(seed: number, over: Partial<GenOptions> = {}): GenOptions {
   return {
@@ -151,8 +148,8 @@ describe("mapgen GenOptions validation", () => {
     ["negative seed", (opts) => ({ ...opts, seed: -1 }), /seed must be a uint32/],
     ["seed above uint32", (opts) => ({ ...opts, seed: 0x1_0000_0000 }), /seed must be a uint32/],
     ["fractional map count", (opts) => ({ ...opts, nMaps: 2.5 }), /nMaps must be a safe integer/],
-    ["too few maps", (opts) => ({ ...opts, nMaps: 1 }), /nMaps must be between 2 and 4/],
-    ["too many maps", (opts) => ({ ...opts, nMaps: 5 }), /nMaps must be between 2 and 4/],
+    ["too few maps", (opts) => ({ ...opts, nMaps: 0 }), /nMaps must be between 1 and 4/],
+    ["too many maps", (opts) => ({ ...opts, nMaps: 5 }), /nMaps must be between 1 and 4/],
     ["fractional width", (opts) => ({ ...opts, width: 8.5 }), /width must be a safe integer/],
     ["too-small width", (opts) => ({ ...opts, width: 2 }), /width must be at least 3/],
     ["fractional height", (opts) => ({ ...opts, height: 8.5 }), /height must be a safe integer/],
@@ -262,8 +259,8 @@ describe("mapgen GenOptions validation", () => {
       ],
       [
         "out-of-range swap",
-        base.catalog.map((entry) => entry === swap ? { ...entry, transform: { kind: "swap", a: 0, b: base.nMaps } } : entry),
-        /swap index .* outside 0\.\./,
+        base.catalog.map((entry) => entry === swap ? { ...entry, transform: { kind: "swap", a: 0, b: 4 } } : entry),
+        /swap index .* outside supported range 0\.\.3/,
       ],
     ];
 
@@ -281,17 +278,62 @@ describe("mapgen GenOptions validation", () => {
   });
 });
 
-/** A "decoupling step" — a move that can make the maps' positions diverge. */
-function solutionDecouples(sol: Solution): boolean {
-  return sol.template.steps.some((m) => {
-    const t = m.transform;
-    if (t.kind === "swap" || t.kind === "scale") return true;
-    return (
-      t.kind === "translate" &&
-      (t.relation === "reverse" || t.relation === "perpendicular" || t.relation === "offset")
-    );
+describe("mapgen centered single-map progression", () => {
+  it("starts a 63×63 map at its exact center and scales toward that same center", () => {
+    const level = generate({
+      seed: 42,
+      nMaps: 1,
+      width: 63,
+      height: 63,
+      catalog: DEFAULT_CATALOG,
+      diseaseCount: 1,
+      difficulty: { min: 2, max: 12 },
+    });
+
+    expect(level.mm.maps).toHaveLength(1);
+    expect(level.mm.maps[0]!.start).toEqual({ x: 31, y: 31 });
+    expect(level.mm.maps[0]!.origin).toEqual({ x: 31, y: 31 });
+    expect(level.start.pos).toEqual([{ x: 31, y: 31 }]);
+    expect(level.diseases[0]!.reference.steps.every((step) => step.transform.kind !== "swap")).toBe(true);
+    expect(evaluate(level.mm, level.start, level.diseases[0]!.reference).cured).toContain(0);
   });
-}
+
+  it("constructs deterministic one- and multi-map levels without any swap machine", () => {
+    const catalog = DEFAULT_CATALOG.filter((entry) => entry.transform.kind !== "swap");
+    for (const nMaps of [1, 2, 3, 4]) {
+      const opts = nMapOpts(2026, nMaps, {
+        catalog,
+        diseaseCount: nMaps,
+        difficulty: { min: 2, max: 10 },
+      });
+      const a = generate(opts);
+      const b = generate(opts);
+      expect(multiMapFieldEqual(a.mm, b.mm)).toBe(true);
+      expect(a.diseases).toEqual(b.diseases);
+      const center = { x: Math.floor(opts.width / 2), y: Math.floor(opts.height / 2) };
+      expect(a.mm.maps[0]!.start).toEqual(center);
+      expect(new Set(a.mm.maps.map((map) => `${map.start.x},${map.start.y}`)).size).toBe(nMaps);
+      for (const map of a.mm.maps) expect(map.origin).toEqual(center);
+      for (const disease of a.diseases) {
+        expect(disease.reference.steps.every((step) => step.transform.kind !== "swap")).toBe(true);
+        expect(evaluate(a.mm, a.start, disease.reference).cured).toContain(disease.id);
+        expect(disease.difficulty).toBeGreaterThanOrEqual(opts.difficulty.min);
+        expect(disease.difficulty).toBeLessThanOrEqual(opts.difficulty.max);
+      }
+    }
+  });
+
+  it("allows future-layer swaps in a one-map catalog but never emits an unusable reference", () => {
+    const opts = nMapOpts(7, 1, {
+      width: 15,
+      height: 15,
+      diseaseCount: 1,
+      difficulty: { min: 2, max: 8 },
+    });
+    const level = generate(opts);
+    expect(level.diseases[0]!.reference.steps.some((step) => step.transform.kind === "swap")).toBe(false);
+  });
+});
 
 function constructedDifficulty(steps: GeneratedLevel["diseases"][number]["reference"]["steps"]): number {
   const types = new Set(steps.map((step) => step.typeId));
@@ -386,100 +428,67 @@ describe("mapgen INV-9 (constructive solvability)", () => {
   });
 });
 
-// ───────────────────────────── NEW: cross-map tension ─────────────────────────────
+// ────────────── centered multi-map progression ──────────────
 
-describe("mapgen cross-map tension (decoupling required)", () => {
-  it("every generated level has ≥1 disease whose canonical solution decouples", () => {
-    fc.assert(
-      fc.property(fc.integer({ min: 0, max: 1_000_000 }), (seed) => {
-        const opts = smallOpts(seed);
-        const level = generate(opts);
-        const start = initialState(level.mm);
-        let decoupling = 0;
-        for (const d of level.diseases) {
-          const sol = solve(level.mm, start, {
-            catalog: opts.catalog,
-            maxDepth: opts.difficulty.max + 2,
-            targets: [d.id],
-          });
-          expect(sol).not.toBeNull();
-          if (sol !== null && solutionDecouples(sol)) decoupling += 1;
-          // The declared reference must agree with the canonical solver solution.
-          if (sol !== null) {
-            expect(solutionDecouples({ template: d.reference, difficulty: d.difficulty, cost: 0 })).toBe(
-              solutionDecouples(sol),
-            );
-          }
-        }
-        // The whole point: at least one disease cannot be solved by a naive
-        // forward-only (lock-step) recipe.
-        expect(decoupling).toBeGreaterThanOrEqual(1);
-      }),
-      { numRuns: 60 },
-    );
-  });
-
-  it("the naive lock-step forward recipe gets SPOILED on the other map (the trap)", () => {
-    // The cross-map trap: pushing the drug straight at a cure's (cx,cy) — which
-    // moves EVERY map in lock-step — drives the drug onto the tension hazard that
-    // sits at (cx,cy) on the other map, spoiling the whole drug. We replay that
-    // exact naive recipe and confirm it fails for the vast majority of diseases.
-    const push = DEFAULT_CATALOG.find((c) => c.typeId === "push");
-    expect(push).toBeDefined();
-    const naiveRecipe = (cx: number, cy: number) => {
-      const steps = [];
-      for (let i = 0; i < cx; i++) {
-        steps.push({ typeId: push!.typeId, transform: push!.transform, orientation: { rot: 0 as const, flip: false } });
-      }
-      for (let i = 0; i < cy; i++) {
-        steps.push({ typeId: push!.typeId, transform: push!.transform, orientation: { rot: 1 as const, flip: false } });
-      }
-      return { steps };
-    };
-
-    let total = 0;
-    let spoiled = 0;
-    for (let seed = 0; seed < 40; seed++) {
-      const opts = smallOpts(seed);
-      const level = generate(opts);
-      const start = initialState(level.mm);
-      for (const d of level.diseases) {
-        total += 1;
-        const out = evaluate(level.mm, start, naiveRecipe(d.node.x, d.node.y));
-        const naiveCures = !out.failed && out.cured.includes(d.id);
-        if (!naiveCures) spoiled += 1;
-      }
-    }
-    // Empirically ~0.88 of diseases trap the naive lock-step recipe.
-    expect(spoiled / total).toBeGreaterThan(0.6);
-  });
-
-  it("reports a high decoupling FRACTION across diseases (aim: most diseases need it)", () => {
-    let total = 0;
-    let decoupling = 0;
-    for (let seed = 0; seed < 40; seed++) {
-      const opts = smallOpts(seed);
-      const level = generate(opts);
-      const start = initialState(level.mm);
-      for (const d of level.diseases) {
-        total += 1;
-        const sol = solve(level.mm, start, {
-          catalog: opts.catalog,
-          maxDepth: opts.difficulty.max + 2,
-          targets: [d.id],
-        });
-        if (sol !== null && solutionDecouples(sol)) decoupling += 1;
-      }
-    }
-    // Empirically ~0.9; require a clear majority so a regression that silently
-    // drops the tension is caught.
-    expect(decoupling / total).toBeGreaterThan(0.6);
-  });
-
-  it("gives each map a DISTINCT origin (the precondition for decoupling)", () => {
+describe("mapgen centered multi-map progression", () => {
+  it("does not force swap into every multi-map reference", () => {
     const level = generate(smallOpts(99));
-    const origins = level.mm.maps.map((m) => `${m.origin.x},${m.origin.y}`);
-    expect(new Set(origins).size).toBe(level.mm.maps.length);
+    expect(level.diseases.some((disease) =>
+      disease.reference.steps.every((step) => step.transform.kind !== "swap"),
+    )).toBe(true);
+  });
+
+  it("keeps layer A centered while later phase layers start at distinct nearby coordinates", () => {
+    const level = generate(nMapOpts(99, 4, { width: 63, height: 63 }));
+    expect(level.mm.maps.map((map) => map.start)).toEqual([
+      { x: 31, y: 31 },
+      { x: 38, y: 31 },
+      { x: 31, y: 38 },
+      { x: 24, y: 31 },
+    ]);
+    for (const map of level.mm.maps) expect(map.origin).toEqual({ x: 31, y: 31 });
+  });
+
+  it("makes phase exchange change the A/B coordinates after layer B is unlocked", () => {
+    const level = generate(nMapOpts(99, 2, { width: 63, height: 63 }));
+    const exchange = DEFAULT_CATALOG.find((entry) => entry.typeId === "swap01");
+    if (exchange === undefined) throw new Error("missing phase exchange fixture");
+    const before = initialState(level.mm);
+    const after = applyStep(level.mm, before, {
+      typeId: exchange.typeId,
+      transform: exchange.transform,
+      orientation: { rot: 0, flip: false },
+    });
+    expect(after.pos).toEqual([before.pos[1], before.pos[0]]);
+    expect(after.pos).not.toEqual(before.pos);
+  });
+
+  it("gives phase exchange a real alternate-recipe use on the generated seed-14 atlas", () => {
+    const level = generate(nMapOpts(14, 2, {
+      width: 63,
+      height: 63,
+      diseaseCount: 2,
+      difficulty: { min: 4, max: 12 },
+    }));
+    const push = DEFAULT_CATALOG.find((entry) => entry.typeId === "push");
+    const exchange = DEFAULT_CATALOG.find((entry) => entry.typeId === "swap01");
+    if (push === undefined || exchange === undefined) throw new Error("missing phase recipe fixture");
+    const movement = ([1, 1, 3, 0, 3] as const).map((rot) => ({
+      typeId: push.typeId,
+      transform: push.transform,
+      orientation: { rot, flip: false },
+    }));
+    const withoutExchange = evaluate(level.mm, level.start, { steps: movement });
+    const withExchange = evaluate(level.mm, level.start, {
+      steps: [...movement, {
+        typeId: exchange.typeId,
+        transform: exchange.transform,
+        orientation: { rot: 0, flip: false },
+      }],
+    });
+    expect(withoutExchange.cured).toEqual([]);
+    expect(withExchange.cured).toContain(0);
+    expect(withExchange.sideEffects.length).toBeGreaterThan(0);
   });
 });
 
@@ -487,7 +496,7 @@ describe("mapgen cross-map tension (decoupling required)", () => {
 
 describe("mapgen N-map generation (N=3, N=4)", () => {
   for (const nMaps of [3, 4]) {
-    it(`generates valid, decoupling, deterministic levels at N=${nMaps} (several seeds)`, () => {
+    it(`generates valid centered deterministic levels at N=${nMaps} (several seeds)`, () => {
       fc.assert(
         fc.property(fc.integer({ min: 0, max: 50_000 }), (seed) => {
           const opts = nMapOpts(seed, nMaps);
@@ -498,15 +507,16 @@ describe("mapgen N-map generation (N=3, N=4)", () => {
           expect(level.mm.maps.length).toBe(nMaps);
           expect(level.diseases.length).toBe(nMaps);
 
-          // Distinct origins across ALL maps (the decoupling precondition).
-          const origins = level.mm.maps.map((m) => `${m.origin.x},${m.origin.y}`);
-          expect(new Set(origins).size).toBe(nMaps);
+          // Layer A starts at the center; later layers use distinct phase offsets.
+          const center = { x: Math.floor(opts.width / 2), y: Math.floor(opts.height / 2) };
+          expect(level.mm.maps[0]!.start).toEqual(center);
+          expect(new Set(level.mm.maps.map((map) => `${map.start.x},${map.start.y}`)).size).toBe(nMaps);
+          for (const map of level.mm.maps) expect(map.origin).toEqual(center);
 
           // Diseases sit on distinct maps (round-robin onto its own map).
           const mapsUsed = level.diseases.map((d) => d.map);
           expect(new Set(mapsUsed).size).toBe(nMaps);
 
-          let decoupling = 0;
           for (const d of level.diseases) {
             // INV-9: each reference cures, never fails, and its node carries the Cure.
             const out = evaluate(level.mm, start, d.reference);
@@ -518,18 +528,19 @@ describe("mapgen N-map generation (N=3, N=4)", () => {
             expect(d.difficulty).toBeGreaterThanOrEqual(opts.difficulty.min);
             expect(d.difficulty).toBeLessThanOrEqual(opts.difficulty.max);
 
-            // Canonical solver agrees, and we count decoupling diseases.
+            // Canonical solver still agrees with the constructive reference.
             const sol = solve(level.mm, start, {
               catalog: opts.catalog,
               maxDepth: opts.difficulty.max + 2,
               targets: [d.id],
             });
             expect(sol).not.toBeNull();
-            if (sol !== null && solutionDecouples(sol)) decoupling += 1;
           }
 
-          // Cross-map tension predicate: ≥1 disease's canonical solution decouples.
-          expect(decoupling).toBeGreaterThanOrEqual(1);
+          // At least one reference remains usable without a phase swap.
+          expect(level.diseases.some((disease) =>
+            disease.reference.steps.every((step) => step.transform.kind !== "swap"),
+          )).toBe(true);
 
           // INV-10: regeneration is field-equal (all N maps) + identical diseases.
           const again = generate(opts);
@@ -619,7 +630,7 @@ describe("mapgen INV-11 (difficulty bounds)", () => {
   });
 
   it("throws a seed+range error when no level can satisfy the band", () => {
-    // A tiny 5x5 grid cannot host a difficulty-30+ decoupling solution ⇒ a clear
+    // A tiny 5x5 grid cannot host a difficulty-30+ outward path ⇒ a clear
     // throw, never a bad level.
     expect(() =>
       generate(smallOpts(1, { width: 5, height: 5, difficulty: { min: 30, max: 32 } })),
@@ -778,7 +789,7 @@ describe("mapgen scatter never corrupts the reference", () => {
 // ───────────────────────────── catalog guard ─────────────────────────────
 
 describe("mapgen catalog requirements", () => {
-  it("constructs a tense level with the starter catalog (no skew or dilute)", () => {
+  it("constructs solvable levels with the starter catalog (no skew or dilute)", () => {
     const starterCatalog = DEFAULT_CATALOG.filter(
       (entry) => entry.typeId !== "skew" && entry.typeId !== "dilute",
     );
@@ -796,7 +807,7 @@ describe("mapgen catalog requirements", () => {
           targets: [disease.id],
         });
         expect(oracle).not.toBeNull();
-        expect(solutionDecouples(oracle!)).toBe(true);
+        expect(disease.reference.steps.every((step) => step.transform.kind !== "swap")).toBe(true);
       }
     }
   });

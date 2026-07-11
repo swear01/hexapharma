@@ -15,12 +15,12 @@
 | factory-sim | `src/sim/factory-sim/` | integrator（agent 交付） | ✅ 完成（strict SoA zero-allocation / layout+MultiMap identity / routing+cursors / cold snapshot / 100,000-tick + 100,000,000-work pre-init diagnostic bound / throughput deadlock語意） |
 | recipe | `src/sim/recipe/` | integrator（agent 交付） | ✅ 完成（模板→產線 + 重排不變 INV-7） |
 | state.ts | `src/sim/state.ts` | integrator（agent 交付） | ✅ 完成（hashFactory / replayFactory，INV-15） |
-| whole-game state | `src/sim/game.ts`, `src/sim/replay-work.ts`, `src/sim/phase0_interfaces.ts` | integrator（agent 交付） | ✅ 完成（owned/frozen authority inputs、public/Game map/factory bounds、base factory entitlement、origin + normalized 100,000-tick/100,000,000-work trace/replay/hash、per-intent runtime ownership clone、24,500 physical inventory、declared-origin validator） |
+| whole-game state | `src/sim/game.ts`, `src/sim/replay-work.ts`, `src/sim/phase0_interfaces.ts` | integrator（agent 交付） | ✅ 完成（owned/frozen authority inputs、Game map≤64/side/≤4,096、預設1×63中心fog、base factory entitlement、origin + normalized 100,000-tick/100,000,000-work trace/replay/hash、per-intent runtime ownership clone、24,500 physical inventory、declared-origin validator） |
 | economy | `src/sim/economy/` | integrator（agent 交付） | ✅ 完成（遞減定價 + 實際成本/副作用 + R&D + 帳務守恆） |
 | save | `src/sim/save/` | integrator（agent 交付） | ✅ 完成（full/compact raw-work preflight；single 100,000,000；serialize/deserializeSlots共用12,000/8,192/100,000,000 aggregate；legacy replay-before-work封堵） |
-| patent | `src/sim/patent/` | integrator（agent 交付） | ✅ 完成（frozen tree；invalid authority rejection；activeEffects checked aggregate overflow；cash+R&D、鎖機/擴廠/揭霧、2→3→4 reset） |
-| render | `src/render/` | integrator（agent 交付） | ✅ 完成（Lab依實際map dimensions縮cell且canvas ≤980×980 + SoA Factory renderer、static layer cache、default snapshot stability、multi-Application-safe teardown） |
-| ui | `src/ui/` | integrator（agent 交付） | ✅ 完成（stale guards/authority labels/confirmations、intent+save+analysis error alerts、renderer split、compact checkpoint same-origin normalized lineage/cross-run replace/migration/recovery；真人 :53346） |
+| patent | `src/sim/patent/` | integrator（agent 交付） | ✅ 完成（frozen tree；invalid authority rejection；activeEffects checked aggregate overflow；cash+R&D、鎖機/擴廠/揭霧、1→2→3→4 reset含`deep-map-4`） |
+| render | `src/render/`、`public/assets/lab/` | integrator（agent 交付） | ✅ 完成（Lab固定704×512 active-layer viewport/culling、camera pure helpers、原創biochemical atlas + SoA Factory renderer、static layer cache、multi-Application-safe teardown） |
+| ui | `src/ui/` | integrator（agent 交付） | ✅ 完成（Lab pan/zoom/F follow/A–D tabs/Phase Exchange lock、stale guards/authority labels/confirmations、intent+save+analysis error alerts、renderer split、compact checkpoint same-origin normalized lineage/cross-run replace/migration/recovery；真人 :53346） |
 
 ## 規則
 

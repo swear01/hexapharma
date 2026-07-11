@@ -652,10 +652,10 @@ describe("whole-game deterministic state", () => {
 
   it("keeps the whole-game hash wire-compatible without materializing one giant JSON string", () => {
     const empty = createGameState(opts, 200, 0);
-    expect(hashGame(empty)).toBe(1_127_044_116);
+    expect(hashGame(empty)).toBe(50_069_012);
     let produced = applyGameIntent(empty, { kind: "saveRecipe", recipe: recipe() });
     produced = applyGameIntent(produced, { kind: "factoryTicks", ticks: 20 });
-    expect(hashGame(produced)).toBe(3_853_514_608);
+    expect(hashGame(produced)).toBe(1_970_000_602);
 
     const source = readFileSync(new URL("./game.ts", import.meta.url), "utf8");
     const hashBody = source.slice(source.indexOf("export function hashGame"));

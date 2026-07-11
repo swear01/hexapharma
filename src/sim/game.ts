@@ -341,6 +341,12 @@ function requireAllowedMachine(game: GameState, machine: Machine): MachineCatalo
   if (canonical(machine.transform) !== canonical(entry.transform)) {
     throw new Error(`game intent: machine "${machine.typeId}" transform does not match catalog`);
   }
+  if (
+    machine.transform.kind === "swap" &&
+    (machine.transform.a >= game.genOptions.nMaps || machine.transform.b >= game.genOptions.nMaps)
+  ) {
+    throw new Error(`game intent: phase exchange "${machine.typeId}" addresses a locked layer`);
+  }
   if (!entry.orientable && (machine.orientation.rot !== 0 || machine.orientation.flip)) {
     throw new Error(`game intent: machine "${machine.typeId}" orientation does not match catalog`);
   }
@@ -522,29 +528,51 @@ export function validateFactoryLayout(game: GameState, layout: FactoryLayout): v
   }
 }
 
-function freshFog(mm: MultiMap): Uint8Array[] {
-  return mm.maps.map((map) => new Uint8Array(map.width * map.height));
+const BASE_LAB_VISIBILITY_RADIUS = 3;
+
+function revealStartRadius(map: MultiMap["maps"][number], radius: number): Uint8Array {
+  const fog = new Uint8Array(map.width * map.height);
+  for (let dy = -radius; dy <= radius; dy++) {
+    const y = map.start.y + dy;
+    if (y < 0 || y >= map.height) continue;
+    for (let dx = -radius; dx <= radius; dx++) {
+      const x = map.start.x + dx;
+      if (x >= 0 && x < map.width) fog[y * map.width + x] = 1;
+    }
+  }
+  return fog;
 }
 
-function unionFog(dst: readonly Uint8Array[], src: MultiMap): readonly Uint8Array[] {
+function freshFog(mm: MultiMap, radius = BASE_LAB_VISIBILITY_RADIUS): Uint8Array[] {
+  return mm.maps.map((map) => revealStartRadius(map, radius));
+}
+
+function unionFog(dst: readonly Uint8Array[], src: MultiMap, radius: number): readonly Uint8Array[] {
   let result: Uint8Array[] | null = null;
   for (let mapIndex = 0; mapIndex < dst.length; mapIndex++) {
     const current = dst[mapIndex];
-    const incoming = src.maps[mapIndex]?.fog;
-    if (current === undefined || incoming === undefined) continue;
-    let changed = false;
-    for (let i = 0; i < current.length; i++) {
-      if (incoming[i] === 1 && current[i] !== 1) {
-        changed = true;
-        break;
+    const map = src.maps[mapIndex];
+    if (current === undefined || map === undefined) continue;
+    let next: Uint8Array | null = null;
+    for (let i = 0; i < map.fog.length; i++) {
+      if (map.fog[i] !== 1) continue;
+      const sourceX = i % map.width;
+      const sourceY = Math.floor(i / map.width);
+      for (let dy = -radius; dy <= radius; dy++) {
+        const y = sourceY + dy;
+        if (y < 0 || y >= map.height) continue;
+        for (let dx = -radius; dx <= radius; dx++) {
+          const x = sourceX + dx;
+          if (x < 0 || x >= map.width) continue;
+          const target = y * map.width + x;
+          if ((next ?? current)[target] === 1) continue;
+          if (next === null) next = Uint8Array.from(current);
+          next[target] = 1;
+        }
       }
     }
-    if (!changed) continue;
+    if (next === null) continue;
     if (result === null) result = [...dst];
-    const next = Uint8Array.from(current);
-    for (let i = 0; i < next.length; i++) {
-      if (incoming[i] === 1) next[i] = 1;
-    }
     result[mapIndex] = next;
   }
   return result ?? dst;
@@ -567,11 +595,7 @@ function revealAidFog(fog: readonly Uint8Array[], mm: MultiMap, radius: number):
   });
 }
 
-function dimsForN(nMaps: number): number {
-  if (nMaps >= 4) return 6;
-  if (nMaps === 3) return 7;
-  return 12;
-}
+const LAB_WORLD_SIZE = 63;
 
 function validateGameCatalog(catalog: readonly MachineCatalogEntry[]): void {
   const catalogIds = new Set<string>();
@@ -885,7 +909,13 @@ function reduceGameIntent(game: GameState, intent: GameIntent): GameState {
       requireAllowedTemplate(game, intent.template);
       if (intent.template.steps.length === 0) return game;
       const level = levelFor(game.genOptions);
-      const fog = unionFog(game.fog, revealAlong(level.mm, level.start, intent.template));
+      const revealRadius = BASE_LAB_VISIBILITY_RADIUS +
+        activeEffects(DEFAULT_PATENTS, game.patents).revealAid;
+      const fog = unionFog(
+        game.fog,
+        revealAlong(level.mm, level.start, intent.template),
+        revealRadius,
+      );
       return fog === game.fog ? game : { ...game, fog };
     }
     case "unlockPatent": {
@@ -913,24 +943,29 @@ function reduceGameIntent(game: GameState, intent: GameIntent): GameState {
       }
       if (node.effect.kind === "revealAid") {
         const level = levelFor(next.genOptions);
-        next = { ...next, fog: revealAidFog(next.fog, level.mm, node.effect.amount) };
+        next = {
+          ...next,
+          fog: revealAidFog(
+            next.fog,
+            level.mm,
+            BASE_LAB_VISIBILITY_RADIUS + node.effect.amount,
+          ),
+        };
       }
       if (node.effect.kind === "unlockMap") {
         const nMaps = Math.min(4, next.genOptions.nMaps + 1);
-        const dim = dimsForN(nMaps);
         const genOptions = ownGenOptions({
           ...next.genOptions,
           seed: (next.genOptions.seed + 1) >>> 0,
           nMaps,
-          width: dim,
-          height: dim,
+          width: LAB_WORLD_SIZE,
+          height: LAB_WORLD_SIZE,
           catalog: availableCatalog(next.patents),
           diseaseCount: nMaps,
         });
         const level = levelFor(genOptions);
-        let fog = freshFog(level.mm);
         const revealAid = activeEffects(DEFAULT_PATENTS, next.patents).revealAid;
-        if (revealAid > 0) fog = [...revealAidFog(fog, level.mm, revealAid)];
+        const fog = freshFog(level.mm, BASE_LAB_VISIBILITY_RADIUS + revealAid);
         next = {
           ...next,
           genOptions,
@@ -1496,11 +1531,14 @@ export function validateGameState(game: GameState): GameState {
     }
     unlocked.add(id);
   }
-  if (unlocked.has("new-map") && game.genOptions.nMaps < 3) {
-    throw new Error("game state: new-map patent requires a 3+ map level");
+  if (unlocked.has("new-map") && game.genOptions.nMaps < 2) {
+    throw new Error("game state: new-map patent requires a 2+ map level");
   }
-  if (unlocked.has("new-map-4") && game.genOptions.nMaps < 4) {
-    throw new Error("game state: new-map-4 patent requires a 4-map level");
+  if (unlocked.has("new-map-4") && game.genOptions.nMaps < 3) {
+    throw new Error("game state: new-map-4 patent requires a 3+ map level");
+  }
+  if (unlocked.has("deep-map-4") && game.genOptions.nMaps < 4) {
+    throw new Error("game state: deep-map-4 patent requires a 4-map level");
   }
 
   if (game.recipe !== null) {

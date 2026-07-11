@@ -39,15 +39,16 @@ npm run preview -- --host 0.0.0.0 --port 53346 --strictPort
 
 ## 3. 五分鐘完整循環
 
-使用預設網址 <http://127.0.0.1:53346/?seed=14>。預期初始狀態是 Cash 200、R&D 0、2 maps、地圖有迷霧。
+同機器使用 <http://127.0.0.1:53346/?seed=14>；遠端則把 host 換成 Oracle 公網 IP：`http://<Oracle 公網 IP>:53346/?seed=14`。預期初始狀態是 Cash 200、R&D 0、1 map；Layer A 為 `63×63`，藥物在正中央，初始只揭露 radius 3 的 `49/3969` 格。
 
 ### Lab
 
-1. 可先勾選 `Reveal`，方便確認地圖；它不會修改權威探索狀態。
-2. 用底部 hotbar 或數字鍵依序加入 `push` 五次，再加入 `swap01` 一次；`R` 旋轉下一台機器、`H` flip、Backspace 移除最後一步。
-3. 按 `Run` 或 Space；動畫中再次按 Space／`Stop` 應可取消。
-4. 預期結果至少治療 disease 0，且右側 `Run a valid recipe to ship` 變為可按的送廠動作。
-5. 送往 Factory 後，F2 Factory rail 應 active，右側顯示 saved recipe。
+1. 確認畫面只是一張大地圖的局部，不是全 `63×63` 或多圖並排；未知區應是原創 defocused biochemical fog，不應看到「?」debug 格。
+2. 在圖上 drag 平移、wheel 以游標錨定縮放；按 `F` 或 `Focus` 回到藥物並進入 follow。100% 約可見 `11×8` 格，canvas intrinsic size 應為 `704×512`。
+3. 用底部 hotbar 或數字鍵加入 `push2` 四次（`push2 × 4`，預設朝東）；`R` 旋轉下一台機器、`H` flip、Backspace 移除最後一步。Phase Exchange A↔B 在目前單層必須顯示 locked／不可選。
+4. 按 `Run` 或 Space；動畫中再次按 Space／`Stop` 應可取消。
+5. 預期結果治療 disease 0，且右側 `Run a valid recipe to ship` 變為可按的送廠動作。
+6. 送往 Factory 後，F2 Factory rail 應 active，右側顯示 saved recipe。
 
 ### Factory
 
@@ -70,7 +71,7 @@ npm run preview -- --host 0.0.0.0 --port 53346 --strictPort
 2. 有至少 80 Cash + 1 R&D 時解鎖 `reveal-aid`。
 3. 回 Lab，起點附近的 revealed 格數應增加。
 
-## 4. 驗 2 → 3 → 4 maps
+## 4. 驗 1 → 2 → 3 → 4 layers 與 Phase Exchange
 
 用試玩起始值開新頁：
 
@@ -79,8 +80,10 @@ npm run preview -- --host 0.0.0.0 --port 53346 --strictPort
 1. 在 Patents 解鎖 `bench-2`。
 2. 解鎖 `new-map`；先取消一次，確認狀態與資源沒有被誤改。
 3. 再解鎖並確認警告；警告必須列出 recipe、factory layout/runtime、waste、inventory、fog、sales history 會被清除。
-4. 回 Lab，預期顯示 3 maps、seed 15。
-5. 解鎖並確認 `new-map-4`，預期顯示 4 maps、seed 16。
+4. 回 Lab，預期顯示 2 maps、seed 15，尺寸仍為 `63×63`；A/B tabs 可切換且各自保留鏡頭。A 的 start 在 `(31,31)`，B 在近中心的 `(38,31)`。
+5. 確認 Phase Exchange A↔B 已可用。其用途是交換兩層的**座標**：before 的 A/B 各保留自己位置，after 為 A 收到 B 原座標、B 收到 A 原座標；因 B 有 phase offset，剛解鎖時也不是 no-op。
+6. 解鎖並確認 `new-map-4`，預期顯示 3 maps、seed 16、出現 C tab，尺寸仍為`63×63`。
+7. 解鎖並確認 `deep-map-4`，預期顯示 4 maps、seed 17、出現 D tab，尺寸仍為`63×63`。
 
 ## 5. Save / Load / Rewind
 

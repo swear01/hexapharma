@@ -1,235 +1,277 @@
-/**
- * HexaPharma — Lab renderer (PixiJS v8).
- *
- * A DUMB renderer: it is handed sim state (MultiMap + DrugState) and draws it.
- * It contains NO sim logic — no sweeping, no evaluate, no fog computation. React
- * (src/ui) owns the state and the sim calls; this module only paints what it is
- * given. See AGENTS.md layering rule.
- *
- * The `fog` array on each EffectMap is authored by React (the persistent
- * accumulated exploration fog, or an all-revealed override for the debug toggle):
- * a fogged cell (fog === 0) is drawn as UNKNOWN ("?") so the player discovers a
- * cell's true feature only once a sweep has revealed it.
- *
- * Maps are laid out in a GRID (up to 2 per row) so 2..4 maps fit; cells shrink for
- * N ≥ 3 so the canvas stays a sensible size.
- */
-import { Application, Container, Graphics, Text } from "pixi.js";
-import type { MultiMap, DrugState, EffectMap, Vec2 } from "../sim/phase0_interfaces";
+import {
+  Application,
+  Assets,
+  BlurFilter,
+  Container,
+  Graphics,
+  Sprite,
+  TilingSprite,
+  type Texture,
+} from "pixi.js";
+import type { DrugState, EffectMap, MultiMap, Vec2 } from "../sim/phase0_interfaces";
 import { CellKind } from "../sim/phase0_interfaces";
-
-// ───────────────────────────── layout constants ─────────────────────────────
-
-const PAD = 12; // outer padding
-const LABEL_H = 24; // height reserved for each map's label
-const GAP_X = 28; // horizontal gap between maps in a row
-const GAP_Y = 20; // vertical gap between rows
-const COLS = 2; // maps per row (wrap to a grid for N ≥ 3)
-const MAX_CANVAS_WIDTH = 980;
-const MAX_CANVAS_HEIGHT = 980;
-
-/** Cell size in px, reduced further when a large authorized map must fit the UI. */
-function cellSize(mm: MultiMap): number {
-  const nMaps = mm.maps.length;
-  let preferred = 22;
-  if (nMaps <= 2) preferred = 32;
-  else if (nMaps === 3) preferred = 26;
-  const cols = Math.min(COLS, Math.max(1, nMaps));
-  const rows = Math.ceil(nMaps / COLS);
-  let mapWidth = 1;
-  let mapHeight = 1;
-  for (const map of mm.maps) {
-    if (map.width > mapWidth) mapWidth = map.width;
-    if (map.height > mapHeight) mapHeight = map.height;
-  }
-  const widthPixels = MAX_CANVAS_WIDTH - PAD * 2 - (cols - 1) * GAP_X;
-  const heightPixels =
-    MAX_CANVAS_HEIGHT - PAD * 2 - rows * LABEL_H - (rows - 1) * GAP_Y;
-  const widthBound = Math.floor(widthPixels / (cols * mapWidth));
-  const heightBound = Math.floor(heightPixels / (rows * mapHeight));
-  return Math.max(1, Math.min(preferred, widthBound, heightBound));
-}
-
-/** Grid placement (column/row) of map `i`. */
-function gridPos(i: number): { col: number; row: number } {
-  return { col: i % COLS, row: Math.floor(i / COLS) };
-}
-
-// ───────────────────────────── palette ─────────────────────────────
+import {
+  LAB_CELL_PIXELS,
+  LAB_VIEWPORT,
+  visibleLabCells,
+  type LabCamera,
+} from "./labCamera";
+import { labAssetUrls } from "./labAssets";
 
 const CELL_COLOR: Record<number, number> = {
-  [CellKind.Empty]: 0xe8edf2, // light
-  [CellKind.Wall]: 0x3a3f44, // dark gray
-  [CellKind.Hazard]: 0xe23b3b, // red
-  [CellKind.SideEffect]: 0x9b5de5, // purple
-  [CellKind.Cure]: 0x2bb673, // green
+  [CellKind.Empty]: 0xdce4dc,
+  [CellKind.Wall]: 0x344340,
+  [CellKind.Hazard]: 0xb83d35,
+  [CellKind.SideEffect]: 0x80519a,
+  [CellKind.Cure]: 0x2b9d72,
 };
 
-const GRID_LINE = 0xc2ccd6;
-const FOG_COLOR = 0x10141a; // unknown (fogged) cell fill
-const FOG_MARK = 0x6b7785; // "?" glyph on a fogged cell
-const TOKEN_COLOR = 0x1d6fe0;
-const TOKEN_RING = 0xffffff;
-const BG = 0xf4f7fa;
-const LABEL_COLOR = 0x222a33;
+const BG = 0x111a1b;
+const TOKEN_COLOR = 0x28a9d6;
+const MAX_VISIBLE_CELLS = 320;
 
-/** Width/height of one map in px at the given cell size. */
-function mapPx(map: EffectMap | undefined, cell: number, fallbackW = 9, fallbackH = 9): { w: number; h: number } {
-  const w = (map ? map.width : fallbackW) * cell;
-  const h = (map ? map.height : fallbackH) * cell;
-  return { w, h };
+interface LabTextures {
+  readonly substrate: Texture;
+  readonly fog: Texture;
+  readonly wall: Texture;
+  readonly hazard: Texture;
+  readonly sideEffect: Texture;
+  readonly cure: Texture;
+  readonly drug: Texture;
+  readonly halo: Texture;
 }
 
-/** Pixel size of the whole canvas for an N-map level (all maps assumed same W/H). */
-function canvasSize(mm: MultiMap): { width: number; height: number } {
-  const n = mm.maps.length;
-  const cell = cellSize(mm);
-  const { w: mapW, h: mapH } = mapPx(mm.maps[0], cell);
-  const cols = Math.min(COLS, Math.max(1, n));
-  const rows = Math.ceil(n / COLS);
-  return {
-    width: PAD * 2 + cols * mapW + (cols - 1) * GAP_X,
-    height: PAD * 2 + rows * (LABEL_H + mapH) + (rows - 1) * GAP_Y,
-  };
+async function loadLabTextures(): Promise<LabTextures> {
+  const response = await fetch("/assets/lab/manifest.json");
+  if (!response.ok) throw new Error(`Lab asset manifest request failed with ${response.status}`);
+  const urls = labAssetUrls(await response.json());
+  const [substrate, fog, wall, hazard, sideEffect, cure, drug, halo] = await Promise.all([
+    Assets.load<Texture>(urls.substrate),
+    Assets.load<Texture>(urls.fog),
+    Assets.load<Texture>(urls.wall),
+    Assets.load<Texture>(urls.hazard),
+    Assets.load<Texture>(urls.sideEffect),
+    Assets.load<Texture>(urls.cure),
+    Assets.load<Texture>(urls.drug),
+    Assets.load<Texture>(urls.halo),
+  ]);
+  return { substrate, fog, wall, hazard, sideEffect, cure, drug, halo };
 }
 
-/** Top-left pixel origin of map `i` (after outer pad + its label row). */
-function mapOriginPx(mm: MultiMap, i: number): { ox: number; oy: number } {
-  const cell = cellSize(mm);
-  const { w: mapW, h: mapH } = mapPx(mm.maps[0], cell);
-  const { col, row } = gridPos(i);
-  return {
-    ox: PAD + col * (mapW + GAP_X),
-    oy: PAD + LABEL_H + row * (LABEL_H + mapH + GAP_Y),
-  };
-}
-
-/** Draw one map's cells, grid, and fog into `g`/`fogG` at cell size `cell`. */
-function drawMap(map: EffectMap, ox: number, oy: number, cell: number, g: Graphics, fogG: Graphics, labels: Container): void {
-  for (let y = 0; y < map.height; y++) {
-    for (let x = 0; x < map.width; x++) {
-      const i = y * map.width + x;
-      const px = ox + x * cell;
-      const py = oy + y * cell;
-      const revealed = (map.fog[i] ?? 0) === 1;
-
-      if (!revealed) {
-        // Unknown cell: solid dark fill + a "?" glyph; the true feature stays hidden.
-        fogG.rect(px, py, cell, cell).fill({ color: FOG_COLOR });
-        fogG.rect(px, py, cell, cell).stroke({ color: GRID_LINE, width: 1 });
-        if (cell >= 24) {
-          const q = new Text({
-            text: "?",
-            style: { fontFamily: "Arial", fontSize: Math.round(cell * 0.5), fill: FOG_MARK, fontWeight: "bold" },
-          });
-          q.anchor.set(0.5);
-          q.x = px + cell / 2;
-          q.y = py + cell / 2;
-          labels.addChild(q);
-        }
-        continue;
-      }
-
-      const kind = map.cell[i] ?? CellKind.Empty;
-      const color = CELL_COLOR[kind] ?? CELL_COLOR[CellKind.Empty]!;
-      g.rect(px, py, cell, cell).fill({ color });
-      g.rect(px, py, cell, cell).stroke({ color: GRID_LINE, width: 1 });
-      // Mark Cure cells with a bright target ring so players can spot goals.
-      if (kind === CellKind.Cure) {
-        const ccx = px + cell / 2;
-        const ccy = py + cell / 2;
-        g.circle(ccx, ccy, cell * 0.3).stroke({ color: 0xffffff, width: 2 });
-        g.circle(ccx, ccy, cell * 0.12).fill({ color: 0xffffff });
-      }
-    }
-  }
-}
-
-/** Draw the drug token (a circle) at grid `pos` on map `i`. */
-function drawToken(mm: MultiMap, i: number, pos: Vec2, g: Graphics, failed: boolean): void {
-  const cell = cellSize(mm);
-  const { ox, oy } = mapOriginPx(mm, i);
-  const cx = ox + pos.x * cell + cell / 2;
-  const cy = oy + pos.y * cell + cell / 2;
-  const r = cell * 0.32;
-  g.circle(cx, cy, r + 2).fill({ color: TOKEN_RING });
-  g.circle(cx, cy, r).fill({ color: failed ? 0x111111 : TOKEN_COLOR });
+export interface LabRenderView {
+  readonly activeMap: number;
+  readonly camera: LabCamera;
+  readonly trail: readonly (Vec2 | null)[];
 }
 
 export interface LabRenderer {
-  /** The canvas element to mount into the DOM. */
   readonly canvas: HTMLCanvasElement;
-  /** Repaint the given sim state. Pure draw; no sim logic. */
-  render(mm: MultiMap, drug: DrugState): void;
-  /** Tear down the Pixi application and free GPU resources. */
+  render(mm: MultiMap, drug: DrugState, view: LabRenderView): void;
   destroy(): void;
 }
 
-/**
- * Create + initialize a Lab renderer for a level of the given shape. The canvas is
- * sized from `mm` (maps are assumed uniform W/H) and laid out in a grid. Caller
- * mounts `.canvas`, then calls `.render(mm, drug)` whenever the React state changes,
- * and `.destroy()` on unmount.
- */
-export async function createLabRenderer(mm: MultiMap): Promise<LabRenderer> {
-  const { width, height } = canvasSize(mm);
-  const app = new Application();
-  await app.init({ width, height, background: BG, antialias: true });
+function cellScreen(camera: LabCamera, x: number, y: number): Vec2 {
+  const cell = LAB_CELL_PIXELS * camera.zoom;
+  return {
+    x: LAB_VIEWPORT.width / 2 + (x - camera.x) * cell,
+    y: LAB_VIEWPORT.height / 2 + (y - camera.y) * cell,
+  };
+}
 
-  // Persistent layers: static cells, fog overlay, token, labels.
-  const cells = new Graphics();
-  const fog = new Graphics();
-  const token = new Graphics();
-  const labels = new Container();
-  app.stage.addChild(cells, fog, token, labels);
-  let destroyed = false;
-  let renderedMap: MultiMap | null = null;
+function isRevealed(map: EffectMap, x: number, y: number): boolean {
+  if (x < 0 || y < 0 || x >= map.width || y >= map.height) return false;
+  return map.fog[y * map.width + x] === 1;
+}
 
-  function clearLabels(): void {
-    for (const child of labels.removeChildren()) child.destroy();
-  }
+function featureTexture(textures: LabTextures, kind: number): Texture | null {
+  if (kind === CellKind.Wall) return textures.wall;
+  if (kind === CellKind.Hazard) return textures.hazard;
+  if (kind === CellKind.SideEffect) return textures.sideEffect;
+  if (kind === CellKind.Cure) return textures.cure;
+  return null;
+}
 
-  function render(curr: MultiMap, drug: DrugState): void {
-    token.clear();
-    if (renderedMap !== curr) {
-      renderedMap = curr;
-      cells.clear();
-      fog.clear();
-      clearLabels();
-      const cell = cellSize(curr);
-      for (let i = 0; i < curr.maps.length; i++) {
-        const map = curr.maps[i];
-        if (map === undefined) continue;
-        const { ox, oy } = mapOriginPx(curr, i);
-        drawMap(map, ox, oy, cell, cells, fog, labels);
+function drawVisibleMap(
+  map: EffectMap,
+  camera: LabCamera,
+  textures: LabTextures,
+  terrain: Graphics,
+  featureSprites: readonly Sprite[],
+  revealMask: Graphics,
+): void {
+  const cell = LAB_CELL_PIXELS * camera.zoom;
+  const bounds = visibleLabCells(camera, LAB_VIEWPORT, map);
+  let featureIndex = 0;
+  for (let y = bounds.y0; y < bounds.y1; y++) {
+    for (let x = bounds.x0; x < bounds.x1; x++) {
+      const screen = cellScreen(camera, x, y);
+      const revealed = isRevealed(map, x, y);
+      if (!revealed) continue;
 
-        const label = new Text({
-          text: `Map ${i}`,
-          style: { fontFamily: "Arial", fontSize: 15, fill: LABEL_COLOR, fontWeight: "bold" },
+      revealMask.rect(screen.x - 2, screen.y - 2, cell + 4, cell + 4).fill(0xffffff);
+
+      const kind = map.cell[y * map.width + x] ?? CellKind.Empty;
+      if (kind !== CellKind.Empty) {
+        terrain.circle(screen.x + cell / 2, screen.y + cell / 2, cell * 0.44).fill({
+          color: CELL_COLOR[kind] ?? CELL_COLOR[CellKind.Empty],
+          alpha: 0.22,
         });
-        label.x = ox;
-        label.y = oy - LABEL_H + 2;
-        labels.addChild(label);
+      }
+      const texture = featureTexture(textures, kind);
+      const sprite = texture === null ? undefined : featureSprites[featureIndex++];
+      if (sprite !== undefined && texture !== null) {
+        sprite.texture = texture;
+        sprite.visible = true;
+        sprite.anchor.set(0.5);
+        sprite.x = screen.x + cell / 2;
+        sprite.y = screen.y + cell / 2;
+        sprite.width = cell * (kind === CellKind.Wall ? 1.08 : 0.88);
+        sprite.height = cell * (kind === CellKind.Wall ? 1.08 : 0.88);
+        sprite.rotation = ((x * 7 + y * 11) & 3) * Math.PI / 2;
+      }
+      if (kind === CellKind.Cure) {
+        const cx = screen.x + cell / 2;
+        const cy = screen.y + cell / 2;
+        terrain.circle(cx, cy, cell * 0.3).stroke({ color: 0xeafff5, width: 3 });
+        terrain.circle(cx, cy, cell * 0.1).fill({ color: 0xeafff5 });
       }
     }
-    for (let i = 0; i < curr.maps.length; i++) {
-      const pos = drug.pos[i];
-      if (pos !== undefined) drawToken(curr, i, pos, token, drug.failed);
-    }
   }
+}
+
+function drawToken(
+  pos: Vec2,
+  camera: LabCamera,
+  token: Graphics,
+  art: Sprite,
+  haloArt: Sprite,
+  failed: boolean,
+): void {
+  const cell = LAB_CELL_PIXELS * camera.zoom;
+  const screen = cellScreen(camera, pos.x, pos.y);
+  const cx = screen.x + cell / 2;
+  const cy = screen.y + cell / 2;
+  token.circle(cx, cy, cell * 0.25 + 4).fill({ color: 0xffffff, alpha: 0.92 });
+  token.circle(cx, cy, cell * 0.25).fill({ color: failed ? 0x171717 : TOKEN_COLOR, alpha: 0.46 });
+  art.visible = true;
+  art.anchor.set(0.5);
+  art.x = cx;
+  art.y = cy;
+  art.width = cell * 0.66;
+  art.height = cell * 0.66;
+  art.tint = failed ? 0x444444 : 0xffffff;
+  haloArt.visible = !failed;
+  haloArt.anchor.set(0.5);
+  haloArt.x = cx;
+  haloArt.y = cy;
+  haloArt.width = cell * 1.15;
+  haloArt.height = cell * 1.15;
+  haloArt.alpha = 0.52;
+}
+
+function drawTrail(points: readonly (Vec2 | null)[], camera: LabCamera, route: Graphics): void {
+  if (points.length < 2) return;
+  const cell = LAB_CELL_PIXELS * camera.zoom;
+  let drawing = false;
+  for (const world of points) {
+    if (world === null) {
+      drawing = false;
+      continue;
+    }
+    const point = cellScreen(camera, world.x, world.y);
+    if (drawing) route.lineTo(point.x + cell / 2, point.y + cell / 2);
+    else route.moveTo(point.x + cell / 2, point.y + cell / 2);
+    drawing = true;
+  }
+  route.stroke({ color: TOKEN_COLOR, width: Math.max(3, cell * 0.09), alpha: 0.72 });
+}
+
+export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
+  const textures = await loadLabTextures();
+  const app = new Application();
+  await app.init({
+    width: LAB_VIEWPORT.width,
+    height: LAB_VIEWPORT.height,
+    background: BG,
+    antialias: true,
+    resolution: window.devicePixelRatio,
+    autoDensity: true,
+  });
+
+  const fogBackdrop = TilingSprite.from(textures.fog, {
+    width: LAB_VIEWPORT.width,
+    height: LAB_VIEWPORT.height,
+  });
+  fogBackdrop.tileScale.set(0.42);
+  const substrate = TilingSprite.from(textures.substrate, {
+    width: LAB_VIEWPORT.width,
+    height: LAB_VIEWPORT.height,
+  });
+  substrate.tileScale.set(0.42);
+  substrate.alpha = 0.82;
+  const terrain = new Graphics();
+  const route = new Graphics();
+  const featureLayer = new Container();
+  const featureSprites: Sprite[] = [];
+  for (let i = 0; i < MAX_VISIBLE_CELLS; i++) {
+    const feature = new Sprite(textures.wall);
+    feature.visible = false;
+    featureSprites.push(feature);
+    featureLayer.addChild(feature);
+  }
+  const revealMask = new Graphics();
+  const revealBlur = new BlurFilter({ strength: 6, quality: 2 });
+  revealMask.filters = [revealBlur];
+  substrate.mask = revealMask;
+  const token = new Graphics();
+  const haloArt = new Sprite(textures.halo);
+  haloArt.visible = false;
+  const tokenArt = new Sprite(textures.drug);
+  tokenArt.visible = false;
+  app.stage.addChild(fogBackdrop, substrate, revealMask, terrain, route, featureLayer, haloArt, token, tokenArt);
+  let destroyed = false;
 
   return {
     canvas: app.canvas,
-    render,
+    render: (mm, drug, view) => {
+      terrain.clear();
+      route.clear();
+      token.clear();
+      haloArt.visible = false;
+      tokenArt.visible = false;
+      for (const sprite of featureSprites) sprite.visible = false;
+      revealMask.clear();
+      const map = mm.maps[view.activeMap];
+      if (map === undefined) return;
+      const cell = LAB_CELL_PIXELS * view.camera.zoom;
+      substrate.tilePosition.set(
+        LAB_VIEWPORT.width / 2 - view.camera.x * cell,
+        LAB_VIEWPORT.height / 2 - view.camera.y * cell,
+      );
+      substrate.tileScale.set(0.42 * view.camera.zoom);
+      fogBackdrop.tilePosition.copyFrom(substrate.tilePosition);
+      fogBackdrop.tileScale.copyFrom(substrate.tileScale);
+      drawVisibleMap(map, view.camera, textures, terrain, featureSprites, revealMask);
+      drawTrail(view.trail, view.camera, route);
+      const pos = drug.pos[view.activeMap];
+      if (pos !== undefined) drawToken(pos, view.camera, token, tokenArt, haloArt, drug.failed);
+    },
     destroy: () => {
       if (destroyed) return;
       destroyed = true;
-      clearLabels();
       app.stage.removeChildren();
-      cells.destroy();
-      fog.destroy();
+      fogBackdrop.destroy();
+      substrate.mask = null;
+      substrate.destroy();
+      terrain.destroy();
+      route.destroy();
+      featureLayer.destroy({ children: true });
+      revealMask.filters = null;
+      revealBlur.destroy();
+      revealMask.destroy();
       token.destroy();
-      labels.destroy();
+      haloArt.destroy();
+      tokenArt.destroy();
       app.destroy({ removeView: true });
     },
   };

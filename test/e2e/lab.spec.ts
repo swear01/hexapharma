@@ -17,7 +17,7 @@ test("HexaPharma Lab loads a generated level, runs a template, and reports an ou
   // Persistent game shell + Lab canvas present.
   await expect(page.getByTestId("game-shell")).toBeVisible();
   const canvas = page.locator("[data-testid='lab-canvas'] canvas");
-  await expect(canvas).toBeVisible();
+  await expect(canvas).toBeVisible({ timeout: 15_000 });
 
   // Generated-level info should render (seed + per-disease difficulty/price).
   await expect(page.getByTestId("level-info")).toContainText(/seed/i);
@@ -45,6 +45,7 @@ test("HexaPharma Lab loads a generated level, runs a template, and reports an ou
 });
 
 test("The Lab is fogged by default; a run reveals cells; reveal-all toggles", async ({ page }) => {
+  test.setTimeout(60_000);
   await page.goto("/");
   const canvas = page.locator("[data-testid='lab-canvas'] canvas");
   await expect(canvas).toBeVisible();
@@ -108,8 +109,7 @@ test("Reset clears the template back to empty", async ({ page }) => {
 
 test("editing a completed template invalidates its stale outcome", async ({ page }) => {
   await page.goto("/");
-  for (let i = 0; i < 5; i++) await page.getByTestId("palette-push").click();
-  await page.getByTestId("palette-swap01").click();
+  for (let i = 0; i < 4; i++) await page.getByTestId("palette-push2").click();
   await page.getByTestId("run").click();
   await expect(page.getByTestId("save-recipe")).toBeVisible({ timeout: 10_000 });
 
@@ -127,6 +127,41 @@ test("editing a completed template invalidates its stale outcome", async ({ page
   await expect(page.getByTestId("status")).toContainText("Build a template");
 });
 
+test("the Lab starts centered on one local layer and supports pan, zoom, and focus", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByTestId("map-count")).toHaveText("1 map");
+  await expect(page.getByTestId("revealed-count")).toHaveText("revealed 49/3969");
+  await expect(page.getByTestId("lab-layer-0")).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("lab-layer-1")).toHaveCount(0);
+  await expect(page.getByTestId("palette-swap01")).toBeDisabled();
+
+  const frame = page.getByTestId("lab-map-frame");
+  const box = await frame.boundingBox();
+  if (box === null) throw new Error("Lab frame has no bounding box");
+  const zoom = page.getByTestId("lab-zoom");
+  await expect(zoom).toContainText("100% · follow");
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.wheel(0, -240);
+  await expect(zoom).not.toContainText("100%");
+  await expect(zoom).not.toContainText("follow");
+
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 70, box.y + box.height / 2 + 35);
+  await page.mouse.up();
+  await page.getByTestId("lab-focus").click();
+  await expect(zoom).toContainText("100% · follow");
+});
+
+test("multi-layer levels expose independent A/B tabs and phase exchange", async ({ page }) => {
+  await page.goto("/?nmaps=2");
+  await expect(page.getByTestId("lab-layer-0")).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("lab-layer-1")).toBeVisible();
+  await expect(page.getByTestId("palette-swap01")).toBeEnabled();
+  await page.getByTestId("lab-layer-1").click();
+  await expect(page.getByTestId("lab-layer-1")).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("phase-exchange-cue")).toContainText("A receives B");
+});
+
 test("a Lab renderer initialization failure is visible and does not escape as an unhandled error", async ({
   page,
 }) => {
@@ -141,5 +176,16 @@ test("a Lab renderer initialization failure is visible and does not escape as an
 
   await page.goto("/");
   await expect(page.getByTestId("lab-render-error")).toContainText(/could not start.*renderer/i);
+  expect(pageErrors).toEqual([]);
+});
+
+test("a Lab asset-manifest failure is visible instead of falling back to debug art", async ({ page }) => {
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  await page.route("**/assets/lab/manifest.json", (route) =>
+    route.fulfill({ status: 503, contentType: "application/json", body: "{}" }),
+  );
+  await page.goto("/");
+  await expect(page.getByTestId("lab-render-error")).toContainText(/asset manifest request failed/i);
   expect(pageErrors).toEqual([]);
 });

@@ -4,6 +4,7 @@ import type {
   FactoryLayout,
   GameState,
   GenOptions,
+  MachineCatalogEntry,
   Template,
 } from "../sim/phase0_interfaces";
 import {
@@ -35,19 +36,24 @@ import {
 const START_CASH = 200;
 const SAVE_SLOTS = 3;
 
-function dimsForN(nMaps: number): number {
-  if (nMaps >= 4) return 6;
-  if (nMaps === 3) return 7;
-  return 12;
+const LAB_WORLD_SIZE = 63;
+
+export function catalogForLayers(
+  catalog: readonly MachineCatalogEntry[],
+  nMaps: number,
+): readonly MachineCatalogEntry[] {
+  return catalog.filter((entry) => {
+    const transform = entry.transform;
+    return transform.kind !== "swap" || (transform.a < nMaps && transform.b < nMaps);
+  });
 }
 
-export function defaultGenOptions(seed: number, nMaps = 2): GenOptions {
-  const dim = dimsForN(nMaps);
+export function defaultGenOptions(seed: number, nMaps = 1): GenOptions {
   return {
     seed,
     nMaps,
-    width: dim,
-    height: dim,
+    width: LAB_WORLD_SIZE,
+    height: LAB_WORLD_SIZE,
     catalog: availableCatalog({ unlocked: [] }),
     diseaseCount: nMaps,
     difficulty: { min: 4, max: 12 },
@@ -70,8 +76,8 @@ function queryInt(
 function initialGenOptions(): GenOptions {
   const requestedSeed = queryInt("seed", 14);
   const seed = requestedSeed >= 0 && requestedSeed <= 0xffff_ffff ? requestedSeed : 14;
-  const requestedMaps = queryInt("nmaps", 2);
-  const nMaps = requestedMaps >= 2 && requestedMaps <= 4 ? requestedMaps : 2;
+  const requestedMaps = queryInt("nmaps", 1);
+  const nMaps = requestedMaps >= 1 && requestedMaps <= 4 ? requestedMaps : 1;
   return defaultGenOptions(seed, nMaps);
 }
 
@@ -121,7 +127,10 @@ export function Game() {
   }, [initialSlot, showSlotRead]);
 
   const level = useMemo(() => generate(game.genOptions), [game.genOptions]);
-  const catalog = useMemo(() => availableCatalog(game.patents), [game.patents]);
+  const catalog = useMemo(
+    () => catalogForLayers(availableCatalog(game.patents), game.genOptions.nMaps),
+    [game.genOptions.nMaps, game.patents],
+  );
   const patentEffects = useMemo(
     () => activeEffects(DEFAULT_PATENTS, game.patents),
     [game.patents],

@@ -1,0 +1,71 @@
+{
+  "id": "hexapharma-microscope-atlas-v1",
+  "revision": 1,
+  "baseUrl": "/assets/lab/",
+  "assets": {
+    "substrate": {
+      "file": "substrate-cellular.webp",
+      "width": 1024,
+      "height": 1024,
+      "alpha": false,
+      "repeat": true,
+      "role": "Low-contrast cellular world substrate; render only where terrain is revealed."
+    },
+    "fog": {
+      "file": "fog-defocus.webp",
+      "width": 1024,
+      "height": 1024,
+      "alpha": false,
+      "repeat": true,
+      "role": "Opaque microscope defocus for unexplored space; it must cover world details completely."
+    },
+    "wall": {
+      "file": "wall-crystal.png",
+      "width": 512,
+      "height": 512,
+      "alpha": true,
+      "repeat": false,
+      "role": "Protein-crystal collision cluster."
+    },
+    "hazard": {
+      "file": "hazard-corrosive.png",
+      "width": 512,
+      "height": 512,
+      "alpha": true,
+      "repeat": false,
+      "role": "Corrosive enzyme hazard region."
+    },
+    "sideEffect": {
+      "file": "side-effect-colony.png",
+      "width": 512,
+      "height": 512,
+      "alpha": true,
+      "repeat": false,
+      "role": "Abnormal violet colony for side-effect regions."
+    },
+    "cure": {
+      "file": "cure-receptor.png",
+      "width": 512,
+      "height": 512,
+      "alpha": true,
+      "repeat": false,
+      "role": "Therapeutic receptor destination."
+    },
+    "drug": {
+      "file": "drug-capsule.png",
+      "width": 512,
+      "height": 512,
+      "alpha": true,
+      "repeat": false,
+      "role": "Player-controlled pharmaceutical token."
+    },
+    "halo": {
+      "file": "path-glow.png",
+      "width": 512,
+      "height": 512,
+      "alpha": true,
+      "repeat": false,
+      "role": "Bioluminescent halo behind the current drug token."
+    }
+  }
+}

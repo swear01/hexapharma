@@ -530,6 +530,12 @@ describe("scale (INV-2)", () => {
 // ───────────────────────────── INV-3: swap ─────────────────────────────
 
 describe("swap (INV-3)", () => {
+  it("rejects same-map and out-of-range indices instead of silently doing nothing", () => {
+    const M = mm(emptyMap(5, { x: 1, y: 1 }), emptyMap(5, { x: 3, y: 3 }));
+    expect(() => applyStep(M, initialState(M), swap(0, 0))).toThrow(/swap.*distinct/i);
+    expect(() => applyStep(M, initialState(M), swap(0, 2))).toThrow(/swap.*range/i);
+  });
+
   it("exchanges two maps' positions and never fails", () => {
     const m0 = emptyMap(5, { x: 1, y: 1 });
     const m1 = emptyMap(5, { x: 4, y: 3 });

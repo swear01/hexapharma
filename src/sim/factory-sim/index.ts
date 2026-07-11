@@ -1183,7 +1183,7 @@ function assertRuntime(
 export const initFactory: InitFactoryFn = (layout, mm, start) => {
   const compiled = compileLayout(layout);
   const mapCount = mm.maps.length;
-  if (mapCount < 2 || mapCount > 4 || start.pos.length !== mapCount) {
+  if (mapCount < 1 || mapCount > 4 || start.pos.length !== mapCount) {
     throw new Error("factory init: start state map count mismatch");
   }
   if (typeof start.failed !== "boolean") {

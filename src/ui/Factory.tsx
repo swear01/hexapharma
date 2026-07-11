@@ -254,6 +254,10 @@ interface ClipboardBrush {
 
 const DIR_LABEL: Record<Dir, string> = { 0: "→ E", 1: "↓ S", 2: "← W", 3: "↑ N" };
 
+function machineUiName(typeId: MachineTypeId): string {
+  return typeId === "swap01" ? "phase exchange A↔B" : typeId;
+}
+
 /** A belt-grid tile for the current brush + direction (machines handled separately). */
 function makeTile(brush: Brush, dir: Dir): FactoryTile | null {
   switch (brush.kind) {
@@ -931,7 +935,7 @@ export function Factory({
   const brushIsMachine = brush.kind === "machine";
   const brushAcceptsEffectOrientation = brush.kind === "machine" &&
     entryOf(brush.typeId).orientable && entryOf(brush.typeId).transform.kind === "translate";
-  const brushLabel = brush.kind === "machine" ? `machine: ${brush.typeId}` : brush.kind;
+  const brushLabel = brush.kind === "machine" ? `machine: ${machineUiName(brush.typeId)}` : brush.kind;
   const rate = throughput === null
     ? "unavailable"
     : throughput.rateDen === 0 ? "0" : `${throughput.rateNum}/${throughput.rateDen}`;
@@ -941,7 +945,7 @@ export function Factory({
     : layout.tiles[hoverCell.y * layout.width + hoverCell.x];
   const hoverKind = hoveredMachine === undefined
     ? hoveredTile?.kind ?? "outside"
-    : `machine:${hoveredMachine.def.typeId}`;
+    : `machine:${machineUiName(hoveredMachine.def.typeId)}`;
   const hoverPlacementValid = hoverCell === null || brush.kind === "erase"
     ? true
     : paint(layout, hoverCell.x, hoverCell.y, brush, brushDir, footRot, {
@@ -1038,10 +1042,10 @@ export function Factory({
                   className={`tool-slot${brush.kind === "machine" && brush.typeId === entry.typeId ? " is-selected" : ""}${unlocked ? "" : " is-locked"}`}
                   aria-pressed={brush.kind === "machine" && brush.typeId === entry.typeId}
                   data-testid={`brush-machine-${entry.typeId}`}
-                  title={`${entry.typeId} · ${entry.speed} ticks/unit`}
+                  title={`${machineUiName(entry.typeId)} · ${entry.speed} ticks/unit`}
                 >
-                  <span className="tool-symbol">{entry.typeId.slice(0, 2).toUpperCase()}</span>
-                  <span className="tool-name">{entry.typeId}</span>
+                  <span className="tool-symbol">{entry.typeId === "swap01" ? "PX" : entry.typeId.slice(0, 2).toUpperCase()}</span>
+                  <span className="tool-name">{machineUiName(entry.typeId)}</span>
                   {shortcutIndex >= 0 && shortcutIndex < 4 && (
                     <span className="hotkey">{(shortcutIndex + 7) % 10}</span>
                   )}

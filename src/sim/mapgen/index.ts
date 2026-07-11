@@ -1,12 +1,12 @@
 /**
  * HexaPharma — deterministic constructive map generation.
  *
- * Generation starts from a known machine sequence. Deliberate map barriers make
- * the first two maps diverge, a swap carries the donor position across the
- * barrier, and the cure is placed at the constructed endpoint. Only after every
- * reference path has been replayed and protected do walls, hazards, and side
- * effects grow around it. Solvability therefore follows from construction; the
- * dev/test-only solver is not part of the production dependency graph.
+ * Layer A starts from the exact map center; later phase layers use deterministic
+ * nearby offsets so a phase exchange changes state instead of being a no-op.
+ * The cure is placed at the constructed endpoint. Only after every reference
+ * path has been replayed and protected do walls, hazards, and side effects grow
+ * around it. Solvability therefore follows from construction; the dev/test-only
+ * solver is not part of the production dependency graph.
  */
 import type {
   Vec2,
@@ -143,8 +143,8 @@ function makeScratch(width: number, height: number, start: Vec2, origin: Vec2): 
   const map: ScratchMap = {
     width,
     height,
-    origin,
-    start,
+    origin: { x: origin.x, y: origin.y },
+    start: { x: start.x, y: start.y },
     cell: new Uint8Array(len),
     cureId: new Int16Array(len).fill(-1),
     sideEffectId: new Int32Array(len).fill(-1),
@@ -171,14 +171,16 @@ function freezeMaps(maps: readonly ScratchMap[]): MultiMap {
   return { maps: maps.map(freezeMap) };
 }
 
-function originFor(mapIndex: MapIndex, width: number, height: number): Vec2 {
-  const corners: readonly Vec2[] = [
-    { x: 0, y: 0 },
-    { x: width - 1, y: height - 1 },
-    { x: width - 1, y: 0 },
-    { x: 0, y: height - 1 },
-  ];
-  return corners[mapIndex % corners.length] ?? { x: 0, y: 0 };
+function mapCenter(width: number, height: number): Vec2 {
+  return { x: Math.floor(width / 2), y: Math.floor(height / 2) };
+}
+
+function phaseStart(center: Vec2, width: number, height: number, map: number): Vec2 {
+  const step = Math.max(1, Math.floor(Math.min(width, height) / 8));
+  if (map === 1) return { x: center.x + step, y: center.y };
+  if (map === 2) return { x: center.x, y: center.y + step };
+  if (map === 3) return { x: center.x - step, y: center.y };
+  return center;
 }
 
 function axisMovers(catalog: readonly MachineCatalogEntry[]): AxisMover[] {
@@ -198,7 +200,7 @@ function axisMovers(catalog: readonly MachineCatalogEntry[]): AxisMover[] {
         entry.transform.relation,
         orientation,
       );
-      const axis = delta.x > 0 && delta.y === 0 ? "x" : delta.y > 0 && delta.x === 0 ? "y" : null;
+      const axis = delta.x !== 0 && delta.y === 0 ? "x" : delta.y !== 0 && delta.x === 0 ? "y" : null;
       if (axis === null) continue;
       const step = axis === "x" ? delta.x : delta.y;
       const key = `${axis}:${step}:${entry.typeId}`;
@@ -215,29 +217,17 @@ function axisMovers(catalog: readonly MachineCatalogEntry[]): AxisMover[] {
   return movers;
 }
 
-function smallestMover(movers: readonly AxisMover[], axis: "x" | "y"): AxisMover | null {
+function smallestMover(
+  movers: readonly AxisMover[],
+  axis: "x" | "y",
+  direction: -1 | 1,
+): AxisMover | null {
   let best: AxisMover | null = null;
   for (const mover of movers) {
-    if (mover.axis !== axis) continue;
-    if (best === null || mover.step < best.step) best = mover;
+    if (mover.axis !== axis || Math.sign(mover.step) !== direction) continue;
+    if (best === null || Math.abs(mover.step) < Math.abs(best.step)) best = mover;
   }
   return best;
-}
-
-function swap01(catalog: readonly MachineCatalogEntry[]): { machine: Machine; cost: number } | null {
-  for (const entry of catalog) {
-    const transform = entry.transform;
-    if (
-      transform.kind === "swap" &&
-      ((transform.a === 0 && transform.b === 1) || (transform.a === 1 && transform.b === 0))
-    ) {
-      return {
-        machine: ownMachine({ typeId: entry.typeId, transform, orientation: IDENTITY }),
-        cost: entry.cost,
-      };
-    }
-  }
-  return null;
 }
 
 function referenceDifficulty(reference: Template): number {
@@ -254,22 +244,6 @@ function referenceDifficulty(reference: Template): number {
     ? 2
     : 0;
   return reference.steps.length + diversityBonus + decouplingBonus;
-}
-
-function addBarrier(map: ScratchMap, axis: "x" | "y"): void {
-  if (axis === "x") {
-    for (let y = 0; y < map.height; y++) {
-      const i = idx(map.width, 1, y);
-      map.cell[i] = CellKind.Wall;
-      map.protectedCells[i] = 1;
-    }
-    return;
-  }
-  for (let x = 0; x < map.width; x++) {
-    const i = idx(map.width, x, 1);
-    map.cell[i] = CellKind.Wall;
-    map.protectedCells[i] = 1;
-  }
 }
 
 function protectReference(maps: readonly ScratchMap[], reference: Template): void {
@@ -292,56 +266,95 @@ function protectReference(maps: readonly ScratchMap[], reference: Template): voi
 function constructDiseases(
   rng: Rng,
   maps: readonly ScratchMap[],
-  catalog: readonly MachineCatalogEntry[],
   movers: readonly AxisMover[],
   diseaseCount: number,
   minDifficulty: number,
   maxDifficulty: number,
 ): BuiltDisease[] {
-  const swap = swap01(catalog);
-  const xMover = smallestMover(movers, "x");
-  const yMover = smallestMover(movers, "y");
-  if (swap === null || xMover === null || yMover === null) {
-    throw new Error("mapgen.generate: catalog needs +x/+y movers and a swap between maps 0 and 1");
-  }
-
-  const planned: PlannedDisease[] = [];
+  const candidatesByDisease: {
+    readonly id: DiseaseId;
+    readonly map: MapIndex;
+    readonly candidates: readonly {
+      readonly steps: Machine[];
+      readonly difficulty: number;
+      readonly cost: number;
+    }[];
+  }[] = [];
   for (let id = 0; id < diseaseCount; id++) {
     const map = id % maps.length;
-    const axis = id % 2 === 0 ? "x" : "y";
-    const mover = axis === "x" ? xMover : yMover;
-    const span = axis === "x" ? maps[map]!.width - 1 : maps[map]!.height - 1;
-    const minMoves = Math.ceil(2 / mover.step);
-    const maxMoves = Math.ceil(span / mover.step);
-    const fixedBonus = mover.machine.typeId === swap.machine.typeId ? 3 : 4;
-    const low = Math.max(minDifficulty, minMoves + fixedBonus);
-    const high = Math.min(maxDifficulty, maxMoves + fixedBonus);
-    if (low > high) {
+    const scratch = maps[map]!;
+    const xDirection: -1 | 1 = id % 4 === 1 || id % 4 === 2 ? -1 : 1;
+    const yDirection: -1 | 1 = id % 4 >= 2 ? -1 : 1;
+    const xMover = smallestMover(movers, "x", xDirection);
+    const yMover = smallestMover(movers, "y", yDirection);
+    if (xMover === null || yMover === null) {
+      throw new Error("mapgen.generate: catalog needs axis-aligned translate movers in every direction");
+    }
+    const xRoom = xDirection > 0
+      ? scratch.width - 1 - scratch.start.x
+      : scratch.start.x;
+    const yRoom = yDirection > 0
+      ? scratch.height - 1 - scratch.start.y
+      : scratch.start.y;
+    const xCapacity = Math.floor(xRoom / Math.abs(xMover.step));
+    const yCapacity = Math.floor(yRoom / Math.abs(yMover.step));
+    const candidates: { steps: Machine[]; difficulty: number; cost: number }[] = [];
+    for (let stepCount = 1; stepCount <= xCapacity + yCapacity; stepCount++) {
+      const xCount = Math.min(stepCount, xCapacity);
+      const yCount = stepCount - xCount;
+      const steps: Machine[] = [];
+      for (let n = 0; n < xCount; n++) steps.push(ownMachine(xMover.machine));
+      for (let n = 0; n < yCount; n++) steps.push(ownMachine(yMover.machine));
+      const reference: Template = { steps };
+      const difficulty = referenceDifficulty(reference);
+      if (difficulty < minDifficulty || difficulty > maxDifficulty) continue;
+      candidates.push({
+        steps,
+        difficulty,
+        cost: xCount * xMover.cost + yCount * yMover.cost,
+      });
+    }
+    if (candidates.length === 0) {
       throw new Error(
         `mapgen.generate: difficulty [${minDifficulty},${maxDifficulty}] cannot be constructed ` +
           `on ${maps[map]!.width}x${maps[map]!.height}`,
       );
     }
-
-    const desired = low + rng.int(high - low + 1);
-    const moveCount = desired - fixedBonus;
-    const steps: Machine[] = [];
-    for (let n = 0; n < moveCount; n++) steps.push(ownMachine(mover.machine));
-    steps.push(ownMachine(swap.machine));
-    const reference: Template = Object.freeze({ steps: Object.freeze(steps) });
-    const difficulty = referenceDifficulty(reference);
-
-    planned.push({
+    candidatesByDisease.push({
       id,
       map,
-      difficulty,
-      cost: moveCount * mover.cost + swap.cost,
-      reference,
+      candidates,
     });
   }
 
-  addBarrier(maps[0]!, "x");
-  addBarrier(maps[1]!, "y");
+  const commonDifficulties: number[] = [];
+  for (let difficulty = minDifficulty; difficulty <= maxDifficulty; difficulty++) {
+    if (candidatesByDisease.every((disease) =>
+      disease.candidates.some((candidate) => candidate.difficulty === difficulty),
+    )) {
+      commonDifficulties.push(difficulty);
+    }
+  }
+  if (commonDifficulties.length === 0) {
+    throw new Error(
+      `mapgen.generate: difficulty [${minDifficulty},${maxDifficulty}] has no shared ` +
+        "constructive tier across diseases",
+    );
+  }
+  const chosenDifficulty = commonDifficulties[rng.int(commonDifficulties.length)]!;
+  const planned: PlannedDisease[] = candidatesByDisease.map((disease) => {
+    const chosen = disease.candidates.find(
+      (candidate) => candidate.difficulty === chosenDifficulty,
+    )!;
+    const reference: Template = Object.freeze({ steps: Object.freeze(chosen.steps) });
+    return {
+      id: disease.id,
+      map: disease.map,
+      difficulty: chosen.difficulty,
+      cost: chosen.cost,
+      reference,
+    };
+  });
 
   const built: BuiltDisease[] = [];
   for (const plan of planned) {
@@ -385,20 +398,6 @@ function placeCures(maps: readonly ScratchMap[], built: readonly BuiltDisease[])
   }
 }
 
-function placeTensionHazards(maps: readonly ScratchMap[], built: readonly BuiltDisease[]): void {
-  for (const disease of built) {
-    for (let mi = 0; mi < maps.length; mi++) {
-      if (mi === disease.map) continue;
-      const map = maps[mi];
-      if (map === undefined) continue;
-      const i = idx(map.width, disease.node.x, disease.node.y);
-      if (map.protectedCells[i] === 1 || map.cell[i] !== CellKind.Empty) continue;
-      map.cell[i] = CellKind.Hazard;
-      map.protectedCells[i] = 1;
-    }
-  }
-}
-
 function scatter(rng: Rng, map: ScratchMap, sideEffectBase: number): void {
   const len = map.width * map.height;
   const wallCount = Math.floor((len * 4) / 100);
@@ -436,7 +435,7 @@ function requireSafeInteger(name: string, value: number): void {
   }
 }
 
-function validateCatalog(catalog: readonly MachineCatalogEntry[], nMaps: number): void {
+function validateCatalog(catalog: readonly MachineCatalogEntry[]): void {
   if (!Array.isArray(catalog)) {
     throw new Error("mapgen.generate: catalog must be an array");
   }
@@ -521,14 +520,14 @@ function validateCatalog(catalog: readonly MachineCatalogEntry[], nMaps: number)
       if (transform.a === transform.b) {
         throw new Error(`mapgen.generate: ${path} swap requires distinct map indices`);
       }
-      if (transform.a < 0 || transform.a >= nMaps) {
+      if (transform.a < 0 || transform.a >= 4) {
         throw new Error(
-          `mapgen.generate: ${path} swap index ${transform.a} outside 0..${nMaps - 1}`,
+          `mapgen.generate: ${path} swap index ${transform.a} outside supported range 0..3`,
         );
       }
-      if (transform.b < 0 || transform.b >= nMaps) {
+      if (transform.b < 0 || transform.b >= 4) {
         throw new Error(
-          `mapgen.generate: ${path} swap index ${transform.b} outside 0..${nMaps - 1}`,
+          `mapgen.generate: ${path} swap index ${transform.b} outside supported range 0..3`,
         );
       }
     } else {
@@ -543,8 +542,8 @@ function validateOptions(opts: Parameters<GenerateFn>[0]): void {
     throw new Error(`mapgen.generate: seed must be a uint32, got ${opts.seed}`);
   }
   requireSafeInteger("nMaps", opts.nMaps);
-  if (opts.nMaps < 2 || opts.nMaps > 4) {
-    throw new Error(`mapgen.generate: nMaps must be between 2 and 4, got ${opts.nMaps}`);
+  if (opts.nMaps < 1 || opts.nMaps > 4) {
+    throw new Error(`mapgen.generate: nMaps must be between 1 and 4, got ${opts.nMaps}`);
   }
   requireSafeInteger("width", opts.width);
   if (opts.width < 3) {
@@ -589,7 +588,7 @@ function validateOptions(opts: Parameters<GenerateFn>[0]): void {
       `mapgen.generate: difficulty.max must not exceed ${MAX_GENERATION_DIFFICULTY}`,
     );
   }
-  validateCatalog(opts.catalog, opts.nMaps);
+  validateCatalog(opts.catalog);
 }
 
 export const generate: GenerateFn = (opts) => {
@@ -599,10 +598,10 @@ export const generate: GenerateFn = (opts) => {
 
   const rng = makeRng(seed);
   const movers = axisMovers(catalog);
-  const start: Vec2 = { x: 0, y: 0 };
+  const center = mapCenter(width, height);
   const scratch: ScratchMap[] = [];
   for (let mi = 0; mi < nMaps; mi++) {
-    scratch.push(makeScratch(width, height, start, originFor(mi, width, height)));
+    scratch.push(makeScratch(width, height, phaseStart(center, width, height, mi), center));
   }
 
   let built: BuiltDisease[];
@@ -610,7 +609,6 @@ export const generate: GenerateFn = (opts) => {
     built = constructDiseases(
       rng,
       scratch,
-      catalog,
       movers,
       diseaseCount,
       difficulty.min,
@@ -626,7 +624,6 @@ export const generate: GenerateFn = (opts) => {
   }
 
   placeCures(scratch, built);
-  placeTensionHazards(scratch, built);
   let sideEffectBase = 0;
   for (const map of scratch) {
     scatter(rng, map, sideEffectBase);

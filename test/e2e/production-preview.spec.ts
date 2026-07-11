@@ -4,7 +4,7 @@ import { serializeGameAuthority } from "../../src/sim/save";
 import { defaultGenOptions } from "../../src/ui/Game";
 
 const maximumGameMap = createGameState(
-  { ...defaultGenOptions(14, 4), width: 32, height: 32 },
+  { ...defaultGenOptions(14, 4), width: 64, height: 64 },
   200,
   0,
 );
@@ -16,7 +16,7 @@ const maximumGameMapCheckpoint = JSON.stringify({
 const maximumTwoMapCheckpoint = JSON.stringify({
   version: 2,
   head: serializeGameAuthority(createGameState(
-    { ...defaultGenOptions(14, 2), width: 32, height: 32 },
+    { ...defaultGenOptions(14, 2), width: 64, height: 64 },
     200,
     0,
   )),
@@ -67,8 +67,8 @@ test("production preview renders the maximum Game-authorized map dimensions", as
     width: (element as HTMLCanvasElement).width,
     height: (element as HTMLCanvasElement).height,
   }));
-  expect(size.width).toBeLessThanOrEqual(980);
-  expect(size.height).toBeLessThanOrEqual(980);
+  expect(size.width).toBe(704);
+  expect(size.height).toBe(512);
   expect(errors).toEqual([]);
 });
 
@@ -81,7 +81,5 @@ test("the widest maximum Game map stays inside the Lab content width", async ({ 
   await page.getByTestId("load").click();
   const canvas = page.locator("[data-testid='lab-canvas'] canvas");
   await expect(canvas).toBeVisible();
-  expect(await canvas.evaluate((element) => (element as HTMLCanvasElement).width)).toBeLessThanOrEqual(
-    980,
-  );
+  expect(await canvas.evaluate((element) => (element as HTMLCanvasElement).width)).toBe(704);
 });

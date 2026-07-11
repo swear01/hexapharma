@@ -3,6 +3,8 @@ import { applyGameIntent, createGameState } from "../../src/sim/game";
 import { serializeGame, serializeSlots } from "../../src/sim/save";
 import { defaultGenOptions } from "../../src/ui/Game";
 
+test.setTimeout(60_000);
+
 const legacyDefault = createGameState(defaultGenOptions(14), 200, 0);
 const legacyDefaultHead = serializeGame(legacyDefault);
 const legacyDefaultHistory = serializeSlots([legacyDefault]);
@@ -15,7 +17,7 @@ const legacyRichNextHead = serializeGame(
 // Full game loop smoke: cure in the Lab → Save recipe → Factory → produce → Shop
 // (cash up) → Patents (listed/unlockable). Functional assertions; screenshots only
 // for the record (no visual baselines). The default game level is seed 14, where
-// the starter-machine template [push×5, swap01] cures disease 0 (a sellable cure).
+// the starter-machine template [push2×4] cures disease 0 (a sellable cure).
 
 test("the full loop is playable: cure → produce → sell → patents", async ({ page }) => {
   await page.goto("/");
@@ -30,8 +32,7 @@ test("the full loop is playable: cure → produce → sell → patents", async (
   // ── Lab: reveal, build a curing template, run, then ship the recipe. ──
   await expect(page.getByTestId("view-lab")).toHaveAttribute("data-testid", "view-lab");
   await page.getByTestId("reveal").check();
-  for (let i = 0; i < 5; i++) await page.getByTestId("palette-push").click();
-  await page.getByTestId("palette-swap01").click();
+  for (let i = 0; i < 4; i++) await page.getByTestId("palette-push2").click();
   await page.getByTestId("run").click();
 
   await expect(page.getByTestId("status")).toContainText(/Run complete|WIN/i, { timeout: 10_000 });

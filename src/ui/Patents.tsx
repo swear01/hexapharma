@@ -27,8 +27,19 @@ function effectLabel(node: (typeof DEFAULT_PATENTS)[number]): string {
     case "revealAid":
       return `reveal aid +${e.amount}`;
     case "unlockMap":
-      return "unlock a new, deeper map";
+      return node.id === "new-map"
+        ? "unlock ingredient layer B"
+        : node.id === "new-map-4"
+          ? "unlock ingredient layer C"
+          : "unlock ingredient layer D";
   }
+}
+
+function patentTitle(id: string): string {
+  if (id === "new-map") return "Layer B: carrier medium";
+  if (id === "new-map-4") return "Layer C: catalytic phase";
+  if (id === "deep-map-4") return "Layer D: deep substrate";
+  return id;
 }
 
 export function Patents({ active, economy, patents, onUnlock }: PatentsProps) {
@@ -125,7 +136,7 @@ export function Patents({ active, economy, patents, onUnlock }: PatentsProps) {
                 <div className="patent-node-line" aria-hidden="true" />
                 <div className="patent-card-heading">
                   <span className="patent-emblem">⌬</span>
-                  <div><h2>{node.id}</h2><small>{effectLabel(node)}</small></div>
+                  <div><h2>{patentTitle(node.id)}</h2><small>{effectLabel(node)}</small></div>
                 </div>
                 <div className="patent-requirement">Requires: {node.requires.join(", ") || "root"}</div>
                 <div className="patent-cost">{node.cost} cash · {node.researchCost} R&amp;D</div>

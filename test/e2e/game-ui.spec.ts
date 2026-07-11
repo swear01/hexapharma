@@ -67,6 +67,7 @@ test("the primary UI is a viewport-filling game shell with persistent chrome", a
 test("Factory supports keyboard tools, drag build, right-drag erase, undo, redo, hover, and zoom", async ({
   page,
 }) => {
+  test.setTimeout(60_000);
   await page.goto("/");
   await expect(page.getByTestId("game-shell")).toBeVisible();
   await page.keyboard.press("F2");

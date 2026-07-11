@@ -51,14 +51,18 @@ function stepWithTrails(
   const t = m.transform;
 
   if (t.kind === "swap") {
-    // Pure relabel; no sweep, never fails. Out-of-range indices are a no-op.
+    // Pure relabel; no sweep, never fails. Invalid indices violate Transform authority.
     const a = t.a;
     const b = t.b;
+    if (!Number.isSafeInteger(a) || !Number.isSafeInteger(b) || a === b) {
+      throw new Error("drug graph: swap requires distinct safe-integer map indices");
+    }
+    if (a < 0 || b < 0 || a >= n || b >= n) {
+      throw new Error("drug graph: swap index is outside the active map range");
+    }
     const pa = s.pos[a];
     const pb = s.pos[b];
-    if (a === b || pa === undefined || pb === undefined) {
-      return { next: s, trails: empties };
-    }
+    if (pa === undefined || pb === undefined) throw new Error("drug graph: swap state is missing a map position");
     const pos = s.pos.slice();
     pos[a] = pb;
     pos[b] = pa;

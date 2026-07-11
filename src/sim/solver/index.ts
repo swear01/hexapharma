@@ -85,7 +85,7 @@ function findCureNodes(mm: MultiMap, targets: readonly DiseaseId[]): CureNode[] 
  * emitted in (rot ascending, flip false-before-true) order; first occurrence of
  * each distinct effectiveDelta wins.
  */
-function expandCatalog(catalog: readonly MachineCatalogEntry[]): ConcreteMachine[] {
+function expandCatalog(catalog: readonly MachineCatalogEntry[], mapCount: number): ConcreteMachine[] {
   const out: ConcreteMachine[] = [];
   for (const entry of catalog) {
     const t = entry.transform;
@@ -105,6 +105,18 @@ function expandCatalog(catalog: readonly MachineCatalogEntry[]): ConcreteMachine
         }
       }
     } else {
+      if (
+        t.kind === "swap" &&
+        (!Number.isSafeInteger(t.a) ||
+          !Number.isSafeInteger(t.b) ||
+          t.a === t.b ||
+          t.a < 0 ||
+          t.b < 0 ||
+          t.a >= mapCount ||
+          t.b >= mapCount)
+      ) {
+        continue;
+      }
       out.push({
         machine: { typeId: entry.typeId, transform: t, orientation: { rot: 0, flip: false } },
         cost: entry.cost,
@@ -151,7 +163,7 @@ export const solve: SolveFn = (mm, start, opts) => {
   const nodes = findCureNodes(mm, opts.targets);
   if (nodes === null) return null;
 
-  const machines = expandCatalog(opts.catalog);
+  const machines = expandCatalog(opts.catalog, mm.maps.length);
 
   // The start may already be the goal (zero-step solution).
   if (isGoal(start, nodes)) {

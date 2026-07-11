@@ -17,6 +17,7 @@
  * a fully-revealed COPY for convenience (sim + persistent fog untouched).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from "react";
 import type {
   MultiMap,
   EffectMap,
@@ -34,6 +35,15 @@ import type {
 import { DEFAULT_CATALOG } from "../sim/phase0_interfaces";
 import { applyStep, evaluate } from "../sim/drug-graph";
 import type { LabRenderer } from "../render/labRenderer";
+import {
+  LAB_VIEWPORT,
+  clampLabCamera,
+  focusLabCamera,
+  labTrailsForFrames,
+  panLabCamera,
+  zoomLabCameraAt,
+  type LabCamera,
+} from "../render/labCamera";
 
 // ───────────────────────────── level generation ─────────────────────────────
 
@@ -41,17 +51,25 @@ import type { LabRenderer } from "../render/labRenderer";
  * A display COPY of `mm` whose each map's `fog` is the persistent exploration fog
  * (or fully-revealed when `revealAll`). We never mutate the sim's fog arrays — the
  * renderer reads `map.fog`, drawing fogged cells as UNKNOWN. The persistent arrays
- * are sized to the level by the Game; fall back to the sim's own fog if a map is
- * momentarily missing (e.g. a frame during a level swap).
+ * must match the level exactly; authority mismatches are shown as renderer errors.
  */
 function withFog(mm: MultiMap, fog: readonly Uint8Array[], revealAll: boolean): MultiMap {
   return {
     maps: mm.maps.map((m, i): EffectMap => {
       if (revealAll) return { ...m, fog: new Uint8Array(m.fog.length).fill(1) };
-      const f = fog[i];
-      return f !== undefined && f.length === m.fog.length ? { ...m, fog: f } : m;
+      return { ...m, fog: fog[i]! };
     }),
   };
+}
+
+export function validateLabFogAuthority(mm: MultiMap, fog: readonly Uint8Array[]): string | null {
+  if (fog.length !== mm.maps.length) return "Lab fog authority does not match the active layer count";
+  for (let i = 0; i < mm.maps.length; i++) {
+    if (fog[i]?.length !== mm.maps[i]!.fog.length) {
+      return `Lab fog authority does not match layer ${String.fromCharCode(65 + i)}`;
+    }
+  }
+  return null;
 }
 
 // ───────────────────────────── helpers (display only) ─────────────────────────────
@@ -66,7 +84,7 @@ function isOrientableTranslate(entry: MachineCatalogEntry): boolean {
 function transformLabel(t: Transform): string {
   if (t.kind === "translate") return `translate ${t.relation} (${t.delta.x},${t.delta.y})`;
   if (t.kind === "scale") return `scale ${t.num}/${t.den}`;
-  return `swap ${t.a}↔${t.b}`;
+  return `Phase Exchange ${String.fromCharCode(65 + t.a)}↔${String.fromCharCode(65 + t.b)}`;
 }
 
 /** One template step, described for the ordered list. */
@@ -108,6 +126,7 @@ export function App({ active, level, fog, catalog, onExplore, onSaveRecipe }: Ap
   const [rendererError, setRendererError] = useState<string | null>(null);
 
   const { mm, start } = level;
+  const fogError = useMemo(() => validateLabFogAuthority(mm, fog), [fog, mm]);
   const targets = useMemo<readonly DiseaseId[]>(() => level.diseases.map((d) => d.id), [level]);
 
   // Revealed cells across all maps (sum of fog===1) and the total — a stable signal
@@ -133,6 +152,21 @@ export function App({ active, level, fog, catalog, onExplore, onSaveRecipe }: Ap
 
   // The animating drug token state (fog is external/persistent, not stored here).
   const [shownDrug, setShownDrug] = useState<DrugState>(start);
+  const [activeMap, setActiveMap] = useState(0);
+  const [cameras, setCameras] = useState<readonly LabCamera[]>(() =>
+    mm.maps.map((map, index) =>
+      clampLabCamera(
+        focusLabCamera(start.pos[index] ?? { x: Math.floor(map.width / 2), y: Math.floor(map.height / 2) }),
+        LAB_VIEWPORT,
+        map,
+      ),
+    ),
+  );
+  const [followingDrug, setFollowingDrug] = useState(true);
+  const [trails, setTrails] = useState<readonly (readonly ({ readonly x: number; readonly y: number } | null)[])[]>(
+    () => labTrailsForFrames([start], mm.maps.length),
+  );
+  const camera = cameras[activeMap] ?? focusLabCamera(shownDrug.pos[activeMap] ?? { x: 0, y: 0 });
 
   // Result of the last Run.
   const [outcome, setOutcome] = useState<Outcome | null>(null);
@@ -157,17 +191,26 @@ export function App({ active, level, fog, catalog, onExplore, onSaveRecipe }: Ap
 
   // The map handed to the renderer = the level overlaid with the persistent fog
   // (or fully revealed when the debug toggle is on).
-  const renderMap = useMemo(() => withFog(mm, fog, reveal), [mm, fog, reveal]);
+  const renderMap = useMemo(
+    () => fogError === null ? withFog(mm, fog, reveal) : mm,
+    [fog, fogError, mm, reveal],
+  );
   // Latest fogged map + drug for the async mount paint (avoids a one-frame unfogged flash).
   const renderMapRef = useRef(renderMap);
   renderMapRef.current = renderMap;
   const shownDrugRef = useRef(shownDrug);
   shownDrugRef.current = shownDrug;
+  const viewRef = useRef({ activeMap, camera, trail: trails[activeMap] ?? [] });
+  viewRef.current = { activeMap, camera, trail: trails[activeMap] ?? [] };
 
   // ── mount / unmount the Pixi renderer ─────────────────────────────────────
   useEffect(() => {
     let disposed = false;
     let local: LabRenderer | null = null;
+    if (fogError !== null) {
+      setRendererError(fogError);
+      return () => undefined;
+    }
     setRendererError(null);
     void (async () => {
       try {
@@ -180,7 +223,7 @@ export function App({ active, level, fog, catalog, onExplore, onSaveRecipe }: Ap
         local = r;
         rendererRef.current = r;
         if (mountRef.current) mountRef.current.appendChild(r.canvas);
-        r.render(renderMapRef.current, shownDrugRef.current);
+        r.render(renderMapRef.current, shownDrugRef.current, viewRef.current);
       } catch (error) {
         if (local !== null) {
           local.destroy();
@@ -201,17 +244,37 @@ export function App({ active, level, fog, catalog, onExplore, onSaveRecipe }: Ap
     };
     // mm/start identity changes only when a new level is generated; remount the
     // renderer then so the canvas is resized for the new level shape.
-  }, [mm, start]);
+  }, [fogError, mm, start]);
 
   // ── repaint whenever shown state (or reveal toggle) changes ────────────────
   useEffect(() => {
-    rendererRef.current?.render(renderMap, shownDrug);
-  }, [renderMap, shownDrug]);
+    if (fogError !== null) return;
+    rendererRef.current?.render(renderMap, shownDrug, { activeMap, camera, trail: trails[activeMap] ?? [] });
+  }, [activeMap, camera, fogError, renderMap, shownDrug, trails]);
+
+  useEffect(() => {
+    if (!followingDrug) return;
+    const pos = shownDrug.pos[activeMap];
+    const map = mm.maps[activeMap];
+    if (pos === undefined || map === undefined) return;
+    setCameras((current) => {
+      const previous = current[activeMap] ?? focusLabCamera(pos);
+      const next = clampLabCamera(
+        { x: pos.x + 0.5, y: pos.y + 0.5, zoom: previous.zoom },
+        LAB_VIEWPORT,
+        map,
+      );
+      if (next.x === previous.x && next.y === previous.y && next.zoom === previous.zoom) return current;
+      const updated = [...current];
+      updated[activeMap] = next;
+      return updated;
+    });
+  }, [activeMap, followingDrug, mm.maps, shownDrug]);
 
   // ── palette / template editing ────────────────────────────────────────────
   const addMachine = useCallback(
     (entry: MachineCatalogEntry) => {
-      if (running) return;
+      if (running || (entry.transform.kind === "swap" && mm.maps.length < 2)) return;
       const orientation: Orientation = isOrientableTranslate(entry)
         ? { rot, flip }
         : { rot: 0, flip: false };
@@ -222,24 +285,27 @@ export function App({ active, level, fog, catalog, onExplore, onSaveRecipe }: Ap
       };
       setOutcome(null);
       setShownDrug(start);
+      setTrails(labTrailsForFrames([start], mm.maps.length));
       setSteps((s) => [...s, machine]);
     },
-    [running, rot, flip, start],
+    [mm.maps.length, running, rot, flip, start],
   );
 
   const removeLast = useCallback(() => {
     if (running) return;
     setOutcome(null);
     setShownDrug(start);
+    setTrails(labTrailsForFrames([start], mm.maps.length));
     setSteps((s) => s.slice(0, -1));
-  }, [running, start]);
+  }, [mm.maps.length, running, start]);
 
   const clearTemplate = useCallback(() => {
     if (running) return;
     setOutcome(null);
     setShownDrug(start);
+    setTrails(labTrailsForFrames([start], mm.maps.length));
     setSteps([]);
-  }, [running, start]);
+  }, [mm.maps.length, running, start]);
 
   // ── Run: reveal fog, animate the drug across BOTH maps, then evaluate ──────
   const run = useCallback(() => {
@@ -260,6 +326,8 @@ export function App({ active, level, fog, catalog, onExplore, onSaveRecipe }: Ap
       s = applyStep(mm, s, m);
       frames.push(s);
     }
+    const trailBreaks = [false, ...steps.map((machine) => machine.transform.kind === "swap")];
+    setTrails(labTrailsForFrames(frames.slice(0, 1), mm.maps.length));
 
     const myRun = ++runIdRef.current;
     let k = 0;
@@ -267,7 +335,14 @@ export function App({ active, level, fog, catalog, onExplore, onSaveRecipe }: Ap
       if (runIdRef.current !== myRun) return; // cancelled by reset/unmount
       k++;
       const frame = frames[k];
-      if (frame !== undefined) setShownDrug(frame);
+      if (frame !== undefined) {
+        setShownDrug(frame);
+        setTrails(labTrailsForFrames(
+          frames.slice(0, k + 1),
+          mm.maps.length,
+          trailBreaks.slice(0, k + 1),
+        ));
+      }
       if (k < frames.length - 1) {
         window.setTimeout(tick, 260);
       } else {
@@ -283,7 +358,8 @@ export function App({ active, level, fog, catalog, onExplore, onSaveRecipe }: Ap
     setRunning(false);
     setOutcome(null);
     setShownDrug(start);
-  }, [start]);
+    setTrails(labTrailsForFrames([start], mm.maps.length));
+  }, [mm.maps.length, start]);
 
   // ── Reset: clear the TEMPLATE + token; KEEP what's been explored (fog persists) ──
   const reset = useCallback(() => {
@@ -294,7 +370,8 @@ export function App({ active, level, fog, catalog, onExplore, onSaveRecipe }: Ap
     setFlip(false);
     setOutcome(null);
     setShownDrug(start);
-  }, [start]);
+    setTrails(labTrailsForFrames([start], mm.maps.length));
+  }, [mm.maps.length, start]);
 
   // ── new level handed down by the Game (e.g. new-map patent): reset play state ──
   // (The persistent fog is reset by the Game; here we only clear the template/token.)
@@ -306,7 +383,90 @@ export function App({ active, level, fog, catalog, onExplore, onSaveRecipe }: Ap
     setFlip(false);
     setOutcome(null);
     setShownDrug(start);
+    setTrails(labTrailsForFrames([start], mm.maps.length));
+    setActiveMap(0);
+    setFollowingDrug(true);
+    setCameras(
+      mm.maps.map((map, index) =>
+        clampLabCamera(
+          focusLabCamera(start.pos[index] ?? { x: Math.floor(map.width / 2), y: Math.floor(map.height / 2) }),
+          LAB_VIEWPORT,
+          map,
+        ),
+      ),
+    );
   }, [mm, start]);
+
+  const focusDrug = useCallback(() => {
+    const pos = shownDrug.pos[activeMap];
+    const map = mm.maps[activeMap];
+    if (pos === undefined || map === undefined) return;
+    setFollowingDrug(true);
+    setCameras((current) => {
+      const updated = [...current];
+      updated[activeMap] = clampLabCamera(focusLabCamera(pos), LAB_VIEWPORT, map);
+      return updated;
+    });
+  }, [activeMap, mm.maps, shownDrug]);
+
+  const panRef = useRef<{ pointerId: number; x: number; y: number } | null>(null);
+  const onMapPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0 && event.button !== 1) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    panRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+    setFollowingDrug(false);
+  }, []);
+
+  const onMapPointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = panRef.current;
+    const map = mm.maps[activeMap];
+    if (drag === null || drag.pointerId !== event.pointerId || map === undefined) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const scaleX = LAB_VIEWPORT.width / rect.width;
+    const scaleY = LAB_VIEWPORT.height / rect.height;
+    const dx = (event.clientX - drag.x) * scaleX;
+    const dy = (event.clientY - drag.y) * scaleY;
+    panRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+    setCameras((current) => {
+      const updated = [...current];
+      updated[activeMap] = panLabCamera(current[activeMap] ?? camera, dx, dy, LAB_VIEWPORT, map);
+      return updated;
+    });
+  }, [activeMap, camera, mm.maps]);
+
+  const onMapPointerUp = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (panRef.current?.pointerId !== event.pointerId) return;
+    panRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }, []);
+
+  const onMapWheel = useCallback((event: ReactWheelEvent<HTMLDivElement>) => {
+    const map = mm.maps[activeMap];
+    if (map === undefined) return;
+    event.preventDefault();
+    setFollowingDrug(false);
+    const rect = event.currentTarget.getBoundingClientRect();
+    const point = {
+      x: (event.clientX - rect.left) * LAB_VIEWPORT.width / rect.width,
+      y: (event.clientY - rect.top) * LAB_VIEWPORT.height / rect.height,
+    };
+    const factor = event.deltaY < 0 ? 1.12 : 1 / 1.12;
+    setCameras((current) => {
+      const updated = [...current];
+      const previous = current[activeMap] ?? camera;
+      updated[activeMap] = zoomLabCameraAt(
+        previous,
+        previous.zoom * factor,
+        point,
+        LAB_VIEWPORT,
+        map,
+      );
+      return updated;
+    });
+  }, [activeMap, camera, mm.maps]);
 
   useEffect(() => {
     if (!active) return;
@@ -320,10 +480,23 @@ export function App({ active, level, fog, catalog, onExplore, onSaveRecipe }: Ap
       ) {
         return;
       }
+      if (/^Key[A-D]$/.test(event.code)) {
+        const index = event.code.charCodeAt(3) - 65;
+        if (mm.maps[index] !== undefined) {
+          event.preventDefault();
+          setFollowingDrug(false);
+          setActiveMap(index);
+        }
+        return;
+      }
       if (/^Digit[1-9]$/.test(event.code)) {
         const index = Number(event.code.slice(5)) - 1;
         const entry = DEFAULT_CATALOG[index];
-        if (entry !== undefined && catalog.some((candidate) => candidate.typeId === entry.typeId)) {
+        if (
+          entry !== undefined &&
+          catalog.some((candidate) => candidate.typeId === entry.typeId) &&
+          (entry.transform.kind !== "swap" || mm.maps.length > 1)
+        ) {
           event.preventDefault();
           addMachine(entry);
         }
@@ -335,6 +508,9 @@ export function App({ active, level, fog, catalog, onExplore, onSaveRecipe }: Ap
       } else if (event.key.toLowerCase() === "h") {
         event.preventDefault();
         setFlip((value) => !value);
+      } else if (event.key.toLowerCase() === "f") {
+        event.preventDefault();
+        focusDrug();
       } else if (event.key === "Backspace" || event.key === "Delete") {
         event.preventDefault();
         removeLast();
@@ -346,7 +522,7 @@ export function App({ active, level, fog, catalog, onExplore, onSaveRecipe }: Ap
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [active, addMachine, cancelRun, catalog, removeLast, run, running]);
+  }, [active, addMachine, cancelRun, catalog, focusDrug, mm.maps, removeLast, run, running]);
 
   return (
     <div className="game-view lab-workspace" data-testid="lab-workspace">
@@ -357,13 +533,48 @@ export function App({ active, level, fog, catalog, onExplore, onSaveRecipe }: Ap
               {rendererError}
             </div>
           )}
-          <div ref={mountRef} data-testid="lab-canvas" className="lab-canvas" />
+          <div className="lab-layer-tabs" role="tablist" aria-label="Effect atlas layers">
+            {mm.maps.map((_map, index) => (
+              <button
+                key={index}
+                type="button"
+                role="tab"
+                aria-selected={activeMap === index}
+                className={activeMap === index ? "is-active" : ""}
+                data-testid={`lab-layer-${index}`}
+                onClick={() => {
+                  setFollowingDrug(false);
+                  setActiveMap(index);
+                }}
+              >
+                <strong>{String.fromCharCode(65 + index)}</strong>
+                <span>Layer {index + 1}</span>
+              </button>
+            ))}
+          </div>
+          <div
+            className="lab-map-frame"
+            onPointerDown={onMapPointerDown}
+            onPointerMove={onMapPointerMove}
+            onPointerUp={onMapPointerUp}
+            onPointerCancel={onMapPointerUp}
+            onWheel={onMapWheel}
+            data-testid="lab-map-frame"
+          >
+            <div ref={mountRef} data-testid="lab-canvas" className="lab-canvas" />
+          </div>
 
           <div className="transport-bar" aria-label="Lab run controls">
             <button type="button" onClick={running ? cancelRun : run} disabled={steps.length === 0} className={running ? "is-active" : ""} data-testid="run">
               {running ? "■ Stop" : "▶ Run"}
             </button>
             <button type="button" onClick={reset} data-testid="reset">↺ Reset</button>
+            <button type="button" onClick={focusDrug} data-testid="lab-focus">
+              ◎ Focus
+            </button>
+            <output className="camera-readout" data-testid="lab-zoom">
+              {Math.round(camera.zoom * 100)}%{followingDrug ? " · follow" : ""}
+            </output>
             <label className="debug-toggle">
               <input type="checkbox" checked={reveal} onChange={(event) => setReveal(event.target.checked)} data-testid="reveal" />
               Reveal
@@ -377,18 +588,23 @@ export function App({ active, level, fog, catalog, onExplore, onSaveRecipe }: Ap
           <div className="toolbelt" role="toolbar" aria-label="Lab machine hotbar" data-testid="lab-toolbelt">
             {DEFAULT_CATALOG.map((entry, index) => {
               const unlocked = catalog.some((candidate) => candidate.typeId === entry.typeId);
+              const phaseExchange = entry.transform.kind === "swap";
+              const available = unlocked && (!phaseExchange || mm.maps.length > 1);
+              const phaseCue = phaseExchange
+                ? ` · Before A(${shownDrug.pos[0]?.x ?? "–"},${shownDrug.pos[0]?.y ?? "–"}) B(${shownDrug.pos[1]?.x ?? "–"},${shownDrug.pos[1]?.y ?? "–"}) → after A takes B, B takes A`
+                : "";
               return (
                 <button
                   key={entry.typeId}
                   type="button"
                   onClick={() => addMachine(entry)}
-                  disabled={running || !unlocked}
-                  className={`tool-slot${unlocked ? "" : " is-locked"}`}
-                  title={`${transformLabel(entry.transform)} · ${index + 1}`}
+                  disabled={running || !available}
+                  className={`tool-slot${available ? "" : " is-locked"}`}
+                  title={`${transformLabel(entry.transform)}${phaseCue} · ${index + 1}`}
                   data-testid={`palette-${entry.typeId}`}
                 >
-                  <span className="tool-symbol" aria-hidden="true">{entry.typeId.slice(0, 2).toUpperCase()}</span>
-                  <span className="tool-name">{entry.typeId}</span>
+                  <span className="tool-symbol" aria-hidden="true">{phaseExchange ? "A↔B" : entry.typeId.slice(0, 2).toUpperCase()}</span>
+                  <span className="tool-name">{phaseExchange ? "Phase Exchange" : entry.typeId}</span>
                   <span className="hotkey">{index + 1}</span>
                 </button>
               );
@@ -400,7 +616,7 @@ export function App({ active, level, fog, catalog, onExplore, onSaveRecipe }: Ap
           <div className="panel-kicker">Research workspace</div>
           <h1>Effect Atlas</h1>
           <div data-testid="level-info" className="level-readout">
-            seed {level.seed} · <span data-testid="map-count">{mm.maps.length} maps</span><br />
+            seed {level.seed} · <span data-testid="map-count">{mm.maps.length} {mm.maps.length === 1 ? "map" : "maps"}</span><br />
             <span data-testid="revealed-count">revealed {revealedCount.revealed}/{revealedCount.total}</span>
           </div>
           <div className="disease-stack">
@@ -432,6 +648,23 @@ export function App({ active, level, fog, catalog, onExplore, onSaveRecipe }: Ap
           </div>
 
           <div className="panel-section">
+            <div className="panel-heading">
+              <h2>Active layer</h2>
+              <span>{String.fromCharCode(65 + activeMap)}</span>
+            </div>
+            <p className="panel-copy">
+              Viewing one local region of layer {String.fromCharCode(65 + activeMap)}. Drag to inspect, wheel to zoom, then Focus to follow the drug.
+            </p>
+            {mm.maps.length > 1 && (
+              <div className="phase-cue" data-testid="phase-exchange-cue">
+                <strong>Phase Exchange A↔B</strong>
+                <span>Before: A keeps A, B keeps B</span>
+                <span>After: A receives B, B receives A</span>
+              </div>
+            )}
+          </div>
+
+          <div className="panel-section">
             <h2>Next machine orientation</h2>
             <div className="panel-actions">
               <button type="button" onClick={() => setRot((value) => ((value + 1) % 4) as Rotation)} disabled={running} className="game-control" data-testid="rotate">
@@ -454,7 +687,7 @@ export function App({ active, level, fog, catalog, onExplore, onSaveRecipe }: Ap
               ? won ? "Send complete cure to Factory" : "Send recipe to Factory"
               : "Run a valid recipe to ship"}
           </button>
-          <div className="key-help"><span className="hotkey">Space</span> run · <span className="hotkey">R</span> rotate · <span className="hotkey">H</span> mirror · <span className="hotkey">⌫</span> remove</div>
+          <div className="key-help"><span className="hotkey">Space</span> run · <span className="hotkey">A–D</span> layers · <span className="hotkey">F</span> focus · <span className="hotkey">R</span> rotate · <span className="hotkey">H</span> mirror · <span className="hotkey">⌫</span> remove</div>
         </aside>
       </div>
     </div>

@@ -21,6 +21,9 @@ const options: GenOptions = {
 };
 
 describe("game replay work", () => {
+  it("accepts a single ingredient layer", () => {
+    expect(estimateGameReplayWork({ ...options, nMaps: 1, diseaseCount: 1 }, [])).toBeGreaterThan(0);
+  });
   it("uses the compiled factory instead of blocking a normal recipe trace early", () => {
     const recipe = generate(options).diseases[0]!.reference;
     const trace: readonly GameIntent[] = [
@@ -45,5 +48,24 @@ describe("game replay work", () => {
     });
 
     expect(estimateGameReplayWork(maximumMaps, trace)).toBeGreaterThan(50_000_000);
+  });
+
+  it("charges every 63x63 layer across the complete one-to-four patent path", () => {
+    const oneLayer = { ...options, nMaps: 1, width: 63, height: 63, diseaseCount: 1 };
+    const trace: readonly GameIntent[] = [
+      { kind: "unlockPatent", id: "new-map" },
+      { kind: "runLab", template: { steps: [] } },
+      { kind: "unlockPatent", id: "new-map-4" },
+      { kind: "runLab", template: { steps: [] } },
+      { kind: "unlockPatent", id: "deep-map-4" },
+      { kind: "runLab", template: { steps: [] } },
+    ];
+    const cells = 63 * 63;
+    const expected =
+      cells * 32 +
+      (262_144 + 2 * cells * 32) + 2 * cells * 4 +
+      (262_144 + 3 * cells * 32) + 3 * cells * 4 +
+      (262_144 + 4 * cells * 32) + 4 * cells * 4;
+    expect(estimateGameReplayWork(oneLayer, trace)).toBe(expected);
   });
 });

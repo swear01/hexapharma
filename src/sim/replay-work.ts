@@ -37,7 +37,7 @@ function requireMapCells(options: GenOptions): number {
   const area = options.width * options.height;
   if (
     !Number.isSafeInteger(options.nMaps) ||
-    options.nMaps < 2 ||
+    options.nMaps < 1 ||
     options.nMaps > 4 ||
     !Number.isSafeInteger(options.width) ||
     !Number.isSafeInteger(options.height) ||
@@ -187,9 +187,13 @@ export function estimateGameReplayWork(
             factory = expandProfile(factory, 2, 0);
             intentWork = cappedAdd(intentWork, factory.cold);
           }
-        } else if (intent.id === "new-map" || intent.id === "new-map-4") {
+        } else if (
+          intent.id === "new-map" ||
+          intent.id === "new-map-4" ||
+          intent.id === "deep-map-4"
+        ) {
           nMaps = Math.min(4, nMaps + 1);
-          const dimension = nMaps >= 4 ? 6 : nMaps === 3 ? 7 : 12;
+          const dimension = 63;
           mapCells = nMaps * dimension * dimension;
           intentWork = cappedAdd(intentWork, cappedMultiply(mapCells, 32));
           factory = null;

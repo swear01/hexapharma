@@ -98,7 +98,7 @@ export interface EffectMap {
   readonly fog: Uint8Array;
 }
 
-/** The static geometry of a level: N effect maps (N = 2..4). */
+/** The static geometry of a level: N effect maps (N = 1..4). */
 export interface MultiMap {
   readonly maps: readonly EffectMap[];
 }
@@ -261,7 +261,7 @@ export interface DiseaseSpec {
 
 export interface GenOptions {
   readonly seed: number;
-  readonly nMaps: number; // 2..4
+  readonly nMaps: number; // 1..4
   readonly width: number;
   readonly height: number;
   readonly catalog: readonly MachineCatalogEntry[];
@@ -335,8 +335,8 @@ export const MAX_GAME_FACTORY_CELLS = 4_096;
 export const MAX_GAME_FACTORY_DIMENSION = 256;
 export const BASE_GAME_FACTORY_WIDTH = 9;
 export const BASE_GAME_FACTORY_HEIGHT = 6;
-export const MAX_GAME_MAP_CELLS = 1_024;
-export const MAX_GAME_MAP_DIMENSION = 32;
+export const MAX_GAME_MAP_CELLS = 4_096;
+export const MAX_GAME_MAP_DIMENSION = 64;
 export const MAX_GAME_REPLAY_WORK = 100_000_000;
 export const MAX_REWIND_HISTORY_REPLAY_TICKS = 12_000;
 export const MAX_REWIND_HISTORY_TRACE_ENTRIES = 8_192;

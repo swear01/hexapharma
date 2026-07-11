@@ -15,16 +15,17 @@ HexaPharma（暫定名）是一款融合兩種玩法的 2D 單人本地遊戲：
 ## Key Concepts / Domain
 
 - **成分 / 基底 / 原料**（同義）= 一張效果地圖（+ 起始位置）。對應 Potion Craft 的「基底」。
+- **開場與探索視野**：預設只有 `63×63` Layer A，起點／origin 在正中央 `(31,31)`；visibility radius 3 先揭露 `49/3969` 格。Lab 是固定 `704×512` 的局部 viewport（100% 約 `11×8` 格），而不是全圖縮放器。
 - **效果地圖四特徵**：療效節點（治病目標，看最終位置）／副作用區（最終位置落入 → 降級可賣）／牆壁（擋移動，可當精準停點）／危險區（路徑經過即失敗變廢料）。
-- **機器 = 對藥物多圖狀態的確定性變換**：translate（帶朝向、逐格掃動）／scale-to-origin（按有理比例往原點拉）／swap-maps（交換兩圖）。有形狀、processing cost、速度。Factory splitter 只收 `inDir` 並以 per-tile cursor round-robin，merger 只收 `inDirs` 且按陳列順序固定優先；mutable `FactoryRuntime` 綁定建立它的 layout + `MultiMap` identity。
+- **機器 = 對藥物多圖狀態的確定性變換**：translate（帶朝向、逐格掃動）／scale-to-origin（按有理比例往原點拉）／Phase Exchange A↔B（交換兩圖座標）。Phase Exchange 在單層鎖定；解鎖 B 後，B 的 deterministic near-center phase offset 讓交換有實際位移效果。有形狀、processing cost、速度。Factory splitter 只收 `inDir` 並以 per-tile cursor round-robin，merger 只收 `inDirs` 且按陳列順序固定優先；mutable `FactoryRuntime` 綁定建立它的 layout + `MultiMap` identity。
 - **關鍵性質**：輸送帶繞線不貢獻任何移動，效果只取決於「機器序列 + 各機器朝向」。→ 防無腦旋轉、工廠可重排、研究室專注邏輯路徑。
 - **跨圖拉扯**：一機同時動所有圖；在 A 圖達標的同時別讓 B 圖踩進副作用/危險，是核心深度。
 - **模板 / 藥方**：研究室產出的配方（機器序列 + 各機器朝向）；目標/療效由這份模板在目前地圖得到的 `Outcome` 推導，不另存一份會漂移的 target。
 - **物理成品**：工廠 sink 交付實際 `DrugState` + `Outcome` + 經過機器累加的成本；失敗/無療效不入庫，副作用會扣價，一顆成品只能賣一次。
-- **經濟 / 進程**：difficulty價格以BigInt exact rational計算；銷售取得cash/R&D，各疾病sold counter使單品遞減，現行無訂單。inventory ≤24,500、bulk ≤100,000 IDs。專利控制機器/揭霧/擴廠/2→3→4圖；手建entitlement是`9×6 + patent delta`，既存尺寸只有patent可改。public patent helpers拒絕invalid tree/state/cash/research，`activeEffects`的factory/reveal aggregate overflow也checked throw。
-- **public core 與 Game/UI bounds**：public mapgen/factory-sim各容許至65,536格；Game map另限每邊32、每圖1,024格，Game factory另限每邊256、總計4,096格。前者保留headless API能力，後者是renderer-safe authority；Lab依實際dimensions縮cell並限制canvas ≤980×980，production preview覆蓋2-map最寬與4-map最大。效果圖`sideEffectId`使用`Int32Array`。
+- **經濟 / 進程**：difficulty價格以BigInt exact rational計算；銷售取得cash/R&D，各疾病sold counter使單品遞減，現行無訂單。inventory ≤24,500、bulk ≤100,000 IDs。`new-map`／`new-map-4`／`deep-map-4` 依序解鎖 B／C／D，完成1→2→3→4圖且每層維持`63×63`；手建entitlement是`9×6 + patent delta`，既存尺寸只有patent可改。public patent helpers拒絕invalid tree/state/cash/research，`activeEffects`的factory/reveal aggregate overflow也checked throw。
+- **public core 與 Game/UI bounds**：public mapgen/factory-sim各容許至65,536格；Game map另限每邊64、每圖4,096格，Game factory另限每邊256、總計4,096格。前者保留headless API能力，後者是renderer-safe authority；Lab固定`704×512`、只畫active layer並cull viewport外 cells，production preview覆蓋最大`64×64` authority。效果圖`sideEffectId`使用`Int32Array`。
 - **整局狀態 / Save v3**：單一state/head ≤4,096 trace/≤100,000 ticks/≤100,000,000 work，inventory ≤24,500。正常100,000-tick reference約31,000,000。full wire ≤5,000,000 chars才round-trip；full/compact load皆從raw origin+trace preflight後replay。
-- **持久化 / UI**：rewind共用aggregate 12,000 ticks/8,192 entries/100,000,000；compact另限20/1,250,000 chars。`serializeSlots`/`deserializeSlots`同界，deserialize在任何state replay前驗raw list；legacy先history、必要時head-alone。timeline同origin/normalization-aware，跨run replace。Factory diagnostics另有100,000,000 pre-init work cap。UI 是全螢幕工廠遊戲 shell；Factory 以畫布直接拖建／拆除、pan／zoom、pipette、clipboard 與 50 步 history 操作，Lab／Market／Patents 分別使用 hotbar+inspector／cards／research lattice；只有 active view 接 gameplay hotkeys。
+- **持久化 / UI**：rewind共用aggregate 12,000 ticks/8,192 entries/100,000,000；compact另限20/1,250,000 chars。`serializeSlots`/`deserializeSlots`同界，deserialize在任何state replay前驗raw list；legacy先history、必要時head-alone。timeline同origin/normalization-aware，跨run replace。Factory diagnostics另有100,000,000 pre-init work cap。UI 是全螢幕工廠遊戲 shell；Factory 以畫布直接拖建／拆除、pan／zoom、pipette、clipboard 與 50 步 history 操作；Lab 可 drag pan、wheel zoom、`F` follow，A–D active-layer tabs 各保留 camera。未知區使用 `public/assets/lab/` 原創 biochemical fog／sprites，資產契約與來源見其 `manifest.json`／`README.md`。只有 active view 接 gameplay hotkeys。
 - **求解器**：僅供 tests/tools 驗證與稽核；production 建構式 mapgen 不 import 它，遊戲更**絕不**提供一鍵自動解。
 
 ## External Resources

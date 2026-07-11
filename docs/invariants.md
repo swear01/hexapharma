@@ -14,14 +14,16 @@
 ## mapgen + solver
 
 - **建構即可解**：生成器先選定 reference 機器序列、重播並保護逐圖路徑，再於端點放 cure，最後才在受保護路徑外長出牆、危險區與副作用；可解性由建構本身保證，production `mapgen` 不依賴求解器。
-- **生成輸入 authority**：`GenOptions.seed` 必須是 uint32 `0..0xffffffff`（`-0` canonicalize 為 `0`），public mapgen 單圖 area ≤65,536、difficulty max ≤64、catalog ≤256 entries；進入 `GameState`/renderer 的 map authority 另限每邊 ≤32、每圖 ≤1,024 格。其他圖數/尺寸/疾病數/難度帶皆為合法 safe integer且範圍一致，catalog ID 唯一，cost/speed/transform 參數合法。fractional/unsafe/會被 RNG 截斷成別名的 seed 與未知輸入須在生成起點明確拒絕；Lab 必須依實際 map 尺寸縮 cell、讓 Game canvas ≤980×980。production preview 覆蓋 2-map 最寬與 4-map 最大 dimensions，default-size screenshot baseline不得因大圖支援漂移。
+- **生成輸入 authority**：`GenOptions.seed` 必須是 uint32 `0..0xffffffff`（`-0` canonicalize 為 `0`），public mapgen 單圖 area ≤65,536、difficulty max ≤64、catalog ≤256 entries；進入 `GameState`/renderer 的 map authority 另限每邊 ≤64、每圖 ≤4,096 格。其他圖數/尺寸/疾病數/難度帶皆為合法 safe integer且範圍一致，catalog ID 唯一，cost/speed/transform 參數合法。fractional/unsafe/會被 RNG 截斷成別名的 seed 與未知輸入須在生成起點明確拒絕；Lab canvas 固定 `704×512`，不得為了顯示全圖而縮小，renderer只畫active layer與camera可見cells。production preview覆蓋最大`64×64` Game authority。
 - **工具輸入邊界**：`npm run sim gen|run <seed>` 必須把完整 seed argument 解析成 uint32；空值、尾隨垃圾（如 `14junk`）、fractional、負數、unsafe/超界皆 fail，`-0` canonicalize 為 `0`。balance sweep count 必須是 `1..100,000` safe integers；超限在進 seed loop 前 fail-fast。
 - **生成確定性**：同 build、同完整 `GenOptions`（含 seed）→ 逐欄位相等的地圖（含每圖原點）+ 相同難度分與藥價。牆/危險/副作用 scatter counts須以明示整數 rational `4/100`、`3/100`、`5/100` 向下取整，不用 float 比例參與離散決策。
 - **feature ID 寬度**：`EffectMap.sideEffectId` 必須是 `Int32Array`，生成/clone/save/replay 不得降回 `Int16Array` 而把合法正 ID 靜默截斷。
 - **難度界限**：難度分落在設定區間內（不無腦、不需荒謬機器數）。
 - **定價一致 / 精確性**：基礎藥價 = `roundHalfUp(10 × (17/10)^difficulty) + 3 × refCost`；以 BigInt rational 精確計算、結果須為 safe integer，不得依賴浮點冪次。d=0..58 與舊曲線輸出相同；這是確定性修正，不宣稱人工平衡完成。
 - **求解器健全（soundness）**：回傳非 null 的解，確實治到目標且全程未失敗。
-- **跨圖張力（cross-map tension）**：每張生成的關卡至少有一種疾病的標準解必須「解耦」各圖——即包含 swap / scale / reverse / perpendicular / offset 之一。建構手法（N ∈ {2,3,4} 一致）：map 0 的 `x=1` 與 map 1 的 `y=1` 形成不可平移穿越的完整牆障；reference 先讓另一張 donor map 前進，再以 `swap01` 把位置搬到牆後，cure 才放在該端點。同步直推會被牆擋下；其他圖仍以 `d % nMaps` 輪流承載疾病，安全 reference 路徑全部在散佈特徵前受保護。求解器只在 tests/tools 作 oracle，驗證至少一個疾病確實需要解耦，不得由 production `mapgen` import 或在 runtime reject-until-valid。
+- **中心與 phase 起點**：任意合法尺寸下 Layer A 的 start/origin 都是 `floor(width/2), floor(height/2)`；後續 layers 共享該 origin，但 start 使用互異、界內、靠近中心且只由 layer index/尺寸決定的 phase offset。預設 `63×63` 起點依序為 A `(31,31)`、B `(38,31)`、C `(31,38)`、D `(24,31)`。同一生成輸入必須逐欄位重現。
+- **單層先行與跨圖張力**：mapgen 必須接受 N=1，且任意 N 都不得靠角落全牆或強制 reference 使用 `swap01` 才保證可解；多圖關卡至少保留一個不含 phase swap 的合法 reference。A↔B Phase Exchange 在 N=1 不得出現在可用 UI catalog；N≥2 才可用，並因 phase start 不同而確實交換兩個不同座標。求解器仍只在 tests/tools 作 oracle，不得由 production `mapgen` import 或在 runtime reject-until-valid。
+- **探索遮蔽**：新局每張圖以 start 為中心揭露 Chebyshev radius 3（預設 `7×7 = 49/3969`）；實驗與 reveal-aid 可持久擴張。unrevealed cell 必須由 opaque fog texture 完全遮住，不能畫「?」或先畫 feature 再半透明蓋色而洩漏內容。UI 收到的 fog layer 數或 cell 數不符 authority 時必須顯示錯誤，不得靜默退回 mapgen 的全暗 fog。
 
 ## factory-sim
 

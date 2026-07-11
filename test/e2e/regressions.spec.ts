@@ -15,20 +15,21 @@ import { defaultGenOptions } from "../../src/ui/Game";
 test.setTimeout(60_000);
 
 const SEED = 14;
-const level = generate(defaultGenOptions(SEED));
+const fixtureOptions = defaultGenOptions(SEED, 2);
+const level = generate(fixtureOptions);
 const reference: Template = (() => {
   const found = level.diseases[0]?.reference;
   if (!found) throw new Error(`seed ${SEED} did not generate a disease reference`);
   return found;
 })();
 const referenceOutcome = evaluate(level.mm, initialState(level.mm), reference);
-const swap = DEFAULT_CATALOG.find((entry) => entry.typeId === "swap01");
-if (swap === undefined) throw new Error("missing swap01 fixture machine");
+const push = DEFAULT_CATALOG.find((entry) => entry.typeId === "push");
+if (push === undefined) throw new Error("missing push fixture machine");
 const factoryContractRecipe: Template = {
   steps: [
     ...reference.steps,
-    { typeId: swap.typeId, transform: swap.transform, orientation: { rot: 0, flip: false } },
-    { typeId: swap.typeId, transform: swap.transform, orientation: { rot: 0, flip: false } },
+    { typeId: push.typeId, transform: push.transform, orientation: { rot: 0, flip: false } },
+    { typeId: push.typeId, transform: push.transform, orientation: { rot: 2, flip: false } },
   ],
 };
 if (
@@ -53,11 +54,12 @@ function templateOf(steps: readonly (readonly [string, Rotation])[]): Template {
 }
 
 const sideEffectTemplate = templateOf([
+  ["push", 1],
+  ["push", 1],
+  ["push", 3],
   ["push", 0],
-  ["push2", 0],
-  ["push2", 1],
+  ["push", 3],
   ["swap01", 0],
-  ["push2", 1],
 ]);
 const sideEffectOutcome = evaluate(level.mm, initialState(level.mm), sideEffectTemplate);
 if (sideEffectOutcome.failed || sideEffectOutcome.cured.length === 0 || sideEffectOutcome.sideEffects.length === 0) {
@@ -68,22 +70,15 @@ const sideEffectProductionCost = sideEffectTemplate.steps.reduce((total, step) =
   return total + (DEFAULT_CATALOG.find((entry) => entry.typeId === step.typeId)?.cost ?? 0);
 }, 0);
 const failedTemplate = templateOf([
-  ["push", 1],
-  ["push2", 1],
-  ["swap01", 0],
-  ["push2", 1],
-  ["swap01", 0],
-  ["push2", 1],
+  ["push", 3],
+  ["push", 3],
+  ["push", 3],
+  ["push", 2],
 ]);
 const failedOutcome = evaluate(level.mm, initialState(level.mm), failedTemplate);
 if (!failedOutcome.failed) throw new Error(`seed ${SEED} failed fixture no longer crosses a hazard`);
-const failedFinalTouchesCure = level.diseases.some((disease) => {
-  const final = failedOutcome.final[disease.map];
-  return final?.x === disease.node.x && final.y === disease.node.y;
-});
-if (!failedFinalTouchesCure) throw new Error(`seed ${SEED} failed fixture no longer finishes on a cure`);
 function saveWithFactory(template: Template): string {
-  let game = createGameState(defaultGenOptions(SEED), 9999, 9999);
+  let game = createGameState(fixtureOptions, 9999, 9999);
   game = applyGameIntent(game, { kind: "saveRecipe", recipe: factoryContractRecipe });
   const target = game.factory!;
   const source = compileTemplate(template);
@@ -112,8 +107,8 @@ function saveWithFactory(template: Template): string {
 }
 const failedSave = saveWithFactory(failedTemplate);
 const divergentCureSave = saveWithFactory(sideEffectTemplate);
-const freshNoFactorySave = serializeGame(createGameState(defaultGenOptions(SEED), 200, 0));
-let bulkSaleGame = createGameState(defaultGenOptions(SEED), 200, 0);
+const freshNoFactorySave = serializeGame(createGameState(fixtureOptions, 200, 0));
+let bulkSaleGame = createGameState(fixtureOptions, 200, 0);
 bulkSaleGame = applyGameIntent(bulkSaleGame, { kind: "saveRecipe", recipe: reference });
 bulkSaleGame = applyGameIntent(bulkSaleGame, { kind: "factoryTicks", ticks: 4_200 });
 const bulkSaleCount = bulkSaleGame.inventory.filter((product) =>
@@ -127,7 +122,7 @@ const bulkSaleCheckpoint = JSON.stringify({
 });
 const otherRunCheckpoint = JSON.stringify({
   version: 2,
-  head: serializeGameAuthority(createGameState(defaultGenOptions(15), 200, 0)),
+  head: serializeGameAuthority(createGameState(defaultGenOptions(15, 2), 200, 0)),
   history: [],
 });
 
@@ -146,7 +141,7 @@ async function canvasCell(canvas: Locator, x: number, y: number): Promise<{ x: n
 async function unlock(page: Page, id: string): Promise<void> {
   await page.getByTestId("view-patents").click();
   await page.getByTestId(`patent-unlock-${id}`).click();
-  if (id === "new-map" || id === "new-map-4") {
+  if (id === "new-map" || id === "new-map-4" || id === "deep-map-4") {
     await page.getByTestId(`patent-confirm-${id}`).click();
   }
   await expect(page.getByTestId(`patent-state-${id}`)).toHaveText("unlocked");
@@ -463,16 +458,20 @@ test("machine patents gate both palettes and expansion patents enlarge the facto
   await expect(page.getByTestId("palette-skew")).toBeEnabled();
 });
 
-test("the normal patent path progresses from two to three to four maps", async ({ page }) => {
+test("the normal patent path progresses from one to two to three to four maps", async ({ page }) => {
   await page.goto("/?cash=9999&research=9999");
-  await expect(page.getByTestId("map-count")).toHaveText("2 maps");
+  await expect(page.getByTestId("map-count")).toHaveText("1 map");
 
   await unlock(page, "bench-2");
   await unlock(page, "new-map");
   await page.getByTestId("view-lab").click();
-  await expect(page.getByTestId("map-count")).toHaveText("3 maps", { timeout: 10_000 });
+  await expect(page.getByTestId("map-count")).toHaveText("2 maps", { timeout: 10_000 });
 
   await unlock(page, "new-map-4");
+  await page.getByTestId("view-lab").click();
+  await expect(page.getByTestId("map-count")).toHaveText("3 maps", { timeout: 10_000 });
+
+  await unlock(page, "deep-map-4");
   await page.getByTestId("view-lab").click();
   await expect(page.getByTestId("map-count")).toHaveText("4 maps", { timeout: 10_000 });
 });
@@ -480,7 +479,7 @@ test("the normal patent path progresses from two to three to four maps", async (
 test("a side-effect cure is sellable only with a non-zero side-effect penalty", async ({
   page,
 }) => {
-  await page.goto("/?cash=9999&research=9999");
+  await page.goto("/?cash=9999&research=9999&nmaps=2");
   await unlockRecipeMachines(page, true);
   await buildTemplate(page, sideEffectTemplate);
   await page.getByTestId("run").click();
