@@ -3,7 +3,7 @@ import fc from "fast-check";
 import type { DiseaseId, EconomyState } from "../phase0_interfaces";
 import { nextUnitPrice, sellUnit } from "./index";
 
-const empty: EconomyState = { cash: 0, sold: [] };
+const empty: EconomyState = { cash: 0, research: 0, sold: [] };
 
 describe("nextUnitPrice — diminishing returns", () => {
   it("alreadySold = 0 returns basePrice", () => {
@@ -57,13 +57,38 @@ describe("nextUnitPrice — diminishing returns", () => {
     );
   });
 
+  it("matches exact integer decay at the safe-integer boundary", () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: Number.MAX_SAFE_INTEGER - 10_000, max: Number.MAX_SAFE_INTEGER }),
+        (base) => {
+          const expected = Number((BigInt(base) * 9n) / 10n);
+          expect(nextUnitPrice(base, 1)).toBe(expected);
+        },
+      ),
+    );
+  });
+
   it("non-positive basePrice earns nothing", () => {
     expect(nextUnitPrice(0, 0)).toBe(0);
     expect(nextUnitPrice(-5, 3)).toBe(0);
   });
+
+  it("rejects non-integer prices and invalid sale counts instead of looping or rounding", () => {
+    expect(() => nextUnitPrice(10.5, 0)).toThrow(/integer/i);
+    expect(() => nextUnitPrice(100, -1)).toThrow(/alreadySold|non-negative/i);
+    expect(() => nextUnitPrice(100, Number.POSITIVE_INFINITY)).toThrow(/alreadySold|integer/i);
+  });
 });
 
 describe("sellUnit — cash conservation", () => {
+  it("rejects malformed economy and negative physical costs", () => {
+    expect(() => sellUnit(empty, 0, 100, -1, 0)).toThrow(/cost/i);
+    expect(() => sellUnit(empty, 0, 100, 0, -1)).toThrow(/penalty/i);
+    expect(() => sellUnit({ cash: 0, research: 0, sold: [{ disease: 0, count: -1 }] }, 0, 100, 0, 0))
+      .toThrow(/sold count/i);
+  });
+
   it("cash == initialCash + Σ net over a sequence of sales", () => {
     fc.assert(
       fc.property(
@@ -78,7 +103,7 @@ describe("sellUnit — cash conservation", () => {
           { maxLength: 60 },
         ),
         (initialCash, sales) => {
-          let econ: EconomyState = { cash: initialCash, sold: [] };
+          let econ: EconomyState = { cash: initialCash, research: 0, sold: [] };
           let sumNet = 0;
           for (const s of sales) {
             const r = sellUnit(econ, s.disease, s.base, s.cost, s.penalty);
@@ -87,6 +112,7 @@ describe("sellUnit — cash conservation", () => {
             econ = r.econ;
           }
           expect(econ.cash).toBe(initialCash + sumNet);
+          expect(econ.research).toBe(sales.length);
         },
       ),
     );
@@ -134,6 +160,43 @@ describe("sellUnit — cash conservation", () => {
 });
 
 describe("sellUnit — per-disease independence (parallel demand)", () => {
+  it("lets a different disease sell when another counter is saturated", () => {
+    const econ: EconomyState = {
+      cash: 0,
+      research: 0,
+      sold: [{ disease: 1, count: Number.MAX_SAFE_INTEGER }],
+    };
+
+    const result = sellUnit(econ, 0, 100, 0, 0);
+
+    expect(result.revenue).toBe(100);
+    expect(result.econ).toEqual({
+      cash: 100,
+      research: 1,
+      sold: [
+        { disease: 0, count: 1 },
+        { disease: 1, count: Number.MAX_SAFE_INTEGER },
+      ],
+    });
+    expect(econ.sold).toEqual([{ disease: 1, count: Number.MAX_SAFE_INTEGER }]);
+  });
+
+  it("atomically rejects incrementing the saturated target disease", () => {
+    const econ: EconomyState = {
+      cash: 7,
+      research: 3,
+      sold: [{ disease: 0, count: Number.MAX_SAFE_INTEGER }],
+    };
+    const before: EconomyState = {
+      cash: econ.cash,
+      research: econ.research,
+      sold: econ.sold.map((entry) => ({ ...entry })),
+    };
+
+    expect(() => sellUnit(econ, 0, 100, 0, 0)).toThrow(/incremented safely/i);
+    expect(econ).toEqual(before);
+  });
+
   it("interleaving B's sales does not change A's prices", () => {
     fc.assert(
       fc.property(
@@ -204,7 +267,7 @@ describe("sellUnit — determinism", () => {
         fc.integer({ min: 0, max: 200 }),
         fc.integer({ min: 0, max: 200 }),
         (cash, disease, base, cost, penalty) => {
-          const econ: EconomyState = { cash, sold: [{ disease, count: 3 }] };
+          const econ: EconomyState = { cash, research: 0, sold: [{ disease, count: 3 }] };
           const a = sellUnit(econ, disease, base, cost, penalty);
           const b = sellUnit(econ, disease, base, cost, penalty);
           expect(a).toEqual(b);

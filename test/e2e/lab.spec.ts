@@ -30,11 +30,11 @@ test("HexaPharma Lab loads a generated level, runs a template, and reports an ou
   const status = page.getByTestId("status");
   const before = (await status.textContent())?.trim() ?? "";
 
-  // Build a tiny template from the palette (incl. the offset `skew` machine), then Run.
+  // Build a tiny starter template from the unlocked palette, then Run.
   await page.getByTestId("palette-push").click();
-  await page.getByTestId("palette-skew").click();
+  await page.getByTestId("palette-pull").click();
   await expect(page.getByTestId("template-list")).toContainText("push");
-  await expect(page.getByTestId("template-list")).toContainText("skew");
+  await expect(page.getByTestId("template-list")).toContainText("pull");
 
   await page.getByTestId("run").click();
 
@@ -53,6 +53,10 @@ test("The Lab is fogged by default; a run reveals cells; reveal-all toggles", as
   await expect(page.getByTestId("reveal")).not.toBeChecked();
   const fogged = await canvasShot(canvas);
   await page.screenshot({ path: "test/e2e/__screenshots__/lab.png", fullPage: true });
+  await expect(page).toHaveScreenshot("lab-fogged.png", {
+    fullPage: true,
+    animations: "disabled",
+  });
 
   // Reveal-all paints the true features → the canvas must change; un-checking restores fog.
   await page.getByTestId("reveal").check();
@@ -100,4 +104,42 @@ test("Reset clears the template back to empty", async ({ page }) => {
 
   await page.getByTestId("reset").click();
   await expect(page.getByTestId("template-list")).toContainText("empty");
+});
+
+test("editing a completed template invalidates its stale outcome", async ({ page }) => {
+  await page.goto("/");
+  for (let i = 0; i < 5; i++) await page.getByTestId("palette-push").click();
+  await page.getByTestId("palette-swap01").click();
+  await page.getByTestId("run").click();
+  await expect(page.getByTestId("save-recipe")).toBeVisible({ timeout: 10_000 });
+
+  await page.getByTestId("palette-push").click();
+  await expect(page.getByTestId("save-recipe")).toBeHidden();
+  await expect(page.getByTestId("status")).toContainText("Build a template");
+
+  await page.getByTestId("remove-last").click();
+  await expect(page.getByTestId("save-recipe")).toBeHidden();
+  await page.getByTestId("run").click();
+  await expect(page.getByTestId("save-recipe")).toBeVisible({ timeout: 10_000 });
+
+  await page.getByTestId("clear").click();
+  await expect(page.getByTestId("save-recipe")).toBeHidden();
+  await expect(page.getByTestId("status")).toContainText("Build a template");
+});
+
+test("a Lab renderer initialization failure is visible and does not escape as an unhandled error", async ({
+  page,
+}) => {
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  await page.route("**/src/render/labRenderer.ts*", (route) =>
+    route.fulfill({
+      contentType: "application/javascript",
+      body: 'export async function createLabRenderer() { throw new Error("synthetic init failure"); }',
+    }),
+  );
+
+  await page.goto("/");
+  await expect(page.getByTestId("lab-render-error")).toContainText(/could not start.*renderer/i);
+  expect(pageErrors).toEqual([]);
 });

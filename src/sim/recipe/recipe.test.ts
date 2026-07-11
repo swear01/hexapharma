@@ -15,16 +15,33 @@ import type {
   FactoryMachineDef,
   PlacedMachine,
 } from "../phase0_interfaces";
-import { CellKind, IDENTITY, DEFAULT_CATALOG, DEFAULT_SHAPES, SHAPE_1x1 } from "../phase0_interfaces";
+import {
+  CellKind,
+  IDENTITY,
+  DEFAULT_CATALOG,
+  DEFAULT_SHAPES,
+  MAX_FACTORY_REPLAY_TICKS,
+  MAX_TEMPLATE_STEPS,
+  SHAPE_1x1,
+} from "../phase0_interfaces";
 import { initialState, applyTemplate, evaluate } from "../drug-graph";
 import { worldCells } from "../factory-geom";
-import { replayFactory } from "../state";
+import { initFactory, snapshotProducedEvents, stepFactory } from "../factory-sim";
 import { compileTemplate, factoryOutcome } from "./index";
 
 // ───────────────────────────── fixture helpers ─────────────────────────────
 
 const E: Dir = 0;
 const idx = (w: number, x: number, y: number): number => y * w + x;
+
+function firstProduct(layout: FactoryLayout, mm: MultiMap, start: ReturnType<typeof initialState>, ticks: number) {
+  const runtime = initFactory(layout, mm, start);
+  for (let tick = 0; tick < ticks; tick++) {
+    stepFactory(layout, mm, runtime);
+    if (runtime.producedEvents.count > 0) return snapshotProducedEvents(runtime)[0];
+  }
+  return undefined;
+}
 
 /** An NxN map, all-Empty, fully revealed, with given start + origin. */
 function emptyMap(n: number, start: Vec2, origin: Vec2 = { x: 0, y: 0 }): EffectMap {
@@ -36,7 +53,7 @@ function emptyMap(n: number, start: Vec2, origin: Vec2 = { x: 0, y: 0 }): Effect
     start,
     cell: new Uint8Array(len),
     cureId: new Int16Array(len).fill(-1),
-    sideEffectId: new Int16Array(len).fill(-1),
+    sideEffectId: new Int32Array(len).fill(-1),
     fog: new Uint8Array(len).fill(1),
   };
 }
@@ -50,7 +67,7 @@ function withCell(
 ): EffectMap {
   const cell = Uint8Array.from(m.cell);
   const cureId = Int16Array.from(m.cureId);
-  const sideEffectId = Int16Array.from(m.sideEffectId);
+  const sideEffectId = Int32Array.from(m.sideEffectId);
   const i = idx(m.width, x, y);
   cell[i] = kind;
   if (ids?.cure !== undefined) cureId[i] = ids.cure;
@@ -69,7 +86,7 @@ const translate = (
   delta: Vec2,
   relation: TranslateRelation = "forward",
   orientation: Orientation = IDENTITY,
-  typeId = "t",
+  typeId = "push",
 ): Machine => ({ typeId, transform: { kind: "translate", delta, relation }, orientation });
 
 const scale = (num: number, den: number, typeId = "dilute"): Machine => ({
@@ -126,9 +143,130 @@ function spacedLine(template: Template, gap: number): FactoryLayout {
   return { width: tiles.length, height: 1, tiles, machines };
 }
 
+function serpentineLayout(size: number): FactoryLayout {
+  const path: Vec2[] = [];
+  for (let y = 0; y < size; y++) {
+    if (y % 2 === 0) {
+      for (let x = 0; x < size; x++) path.push({ x, y });
+    } else {
+      for (let x = size - 1; x >= 0; x--) path.push({ x, y });
+    }
+  }
+  const tiles = new Array<FactoryTile>(size * size).fill({ kind: "empty" });
+  const direction = (from: Vec2, to: Vec2): Dir => {
+    if (to.x > from.x) return 0;
+    if (to.x < from.x) return 2;
+    if (to.y > from.y) return 1;
+    return 3;
+  };
+  tiles[0] = { kind: "source", dir: direction(path[0]!, path[1]!), period: 1 };
+  for (let index = 1; index < path.length - 1; index++) {
+    const cell = path[index]!;
+    tiles[cell.y * size + cell.x] = {
+      kind: "belt",
+      dir: direction(cell, path[index + 1]!),
+    };
+  }
+  const sink = path.at(-1)!;
+  tiles[sink.y * size + sink.x] = { kind: "sink" };
+  return { width: size, height: size, tiles, machines: [] };
+}
+
 // ──────────────────────────────── tests ────────────────────────────────
 
 describe("compileTemplate / factoryOutcome", () => {
+  it("waits for a product across a legal long routing path", () => {
+    const map = mm(emptyMap(40, { x: 5, y: 5 }), emptyMap(40, { x: 8, y: 8 }));
+    const start = initialState(map);
+    const outcome = factoryOutcome(serpentineLayout(20), map, start);
+    expect(outcome).toEqual({
+      failed: false,
+      final: start.pos,
+      cured: [],
+      sideEffects: [],
+    });
+  });
+
+  it("rejects a first-product diagnostic above the layout-weighted work budget", () => {
+    const map = mm(emptyMap(40, { x: 5, y: 5 }), emptyMap(40, { x: 8, y: 8 }));
+    const start = initialState(map);
+    expect(() => factoryOutcome(serpentineLayout(22), map, start)).toThrow(
+      /analysis work budget/i,
+    );
+  });
+
+  it("rejects oversized templates before sizing factory geometry", () => {
+    const step = translate({ x: 1, y: 0 });
+    expect(() => compileTemplate({
+      steps: new Array(MAX_TEMPLATE_STEPS + 1).fill(step),
+    })).toThrow(/steps|256/i);
+  });
+
+  it("does not alias mutable empty tiles in a compiled layout", () => {
+    const layout = compileTemplate({ steps: [] });
+    const emptyIndexes = layout.tiles
+      .map((tile, index) => tile.kind === "empty" ? index : -1)
+      .filter((index) => index >= 0);
+    expect(emptyIndexes.length).toBeGreaterThanOrEqual(2);
+    const first = emptyIndexes[0]!;
+    const second = emptyIndexes[1]!;
+    (layout.tiles[first] as { kind: string }).kind = "sink";
+    expect(layout.tiles[second]).toEqual({ kind: "empty" });
+  });
+
+  it("throws instead of reporting a false failure when first-product replay exhausts its budget", () => {
+    const map = mm(emptyMap(40, { x: 5, y: 5 }), emptyMap(40, { x: 8, y: 8 }));
+    const start = initialState(map);
+    const b: FactoryLayout = {
+      width: 3,
+      height: 1,
+      tiles: [
+        { kind: "source", dir: E, period: 1 },
+        { kind: "empty" },
+        { kind: "sink" },
+      ],
+      machines: [
+        {
+          id: 0,
+          def: {
+            typeId: "slow",
+            transform: { kind: "translate", delta: { x: 1, y: 0 }, relation: "forward" },
+            orientation: IDENTITY,
+            cost: 1,
+            speed: MAX_FACTORY_REPLAY_TICKS,
+          },
+          anchor: { x: 1, y: 0 },
+          footRot: 0,
+          shape: SHAPE_1x1,
+        },
+      ],
+    };
+    expect(() => factoryOutcome(b, map, start)).toThrow(/budget/i);
+  });
+
+  it("owns compiled machine transforms and orientations without freezing caller inputs", () => {
+    const step = structuredClone(DEFAULT_CATALOG.find((entry) => entry.typeId === "push")!);
+    const machine: Machine = {
+      typeId: step.typeId,
+      transform: step.transform,
+      orientation: { rot: 0, flip: false },
+    };
+    const layout = compileTemplate({ steps: [machine] });
+    if (machine.transform.kind !== "translate") throw new Error("push fixture must translate");
+    const mutableDelta = machine.transform.delta as { x: number };
+    const mutableOrientation = machine.orientation as { rot: Rotation };
+    mutableDelta.x = 7;
+    mutableOrientation.rot = 2;
+    expect(layout.machines[0]?.def.transform).toMatchObject({ delta: { x: 1, y: 0 } });
+    expect(layout.machines[0]?.def.orientation).toEqual({ rot: 0, flip: false });
+
+    const testLevel = fixture();
+    initFactory(layout, testLevel.mm, testLevel.start);
+    expect(() => {
+      mutableDelta.x = 8;
+      mutableOrientation.rot = 3;
+    }).not.toThrow();
+  });
   const samples: { name: string; t: Template }[] = [
     { name: "single push E", t: tpl(translate({ x: 1, y: 0 }, "forward", IDENTITY, "push")) },
     {
@@ -176,7 +314,7 @@ describe("compileTemplate / factoryOutcome", () => {
       const pm = layout.machines[i]!;
       const typeId = t.steps[i]!.typeId;
       expect(pm.def.typeId).toBe(typeId);
-      expect(pm.def.speed).toBe(1);
+      expect(pm.def.speed).toBe(DEFAULT_CATALOG.find((entry) => entry.typeId === typeId)?.speed ?? 1);
       // REAL shape used — the type's canonical footprint, not a flattened 1×1.
       expect(pm.shape).toBe(DEFAULT_SHAPES[typeId] ?? SHAPE_1x1);
     }
@@ -215,9 +353,8 @@ describe("compileTemplate / factoryOutcome", () => {
       const { mm: map, start } = fixture();
       const layout = compileTemplate(t);
       const cap = (layout.width + layout.height) * 6 + 16;
-      const ran = replayFactory(layout, map, start, cap);
-      expect(ran.deadlocked).toBe(false);
-      expect(ran.produced[0]).toBeDefined();
+      const produced = firstProduct(layout, map, start, cap);
+      expect(produced).toBeDefined();
     });
 
     it(`compiles deterministically (${name})`, () => {
@@ -225,13 +362,14 @@ describe("compileTemplate / factoryOutcome", () => {
     });
   }
 
-  it("derives cost from DEFAULT_CATALOG (fallback 0)", () => {
+  it("derives cost from DEFAULT_CATALOG and rejects unknown machine types", () => {
     const layout = compileTemplate(tpl(translate({ x: 1, y: 0 }, "forward", IDENTITY, "push")));
     const pushCost = DEFAULT_CATALOG.find((e) => e.typeId === "push")!.cost;
     expect(layout.machines[0]!.def.cost).toBe(pushCost);
 
-    const unknown = compileTemplate(tpl(translate({ x: 1, y: 0 }, "forward", IDENTITY, "mystery")));
-    expect(unknown.machines[0]!.def.cost).toBe(0);
+    expect(() =>
+      compileTemplate(tpl(translate({ x: 1, y: 0 }, "forward", IDENTITY, "mystery"))),
+    ).toThrow(/unknown machine/i);
   });
 
   for (const { name, t } of samples) {
@@ -240,13 +378,12 @@ describe("compileTemplate / factoryOutcome", () => {
       const layout = compileTemplate(t);
 
       const cap = (layout.width + layout.height) * 6 + 16;
-      const ran = replayFactory(layout, map, start, cap);
-      const produced = ran.produced[0];
+      const produced = firstProduct(layout, map, start, cap);
       expect(produced).toBeDefined();
 
       const pure = applyTemplate(map, start, t);
-      expect(produced!.pos).toEqual(pure.pos);
-      expect(produced!.failed).toBe(pure.failed);
+      expect(produced!.drug.pos).toEqual(pure.pos);
+      expect(produced!.drug.failed).toBe(pure.failed);
 
       expect(factoryOutcome(layout, map, start)).toEqual(evaluate(map, start, t));
     });
@@ -297,10 +434,10 @@ describe("rearrange-invariance (INV-7 at the factory level)", () => {
       expect(outSpaced).toEqual(pure);
       expect(outSpaced).toEqual(outCompact);
 
-      const dCompact = replayFactory(compact, map, start, (compact.width + 1) * 6 + 16).produced[0];
-      const dSpaced = replayFactory(spaced, map, start, (spaced.width + 1) * 6 + 16).produced[0];
-      expect(dSpaced!.pos).toEqual(dCompact!.pos);
-      expect(dSpaced!.failed).toEqual(dCompact!.failed);
+      const dCompact = firstProduct(compact, map, start, (compact.width + 1) * 6 + 16);
+      const dSpaced = firstProduct(spaced, map, start, (spaced.width + 1) * 6 + 16);
+      expect(dSpaced!.drug.pos).toEqual(dCompact!.drug.pos);
+      expect(dSpaced!.drug.failed).toEqual(dCompact!.drug.failed);
     });
   }
 

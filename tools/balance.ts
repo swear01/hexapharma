@@ -5,9 +5,9 @@
  *
  * Generates a level per seed at a representative config (nMaps 2, 16×16,
  * diseaseCount 2, difficulty band [2,12]) and, per generated disease, collects:
- *   - difficulty, basePrice, solver cost, reference (canonical) step count,
+ *   - difficulty, basePrice, constructed-reference cost and step count,
  *   - compiled-reference steady throughput rate (from analyzeThroughput),
- *   - a simple profit/tick ≈ rate × basePrice.
+ *   - a simple first-unit net profit/tick ≈ rate × (basePrice − actual recipe cost).
  *
  * It then prints a readable balance report (design §5 difficulty→price, §8
  * anti-degeneracy): a difficulty histogram, basePrice grouped by difficulty
@@ -19,9 +19,22 @@
 import { generate } from "../src/sim/mapgen/index";
 import { compileTemplate } from "../src/sim/recipe/index";
 import { analyzeThroughput } from "../src/sim/factory-sim/index";
-import { DEFAULT_CATALOG, type GenOptions } from "../src/sim/phase0_interfaces";
+import {
+  DEFAULT_CATALOG,
+  type GenOptions,
+  type MachineCatalogEntry,
+} from "../src/sim/phase0_interfaces";
+import { pathToFileURL } from "node:url";
 
-interface Sample {
+export const MAX_BALANCE_SEEDS = 100_000;
+
+function requireSweepCount(count: number): void {
+  if (!Number.isSafeInteger(count) || count <= 0 || count > MAX_BALANCE_SEEDS) {
+    throw new Error(`balance count must be an integer from 1 to ${MAX_BALANCE_SEEDS}`);
+  }
+}
+
+export interface Sample {
   readonly seed: number;
   readonly diseaseId: number;
   readonly difficulty: number;
@@ -30,17 +43,34 @@ interface Sample {
   readonly refSteps: number;
   readonly rateNum: number;
   readonly rateDen: number;
-  /** profit/tick ≈ (rateNum/rateDen) × basePrice, as a float for reporting only. */
+  /** First-unit net profit/tick; float is reporting-only, never sim state. */
   readonly profitPerTick: number;
 }
 
-function optsFor(seed: number): GenOptions {
+export interface SweepFailure {
+  readonly seed: number;
+  readonly error: string;
+}
+
+export interface SweepResult {
+  readonly samples: Sample[];
+  readonly failed: SweepFailure[];
+}
+
+export interface SweepOverrides {
+  readonly generate?: typeof generate;
+  readonly compileTemplate?: typeof compileTemplate;
+  readonly analyzeThroughput?: typeof analyzeThroughput;
+  readonly catalog?: readonly MachineCatalogEntry[];
+}
+
+function optsFor(seed: number, catalog: readonly MachineCatalogEntry[] = DEFAULT_CATALOG): GenOptions {
   return {
     seed,
     nMaps: 2,
     width: 16,
     height: 16,
-    catalog: DEFAULT_CATALOG,
+    catalog,
     diseaseCount: 2,
     difficulty: { min: 2, max: 12 },
   };
@@ -58,38 +88,80 @@ function fmt(n: number, digits = 2): string {
   return n.toFixed(digits);
 }
 
-function sweep(count: number): { samples: Sample[]; failed: { seed: number; error: string }[] } {
+export function minMax(values: readonly number[]): { readonly min: number; readonly max: number } {
+  if (values.length === 0) return { min: 0, max: 0 };
+  let min = values[0]!;
+  let max = values[0]!;
+  for (let index = 1; index < values.length; index++) {
+    const value = values[index]!;
+    if (value < min) min = value;
+    if (value > max) max = value;
+  }
+  return { min, max };
+}
+
+export function referenceCost(
+  steps: readonly { readonly typeId: string }[],
+  catalog: readonly MachineCatalogEntry[] = DEFAULT_CATALOG,
+): number {
+  let cost = 0;
+  for (const step of steps) {
+    const entry = catalog.find((candidate) => candidate.typeId === step.typeId);
+    if (entry === undefined) {
+      throw new Error(`unknown machine type in reference: "${step.typeId}"`);
+    }
+    cost += entry.cost;
+  }
+  return cost;
+}
+
+export function sweep(count: number, overrides: SweepOverrides = {}): SweepResult {
+  requireSweepCount(count);
+  const generateLevel = overrides.generate ?? generate;
+  const compile = overrides.compileTemplate ?? compileTemplate;
+  const throughput = overrides.analyzeThroughput ?? analyzeThroughput;
+  const catalog = overrides.catalog ?? DEFAULT_CATALOG;
   const samples: Sample[] = [];
-  const failed: { seed: number; error: string }[] = [];
+  const failed: SweepFailure[] = [];
   for (let seed = 1; seed <= count; seed++) {
-    let level;
     try {
-      level = generate(optsFor(seed));
+      const level = generateLevel(optsFor(seed, catalog));
+      const seedSamples: Sample[] = [];
+      for (const disease of level.diseases) {
+        const layout = compile(disease.reference);
+        const report = throughput(layout, level.mm);
+        if (
+          !Number.isSafeInteger(report.rateNum) ||
+          report.rateNum < 0 ||
+          !Number.isSafeInteger(report.rateDen) ||
+          report.rateDen <= 0
+        ) {
+          throw new Error(`invalid throughput rate ${report.rateNum}/${report.rateDen}`);
+        }
+        const cost = referenceCost(disease.reference.steps, catalog);
+        const rate = report.rateNum / report.rateDen;
+        seedSamples.push({
+          seed,
+          diseaseId: disease.id,
+          difficulty: disease.difficulty,
+          basePrice: disease.basePrice,
+          cost,
+          refSteps: disease.reference.steps.length,
+          rateNum: report.rateNum,
+          rateDen: report.rateDen,
+          profitPerTick: rate * (disease.basePrice - cost),
+        });
+      }
+      samples.push(...seedSamples);
     } catch (err) {
       failed.push({ seed, error: err instanceof Error ? err.message : String(err) });
-      continue;
-    }
-    for (const d of level.diseases) {
-      const layout = compileTemplate(d.reference);
-      const tp = analyzeThroughput(layout, level.mm);
-      const rate = tp.rateDen === 0 ? 0 : tp.rateNum / tp.rateDen;
-      samples.push({
-        seed,
-        diseaseId: d.id,
-        difficulty: d.difficulty,
-        basePrice: d.basePrice,
-        cost: d.reference.steps.reduce((acc, s) => {
-          const entry = DEFAULT_CATALOG.find((e) => e.typeId === s.typeId);
-          return acc + (entry?.cost ?? 0);
-        }, 0),
-        refSteps: d.reference.steps.length,
-        rateNum: tp.rateNum,
-        rateDen: tp.rateDen,
-        profitPerTick: rate * d.basePrice,
-      });
     }
   }
   return { samples, failed };
+}
+
+export function sweepExitCode(result: SweepResult): 0 | 1 {
+  return result.samples.length === 0 || result.failed.length > 0 ? 1 : 0;
 }
 
 function printDifficultyHistogram(samples: readonly Sample[]): void {
@@ -118,8 +190,7 @@ function printPriceByDifficulty(samples: readonly Sample[]): void {
   for (const d of diffs) {
     const prices = byDiff.get(d) ?? [];
     const med = median(prices);
-    const lo = Math.min(...prices);
-    const hi = Math.max(...prices);
+    const { min: lo, max: hi } = minMax(prices);
     const trend = med >= prevMedian ? "↑/=" : "↓!!";
     console.log(
       `  d=${String(d).padStart(2)} | n=${String(prices.length).padStart(4)} ` +
@@ -131,10 +202,9 @@ function printPriceByDifficulty(samples: readonly Sample[]): void {
 
 function printProfitSpread(samples: readonly Sample[]): void {
   const profits = samples.map((s) => s.profitPerTick);
-  const lo = Math.min(...profits);
-  const hi = Math.max(...profits);
+  const { min: lo, max: hi } = minMax(profits);
   const med = median(profits);
-  console.log("\nprofit/tick spread (rate × basePrice):");
+  console.log("\nfirst-unit net profit/tick spread (rate × (basePrice − production cost)):");
   console.log(`  min=${fmt(lo)}  median=${fmt(med)}  max=${fmt(hi)}  (n=${profits.length})`);
 
   // Degeneracy flag: a disease whose profit/tick dwarfs the median by a large
@@ -158,34 +228,54 @@ function printProfitSpread(samples: readonly Sample[]): void {
   }
 }
 
-function main(): void {
-  const arg = process.argv[2];
-  const count = arg !== undefined ? Number.parseInt(arg, 10) : 100;
-  if (!Number.isFinite(count) || count <= 0) {
-    console.error(`invalid count: ${arg}`);
-    process.exitCode = 1;
-    return;
-  }
-
+export function runBalance(count: number, overrides: SweepOverrides = {}): 0 | 1 {
+  requireSweepCount(count);
   console.log(`HexaPharma balance sweep — ${count} seeds (nMaps 2, 16×16, diseaseCount 2, band [2,12])\n`);
-  const { samples, failed } = sweep(count);
+  const result = sweep(count, overrides);
+  const { samples, failed } = result;
+
+  for (const failure of failed) {
+    console.error(`FAILED seed=${failure.seed}: ${failure.error}`);
+  }
 
   if (samples.length === 0) {
     console.error("no diseases generated; nothing to report.");
-    if (failed.length > 0) console.error(`${failed.length} seed(s) failed to generate.`);
-    process.exitCode = 1;
-    return;
+    if (failed.length > 0) console.error(`${failed.length} seed(s) failed generation or analysis.`);
+    return 1;
   }
 
   console.log(
     `generated ${samples.length} diseases from ${count - failed.length}/${count} seeds` +
-      (failed.length > 0 ? ` (${failed.length} seed(s) failed to generate)` : "") +
+      (failed.length > 0 ? ` (${failed.length} seed(s) failed generation or analysis)` : "") +
       ".\n",
   );
 
   printDifficultyHistogram(samples);
   printPriceByDifficulty(samples);
   printProfitSpread(samples);
+  return sweepExitCode(result);
 }
 
-main();
+export function parseBalanceArgs(args: readonly string[]): number {
+  if (args.length > 1) throw new Error(`unexpected arguments: ${args.slice(1).join(" ")}`);
+  const arg = args[0];
+  const count = arg !== undefined ? Number(arg) : 100;
+  if (!Number.isSafeInteger(count) || count <= 0 || count > MAX_BALANCE_SEEDS) {
+    throw new Error(`invalid count: ${arg}`);
+  }
+  return count;
+}
+
+export function main(args = process.argv.slice(2)): void {
+  let count: number;
+  try {
+    count = parseBalanceArgs(args);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+    return;
+  }
+  process.exitCode = runBalance(count);
+}
+
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) main();

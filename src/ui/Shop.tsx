@@ -11,17 +11,15 @@ import type {
   GeneratedLevel,
   EconomyState,
   DiseaseId,
+  InventoryProduct,
 } from "../sim/phase0_interfaces";
-import { sellUnit, nextUnitPrice } from "../sim/economy";
+import { nextUnitPrice } from "../sim/economy";
 
 interface ShopProps {
   readonly level: GeneratedLevel;
   readonly economy: EconomyState;
-  readonly inventory: Record<DiseaseId, number>;
-  /** Production cost charged per unit sold (sum of recipe step costs). */
-  readonly recipeCost: number;
-  /** Apply a sale: caller updates cash from the new economy + decrements inventory. */
-  readonly onSell: (disease: DiseaseId, nextEconomy: EconomyState) => void;
+  readonly inventory: readonly InventoryProduct[];
+  readonly onSell: (productIds: readonly number[], disease: DiseaseId) => void;
 }
 
 function soldSoFar(economy: EconomyState, disease: DiseaseId): number {
@@ -29,29 +27,24 @@ function soldSoFar(economy: EconomyState, disease: DiseaseId): number {
   return 0;
 }
 
-export function Shop({ level, economy, inventory, recipeCost, onSell }: ShopProps) {
+export function Shop({ level, economy, inventory, onSell }: ShopProps) {
   const sellOne = useCallback(
-    (disease: DiseaseId, basePrice: number) => {
-      if ((inventory[disease] ?? 0) <= 0) return;
-      // sideEffectPenalty = 0 (Phase 1 cures land on a cure cell, no side-effect).
-      const res = sellUnit(economy, disease, basePrice, recipeCost, 0);
-      onSell(disease, res.econ);
+    (disease: DiseaseId) => {
+      const product = inventory.find((candidate) => candidate.outcome.cured.includes(disease));
+      if (product === undefined) return;
+      onSell([product.inventoryId], disease);
     },
-    [economy, inventory, recipeCost, onSell],
+    [inventory, onSell],
   );
 
   const sellAll = useCallback(
-    (disease: DiseaseId, basePrice: number) => {
-      let econ = economy;
-      let have = inventory[disease] ?? 0;
-      while (have > 0) {
-        const res = sellUnit(econ, disease, basePrice, recipeCost, 0);
-        econ = res.econ;
-        have -= 1;
-        onSell(disease, res.econ);
-      }
+    (disease: DiseaseId) => {
+      const productIds = inventory
+        .filter((product) => product.outcome.cured.includes(disease))
+        .map((product) => product.inventoryId);
+      if (productIds.length > 0) onSell(productIds, disease);
     },
-    [economy, inventory, recipeCost, onSell],
+    [inventory, onSell],
   );
 
   const btn: React.CSSProperties = {
@@ -70,7 +63,7 @@ export function Shop({ level, economy, inventory, recipeCost, onSell }: ShopProp
       <p style={{ margin: "0 0 14px", color: "#5a6470" }}>
         Sell produced units. Each successive unit of the SAME disease fetches less
         (diminishing demand), so diversifying your cures pays. Production cost per
-        unit: {recipeCost}.
+        unit is taken from the machines that physical product actually traversed; side-effects are penalized.
       </p>
 
       <table data-testid="shop-table" style={{ borderCollapse: "collapse", width: "100%", maxWidth: 760 }}>
@@ -86,7 +79,8 @@ export function Shop({ level, economy, inventory, recipeCost, onSell }: ShopProp
         </thead>
         <tbody>
           {level.diseases.map((d) => {
-            const have = inventory[d.id] ?? 0;
+            const eligible = inventory.filter((product) => product.outcome.cured.includes(d.id));
+            const have = eligible.length;
             const sold = soldSoFar(economy, d.id);
             const next = nextUnitPrice(d.basePrice, sold);
             return (
@@ -99,7 +93,7 @@ export function Shop({ level, economy, inventory, recipeCost, onSell }: ShopProp
                 <td style={cell}>
                   <button
                     type="button"
-                    onClick={() => sellOne(d.id, d.basePrice)}
+                    onClick={() => sellOne(d.id)}
                     disabled={have <= 0}
                     style={btn}
                     data-testid={`shop-sell-${d.id}`}
@@ -108,7 +102,7 @@ export function Shop({ level, economy, inventory, recipeCost, onSell }: ShopProp
                   </button>{" "}
                   <button
                     type="button"
-                    onClick={() => sellAll(d.id, d.basePrice)}
+                    onClick={() => sellAll(d.id)}
                     disabled={have <= 0}
                     style={btn}
                     data-testid={`shop-sell-all-${d.id}`}

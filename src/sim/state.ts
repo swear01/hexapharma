@@ -1,54 +1,107 @@
 import type {
-  MultiMap,
   DrugState,
   FactoryLayout,
+  FactoryRuntime,
   FactoryState,
   HashFactoryFn,
+  MultiMap,
   ReplayFactoryFn,
 } from "./phase0_interfaces";
+import { MAX_FACTORY_REPLAY_TICKS } from "./phase0_interfaces";
 import { hashInit, hashU32 } from "./hash";
-import { initFactory, stepFactory } from "./factory-sim";
+import { initFactory, snapshotFactory, stepFactory } from "./factory-sim";
 
-// Deterministic whole-sim state + replay (INV-15).
-//
-// hashFactory folds the entire observable FactoryState into a 32-bit FNV-1a hash:
-// tick, then every unit (id, pos, each map position + failed flag, proc, machineId),
-// then the produced drugs (positions + failed), then deadlocked + nextUnitId.
-// Iteration follows the state's own (deterministic, id-sorted) ordering, so two equal
-// runs hash equal. machineId is folded as machineId+1 so null (-> 0) is distinct from id 0.
-
-/** Fold a DrugState (every map's pos + the failed flag) into the running hash. */
 function hashDrug(h: number, d: DrugState): number {
-  let x = hashU32(h, d.pos.length);
-  for (const p of d.pos) {
-    x = hashU32(x, p.x | 0);
-    x = hashU32(x, p.y | 0);
+  let next = hashU32(h, d.pos.length);
+  for (let i = 0; i < d.pos.length; i++) {
+    const pos = d.pos[i];
+    next = hashU32(next, pos?.x ?? 0);
+    next = hashU32(next, pos?.y ?? 0);
   }
-  return hashU32(x, d.failed ? 1 : 0);
+  return hashU32(next, d.failed ? 1 : 0);
 }
 
-export const hashFactory: HashFactoryFn = (s) => {
+function hashRuntime(s: FactoryRuntime): number {
   let h = hashInit();
   h = hashU32(h, s.tick | 0);
-
-  h = hashU32(h, s.units.length);
-  for (const u of s.units) {
-    h = hashU32(h, u.id | 0);
-    h = hashU32(h, u.pos.x | 0);
-    h = hashU32(h, u.pos.y | 0);
-    h = hashU32(h, u.proc | 0);
-    h = hashU32(h, (u.machineId === null ? 0 : u.machineId + 1) | 0);
-    h = hashDrug(h, u.drug);
+  h = hashU32(h, s.unitCount);
+  for (let unitIndex = 0; unitIndex < s.unitCount; unitIndex++) {
+    h = hashU32(h, s.unitIds[unitIndex] ?? 0);
+    h = hashU32(h, s.unitX[unitIndex] ?? 0);
+    h = hashU32(h, s.unitY[unitIndex] ?? 0);
+    h = hashU32(h, s.unitProc[unitIndex] ?? 0);
+    const machineId = s.unitMachineIds[unitIndex] ?? -1;
+    h = hashU32(h, machineId < 0 ? 0 : machineId + 1);
+    h = hashU32(h, s.unitProductionCosts[unitIndex] ?? 0);
+    h = hashU32(h, s.mapCount);
+    const base = unitIndex * s.mapCount;
+    for (let mapIndex = 0; mapIndex < s.mapCount; mapIndex++) {
+      h = hashU32(h, s.unitDrugX[base + mapIndex] ?? 0);
+      h = hashU32(h, s.unitDrugY[base + mapIndex] ?? 0);
+    }
+    h = hashU32(h, s.unitFailed[unitIndex] === 0 ? 0 : 1);
   }
 
-  h = hashU32(h, s.produced.length);
-  for (const d of s.produced) h = hashDrug(h, d);
+  h = hashU32(h, s.producedEvents.count);
+  for (let eventIndex = 0; eventIndex < s.producedEvents.count; eventIndex++) {
+    h = hashU32(h, s.producedEvents.ids[eventIndex] ?? 0);
+    h = hashU32(h, s.producedEvents.productionCosts[eventIndex] ?? 0);
+    h = hashU32(h, s.mapCount);
+    const base = eventIndex * s.mapCount;
+    for (let mapIndex = 0; mapIndex < s.mapCount; mapIndex++) {
+      h = hashU32(h, s.producedEvents.drugX[base + mapIndex] ?? 0);
+      h = hashU32(h, s.producedEvents.drugY[base + mapIndex] ?? 0);
+    }
+    h = hashU32(h, s.producedEvents.failed[eventIndex] === 0 ? 0 : 1);
+  }
 
+  h = hashU32(h, s.splitterCursors.length);
+  for (let slot = 0; slot < s.splitterCursors.length; slot++) {
+    h = hashU32(h, s.splitterCursors[slot] ?? 0);
+  }
+  h = hashU32(h, s.producedTotal);
+  h = hashU32(h, s.deadlocked ? 1 : 0);
+  h = hashU32(h, s.nextUnitId);
+  return h >>> 0;
+}
+
+function hashSnapshot(s: FactoryState): number {
+  let h = hashInit();
+  h = hashU32(h, s.tick | 0);
+  h = hashU32(h, s.units.length);
+  for (let i = 0; i < s.units.length; i++) {
+    const unit = s.units[i];
+    if (unit === undefined) continue;
+    h = hashU32(h, unit.id | 0);
+    h = hashU32(h, unit.pos.x | 0);
+    h = hashU32(h, unit.pos.y | 0);
+    h = hashU32(h, unit.proc | 0);
+    h = hashU32(h, (unit.machineId === null ? 0 : unit.machineId + 1) | 0);
+    h = hashU32(h, unit.productionCost | 0);
+    h = hashDrug(h, unit.drug);
+  }
+
+  h = hashU32(h, s.producedEvents.length);
+  for (let i = 0; i < s.producedEvents.length; i++) {
+    const product = s.producedEvents[i];
+    if (product === undefined) continue;
+    h = hashU32(h, product.id | 0);
+    h = hashU32(h, product.productionCost | 0);
+    h = hashDrug(h, product.drug);
+  }
+
+  h = hashU32(h, s.splitterCursors.length);
+  for (let slot = 0; slot < s.splitterCursors.length; slot++) {
+    h = hashU32(h, s.splitterCursors[slot] ?? 0);
+  }
+  h = hashU32(h, s.producedTotal);
   h = hashU32(h, s.deadlocked ? 1 : 0);
   h = hashU32(h, s.nextUnitId | 0);
-
   return h >>> 0;
-};
+}
+
+export const hashFactory: HashFactoryFn = (state) =>
+  "unitCount" in state ? hashRuntime(state) : hashSnapshot(state);
 
 export const replayFactory: ReplayFactoryFn = (
   layout: FactoryLayout,
@@ -56,9 +109,12 @@ export const replayFactory: ReplayFactoryFn = (
   start: DrugState,
   ticks: number,
 ): FactoryState => {
-  let s = initFactory(layout, mm, start);
-  for (let i = 0; i < ticks; i++) {
-    s = stepFactory(layout, mm, s);
+  if (!Number.isSafeInteger(ticks) || ticks < 0 || ticks > MAX_FACTORY_REPLAY_TICKS) {
+    throw new Error(
+      `factory replay: ticks must be a non-negative safe integer <= ${MAX_FACTORY_REPLAY_TICKS}`,
+    );
   }
-  return s;
+  const runtime = initFactory(layout, mm, start);
+  for (let tick = 0; tick < ticks; tick++) stepFactory(layout, mm, runtime);
+  return snapshotFactory(runtime);
 };

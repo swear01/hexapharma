@@ -1,10 +1,9 @@
 /**
  * HexaPharma — the Factory (Phase 2 visual, NEW model).
  *
- * React owns ALL state: the FactoryLayout the player edits (belt-grid tiles +
- * multi-cell shaped machines in `layout.machines`), the running FactoryState
- * (advanced by CALLING the sim `stepFactory`), and the level (MultiMap + start).
- * It hands plain sim state to the dumb PixiJS renderer (src/render/factoryRenderer).
+ * The top-level GameState owns the authoritative layout/runtime; this component
+ * owns only editing controls and sends intents through callbacks. It hands plain
+ * sim state to the dumb PixiJS renderer (src/render/factoryRenderer).
  * NO tick/throughput logic lives here — we only CALL the sim. See AGENTS.md layering.
  *
  * NEW model recap:
@@ -25,23 +24,26 @@ import type {
   Dir,
   Vec2,
   Rotation,
+  Orientation,
   Template,
   Machine,
-  Transform,
   PlacedMachine,
   MachineShape,
   FactoryTile,
   FactoryLayout,
   FactoryMachineDef,
-  FactoryState,
+  FactoryRuntime,
   MachineCatalogEntry,
   MachineTypeId,
   GeneratedLevel,
+  ThroughputReport,
+  Outcome,
 } from "../sim/phase0_interfaces";
 import { DEFAULT_CATALOG, DEFAULT_SHAPES, IDENTITY } from "../sim/phase0_interfaces";
-import { initFactory, stepFactory, analyzeThroughput } from "../sim/factory-sim";
-import { compileTemplate } from "../sim/recipe";
-import { createFactoryRenderer, type FactoryRenderer } from "../render/factoryRenderer";
+import { initFactory, analyzeThroughput } from "../sim/factory-sim";
+import { compileTemplate, factoryOutcome } from "../sim/recipe";
+import { evaluate } from "../sim/drug-graph";
+import type { FactoryRenderer } from "../render/factoryRenderer";
 
 // ───────────────────────────── directions ─────────────────────────────
 
@@ -58,7 +60,7 @@ function opposite(d: Dir): Dir {
 }
 
 function emptyTiles(w: number, h: number): FactoryTile[] {
-  return new Array<FactoryTile>(w * h).fill({ kind: "empty" });
+  return Array.from({ length: w * h }, () => ({ kind: "empty" }));
 }
 
 // ───────────────────────────── machine geometry (mirrors the sim) ─────────────────────────────
@@ -101,31 +103,35 @@ function nextMachineId(layout: FactoryLayout): number {
 
 // ───────────────────────────── default + preset layouts ─────────────────────────────
 
-function entryOf(typeId: MachineTypeId): MachineCatalogEntry | undefined {
-  return DEFAULT_CATALOG.find((e) => e.typeId === typeId);
+function entryOf(typeId: MachineTypeId): MachineCatalogEntry {
+  const entry = DEFAULT_CATALOG.find((candidate) => candidate.typeId === typeId);
+  if (entry === undefined) throw new Error(`Factory: unknown machine type "${typeId}"`);
+  return entry;
 }
 
 function fixtureStep(typeId: MachineTypeId): Machine {
   const entry = entryOf(typeId);
-  const transform: Transform = entry?.transform ?? DEFAULT_CATALOG[0]!.transform;
-  return { typeId, transform, orientation: IDENTITY };
+  return { typeId, transform: entry.transform, orientation: IDENTITY };
 }
 
-function machineDef(typeId: MachineTypeId, speed: number): FactoryMachineDef {
+function machineDef(typeId: MachineTypeId, requestedOrientation: Orientation = IDENTITY): FactoryMachineDef {
   const entry = entryOf(typeId);
+  const orientation = entry.orientable && entry.transform.kind === "translate"
+    ? requestedOrientation
+    : IDENTITY;
   return {
     typeId,
-    transform: entry?.transform ?? DEFAULT_CATALOG[0]!.transform,
-    orientation: IDENTITY,
-    cost: entry?.cost ?? 0,
-    speed: Math.max(1, speed | 0),
+    transform: entry.transform,
+    orientation,
+    cost: entry.cost,
+    speed: entry.speed,
   };
 }
 
 /**
  * Default factory: compile a 3-stage template (push → pull → push2) to a straight
  * 1×1-machine line (compileTemplate), then re-lay it onto a roomy GRID_W×GRID_H grid
- * with the middle `pull` slowed to speed 3 (the bottleneck) — leaving empty space
+ * with catalog-defined machine speeds — leaving empty space
  * below for the player to add a parallel `pull` and raise throughput.
  */
 function defaultLayout(): FactoryLayout {
@@ -140,8 +146,7 @@ function defaultLayout(): FactoryLayout {
   const machines: PlacedMachine[] = [];
   for (const m of line.machines) {
     if (m.anchor.x >= GRID_W) continue;
-    const speed = m.def.typeId === "pull" ? 3 : 1;
-    machines.push({ ...m, def: { ...m.def, speed } });
+    machines.push(m);
   }
   return { width: GRID_W, height: GRID_H, tiles, machines };
 }
@@ -166,7 +171,7 @@ function recipeLayout(recipe: Template): FactoryLayout {
   return { width: w, height: h, tiles, machines: line.machines.slice() };
 }
 
-/** Preset: single speed-3 push on one row (the slow baseline). Rate ≈ 1/3. */
+/** Preset: one catalog-speed pull on one row (the slow baseline). */
 function singlePreset(): FactoryLayout {
   const tiles = emptyTiles(GRID_W, GRID_H);
   const at = (x: number, y: number) => y * GRID_W + x;
@@ -176,14 +181,14 @@ function singlePreset(): FactoryLayout {
   tiles[at(4, 0)] = { kind: "belt", dir: E };
   tiles[at(5, 0)] = { kind: "sink" };
   const machines: PlacedMachine[] = [
-    { id: 0, def: machineDef("push", 3), anchor: { x: 2, y: 0 }, footRot: 0, shape: DEFAULT_SHAPES.push! },
+    { id: 0, def: machineDef("pull"), anchor: { x: 2, y: 0 }, footRot: 0, shape: DEFAULT_SHAPES.pull! },
   ];
   return { width: GRID_W, height: GRID_H, tiles, machines };
 }
 
 /**
- * Preset: source → splitter → two speed-3 push machines (rows 0 + 1) → merger → sink.
- * Mirrors the sim's verified parallel fixture; rate ≈ 2/3 (≈2× the single preset).
+ * Preset: source → splitter → two pull machines (rows 0 + 1) → merger → sink.
+ * Mirrors the sim's verified parallel fixture at about 2× the single preset.
  */
 function parallelPreset(): FactoryLayout {
   const tiles = emptyTiles(GRID_W, GRID_H);
@@ -197,10 +202,21 @@ function parallelPreset(): FactoryLayout {
   tiles[at(3, 1)] = { kind: "belt", dir: E };
   tiles[at(4, 1)] = { kind: "belt", dir: N };
   const machines: PlacedMachine[] = [
-    { id: 0, def: machineDef("push", 3), anchor: { x: 2, y: 0 }, footRot: 0, shape: DEFAULT_SHAPES.push! },
-    { id: 1, def: machineDef("push", 3), anchor: { x: 2, y: 1 }, footRot: 0, shape: DEFAULT_SHAPES.push! },
+    { id: 0, def: machineDef("pull"), anchor: { x: 2, y: 0 }, footRot: 0, shape: DEFAULT_SHAPES.pull! },
+    { id: 1, def: machineDef("pull"), anchor: { x: 2, y: 1 }, footRot: 0, shape: DEFAULT_SHAPES.pull! },
   ];
   return { width: GRID_W, height: GRID_H, tiles, machines };
+}
+
+function fitPreset(preset: FactoryLayout, width: number, height: number): FactoryLayout {
+  if (width < 6 || height < 2) return preset;
+  const tiles = emptyTiles(width, height);
+  for (let y = 0; y < Math.min(preset.height, height); y++) {
+    for (let x = 0; x < Math.min(preset.width, width); x++) {
+      tiles[y * width + x] = preset.tiles[y * preset.width + x]!;
+    }
+  }
+  return { width, height, tiles, machines: preset.machines.slice() };
 }
 
 // ───────────────────────────── palette / editing ─────────────────────────────
@@ -246,17 +262,23 @@ function paint(
   brush: Brush,
   dir: Dir,
   footRot: Rotation,
-  speed: number,
+  effectOrientation: Orientation,
 ): FactoryLayout {
   if (brush.kind === "machine") {
-    const shape: MachineShape = DEFAULT_SHAPES[brush.typeId] ?? DEFAULT_SHAPES.push!;
+    const shape: MachineShape | undefined = DEFAULT_SHAPES[brush.typeId];
+    if (shape === undefined) throw new Error(`Factory: unknown machine shape "${brush.typeId}"`);
     const m: PlacedMachine = {
       id: nextMachineId(layout),
-      def: machineDef(brush.typeId, speed),
+      def: machineDef(brush.typeId, effectOrientation),
       anchor: { x, y },
       footRot,
       shape,
     };
+    for (const cell of worldCells(m)) {
+      if (cell.x < 0 || cell.y < 0 || cell.x >= layout.width || cell.y >= layout.height) return layout;
+      if (machineAt(layout, cell.x, cell.y) !== undefined) return layout;
+      if (layout.tiles[cell.y * layout.width + cell.x]?.kind !== "empty") return layout;
+    }
     return { ...layout, machines: [...layout.machines, m] };
   }
 
@@ -301,128 +323,191 @@ interface FactoryProps {
   readonly recipe: Template | null;
   /** The shared/persisted factory layout, or null to use the recipe/fixture default. */
   readonly factory: FactoryLayout | null;
+  readonly factoryState: FactoryRuntime | null;
+  readonly factoryWaste: number;
+  readonly entitledWidth: number;
+  readonly entitledHeight: number;
+  readonly catalog: readonly MachineCatalogEntry[];
   /** Lift the current layout into the shared game state. */
-  readonly onFactoryChange: (layout: FactoryLayout) => void;
-  /** Report newly produced units (delta since the last report) to the Game inventory. */
-  readonly onProduced: (count: number) => void;
+  readonly onFactoryChange: (layout: FactoryLayout) => boolean;
+  readonly onAdvance: (ticks: number) => boolean;
+  readonly onReset: () => boolean;
 }
 
 /** Pick the starting layout: the persisted one, else the recipe line, else the fixture. */
-function startingLayout(factory: FactoryLayout | null, recipe: Template | null): FactoryLayout {
+function startingLayout(
+  factory: FactoryLayout | null,
+  recipe: Template | null,
+  entitledWidth: number,
+  entitledHeight: number,
+): FactoryLayout {
   if (factory !== null) return factory;
   if (recipe !== null && recipe.steps.length > 0) return recipeLayout(recipe);
-  return defaultLayout();
+  return fitPreset(defaultLayout(), entitledWidth, entitledHeight);
 }
 
-export function Factory({ level, recipe, factory, onFactoryChange, onProduced }: FactoryProps) {
+export function Factory({
+  level,
+  recipe,
+  factory,
+  factoryState,
+  factoryWaste,
+  entitledWidth,
+  entitledHeight,
+  catalog,
+  onFactoryChange,
+  onAdvance,
+  onReset,
+}: FactoryProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<FactoryRenderer | null>(null);
+  const [rendererError, setRendererError] = useState<string | null>(null);
 
   const { mm, start } = level;
 
-  const [layout, setLayout] = useState<FactoryLayout>(() => startingLayout(factory, recipe));
-  const [state, setState] = useState<FactoryState>(() => initFactory(startingLayout(factory, recipe), mm, start));
+  const [layout, setLayout] = useState<FactoryLayout>(() =>
+    startingLayout(factory, recipe, entitledWidth, entitledHeight)
+  );
   const [playing, setPlaying] = useState<boolean>(false);
 
   // editing brush + parameters.
   const [brush, setBrush] = useState<Brush>({ kind: "belt" });
   const [brushDir, setBrushDir] = useState<Dir>(E);
   const [footRot, setFootRot] = useState<Rotation>(0);
-  const [brushSpeed, setBrushSpeed] = useState<number>(1);
+  const [effectRot, setEffectRot] = useState<Rotation>(0);
+  const [effectFlip, setEffectFlip] = useState(false);
 
   // keep the latest layout/level in refs so the play timer reads fresh values.
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
-  const mmRef = useRef(mm);
-  mmRef.current = mm;
+  const state = useMemo(
+    () => factoryState ?? initFactory(layout, mm, start),
+    [factoryState, layout, mm, start],
+  );
 
-  // produced units already reported to the Game (so we only report the delta).
-  const reportedRef = useRef(0);
+  const throughputAnalysis = useMemo<{
+    readonly report: ThroughputReport | null;
+    readonly error: string | null;
+  }>(() => {
+    try {
+      return { report: analyzeThroughput(layout, mm), error: null };
+    } catch (error) {
+      return {
+        report: null,
+        error: `Throughput analysis unavailable: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
+  }, [layout, mm]);
+  const throughput = throughputAnalysis.report;
+  const expectedOutcome = useMemo(
+    () => recipe === null ? null : evaluate(mm, start, recipe),
+    [mm, recipe, start],
+  );
+  const sampleAnalysis = useMemo<{
+    readonly outcome: Outcome | null;
+    readonly error: string | null;
+  }>(() => {
+    if (expectedOutcome === null) return { outcome: null, error: null };
+    try {
+      return { outcome: factoryOutcome(layout, mm, start), error: null };
+    } catch (error) {
+      return {
+        outcome: null,
+        error: `Recipe sample unavailable: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
+  }, [expectedOutcome, layout, mm, start]);
+  const recipeValid = useMemo(() => {
+    if (expectedOutcome === null || sampleAnalysis.outcome === null) return null;
+    return JSON.stringify(sampleAnalysis.outcome) === JSON.stringify(expectedOutcome);
+  }, [expectedOutcome, sampleAnalysis.outcome]);
+  const analysisError = [throughputAnalysis.error, sampleAnalysis.error]
+    .filter((entry): entry is string => entry !== null)
+    .join(" ");
 
-  const throughput = useMemo(() => analyzeThroughput(layout, mm), [layout, mm]);
+  useEffect(() => {
+    const next = startingLayout(factory, recipe, entitledWidth, entitledHeight);
+    setPlaying(false);
+    if (factory !== null || onFactoryChange(next)) setLayout(next);
+  }, [recipe, mm, start, factory, entitledWidth, entitledHeight, onFactoryChange]);
 
   // re-init the running sim for a fresh layout (shared by editing + presets + reset).
   const reinit = useCallback(
     (next: FactoryLayout) => {
-      setLayout(next);
-      onFactoryChange(next);
       setPlaying(false);
-      reportedRef.current = 0;
-      setState(initFactory(next, mmRef.current, start));
+      if (onFactoryChange(next)) setLayout(next);
     },
-    [onFactoryChange, start],
+    [onFactoryChange],
   );
 
   // ── mount / unmount the Pixi renderer ──
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  const bottleneckRef = useRef(throughput?.bottleneck ?? null);
+  bottleneckRef.current = throughput?.bottleneck ?? null;
   useEffect(() => {
     let disposed = false;
     let local: FactoryRenderer | null = null;
+    setRendererError(null);
     void (async () => {
-      const r = await createFactoryRenderer(layoutRef.current);
-      if (disposed) {
-        r.destroy();
-        return;
+      try {
+        const { createFactoryRenderer } = await import("../render/factoryRenderer");
+        const r = await createFactoryRenderer(layoutRef.current);
+        if (disposed) {
+          r.destroy();
+          return;
+        }
+        local = r;
+        rendererRef.current = r;
+        if (mountRef.current) mountRef.current.appendChild(r.canvas);
+        r.render(layoutRef.current, stateRef.current, bottleneckRef.current);
+      } catch (error) {
+        if (local !== null) {
+          local.destroy();
+          local = null;
+        }
+        rendererRef.current = null;
+        if (!disposed) {
+          const detail = error instanceof Error ? error.message : String(error);
+          setRendererError(`Could not start the Factory renderer: ${detail}`);
+        }
       }
-      local = r;
-      rendererRef.current = r;
-      if (mountRef.current) mountRef.current.appendChild(r.canvas);
-      r.render(layoutRef.current, state, throughput.bottleneck);
     })();
     return () => {
       disposed = true;
       rendererRef.current = null;
       if (local) local.destroy();
     };
-  }, []);
+  }, [layout.width, layout.height]);
 
   // ── repaint whenever layout / state / bottleneck changes ──
   useEffect(() => {
-    rendererRef.current?.render(layout, state, throughput.bottleneck);
-  }, [layout, state, throughput.bottleneck]);
+    rendererRef.current?.render(layout, state, throughput?.bottleneck ?? null);
+  }, [layout, state, state.tick, throughput?.bottleneck]);
 
   // ── play timer: advance the sim by one tick per interval ──
   useEffect(() => {
     if (!playing) return;
     const id = window.setInterval(() => {
-      setState((s) => stepFactory(layoutRef.current, mmRef.current, s));
+      if (!onAdvance(1)) setPlaying(false);
     }, TICK_MS);
     return () => window.clearInterval(id);
-  }, [playing]);
+  }, [playing, onAdvance]);
 
   // stop playing automatically on deadlock.
   useEffect(() => {
     if (state.deadlocked && playing) setPlaying(false);
   }, [state.deadlocked, playing]);
 
-  // ── report newly produced units to the Game inventory (delta only) ──
-  useEffect(() => {
-    const total = state.produced.length;
-    if (total > reportedRef.current) {
-      onProduced(total - reportedRef.current);
-      reportedRef.current = total;
-    }
-  }, [state.produced.length, onProduced]);
-
-  // ── a new recipe / deeper level arrives: rebuild the line + reset the sim ──
-  useEffect(() => {
-    const next = startingLayout(factory, recipe);
-    setLayout(next);
-    setPlaying(false);
-    reportedRef.current = 0;
-    setState(initFactory(next, mm, start));
-    // intentionally keyed on recipe + level identity (not the editable factory).
-  }, [recipe, mm, start, factory]);
-
   // ── controls ──
   const stepOnce = useCallback(() => {
-    setState((s) => stepFactory(layoutRef.current, mmRef.current, s));
-  }, []);
+    onAdvance(1);
+  }, [onAdvance]);
 
   const reset = useCallback(() => {
     setPlaying(false);
-    reportedRef.current = 0;
-    setState(initFactory(layoutRef.current, mmRef.current, start));
-  }, [start]);
+    onReset();
+  }, [onReset]);
 
   // ── editing: click a cell to paint the current brush ──
   const onCanvasClick = useCallback(
@@ -434,9 +519,9 @@ export function Factory({ level, recipe, factory, onFactoryChange, onProduced }:
       const py = ((e.clientY - rect.top) / rect.height) * canvas.height;
       const cell = cellFromCanvas(layout, px, py);
       if (!cell) return;
-      reinit(paint(layout, cell.x, cell.y, brush, brushDir, footRot, brushSpeed));
+      reinit(paint(layout, cell.x, cell.y, brush, brushDir, footRot, { rot: effectRot, flip: effectFlip }));
     },
-    [layout, brush, brushDir, footRot, brushSpeed, reinit],
+    [layout, brush, brushDir, footRot, effectRot, effectFlip, reinit],
   );
 
   // ───────────────────────────── styles ─────────────────────────────
@@ -455,7 +540,9 @@ export function Factory({ level, recipe, factory, onFactoryChange, onProduced }:
   const brushIsMachine = brush.kind === "machine";
   const brushLabel = brush.kind === "machine" ? `machine: ${brush.typeId}` : brush.kind;
 
-  const rate = throughput.rateDen === 0 ? "0" : `${throughput.rateNum}/${throughput.rateDen}`;
+  const rate = throughput === null
+    ? "unavailable"
+    : throughput.rateDen === 0 ? "0" : `${throughput.rateNum}/${throughput.rateDen}`;
 
   const tileBrushBtn = (kind: Brush["kind"] & ("belt" | "splitter" | "merger" | "source" | "sink" | "erase"), label: string) => (
     <button
@@ -482,7 +569,23 @@ export function Factory({ level, recipe, factory, onFactoryChange, onProduced }:
       <div data-testid="factory-recipe" style={{ fontSize: 12, color: "#5a6470", marginBottom: 12 }}>
         {recipe === null
           ? "No saved recipe — build a cure in the Lab and Save recipe → Factory, or hand-build a line below."
-          : `Producing the saved recipe (${recipe.steps.length} step${recipe.steps.length === 1 ? "" : "s"}). Each unit that reaches the sink is added to your inventory for the Shop.`}
+          : sampleAnalysis.error !== null
+            ? `A saved recipe contract is active (${recipe.steps.length} step${recipe.steps.length === 1 ? "" : "s"}), but its bounded sink sample is unavailable. Live matching outcomes remain authoritative; mismatches are waste.`
+          : recipeValid === false
+            ? `A saved recipe contract is active (${recipe.steps.length} step${recipe.steps.length === 1 ? "" : "s"}), but the current layout's bounded sink sample diverges. Only live matching outcomes enter inventory; mismatches are waste.`
+            : `The current layout's bounded sink sample matches the saved recipe (${recipe.steps.length} step${recipe.steps.length === 1 ? "" : "s"}). Live matching outcomes enter inventory; mismatches are waste.`}
+      </div>
+      <div
+        data-testid="factory-validity"
+        style={{ fontSize: 12, color: recipeValid === false ? "#a11d1d" : "#15724a", marginBottom: 10 }}
+      >
+        {sampleAnalysis.error !== null
+          ? "The bounded sink sample is unavailable; live product validation remains authoritative."
+          : recipeValid === null
+          ? "No recipe contract. Sink output is treated as waste."
+          : recipeValid
+            ? "A bounded sink sample matches the saved recipe; live product validation remains authoritative."
+            : "The bounded sink sample diverges from the saved recipe; live mismatches are waste."}
       </div>
 
       {/* run controls */}
@@ -506,10 +609,20 @@ export function Factory({ level, recipe, factory, onFactoryChange, onProduced }:
           ⟲ Reset
         </button>
         <span style={{ width: 12 }} />
-        <button type="button" onClick={() => reinit(singlePreset())} style={btn} data-testid="preset-single">
+        <button
+          type="button"
+          onClick={() => reinit(fitPreset(singlePreset(), layout.width, layout.height))}
+          style={btn}
+          data-testid="preset-single"
+        >
           Preset: single
         </button>
-        <button type="button" onClick={() => reinit(parallelPreset())} style={btn} data-testid="preset-parallel">
+        <button
+          type="button"
+          onClick={() => reinit(fitPreset(parallelPreset(), layout.width, layout.height))}
+          style={btn}
+          data-testid="preset-parallel"
+        >
           Preset: parallel
         </button>
       </div>
@@ -529,16 +642,40 @@ export function Factory({ level, recipe, factory, onFactoryChange, onProduced }:
           border: `1px solid ${state.deadlocked ? "#f3c4c4" : "#d9e0e7"}`,
         }}
       >
-        tick <span data-testid="factory-tick">{state.tick}</span> · produced{" "}
-        <span data-testid="factory-produced">{state.produced.length}</span> · throughput{" "}
+        tick <span data-testid="factory-tick">{state.tick}</span> · total sink outcomes{" "}
+        <span data-testid="factory-produced">{state.producedTotal}</span> (includes waste) · waste{" "}
+        <span data-testid="factory-waste">{factoryWaste}</span> · throughput{" "}
         <span data-testid="factory-rate">{rate}</span> units/tick · bottleneck{" "}
         <span data-testid="factory-bottleneck">
-          {throughput.bottleneck === null ? "none" : `#${throughput.bottleneck} (${throughput.bottleneckType})`}
+          {throughput === null
+            ? "unavailable"
+            : throughput.bottleneck === null
+              ? "none"
+              : `#${throughput.bottleneck} (${throughput.bottleneckType})`}
         </span>
         {state.deadlocked ? " · DEADLOCKED" : ""}
       </div>
 
+      {analysisError !== "" && (
+        <div
+          role="alert"
+          data-testid="factory-analysis-error"
+          style={{ color: "#a11d1d", marginBottom: 10, fontSize: 13 }}
+        >
+          {analysisError}
+        </div>
+      )}
+
       {/* canvas (click to edit) */}
+      {rendererError !== null && (
+        <div
+          role="alert"
+          data-testid="factory-render-error"
+          style={{ color: "#a11d1d", marginBottom: 10, fontSize: 13 }}
+        >
+          {rendererError}
+        </div>
+      )}
       <div
         ref={mountRef}
         onClick={onCanvasClick}
@@ -569,20 +706,24 @@ export function Factory({ level, recipe, factory, onFactoryChange, onProduced }:
           <div style={{ marginTop: 12 }}>
             <h2 style={sectionTitle}>Machine types (footprint = its shape)</h2>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-              {DEFAULT_CATALOG.map((entry) => (
+              {DEFAULT_CATALOG.map((entry) => {
+                const unlocked = catalog.some((candidate) => candidate.typeId === entry.typeId);
+                return (
                 <button
                   key={entry.typeId}
                   type="button"
                   onClick={() => setBrush({ kind: "machine", typeId: entry.typeId })}
+                  disabled={!unlocked}
                   style={{
                     ...btn,
                     ...(brush.kind === "machine" && brush.typeId === entry.typeId ? active : {}),
                   }}
                   data-testid={`brush-machine-${entry.typeId}`}
                 >
-                  {entry.typeId}
+                  {entry.typeId}{unlocked ? "" : " (locked)"}
                 </button>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>
@@ -609,29 +750,31 @@ export function Factory({ level, recipe, factory, onFactoryChange, onProduced }:
             >
               footRot: {footRot} × 90°
             </button>
+            <button
+              type="button"
+              onClick={() => setEffectRot((r) => ((r + 1) & 3) as Rotation)}
+              style={btn}
+              data-testid="brush-effect-rotate"
+            >
+              effectRot: {effectRot} × 90°
+            </button>
+            <button
+              type="button"
+              onClick={() => setEffectFlip((value) => !value)}
+              style={btn}
+              data-testid="brush-effect-flip"
+            >
+              effectFlip: {effectFlip ? "on" : "off"}
+            </button>
           </div>
-          <label
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              fontSize: 13,
-              opacity: brushIsMachine ? 1 : 0.5,
-            }}
-          >
-            Machine speed (ticks/unit)
-            <input
-              type="number"
-              min={1}
-              value={brushSpeed}
-              onChange={(e) => setBrushSpeed(Math.max(1, Number(e.target.value) | 0))}
-              disabled={!brushIsMachine}
-              data-testid="brush-speed"
-              style={{ width: 70, padding: "5px 6px", border: "1px solid #b8c2cc", borderRadius: 6, fontSize: 13 }}
-            />
-          </label>
+          {brushIsMachine && (
+            <div style={{ fontSize: 13, color: "#5a6470" }}>
+              Fixed machine speed: {entryOf(brush.typeId).speed} ticks/unit. effectRot/effectFlip
+              change the drug transform; footRot only packs the footprint.
+            </div>
+          )}
           <p style={{ fontSize: 12, color: "#8a94a0", marginTop: 14 }}>
-            Tip: the default line has a slow <code>pull</code> (speed 3) bottleneck. Drop a
+            Tip: the default line has a catalog-defined slow <code>pull</code> bottleneck. Drop a
             splitter before it, a second <code>pull</code> on the row below, and a merger
             after — the throughput rate rises. Or hit <strong>Preset: parallel</strong> to
             see it vs <strong>Preset: single</strong>.

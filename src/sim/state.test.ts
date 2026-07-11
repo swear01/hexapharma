@@ -11,12 +11,14 @@ import type {
   PlacedMachine,
   Transform,
 } from "./phase0_interfaces";
-import { IDENTITY, SHAPE_1x1 } from "./phase0_interfaces";
+import { IDENTITY, MAX_FACTORY_REPLAY_TICKS, SHAPE_1x1 } from "./phase0_interfaces";
 import { initialState } from "./drug-graph";
 import { hashFactory, replayFactory } from "./state";
-import { initFactory, stepFactory } from "./factory-sim";
+import { initFactory, snapshotFactory, stepFactory } from "./factory-sim";
 
 const E: Dir = 0;
+const S: Dir = 1;
+const W: Dir = 2;
 
 function emptyMap(n: number, start: Vec2): EffectMap {
   const len = n * n;
@@ -27,7 +29,7 @@ function emptyMap(n: number, start: Vec2): EffectMap {
     start,
     cell: new Uint8Array(len),
     cureId: new Int16Array(len).fill(-1),
-    sideEffectId: new Int16Array(len).fill(-1),
+    sideEffectId: new Int32Array(len).fill(-1),
     fog: new Uint8Array(len),
   };
 }
@@ -65,9 +67,29 @@ describe("hashFactory", () => {
     const start = initialState(mm);
     const s0 = initFactory(layout, mm, start);
     expect(hashFactory(s0)).toBe(hashFactory(initFactory(layout, mm, start)));
-    const s1 = stepFactory(layout, mm, s0);
-    // After a tick the content differs ⇒ hash should differ.
-    expect(hashFactory(s1)).not.toBe(hashFactory(s0));
+    const initialHash = hashFactory(s0);
+    stepFactory(layout, mm, s0);
+    expect(hashFactory(s0)).not.toBe(initialHash);
+    expect(hashFactory(snapshotFactory(s0))).toBe(hashFactory(s0));
+  });
+
+  it("hashes behavior-affecting splitter round-robin cursors", () => {
+    const layout: FactoryLayout = {
+      width: 3,
+      height: 2,
+      tiles: [
+        { kind: "source", dir: E, period: 1 },
+        { kind: "splitter", inDir: W, outDirs: [E, S] },
+        { kind: "sink" },
+        { kind: "empty" },
+        { kind: "sink" },
+        { kind: "empty" },
+      ],
+      machines: [],
+    };
+    const snapshot = snapshotFactory(initFactory(layout, twoMaps(), initialState(twoMaps())));
+    const alternate = { ...snapshot, splitterCursors: [1] };
+    expect(hashFactory(alternate)).not.toBe(hashFactory(snapshot));
   });
 });
 
@@ -95,8 +117,8 @@ describe("replayFactory (INV-15)", () => {
     const layout = lineLayout(2, 3);
     const mm = twoMaps();
     const start = initialState(mm);
-    let s = initFactory(layout, mm, start);
-    for (let i = 0; i < 37; i++) s = stepFactory(layout, mm, s);
+    const s = initFactory(layout, mm, start);
+    for (let i = 0; i < 37; i++) stepFactory(layout, mm, s);
     const replayed = replayFactory(layout, mm, start, 37);
     expect(hashFactory(replayed)).toBe(hashFactory(s));
     expect(replayed.tick).toBe(37);
@@ -109,5 +131,17 @@ describe("replayFactory (INV-15)", () => {
     const a = replayFactory(layout, mm, start, 20);
     const b = replayFactory(layout, mm, start, 25);
     expect(hashFactory(a)).not.toBe(hashFactory(b));
+  });
+
+  it("rejects fractional, negative, and non-finite replay lengths", () => {
+    const layout = lineLayout(1, 2);
+    const mm = twoMaps();
+    const start = initialState(mm);
+    for (const ticks of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => replayFactory(layout, mm, start, ticks)).toThrow(/ticks|integer/i);
+    }
+    expect(() => replayFactory(layout, mm, start, MAX_FACTORY_REPLAY_TICKS + 1)).toThrow(
+      new RegExp(`ticks|${MAX_FACTORY_REPLAY_TICKS}`),
+    );
   });
 });

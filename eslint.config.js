@@ -2,6 +2,16 @@ import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 import globals from "globals";
 
+const solverImportPattern = {
+  regex: "(^|/)solver(?:/|$)",
+  message: "the dev/test-only solver must not enter the production dependency graph.",
+};
+
+const dynamicSolverImportRestriction = {
+  selector: "ImportExpression[source.type='Literal'][source.value=/\\/solver(?:\\/|$)/]",
+  message: "the dev/test-only solver must not be imported dynamically by production code.",
+};
+
 export default tseslint.config(
   {
     ignores: [
@@ -28,6 +38,14 @@ export default tseslint.config(
           caughtErrorsIgnorePattern: "^_",
         },
       ],
+    },
+  },
+  {
+    files: ["src/**/*.ts", "src/**/*.tsx"],
+    ignores: ["src/**/*.test.ts", "src/**/*.test.tsx", "src/sim/solver/**"],
+    rules: {
+      "no-restricted-imports": ["error", { patterns: [solverImportPattern] }],
+      "no-restricted-syntax": ["error", dynamicSolverImportRestriction],
     },
   },
   // Determinism + purity hard-rules for the sim core, enforced automatically.
@@ -69,6 +87,25 @@ export default tseslint.config(
           ],
         },
       ],
+    },
+  },
+  {
+    files: ["src/sim/**/*.ts"],
+    ignores: ["src/sim/**/*.test.ts", "src/sim/solver/**"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["pixi.js", "react", "react-dom", "**/render/**", "**/ui/**"],
+              message: "sim core is pure: it must not import render / UI / DOM libraries.",
+            },
+            solverImportPattern,
+          ],
+        },
+      ],
+      "no-restricted-syntax": ["error", dynamicSolverImportRestriction],
     },
   },
   // Tests and tooling may be looser.

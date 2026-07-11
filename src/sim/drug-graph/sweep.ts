@@ -24,6 +24,124 @@ function cellAt(map: EffectMap, x: number, y: number): number {
   return v ?? CellKind.Wall;
 }
 
+function enterStatus(map: EffectMap, x: number, y: number): number {
+  if (!inBounds(map, x, y)) return 0;
+  const kind = cellAt(map, x, y);
+  if (kind === CellKind.Wall) return 0;
+  return kind === CellKind.Hazard ? 2 : 1;
+}
+
+export function sweepInto(
+  map: EffectMap,
+  fromX: number,
+  fromY: number,
+  targetX: number,
+  targetY: number,
+  out: Int32Array,
+  outOffset: number,
+): void {
+  let posX = fromX;
+  let posY = fromY;
+  const dx = targetX - fromX;
+  const dy = targetY - fromY;
+  if (dx === 0 && dy === 0) {
+    out[outOffset] = posX;
+    out[outOffset + 1] = posY;
+    out[outOffset + 2] = 0;
+    return;
+  }
+
+  const sx = Math.sign(dx);
+  const sy = Math.sign(dy);
+  const adx = Math.abs(dx);
+  const ady = Math.abs(dy);
+  let x = fromX;
+  let y = fromY;
+  let tMaxX = ady;
+  let tMaxY = adx;
+  let nx = adx;
+  let ny = ady;
+
+  while (nx > 0 || ny > 0) {
+    if (nx > 0 && (ny === 0 || tMaxX < tMaxY)) {
+      x += sx;
+      const status = enterStatus(map, x, y);
+      if (status === 0) break;
+      posX = x;
+      posY = y;
+      if (status === 2) {
+        out[outOffset] = posX;
+        out[outOffset + 1] = posY;
+        out[outOffset + 2] = 1;
+        return;
+      }
+      tMaxX += ady;
+      nx -= 1;
+    } else if (ny > 0 && (nx === 0 || tMaxY < tMaxX)) {
+      y += sy;
+      const status = enterStatus(map, x, y);
+      if (status === 0) break;
+      posX = x;
+      posY = y;
+      if (status === 2) {
+        out[outOffset] = posX;
+        out[outOffset + 1] = posY;
+        out[outOffset + 2] = 1;
+        return;
+      }
+      tMaxY += adx;
+      ny -= 1;
+    } else {
+      const gxX = x + sx;
+      const gxY = y;
+      let status = enterStatus(map, gxX, gxY);
+      if (status === 0) break;
+      posX = gxX;
+      posY = gxY;
+      if (status === 2) {
+        out[outOffset] = posX;
+        out[outOffset + 1] = posY;
+        out[outOffset + 2] = 1;
+        return;
+      }
+
+      const gyX = x;
+      const gyY = y + sy;
+      status = enterStatus(map, gyX, gyY);
+      if (status === 0) break;
+      posX = gyX;
+      posY = gyY;
+      if (status === 2) {
+        out[outOffset] = posX;
+        out[outOffset + 1] = posY;
+        out[outOffset + 2] = 1;
+        return;
+      }
+
+      x += sx;
+      y += sy;
+      status = enterStatus(map, x, y);
+      if (status === 0) break;
+      posX = x;
+      posY = y;
+      if (status === 2) {
+        out[outOffset] = posX;
+        out[outOffset + 1] = posY;
+        out[outOffset + 2] = 1;
+        return;
+      }
+      tMaxX += ady;
+      tMaxY += adx;
+      nx -= 1;
+      ny -= 1;
+    }
+  }
+
+  out[outOffset] = posX;
+  out[outOffset + 1] = posY;
+  out[outOffset + 2] = 0;
+}
+
 /**
  * Apply the drug-sweep rule to one entered cell, mutating `entered`/`pos`/`failed`.
  * Returns a status describing whether the walk should continue.

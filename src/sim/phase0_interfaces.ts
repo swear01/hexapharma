@@ -92,8 +92,8 @@ export interface EffectMap {
   readonly cell: Uint8Array;
   /** length width*height; DiseaseId at Cure cells, else -1. */
   readonly cureId: Int16Array;
-  /** length width*height; SideEffectId at SideEffect cells, else -1. */
-  readonly sideEffectId: Int16Array;
+  /** length width*height; globally unique SideEffectId at SideEffect cells, else -1. */
+  readonly sideEffectId: Int32Array;
   /** length width*height; 0 = fogged/hidden, 1 = revealed. */
   readonly fog: Uint8Array;
 }
@@ -222,6 +222,8 @@ export interface MachineCatalogEntry {
   readonly typeId: MachineTypeId;
   readonly transform: Transform;
   readonly cost: number;
+  /** Fixed ticks to process one unit in the factory. */
+  readonly speed: number;
   /** If true (translate only), the search may rotate/flip this machine. */
   readonly orientable: boolean;
 }
@@ -287,15 +289,23 @@ export type DifficultyToBasePriceFn = (difficulty: number, refCost: number) => n
  * tests all agree. Orientable translate entries expand to all 4 rotations (+flip)
  * during search, so axis-specific variants are unnecessary.
  */
-export const DEFAULT_CATALOG: readonly MachineCatalogEntry[] = [
-  { typeId: "push", transform: { kind: "translate", delta: { x: 1, y: 0 }, relation: "forward" }, cost: 1, orientable: true },
-  { typeId: "push2", transform: { kind: "translate", delta: { x: 2, y: 0 }, relation: "forward" }, cost: 2, orientable: true },
-  { typeId: "pull", transform: { kind: "translate", delta: { x: 1, y: 0 }, relation: "reverse" }, cost: 1, orientable: true },
-  { typeId: "shear", transform: { kind: "translate", delta: { x: 1, y: 0 }, relation: "perpendicular" }, cost: 2, orientable: true },
-  { typeId: "skew", transform: { kind: "translate", delta: { x: 1, y: 0 }, relation: "offset" }, cost: 2, orientable: true },
-  { typeId: "dilute", transform: { kind: "scale", num: 1, den: 2 }, cost: 3, orientable: false },
-  { typeId: "swap01", transform: { kind: "swap", a: 0, b: 1 }, cost: 1, orientable: false },
-];
+function deepFreezeData<T>(value: T): T {
+  if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
+    for (const child of Object.values(value as Record<string, unknown>)) deepFreezeData(child);
+    Object.freeze(value);
+  }
+  return value;
+}
+
+export const DEFAULT_CATALOG: readonly MachineCatalogEntry[] = deepFreezeData([
+  { typeId: "push", transform: { kind: "translate", delta: { x: 1, y: 0 }, relation: "forward" }, cost: 1, speed: 1, orientable: true },
+  { typeId: "push2", transform: { kind: "translate", delta: { x: 2, y: 0 }, relation: "forward" }, cost: 2, speed: 2, orientable: true },
+  { typeId: "pull", transform: { kind: "translate", delta: { x: 1, y: 0 }, relation: "reverse" }, cost: 1, speed: 2, orientable: true },
+  { typeId: "shear", transform: { kind: "translate", delta: { x: 1, y: 0 }, relation: "perpendicular" }, cost: 2, speed: 3, orientable: true },
+  { typeId: "skew", transform: { kind: "translate", delta: { x: 1, y: 0 }, relation: "offset" }, cost: 2, speed: 3, orientable: true },
+  { typeId: "dilute", transform: { kind: "scale", num: 1, den: 2 }, cost: 3, speed: 4, orientable: false },
+  { typeId: "swap01", transform: { kind: "swap", a: 0, b: 1 }, cost: 1, speed: 1, orientable: false },
+]);
 
 // ═══════════════════════════════ Phase 2 — factory (spatial packing + throughput) ═══════════════════════════════
 // Tick-based deterministic sim. A "unit" is a drug in transit carrying its multi-map
@@ -311,6 +321,26 @@ export const DEFAULT_CATALOG: readonly MachineCatalogEntry[] = [
 
 /** Cardinal direction on the square grid (y-down): 0=E, 1=S, 2=W, 3=N. */
 export type Dir = 0 | 1 | 2 | 3;
+export const MAX_TEMPLATE_STEPS = 256;
+export const MAX_FACTORY_CELLS = 65_536;
+export const MAX_FACTORY_MACHINES = 65_536;
+export const MAX_MACHINE_SHAPE_CELLS = 256;
+export const MAX_MACHINE_PORTS = 256;
+export const MAX_FACTORY_PORTS = 262_144;
+export const MAX_FACTORY_REPLAY_TICKS = 100_000;
+export const MAX_FACTORY_ANALYSIS_WORK = 100_000_000;
+export const MAX_GAME_INVENTORY_PRODUCTS = 24_500;
+export const MAX_BULK_SALE_PRODUCTS = 100_000;
+export const MAX_GAME_FACTORY_CELLS = 4_096;
+export const MAX_GAME_FACTORY_DIMENSION = 256;
+export const BASE_GAME_FACTORY_WIDTH = 9;
+export const BASE_GAME_FACTORY_HEIGHT = 6;
+export const MAX_GAME_MAP_CELLS = 1_024;
+export const MAX_GAME_MAP_DIMENSION = 32;
+export const MAX_GAME_REPLAY_WORK = 100_000_000;
+export const MAX_REWIND_HISTORY_REPLAY_TICKS = 12_000;
+export const MAX_REWIND_HISTORY_TRACE_ENTRIES = 8_192;
+export const MAX_REWIND_HISTORY_REPLAY_WORK = 100_000_000;
 
 /** A machine as placed in the factory: a drug-transform + throughput attributes. */
 export interface FactoryMachineDef {
@@ -384,23 +414,100 @@ export interface Unit {
   readonly drug: DrugState;
   readonly proc: number;
   readonly machineId: number | null;
+  /** Sum of machine processing costs actually incurred by this physical unit. */
+  readonly productionCost: number;
 }
 
+/** One physical unit that reached a sink. */
+export interface ProducedUnit {
+  readonly id: number;
+  readonly drug: DrugState;
+  readonly productionCost: number;
+}
+
+/** Fixed-capacity, allocation-free product events written by the most recent tick. */
+export interface FactoryProductEventBuffer {
+  readonly capacity: number;
+  readonly mapCount: number;
+  count: number;
+  readonly ids: Int32Array;
+  readonly productionCosts: Int32Array;
+  readonly failed: Uint8Array;
+  /** Flat `[eventIndex * mapCount + mapIndex]` positions. */
+  readonly drugX: Int32Array;
+  readonly drugY: Int32Array;
+}
+
+/**
+ * Mutable fixed-capacity factory runtime. Every array is allocated by init/restore and
+ * reused by every tick. Active units occupy dense slots `[0, unitCount)` in id order.
+ */
+export interface FactoryRuntime {
+  readonly capacity: number;
+  readonly mapCount: number;
+  readonly unitIds: Int32Array;
+  readonly unitX: Int32Array;
+  readonly unitY: Int32Array;
+  readonly unitProc: Int32Array;
+  /** Placed machine id, or -1 while on the belt grid. */
+  readonly unitMachineIds: Int32Array;
+  readonly unitProductionCosts: Int32Array;
+  readonly unitFailed: Uint8Array;
+  /** Flat `[unitIndex * mapCount + mapIndex]` positions. */
+  readonly unitDrugX: Int32Array;
+  readonly unitDrugY: Int32Array;
+  /** Next output index for each splitter, in row-major splitter order. */
+  readonly splitterCursors: Int32Array;
+  readonly producedEvents: FactoryProductEventBuffer;
+  tick: number;
+  unitCount: number;
+  nextUnitId: number;
+  /** Cumulative physical units that reached a sink. */
+  producedTotal: number;
+  deadlocked: boolean;
+}
+
+/** Cold, serializable snapshot. Product events cover only the most recent tick. */
 export interface FactoryState {
   readonly tick: number;
   readonly units: readonly Unit[];
   readonly nextUnitId: number;
-  /** Final DrugState of every unit that has reached a sink, in arrival order. */
-  readonly produced: readonly DrugState[];
+  readonly producedTotal: number;
+  /** Cold copy of per-splitter round-robin cursors, in row-major splitter order. */
+  readonly splitterCursors: readonly number[];
+  readonly producedEvents: readonly ProducedUnit[];
   /** True once the sim detects no unit can make progress and buffers are blocked. */
   readonly deadlocked: boolean;
 }
 
-/** Build the initial factory state (tick 0, no units) for a layout + level. */
-export type InitFactoryFn = (layout: FactoryLayout, mm: MultiMap, start: DrugState) => FactoryState;
+/** Allocate a fixed-capacity runtime at tick 0. This is a cold boundary. */
+export type InitFactoryFn = (layout: FactoryLayout, mm: MultiMap, start: DrugState) => FactoryRuntime;
 
-/** Advance the factory one tick: deterministic, pure (returns a new state). */
-export type StepFactoryFn = (layout: FactoryLayout, mm: MultiMap, s: FactoryState) => FactoryState;
+/** Advance the mutable runtime one tick without allocating. */
+export type StepFactoryFn = (
+  layout: FactoryLayout,
+  mm: MultiMap,
+  runtime: FactoryRuntime,
+) => void;
+
+/** Allocate an immutable/serializable view of the mutable runtime (cold boundary). */
+export type SnapshotFactoryFn = (runtime: FactoryRuntime) => FactoryState;
+
+/** Reconstruct a fixed-capacity runtime from a cold snapshot. */
+export type RestoreFactoryFn = (
+  layout: FactoryLayout,
+  mm: MultiMap,
+  start: DrugState,
+  snapshot: FactoryState,
+) => FactoryRuntime;
+
+/** Copy one product event as `[id, cost, failed, x0, y0, ...]` into caller storage. */
+export type CopyFactoryProductEventFn = (
+  runtime: FactoryRuntime,
+  eventIndex: number,
+  out: Int32Array,
+  outOffset: number,
+) => void;
 
 /** Steady-state throughput report (MEASURED by simulating a window — not a heuristic). */
 export interface ThroughputReport {
@@ -423,8 +530,8 @@ export interface ReplayInput {
   readonly ticks: number; // advance this many ticks
 }
 
-/** Deterministic content hash of a FactoryState (for replay equality, INV-15). */
-export type HashFactoryFn = (s: FactoryState) => number;
+/** Deterministic content hash of a live runtime or cold snapshot (INV-15). */
+export type HashFactoryFn = (s: FactoryState | FactoryRuntime) => number;
 
 /** Run `ticks` ticks from init and return the final state — same inputs ⇒ same hash. */
 export type ReplayFactoryFn = (
@@ -449,32 +556,32 @@ const SH_S: Dir = 1;
 const SH_W: Dir = 2;
 
 /** 1×1 cell, in on the west side, out on the east side. */
-export const SHAPE_1x1: MachineShape = {
+export const SHAPE_1x1: MachineShape = deepFreezeData({
   cells: [{ x: 0, y: 0 }],
   inPorts: [{ cell: { x: 0, y: 0 }, side: SH_W }],
   outPorts: [{ cell: { x: 0, y: 0 }, side: SH_E }],
-};
+});
 /** 2×1 horizontal: in west of left cell, out east of right cell. */
-export const SHAPE_2x1: MachineShape = {
+export const SHAPE_2x1: MachineShape = deepFreezeData({
   cells: [{ x: 0, y: 0 }, { x: 1, y: 0 }],
   inPorts: [{ cell: { x: 0, y: 0 }, side: SH_W }],
   outPorts: [{ cell: { x: 1, y: 0 }, side: SH_E }],
-};
+});
 /** L-tromino: in west of (0,0), out south of (1,1). */
-export const SHAPE_L: MachineShape = {
+export const SHAPE_L: MachineShape = deepFreezeData({
   cells: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }],
   inPorts: [{ cell: { x: 0, y: 0 }, side: SH_W }],
   outPorts: [{ cell: { x: 1, y: 1 }, side: SH_S }],
-};
+});
 /** 2×2 block: in west of (0,0), out east of (1,0). */
-export const SHAPE_2x2: MachineShape = {
+export const SHAPE_2x2: MachineShape = deepFreezeData({
   cells: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }],
   inPorts: [{ cell: { x: 0, y: 0 }, side: SH_W }],
   outPorts: [{ cell: { x: 1, y: 0 }, side: SH_E }],
-};
+});
 
 /** Canonical footprint per machine type (each type has a fixed shape, Big-Pharma style). */
-export const DEFAULT_SHAPES: Readonly<Record<MachineTypeId, MachineShape>> = {
+export const DEFAULT_SHAPES: Readonly<Record<MachineTypeId, MachineShape>> = deepFreezeData({
   push: SHAPE_1x1,
   push2: SHAPE_2x1,
   pull: SHAPE_1x1,
@@ -482,7 +589,7 @@ export const DEFAULT_SHAPES: Readonly<Record<MachineTypeId, MachineShape>> = {
   skew: SHAPE_1x1,
   dilute: SHAPE_2x2,
   swap01: SHAPE_2x1,
-};
+});
 
 // ═══════════════════════════════ Phase 3 — economy / patent / save ═══════════════════════════════
 
@@ -499,6 +606,8 @@ export interface SoldCount {
 
 export interface EconomyState {
   readonly cash: number;
+  /** Research points earned by selling physical products. */
+  readonly research: number;
   readonly sold: readonly SoldCount[]; // per-disease cumulative sales (deterministic order)
 }
 
@@ -537,6 +646,7 @@ export type PatentEffect =
 export interface PatentNode {
   readonly id: string;
   readonly cost: number; // cash to unlock
+  readonly researchCost: number;
   readonly requires: readonly string[]; // prerequisite node ids
   readonly effect: PatentEffect;
 }
@@ -545,28 +655,70 @@ export interface PatentState {
   readonly unlocked: readonly string[]; // node ids, in unlock order
 }
 
-export type CanUnlockFn = (tree: readonly PatentNode[], state: PatentState, cash: number, id: string) => boolean;
+export type CanUnlockFn = (
+  tree: readonly PatentNode[],
+  state: PatentState,
+  cash: number,
+  research: number,
+  id: string,
+) => boolean;
 
 /** Unlock a node: returns new PatentState + cash spent (throws/no-ops if not allowed — define). */
 export type UnlockPatentFn = (
   tree: readonly PatentNode[],
   state: PatentState,
   cash: number,
+  research: number,
   id: string,
-) => { patents: PatentState; cash: number };
+) => { patents: PatentState; cash: number; research: number };
 
 // ── top-level game state + save ──
 
 /**
  * Whole-game state. The current level is stored as its seed + GenOptions and
- * regenerated deterministically on load (mapgen is seed-pure), so save never has
- * to serialize typed arrays. One save = one seed (D12).
+ * regenerated deterministically on load; only mutable typed state such as fog is
+ * serialized. One save = one current seed/configuration identity (D12).
  */
+export interface InventoryProduct extends ProducedUnit {
+  /** Save-global id; factory unit ids restart when a line is reset. */
+  readonly inventoryId: number;
+  readonly outcome: Outcome;
+}
+
+/** Immutable run origin used to verify that a persisted input trace reproduces the save. */
+export interface GameOrigin {
+  readonly genOptions: GenOptions;
+  readonly cash: number;
+  readonly research: number;
+}
+
+/** Every authoritative whole-game state transition; consecutive factory ticks are normalized. */
+export type GameIntent =
+  | { readonly kind: "saveRecipe"; readonly recipe: Template }
+  | { readonly kind: "setFactory"; readonly factory: FactoryLayout }
+  | { readonly kind: "factoryTicks"; readonly ticks: number }
+  | { readonly kind: "resetFactory" }
+  | { readonly kind: "sellProduct"; readonly productId: number; readonly disease: number }
+  | { readonly kind: "sellProducts"; readonly productIds: readonly number[]; readonly disease: number }
+  | { readonly kind: "runLab"; readonly template: Template }
+  | { readonly kind: "unlockPatent"; readonly id: string };
+
 export interface GameState {
+  readonly origin: GameOrigin;
+  readonly intentTrace: readonly GameIntent[];
+  /** Cumulative factory ticks represented by `intentTrace`; bounded for save replay validation. */
+  readonly replayTicks: number;
   readonly genOptions: GenOptions; // regenerates the current MultiMap + diseases
   readonly economy: EconomyState;
   readonly patents: PatentState;
-  readonly factory: FactoryLayout; // current production line
+  readonly recipe: Template | null;
+  readonly factory: FactoryLayout | null;
+  readonly factoryState: FactoryRuntime | null;
+  readonly factoryWaste: number;
+  readonly inventory: readonly InventoryProduct[];
+  readonly nextInventoryId: number;
+  /** Persistent exploration state, one typed array per effect map. */
+  readonly fog: readonly Uint8Array[];
   readonly rng: RngState; // for any further seeded draws (e.g. next map)
 }
 

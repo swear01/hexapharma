@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import {
   DEFAULT_CATALOG,
   type GenOptions,
-  type GameState,
   type EconomyState,
   type PatentState,
 } from "../../src/sim/phase0_interfaces";
@@ -15,6 +14,7 @@ import { analyzeThroughput } from "../../src/sim/factory-sim/index";
 import { sellUnit } from "../../src/sim/economy/index";
 import { DEFAULT_PATENTS, canUnlock, unlockPatent } from "../../src/sim/patent/index";
 import { serializeGame, deserializeGame } from "../../src/sim/save/index";
+import { applyGameIntent, createGameState } from "../../src/sim/game";
 
 /** Small, fast options for an end-to-end loop. */
 function opts(seed: number): GenOptions {
@@ -29,7 +29,7 @@ function opts(seed: number): GenOptions {
   };
 }
 
-describe("integration: explore → research → produce → sell → patent → deeper", () => {
+describe("integration: map → recipe → factory plus economy/patent/save contracts", () => {
   it("a generated disease can be solved, compiled, produced, and sold", () => {
     const level = generate(opts(7));
     const start = initialState(level.mm);
@@ -54,8 +54,8 @@ describe("integration: explore → research → produce → sell → patent → 
     // produce: run the line; mass conservation holds; units are produced
     const fs = replayFactory(layout, level.mm, start, 200);
     expect(fs.deadlocked).toBe(false);
-    expect(fs.produced.length).toBeGreaterThan(0);
-    expect(fs.nextUnitId).toBe(fs.produced.length + fs.units.length); // no spawn/vanish
+    expect(fs.producedTotal).toBeGreaterThan(0);
+    expect(fs.nextUnitId).toBe(fs.producedTotal + fs.units.length); // no spawn/vanish
 
     // throughput is reported
     const tp = analyzeThroughput(layout, level.mm);
@@ -66,7 +66,7 @@ describe("integration: explore → research → produce → sell → patent → 
     const level = generate(opts(7));
     const dA = level.diseases[0]!;
     const dB = level.diseases[1]!;
-    let econ: EconomyState = { cash: 0, sold: [] };
+    let econ: EconomyState = { cash: 0, research: 0, sold: [] };
 
     // spam disease A: each successive unit nets no more than the previous
     const nets: number[] = [];
@@ -92,33 +92,39 @@ describe("integration: explore → research → produce → sell → patent → 
   it("patents gate on cash + prerequisites; new-map requires bench-2", () => {
     let patents: PatentState = { unlocked: [] };
     // too poor for bench-2 (cost 120)
-    expect(canUnlock(DEFAULT_PATENTS, patents, 50, "bench-2")).toBe(false);
+    expect(canUnlock(DEFAULT_PATENTS, patents, 50, 9999, "bench-2")).toBe(false);
     // new-map locked until bench-2
-    expect(canUnlock(DEFAULT_PATENTS, patents, 9999, "new-map")).toBe(false);
+    expect(canUnlock(DEFAULT_PATENTS, patents, 9999, 9999, "new-map")).toBe(false);
 
-    const u1 = unlockPatent(DEFAULT_PATENTS, patents, 200, "bench-2");
+    const u1 = unlockPatent(DEFAULT_PATENTS, patents, 200, 9999, "bench-2");
     patents = u1.patents;
     expect(patents.unlocked).toContain("bench-2");
     expect(u1.cash).toBe(80); // 200 − 120
 
     // now new-map is unlockable with enough cash
-    expect(canUnlock(DEFAULT_PATENTS, patents, 9999, "new-map")).toBe(true);
+    expect(canUnlock(DEFAULT_PATENTS, patents, 9999, u1.research, "new-map")).toBe(true);
   });
 
   it("a full GameState round-trips through save", () => {
-    const g: GameState = {
-      genOptions: opts(7),
-      economy: { cash: 350, sold: [{ disease: 1, count: 2 }] },
-      patents: { unlocked: ["bench-2"] },
-      factory: compileTemplate(
-        solve(generate(opts(7)).mm, initialState(generate(opts(7)).mm), {
-          catalog: DEFAULT_CATALOG,
-          maxDepth: 12,
-          targets: [0],
-        })!.template,
-      ),
-      rng: { s: 7 },
-    };
+    const options = opts(7);
+    const level = generate(options);
+    const template = solve(level.mm, initialState(level.mm), {
+      catalog: DEFAULT_CATALOG,
+      maxDepth: 12,
+      targets: [0],
+    })!.template;
+    let g = createGameState(options, 10_000, 100);
+    g = applyGameIntent(g, { kind: "saveRecipe", recipe: template });
+    g = applyGameIntent(g, { kind: "factoryTicks", ticks: 200 });
+    const product = g.inventory[0]!;
+    g = applyGameIntent(g, {
+      kind: "sellProduct",
+      productId: product.inventoryId,
+      disease: product.outcome.cured[0]!,
+    });
+    g = applyGameIntent(g, { kind: "unlockPatent", id: "bench-2" });
+    g = applyGameIntent(g, { kind: "unlockPatent", id: "skew-unlock" });
+    g = applyGameIntent(g, { kind: "unlockPatent", id: "dilute-unlock" });
     expect(deserializeGame(serializeGame(g))).toEqual(g);
   });
 

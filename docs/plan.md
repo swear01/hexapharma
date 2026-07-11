@@ -2,7 +2,8 @@
 
 ## In Progress
 
-- 真人試玩 + 平衡：在 :53346 跑完整循環，調難度曲線/定價/吞吐節奏（不可約的人工判斷）。
+- 真人試玩 + 平衡：在 :53346 跑完整循環，調難度曲線/定價/吞吐節奏（不可約的人工判斷）。目前 100-seed sweep 為 100/100 可生成，但 17 個 difficulty-12 樣本達中位淨利/tick 的 4.88×，尚未宣稱平衡完成。
+- 出貨品質：持續做真人視覺/UX review。
 
 ## Done
 
@@ -12,16 +13,21 @@
   - `rng`（mulberry32）+ `hash`（FNV-1a）。
   - `drug-graph`（orient/supercover sweep/applyStep/evaluate/revealAlong；translate 四關係 順逆垂直偏移；INV-1..8）。
   - `solver`（多圖 BFS；複合難度 = 步數 + 多樣性 + 解耦；INV-13；dev/test 限定）。
-  - `mapgen`（建構式生成 + **跨圖張力**（各圖不同原點 + 他圖端點 Hazard，求解器 oracle 驗證解耦）+ 指數定價；INV-9..12 + tension 不變式）。
+  - `mapgen`（production 建構式生成；solver 僅 tests/tools；difficulty price 用 BigInt exact `17/10` rational half-up，d0–58 保持舊值；此機械修正非人工平衡）。
 - **Phase 1 — 研究室視覺（:53346）** ✅：PixiJS 並列畫 2 圖（四特徵 + 迷霧 + 藥物）+ React Lab（palette/旋轉/flip/Run 動畫/結果）+ 依 seed 玩生成關卡 + reveal debug。
-- **UI 迷霧探索 + 3–4 圖 + 專利接線** ✅：研究室改為**真實累積探索**——Game 持有每圖 persistent fog（Uint8Array，初始全霧），每次 Run 把 `revealAlong` 揭露的格 union 進去；未揭露格畫成「?」UNKNOWN，Reset 不收回已探索，載入新關卡才重置；保留「Reveal all (debug)」開關（預設關）。labRenderer 以 2-per-row grid 排 N=2..4 圖並按 N 縮小格子。專利接線：`reveal-aid` 在各圖 start 周圍揭一個半徑（= amount，Chebyshev，確定性）；`new-map` 重生**更深**關卡（`nMaps=min(4,nMaps+1)`、N≥3 縮圖到 7×7／6×6、重置 recipe/factory/inventory + 新霧、保留 cash + patents）。起始 N 可用 `?nmaps=`／`?seed=` query 覆蓋（預設 N=2，供深圖試玩 / N-map 測試）；起始現金可用 `?cash=` 覆蓋（整數，預設 START_CASH，供 e2e / 試玩買專利）。Lab level-info 另顯示 `maps N` 與 `revealed R/T`（across 所有圖的已揭格數），供測試判斷揭霧成長與關卡加深。
-- **Phase 2 — 工廠吞吐配平** ✅：`factory-sim`（belt/多格多 port 機器 tick、splitter/merger 真並聯、throughput、bottleneck、deadlock；質量守恆/確定性）+ `state.ts`（replay → INV-15）+ `recipe`（模板→產線 + 重排不變 INV-7）+ Factory 視覺（放置多格機器 + footRot 旋轉、splitter/merger 佈線、放慢機器見瓶頸、splitter→兩機器→merger 真並聯提升吞吐）。
-- **Phase 3 — 經濟/存讀檔/專利 + 循環** ✅：`economy`（遞減定價 + 反退化 + 帳務守恆）+ `save`（round-trip + 多存檔/回溯）+ `patent`（天賦樹 + 解鎖新地圖）+ 完整循環 UI（Lab→Factory→Shop→Patents）+ 存讀檔。
-- **整合**：`test/integration/loop.test.ts` headless 跑通 探索→研究→量產→賣→專利→更深；`npm run check` 全綠（vitest + e2e）。
+- **UI 迷霧探索 + 3–4 圖 + 專利接線** ✅：研究室真實累積 persistent fog；未揭露格畫「?」，Reset 保留探索。渲染支援 N=2..4；`reveal-aid` 揭 start 周圍，兩段 map patent 正常 2→3→4 並重建更深關卡。deeper reset 清 recipe/factory/runtime/waste/inventory/fog + `economy.sold`，UI 完整警告且需 confirmation；保留扣款後 cash/R&D、patents 與全域 inventory ID。machine patent 鎖 palette/catalog，expand patent 實際擴張 layout。`?nmaps=`/`?seed=`/`?cash=`/`?research=` 僅覆蓋測試/試玩起始值。
+- **Phase 2 — 工廠吞吐配平** ✅：`factory-sim`（belt/多格多 port 機器 tick、splitter/merger 真並聯、throughput、bottleneck、deadlock；質量守恆/確定性）+ `state.ts` 工廠 replay + `recipe` 重排不變 + Factory 視覺。splitter 只收 `inDir` 且 per tile cursor round-robin，merger 只收 `inDirs` 且依序固定優先；cursor 進 runtime/snapshot/hash/save。機器 cost/speed 由 catalog 固定；effectRot/effectFlip 與 footprint footRot 分離。
+- **Phase 3 — 經濟/存讀檔/專利 + 循環** ✅：single state/head ≤4,096 entries/≤100,000 ticks/≤100,000,000 work；rewind共用aggregate ≤12,000/≤8,192/≤100,000,000。full/compact readers從raw origin+trace preflight；`deserializeSlots`在任何state replay前驗aggregate，`serializeSlots`同界。legacy先history、必要時head-alone；compact另限20/1,250,000 chars。timeline同origin/normalization-aware，跨run replace。
+- **2026-07 TDD 計劃書對齊修正** ✅：完整GameState reducer；≤4,096 entries/≤100,000 ticks/≤100,000,000 work，inventory≤24,500、bulk≤100,000。正常100,000-tick reference約31,000,000。public/Game map/factory分層、`9×6 + patent delta`、Int32 side effects、實體產品/R&D/patents與production無solver均完成。
+- **strict factory zero-allocation 熱路徑** ✅：`FactoryRuntime`為固定容量SoA，geometry/index冷編譯，buffers全預配置；runtime綁layout + `MultiMap` identity，成功tick原地更新。diagnostics ≤100,000 ticks/≤100,000,000 layout work，init/tick前驗`(area + machines + sources)² × observationTicks`，避免同步`useMemo`鎖UI。throughput serpentine 20×20成功/21×21 fail-fast；outcome 20×20成功/22×22 fail-fast（21×21仍低於cap）。`factoryOutcome`deadlock/首產品 exhaustion throw；throughput真deadlock回`0/1`與null bottleneck，window/work超budget才throw並顯示alert。
+- **輸入、錯誤與持久化 authority 補強** ✅：authority inputs owned/frozen；public/Game map/factory、template、inventory、seed/tool bounds完成；patent helpers拒絕invalid tree/state/cash/research，`activeEffects` aggregate用checked safe-integer add。完整save拒絕不一致state；compact inspector從raw trace重算work再replay。storage、analysis、intent/save failures全部顯式UI error；Load/Save/Rewind不踩壞blob。
+- **production dependency / bundle 補強** ✅：ESLint在production `src/**`禁止static/dynamic solver import；Lab/Factory Pixi renderer dynamic import、啟動錯誤可見，production build所有chunk <500 kB且無warning。Lab依實際dimensions縮cell、Game-authorized canvas ≤980×980且default snapshots不變；production-preview於`:53348`除四tab lazy-load/零runtime error外，另驗2-map最寬與4-map最大32×32。Pixi teardown不釋放global pools。
+- **固定視覺回歸 baseline** ✅：Lab fogged 與 Factory reset 的 Playwright `toHaveScreenshot` expected snapshots 已納入本輪工作成果與 e2e pixel-diff（目前工作樹未 commit 時不宣稱「已提交」）。
+- **整合**：`src/sim/game.test.ts`與integration tests守整局vertical trace；checkpoint/save tests守lineage、cross-run、legacy/full-wire preflight。factory tests守throughput 20×20/21×21 work邊界；recipe tests守outcome 20×20/22×22邊界。Playwright覆蓋Factory analysis alert與固定baseline；production-preview驗最大map canvas。
 
 ## Next Up
 
-- 平衡（求解器掃配方/吞吐空間）、反退化實測（3–4 圖 UI/loop 已接，見上）。
-- 內容量產（更多疾病/原料/機器變換 = 純資料）；美術打磨；存檔 UI 多槽位/回溯打磨。
-- 補強：難度分納入包圍度等因子；更多機器形狀/footprint 內容。
+- 平衡：針對目前 17 個高難度淨利 outlier 決定「進程獎勵」的可接受區間，再以求解器掃最短解成本/吞吐、調整 difficulty→price 曲線與旗標門檻，最後在 3–4 圖真人循環驗證反退化。
+- **Post-MVP roadmap（不是目前 correctness gap）**：內容量產（更多疾病/原料/機器變換 = 純資料）、更多機器形狀/footprint、正式美術與上架打磨。
+- **平衡/設計後續**：難度分是否納入包圍度等因子，待真人玩測資料決定；不把這類主觀曲線工作混稱為尚未修好的程式 correctness。
 - 完整路線圖見 [roadmap.md](roadmap.md)。

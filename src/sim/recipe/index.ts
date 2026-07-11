@@ -16,9 +16,20 @@ import type {
   CompileTemplateFn,
   FactoryOutcomeFn,
 } from "../phase0_interfaces";
-import { CellKind, DEFAULT_CATALOG, DEFAULT_SHAPES, SHAPE_1x1 } from "../phase0_interfaces";
+import {
+  CellKind,
+  DEFAULT_CATALOG,
+  DEFAULT_SHAPES,
+  MAX_FACTORY_REPLAY_TICKS,
+  MAX_TEMPLATE_STEPS,
+} from "../phase0_interfaces";
 import { worldCells, worldInPorts, worldOutPorts } from "../factory-geom";
-import { replayFactory } from "../state";
+import {
+  initFactory,
+  requireFactoryAnalysisBudget,
+  snapshotProducedEvents,
+  stepFactory,
+} from "../factory-sim";
 
 // ════════════════════════════════ recipe ════════════════════════════════
 //
@@ -33,7 +44,7 @@ import { replayFactory } from "../state";
 // The effect-determining drug orientation lives in each machine's `def.orientation`
 // and is INDEPENDENT of `footRot` (packing only) — so the shaped packing + belt
 // routing preserve the cure exactly (INV-7). factoryOutcome runs the layout via
-// replayFactory until a unit reaches the sink, then reads its final DrugState into
+// the fixed-capacity runtime until a unit reaches the sink, then reads its final DrugState into
 // a cure/side-effect/failure Outcome.
 
 const E: Dir = 0;
@@ -46,24 +57,36 @@ const DIR_DX: readonly number[] = [1, 0, -1, 0]; // E S W N
 const DIR_DY: readonly number[] = [0, 1, 0, -1];
 const SCAN: readonly Dir[] = [E, S, W, N];
 
-function catalogCost(typeId: string): number {
+function catalogEntry(typeId: string) {
   for (const entry of DEFAULT_CATALOG) {
-    if (entry.typeId === typeId) return entry.cost;
+    if (entry.typeId === typeId) return entry;
   }
-  return 0;
+  throw new Error(`compileTemplate: unknown machine type "${typeId}"`);
 }
 
 function shapeOf(typeId: string): MachineShape {
-  return DEFAULT_SHAPES[typeId] ?? SHAPE_1x1;
+  const shape = DEFAULT_SHAPES[typeId];
+  if (shape === undefined) throw new Error(`compileTemplate: unknown machine shape "${typeId}"`);
+  return shape;
 }
 
-function defOf(step: Machine, speed: number): FactoryMachineDef {
+function defOf(step: Machine): FactoryMachineDef {
+  const entry = catalogEntry(step.typeId);
+  const transform = step.transform.kind === "translate"
+    ? {
+        kind: "translate" as const,
+        delta: { x: step.transform.delta.x, y: step.transform.delta.y },
+        relation: step.transform.relation,
+      }
+    : step.transform.kind === "scale"
+      ? { kind: "scale" as const, num: step.transform.num, den: step.transform.den }
+      : { kind: "swap" as const, a: step.transform.a, b: step.transform.b };
   return {
     typeId: step.typeId,
-    transform: step.transform,
-    orientation: step.orientation,
-    cost: catalogCost(step.typeId),
-    speed,
+    transform,
+    orientation: { rot: step.orientation.rot, flip: step.orientation.flip },
+    cost: entry.cost,
+    speed: entry.speed,
   };
 }
 
@@ -174,6 +197,9 @@ interface Placed {
 }
 
 export const compileTemplate: CompileTemplateFn = (template) => {
+  if (!Array.isArray(template.steps) || template.steps.length > MAX_TEMPLATE_STEPS) {
+    throw new Error(`compileTemplate: recipe must not exceed ${MAX_TEMPLATE_STEPS} steps`);
+  }
   const k = template.steps.length;
 
   // ── 1. Normalize each machine's footRot (first input port faces W) + measure it.
@@ -184,7 +210,7 @@ export const compileTemplate: CompileTemplateFn = (template) => {
   for (let i = 0; i < k; i++) {
     const step = template.steps[i]!;
     const shape = shapeOf(step.typeId);
-    const def = defOf(step, 1);
+    const def = defOf(step);
     const footRot = normalizeFootRot(def, shape);
     const g = localGeom(def, shape, footRot);
     // spine row = the input-port row (g.inPort.y). Track vertical reach around it.
@@ -212,7 +238,8 @@ export const compileTemplate: CompileTemplateFn = (template) => {
   const spineY = maxAbove; // first row that fits every footprint's reach above the port
   const height = spineY + maxBelow + marginBelow + 1;
 
-  const tiles: FactoryTile[] = new Array<FactoryTile>(width * height).fill({ kind: "empty" });
+  const tiles: FactoryTile[] = [];
+  for (let cell = 0; cell < width * height; cell++) tiles.push({ kind: "empty" });
   // blocked = cells no belt may be carved through (machines, source, sink, laid belts).
   const blocked = new Uint8Array(width * height);
 
@@ -374,16 +401,32 @@ function outcomeOf(mm: MultiMap, drug: DrugState): Outcome {
   return { failed: false, final: finalPos, cured, sideEffects };
 }
 
-/** Generous bounded tick budget: speed-1 machines on a width-O(k) line produce in O(width) ticks. */
+/** Bounded first-product budget covering every carrier cell plus each machine's latency once. */
 function tickCap(layout: FactoryLayout): number {
-  return (layout.width + layout.height) * 6 + 16;
+  let ticks = Math.min(MAX_FACTORY_REPLAY_TICKS, layout.width * layout.height + 16);
+  for (const machine of layout.machines) {
+    if (ticks > MAX_FACTORY_REPLAY_TICKS - machine.def.speed) {
+      return MAX_FACTORY_REPLAY_TICKS;
+    }
+    ticks += machine.def.speed;
+  }
+  return ticks;
 }
 
 export const factoryOutcome: FactoryOutcomeFn = (layout, mm, start) => {
-  const final = replayFactory(layout, mm, start, tickCap(layout));
-  const first = final.produced[0];
-  if (first === undefined) {
-    return { failed: true, final: [], cured: [], sideEffects: [] };
+  const cap = tickCap(layout);
+  requireFactoryAnalysisBudget(layout, cap, "factory outcome");
+  const runtime = initFactory(layout, mm, start);
+  for (let tick = 0; tick < cap; tick++) {
+    stepFactory(layout, mm, runtime);
+    if (runtime.producedEvents.count === 0) {
+      if (runtime.deadlocked) {
+        throw new Error("factory outcome: factory deadlocked before producing a product");
+      }
+      continue;
+    }
+    const first = snapshotProducedEvents(runtime)[0];
+    if (first !== undefined) return outcomeOf(mm, first.drug);
   }
-  return outcomeOf(mm, first);
+  throw new Error(`factory outcome: first-product replay budget exhausted after ${cap} ticks`);
 };

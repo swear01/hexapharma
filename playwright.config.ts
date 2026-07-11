@@ -1,8 +1,9 @@
 import { defineConfig, devices } from "@playwright/test";
 
-// e2e runs against a throwaway dev server on 53347 (NOT the 53346 playtest port),
+// e2e runs against throwaway dev/preview servers (NOT the 53346 playtest port),
 // so automated tests never collide with a manual playtest session.
-const PORT = 53347;
+const DEV_PORT = 53347;
+const PREVIEW_PORT = 53348;
 
 export default defineConfig({
   testDir: "test/e2e",
@@ -11,14 +12,33 @@ export default defineConfig({
   retries: 0,
   reporter: "list",
   use: {
-    baseURL: `http://localhost:${PORT}`,
+    baseURL: `http://localhost:${DEV_PORT}`,
     trace: "off",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
-  webServer: {
-    command: `npx vite --port ${PORT} --strictPort`,
-    url: `http://localhost:${PORT}`,
-    reuseExistingServer: !process.env.CI,
-    timeout: 60_000,
-  },
+  projects: [
+    {
+      name: "chromium",
+      testIgnore: /production-preview\.spec\.ts/,
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "production-preview",
+      testMatch: /production-preview\.spec\.ts/,
+      use: { ...devices["Desktop Chrome"], baseURL: `http://localhost:${PREVIEW_PORT}` },
+    },
+  ],
+  webServer: [
+    {
+      command: `npx vite --port ${DEV_PORT} --strictPort`,
+      url: `http://localhost:${DEV_PORT}`,
+      reuseExistingServer: false,
+      timeout: 60_000,
+    },
+    {
+      command: `npm run build && npx vite preview --host 127.0.0.1 --port ${PREVIEW_PORT} --strictPort`,
+      url: `http://localhost:${PREVIEW_PORT}`,
+      reuseExistingServer: false,
+      timeout: 120_000,
+    },
+  ],
 });

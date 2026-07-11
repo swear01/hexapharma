@@ -1,7 +1,7 @@
 /**
  * HexaPharma — Factory renderer (PixiJS v8).
  *
- * A DUMB renderer: handed a FactoryLayout + FactoryState (+ the bottleneck machine
+ * A DUMB renderer: handed a FactoryLayout + FactoryRuntime (+ the bottleneck machine
  * id to highlight) it draws the belt-grid tiles, the multi-cell shaped machines
  * (in layout.machines), the source/sink, and the Unit tokens. It contains NO sim
  * logic — no stepping, no throughput analysis. React (src/ui) owns the state and
@@ -19,7 +19,7 @@ import type {
   PlacedMachine,
   FactoryTile,
   FactoryLayout,
-  FactoryState,
+  FactoryRuntime,
 } from "../sim/phase0_interfaces";
 import { worldCells, worldInPorts, worldOutPorts } from "../sim/factory-geom";
 
@@ -195,8 +195,8 @@ function drawMachine(m: PlacedMachine, isBottleneck: boolean, ctx: DrawCtx): voi
 
 export interface FactoryRenderer {
   readonly canvas: HTMLCanvasElement;
-  /** Repaint the given layout + sim state. Pure draw; no sim logic. */
-  render(layout: FactoryLayout, state: FactoryState, bottleneckId: number | null): void;
+  /** Repaint the given layout + mutable sim runtime. Pure draw; no sim logic. */
+  render(layout: FactoryLayout, runtime: FactoryRuntime, bottleneckId: number | null): void;
   destroy(): void;
 }
 
@@ -214,41 +214,47 @@ export async function createFactoryRenderer(layout: FactoryLayout): Promise<Fact
   const tokens = new Graphics();
   const labels = new Container();
   app.stage.addChild(cells, tokens, labels);
+  let destroyed = false;
+  let renderedLayout: FactoryLayout | null = null;
+  let renderedBottleneck: number | null = null;
 
-  function render(curr: FactoryLayout, state: FactoryState, bottleneckId: number | null): void {
+  function clearLabels(): void {
+    for (const child of labels.removeChildren()) child.destroy();
+  }
+
+  function render(curr: FactoryLayout, runtime: FactoryRuntime, bottleneckId: number | null): void {
     const want = canvasSize(curr);
     if (app.renderer.width !== want.width || app.renderer.height !== want.height) {
       app.renderer.resize(want.width, want.height);
     }
-    cells.clear();
     tokens.clear();
-    labels.removeChildren();
-
-    const ctx: DrawCtx = { cells, labels };
-
-    // 1. belt-grid tiles.
-    for (let y = 0; y < curr.height; y++) {
-      for (let x = 0; x < curr.width; x++) {
-        const tile = curr.tiles[y * curr.width + x];
-        if (tile === undefined) continue;
-        drawTile(tile, x, y, ctx);
+    if (renderedLayout !== curr || renderedBottleneck !== bottleneckId) {
+      renderedLayout = curr;
+      renderedBottleneck = bottleneckId;
+      cells.clear();
+      clearLabels();
+      const ctx: DrawCtx = { cells, labels };
+      for (let y = 0; y < curr.height; y++) {
+        for (let x = 0; x < curr.width; x++) {
+          const tile = curr.tiles[y * curr.width + x];
+          if (tile === undefined) continue;
+          drawTile(tile, x, y, ctx);
+        }
+      }
+      for (const m of curr.machines) {
+        drawMachine(m, bottleneckId !== null && m.id === bottleneckId, ctx);
       }
     }
-
-    // 2. machines (footprints) on top of the grid.
-    for (const m of curr.machines) {
-      drawMachine(m, bottleneckId !== null && m.id === bottleneckId, ctx);
-    }
-
-    // 3. Unit tokens. machineId !== null ⇒ inside a machine (pos = its input-port cell).
-    for (const u of state.units) {
-      const cx = PAD + u.pos.x * CELL + CELL / 2;
-      const cy = PAD + u.pos.y * CELL + CELL / 2;
+    for (let unitIndex = 0; unitIndex < runtime.unitCount; unitIndex++) {
+      const cx = PAD + (runtime.unitX[unitIndex] ?? 0) * CELL + CELL / 2;
+      const cy = PAD + (runtime.unitY[unitIndex] ?? 0) * CELL + CELL / 2;
       const r = CELL * 0.2;
       tokens.circle(cx, cy, r + 2).fill({ color: TOKEN_RING });
-      tokens.circle(cx, cy, r).fill({ color: u.drug.failed ? TOKEN_FAILED : TOKEN_COLOR });
+      tokens.circle(cx, cy, r).fill({
+        color: runtime.unitFailed[unitIndex] === 0 ? TOKEN_COLOR : TOKEN_FAILED,
+      });
       // proc ring while a unit is being processed inside a machine.
-      if (u.machineId !== null && u.proc > 0) {
+      if ((runtime.unitMachineIds[unitIndex] ?? -1) >= 0 && (runtime.unitProc[unitIndex] ?? 0) > 0) {
         tokens.circle(cx, cy, r + 4).stroke({ color: TOKEN_PROC, width: 2 });
       }
     }
@@ -257,6 +263,15 @@ export async function createFactoryRenderer(layout: FactoryLayout): Promise<Fact
   return {
     canvas: app.canvas,
     render,
-    destroy: () => app.destroy(true, { children: true }),
+    destroy: () => {
+      if (destroyed) return;
+      destroyed = true;
+      clearLabels();
+      app.stage.removeChildren();
+      cells.destroy();
+      tokens.destroy();
+      labels.destroy();
+      app.destroy({ removeView: true });
+    },
   };
 }

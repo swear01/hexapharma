@@ -32,12 +32,10 @@ import type {
   GeneratedLevel,
 } from "../sim/phase0_interfaces";
 import { DEFAULT_CATALOG } from "../sim/phase0_interfaces";
-import { applyStep, evaluate, revealAlong } from "../sim/drug-graph";
-import { createLabRenderer, type LabRenderer } from "../render/labRenderer";
+import { applyStep, evaluate } from "../sim/drug-graph";
+import type { LabRenderer } from "../render/labRenderer";
 
 // ───────────────────────────── level generation ─────────────────────────────
-
-const catalog: readonly MachineCatalogEntry[] = DEFAULT_CATALOG;
 
 /**
  * A display COPY of `mm` whose each map's `fog` is the persistent exploration fog
@@ -97,15 +95,16 @@ interface AppProps {
   readonly level: GeneratedLevel;
   /** Persistent exploration fog (one Uint8Array per map), owned by the Game. */
   readonly fog: readonly Uint8Array[];
-  /** Report a run's revealed cells (a `revealAlong` MultiMap) for unioning into the fog. */
-  readonly onReveal: (revealed: MultiMap) => void;
+  readonly catalog: readonly MachineCatalogEntry[];
+  readonly onExplore: (template: Template) => void;
   /** Called with the winning template when the player saves a cure to the Factory. */
   readonly onSaveRecipe: (winning: Template) => void;
 }
 
-export function App({ level, fog, onReveal, onSaveRecipe }: AppProps) {
+export function App({ level, fog, catalog, onExplore, onSaveRecipe }: AppProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<LabRenderer | null>(null);
+  const [rendererError, setRendererError] = useState<string | null>(null);
 
   const { mm, start } = level;
   const targets = useMemo<readonly DiseaseId[]>(() => level.diseases.map((d) => d.id), [level]);
@@ -168,16 +167,30 @@ export function App({ level, fog, onReveal, onSaveRecipe }: AppProps) {
   useEffect(() => {
     let disposed = false;
     let local: LabRenderer | null = null;
+    setRendererError(null);
     void (async () => {
-      const r = await createLabRenderer(mm);
-      if (disposed) {
-        r.destroy();
-        return;
+      try {
+        const { createLabRenderer } = await import("../render/labRenderer");
+        const r = await createLabRenderer(mm);
+        if (disposed) {
+          r.destroy();
+          return;
+        }
+        local = r;
+        rendererRef.current = r;
+        if (mountRef.current) mountRef.current.appendChild(r.canvas);
+        r.render(renderMapRef.current, shownDrugRef.current);
+      } catch (error) {
+        if (local !== null) {
+          local.destroy();
+          local = null;
+        }
+        rendererRef.current = null;
+        if (!disposed) {
+          const detail = error instanceof Error ? error.message : String(error);
+          setRendererError(`Could not start the Lab renderer: ${detail}`);
+        }
       }
-      local = r;
-      rendererRef.current = r;
-      if (mountRef.current) mountRef.current.appendChild(r.canvas);
-      r.render(renderMapRef.current, shownDrugRef.current);
     })();
     return () => {
       disposed = true;
@@ -206,20 +219,26 @@ export function App({ level, fog, onReveal, onSaveRecipe }: AppProps) {
         transform: entry.transform,
         orientation,
       };
+      setOutcome(null);
+      setShownDrug(start);
       setSteps((s) => [...s, machine]);
     },
-    [running, rot, flip],
+    [running, rot, flip, start],
   );
 
   const removeLast = useCallback(() => {
     if (running) return;
+    setOutcome(null);
+    setShownDrug(start);
     setSteps((s) => s.slice(0, -1));
-  }, [running]);
+  }, [running, start]);
 
   const clearTemplate = useCallback(() => {
     if (running) return;
+    setOutcome(null);
+    setShownDrug(start);
     setSteps([]);
-  }, [running]);
+  }, [running, start]);
 
   // ── Run: reveal fog, animate the drug across BOTH maps, then evaluate ──────
   const run = useCallback(() => {
@@ -230,7 +249,7 @@ export function App({ level, fog, onReveal, onSaveRecipe }: AppProps) {
     const t: Template = { steps };
     // Reveal fog along every sweep path (sim does the work); the Game unions the
     // revealed cells into the PERSISTENT exploration fog (do not mutate sim arrays).
-    onReveal(revealAlong(mm, start, t));
+    onExplore(t);
     setShownDrug(start);
 
     // Precompute the per-step drug states by folding applyStep (sim only).
@@ -256,7 +275,7 @@ export function App({ level, fog, onReveal, onSaveRecipe }: AppProps) {
       }
     };
     window.setTimeout(tick, 260);
-  }, [running, steps, mm, start, onReveal]);
+  }, [running, steps, mm, start, onExplore]);
 
   // ── Reset: clear the TEMPLATE + token; KEEP what's been explored (fog persists) ──
   const reset = useCallback(() => {
@@ -360,6 +379,15 @@ export function App({ level, fog, onReveal, onSaveRecipe }: AppProps) {
       </div>
 
       {/* canvas */}
+      {rendererError !== null && (
+        <div
+          role="alert"
+          data-testid="lab-render-error"
+          style={{ color: "#a11d1d", marginBottom: 10, fontSize: 13 }}
+        >
+          {rendererError}
+        </div>
+      )}
       <div
         ref={mountRef}
         data-testid="lab-canvas"
@@ -395,19 +423,22 @@ export function App({ level, fog, onReveal, onSaveRecipe }: AppProps) {
         <div style={{ flex: "1 1 320px" }}>
           <h2 style={sectionTitle}>Machine palette</h2>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-            {catalog.map((entry) => (
+            {DEFAULT_CATALOG.map((entry) => {
+              const unlocked = catalog.some((candidate) => candidate.typeId === entry.typeId);
+              return (
               <button
                 key={entry.typeId}
                 type="button"
                 onClick={() => addMachine(entry)}
-                disabled={running}
+                disabled={running || !unlocked}
                 style={btn}
                 title={transformLabel(entry.transform)}
                 data-testid={`palette-${entry.typeId}`}
               >
-                + {entry.typeId}
+                + {entry.typeId}{unlocked ? "" : " (locked)"}
               </button>
-            ))}
+              );
+            })}
           </div>
 
           <div style={{ marginTop: 12 }}>

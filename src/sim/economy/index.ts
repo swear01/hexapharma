@@ -39,13 +39,20 @@ function priceFloor(basePrice: number): number {
  * Deterministic integer geometric decay (×9/10 per prior sale, floored).
  */
 export const nextUnitPrice = (basePrice: number, alreadySold: number): number => {
+  if (!Number.isSafeInteger(basePrice)) {
+    throw new Error("economy: basePrice must be a safe integer");
+  }
+  if (!Number.isSafeInteger(alreadySold) || alreadySold < 0) {
+    throw new Error("economy: alreadySold must be a non-negative safe integer");
+  }
   if (basePrice <= 0) return 0;
   const floor = priceFloor(basePrice);
   let price = basePrice;
-  const n = alreadySold < 0 ? 0 : alreadySold;
-  for (let k = 0; k < n; k++) {
+  for (let k = 0; k < alreadySold; k++) {
     if (price <= floor) return floor;
-    const decayed = Math.floor((price * 9) / 10);
+    const quotient = Math.floor(price / 10);
+    const remainder = price % 10;
+    const decayed = quotient * 9 + Math.floor((remainder * 9) / 10);
     price = decayed < floor ? floor : decayed;
   }
   return price;
@@ -96,11 +103,43 @@ export const sellUnit = (
   productionCost: number,
   sideEffectPenalty: number,
 ): SaleResult => {
+  if (!Number.isSafeInteger(econ.cash)) throw new Error("economy: cash must be a safe integer");
+  if (!Number.isSafeInteger(econ.research) || econ.research < 0) {
+    throw new Error("economy: research must be a non-negative safe integer");
+  }
+  if (!Number.isSafeInteger(disease) || disease < 0) {
+    throw new Error("economy: disease must be a non-negative safe integer");
+  }
+  if (!Number.isSafeInteger(productionCost) || productionCost < 0) {
+    throw new Error("economy: production cost must be a non-negative safe integer");
+  }
+  if (!Number.isSafeInteger(sideEffectPenalty) || sideEffectPenalty < 0) {
+    throw new Error("economy: side-effect penalty must be a non-negative safe integer");
+  }
+  let previousDisease = -1;
+  for (const sold of econ.sold) {
+    if (!Number.isSafeInteger(sold.disease) || sold.disease < 0 || sold.disease <= previousDisease) {
+      throw new Error("economy: sold diseases must be unique non-negative safe integers in order");
+    }
+    if (!Number.isSafeInteger(sold.count) || sold.count <= 0) {
+      throw new Error("economy: stored sold count must be a positive safe integer");
+    }
+    if (sold.disease === disease && sold.count === Number.MAX_SAFE_INTEGER) {
+      throw new Error("economy: sold count cannot be incremented safely");
+    }
+    previousDisease = sold.disease;
+  }
   const revenue = nextUnitPrice(basePrice, soldSoFar(econ, disease));
   const net = revenue - productionCost - sideEffectPenalty;
+  const cash = econ.cash + net;
+  const research = econ.research + 1;
+  if (!Number.isSafeInteger(net) || !Number.isSafeInteger(cash) || !Number.isSafeInteger(research)) {
+    throw new Error("economy: sale result exceeds safe-integer range");
+  }
   return {
     econ: {
-      cash: econ.cash + net,
+      cash,
+      research,
       sold: bumpSold(econ.sold, disease),
     },
     revenue,

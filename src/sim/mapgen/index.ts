@@ -1,54 +1,12 @@
 /**
- * HexaPharma — mapgen.
+ * HexaPharma — deterministic constructive map generation.
  *
- * Constructive level generation for N ∈ {2,3,4} effect maps with genuine
- * CROSS-MAP TENSION + per-disease difficulty scoring + pricing. Satisfies INV-9
- * (constructive solvability),
- * INV-10 (generation determinism), INV-11 (difficulty bounds), INV-12 (pricing
- * consistency) and the NEW cross-map tension invariant: every accepted level has
- * at least one disease whose canonical solver solution must DECOUPLE the maps.
- *
- * All randomness flows from `makeRng(opts.seed)` — no Math.random / Date.now.
- *
- * Tension construction (construct-then-verify):
- *   1. Each map gets a DISTINCT origin. Distinct origins are what make decoupling
- *      possible at all: the drug starts at the same cell on every map, so a forward
- *      / reverse / perpendicular / offset translate moves every map's position
- *      IDENTICALLY — positions can only ever diverge through a `scale` (each map
- *      pulled toward ITS OWN origin) or a `swap` (after a wall has already split
- *      them). With one shared origin the two positions stay equal forever and no
- *      decoupling solution can exist.
- *   2. For every disease's cure cell (cx,cy) on its map A, a HAZARD is dropped at
- *      the SAME coordinate (cx,cy) on every OTHER map — the cell where a naive
- *      forward push (which moves all maps in lock-step) would land the drug while
- *      it chases map A's cure. The naive lock-step approach therefore spoils the
- *      drug on the other map; the only way to cure is to decouple (a `scale` /
- *      `swap` / non-forward translate) so the other map's position is elsewhere.
- *   3. We VERIFY with the solver oracle: the level is solvable for every disease,
- *      every difficulty lands in [min,max], INV-9 holds (the solver template, run
- *      through `evaluate`, cures and never fails), and the TENSION PREDICATE holds
- *      (≥1 disease's canonical solution contains a decoupling step). Otherwise the
- *      attempt is rejected; generation is a bounded, deterministic reject loop.
- *
- * `DiseaseSpec.difficulty`/`cost`/`reference` all come from the solver's canonical
- * solution, so they agree by construction.
- *
- * N-MAP GENERALITY + SIZE/PERF GUIDANCE:
- *   The generator is uniform in `nMaps`: it builds `nMaps` maps each with a DISTINCT
- *   corner origin (distinct for the supported N ≤ 4), round-robins diseases onto
- *   distinct maps (`d % nMaps`), and drops the tension hazard at every cure's (cx,cy)
- *   on EVERY other map. The acceptance oracle is unchanged: solvable for every
- *   disease, all difficulties in band, INV-9, and ≥1 canonical solution decouples.
- *   Because `scale` pulls EACH map toward its OWN origin, decoupling stays reachable
- *   at any N (it does not rely on the 2-map-only `swap01`).
- *
- *   The solver is a BFS over (W·H)^N position tuples, so the only thing that scales
- *   badly with N is MAP SIZE. Keep maps small as N grows:
- *     N=2 : up to ~16×16 (the default/CLI config) is fine.
- *     N=3 : ~7×7 with a modest band (e.g. [3,12]).
- *     N=4 : ~6×6 with a modest band (e.g. [3,12]).
- *   Larger N or larger maps blow up the (W·H)^N state space and the per-attempt
- *   solver re-checks; the bounded reject loop will simply exhaust and throw.
+ * Generation starts from a known machine sequence. Deliberate map barriers make
+ * the first two maps diverge, a swap carries the donor position across the
+ * barrier, and the cure is placed at the constructed endpoint. Only after every
+ * reference path has been replayed and protected do walls, hazards, and side
+ * effects grow around it. Solvability therefore follows from construction; the
+ * dev/test-only solver is not part of the production dependency graph.
  */
 import type {
   Vec2,
@@ -56,43 +14,74 @@ import type {
   MultiMap,
   Orientation,
   Rotation,
+  Machine,
   MachineCatalogEntry,
   DiseaseSpec,
   GenerateFn,
   DifficultyToBasePriceFn,
   MapIndex,
   DiseaseId,
-  Solution,
+  Template,
+  Rng,
 } from "../phase0_interfaces";
 import { CellKind } from "../phase0_interfaces";
-import { effectiveDelta, evaluate, initialState } from "../drug-graph";
-import { solve } from "../solver";
+import {
+  applyTemplate,
+  effectiveDelta,
+  evaluate,
+  initialState,
+  revealAlong,
+} from "../drug-graph";
 import { makeRng } from "../rng";
-import type { Rng } from "../phase0_interfaces";
 
-// ───────────────────────────── pricing (INV-12) ─────────────────────────────
+export const MAX_MAP_CELLS = 65_536;
+export const MAX_GENERATION_DIFFICULTY = 64;
+export const MAX_GENERATION_CATALOG_ENTRIES = 256;
 
-/**
- * Base price = exponential in difficulty + a linear term in reference cost.
- * Deterministic, integer, and monotonically NON-decreasing in BOTH arguments
- * (the exponential base > 1 and both coefficients are positive). Pure leaf math
- * (Math.pow / Math.round are allowed here per the module brief).
- */
-export const difficultyToBasePrice: DifficultyToBasePriceFn = (difficulty, refCost) =>
-  Math.round(10 * Math.pow(1.7, difficulty) + 3 * refCost);
+const MAX_SAFE_PRICE = BigInt(Number.MAX_SAFE_INTEGER);
 
-// ───────────────────────────── small helpers ─────────────────────────────
+export const difficultyToBasePrice: DifficultyToBasePriceFn = (difficulty, refCost) => {
+  if (!Number.isSafeInteger(difficulty)) {
+    throw new Error("mapgen.difficultyToBasePrice: difficulty must be a safe integer");
+  }
+  if (difficulty < 0) {
+    throw new Error("mapgen.difficultyToBasePrice: difficulty must be non-negative");
+  }
+  if (difficulty > MAX_GENERATION_DIFFICULTY) {
+    throw new Error(
+      `mapgen.difficultyToBasePrice: difficulty must not exceed ${MAX_GENERATION_DIFFICULTY}`,
+    );
+  }
+  if (!Number.isSafeInteger(refCost)) {
+    throw new Error("mapgen.difficultyToBasePrice: refCost must be a safe integer");
+  }
+  if (refCost < 0) {
+    throw new Error("mapgen.difficultyToBasePrice: refCost must be non-negative");
+  }
+
+  const exponent = BigInt(difficulty);
+  const numerator = 10n * 17n ** exponent;
+  const denominator = 10n ** exponent;
+  const difficultyPrice = (2n * numerator + denominator) / (2n * denominator);
+  const basePrice = difficultyPrice + 3n * BigInt(refCost);
+  if (basePrice > MAX_SAFE_PRICE) {
+    throw new Error("mapgen.difficultyToBasePrice: base price exceeds the safe-integer range");
+  }
+  return Number(basePrice);
+};
 
 const ALL_ROTATIONS: readonly Rotation[] = [0, 1, 2, 3];
+const IDENTITY: Orientation = { rot: 0, flip: false };
 
 const idx = (w: number, x: number, y: number): number => y * w + x;
 
-/** A catalog translate machine reduced to one concrete oriented effective delta. */
 interface AxisMover {
-  readonly delta: Vec2; // effective delta (axis-aligned, positive component)
+  readonly axis: "x" | "y";
+  readonly step: number;
+  readonly machine: Machine;
+  readonly cost: number;
 }
 
-/** A fully-mutable scratch map we fill during one generation attempt. */
 interface ScratchMap {
   readonly width: number;
   readonly height: number;
@@ -100,98 +89,88 @@ interface ScratchMap {
   readonly start: Vec2;
   readonly cell: Uint8Array;
   readonly cureId: Int16Array;
-  readonly sideEffectId: Int16Array;
-  /** Cells that must never be overwritten (start, cures, tension hazards). */
+  readonly sideEffectId: Int32Array;
   readonly protectedCells: Uint8Array;
+}
+
+interface BuiltDisease {
+  readonly id: DiseaseId;
+  readonly map: MapIndex;
+  readonly node: Vec2;
+  readonly difficulty: number;
+  readonly cost: number;
+  readonly reference: Template;
+}
+
+interface PlannedDisease {
+  readonly id: DiseaseId;
+  readonly map: MapIndex;
+  readonly difficulty: number;
+  readonly cost: number;
+  readonly reference: Template;
+}
+
+function ownMachine(machine: Machine): Machine {
+  const transform = machine.transform.kind === "translate"
+    ? Object.freeze({
+        kind: "translate" as const,
+        delta: Object.freeze({ x: machine.transform.delta.x, y: machine.transform.delta.y }),
+        relation: machine.transform.relation,
+      })
+    : machine.transform.kind === "scale"
+      ? Object.freeze({
+          kind: "scale" as const,
+          num: machine.transform.num,
+          den: machine.transform.den,
+        })
+      : Object.freeze({
+          kind: "swap" as const,
+          a: machine.transform.a,
+          b: machine.transform.b,
+        });
+  return Object.freeze({
+    typeId: machine.typeId,
+    transform,
+    orientation: Object.freeze({
+      rot: machine.orientation.rot,
+      flip: machine.orientation.flip,
+    }),
+  });
 }
 
 function makeScratch(width: number, height: number, start: Vec2, origin: Vec2): ScratchMap {
   const len = width * height;
-  const m: ScratchMap = {
+  const map: ScratchMap = {
     width,
     height,
     origin,
     start,
     cell: new Uint8Array(len),
     cureId: new Int16Array(len).fill(-1),
-    sideEffectId: new Int16Array(len).fill(-1),
+    sideEffectId: new Int32Array(len).fill(-1),
     protectedCells: new Uint8Array(len),
   };
-  // The start cell is always protected.
-  m.protectedCells[idx(width, start.x, start.y)] = 1;
-  return m;
+  map.protectedCells[idx(width, start.x, start.y)] = 1;
+  return map;
 }
 
-function freezeMap(m: ScratchMap): EffectMap {
+function freezeMap(map: ScratchMap): EffectMap {
   return {
-    width: m.width,
-    height: m.height,
-    origin: m.origin,
-    start: m.start,
-    cell: m.cell,
-    cureId: m.cureId,
-    sideEffectId: m.sideEffectId,
-    // Every level ships fully fogged (lab experimentation reveals it).
-    fog: new Uint8Array(m.width * m.height),
+    width: map.width,
+    height: map.height,
+    origin: map.origin,
+    start: map.start,
+    cell: map.cell,
+    cureId: map.cureId,
+    sideEffectId: map.sideEffectId,
+    fog: new Uint8Array(map.width * map.height),
   };
 }
 
-// ───────────────────────────── catalog inspection ─────────────────────────────
-
-/**
- * Enumerate the catalog's translate machines as concrete axis-aligned movers with
- * a strictly-positive single component (pure +x or +y motion), deduped by effective
- * delta. The generator only needs to know that SOME forward motion exists (so the
- * cure is reachable and the difficulty lever has range); a catalog with no such
- * mover cannot host an axis-grid level and is rejected up front.
- */
-function axisMovers(catalog: readonly MachineCatalogEntry[]): AxisMover[] {
-  const out: AxisMover[] = [];
-  const seen = new Set<string>();
-  for (const entry of catalog) {
-    const t = entry.transform;
-    if (t.kind !== "translate") continue;
-    const orientations: Orientation[] = entry.orientable
-      ? ALL_ROTATIONS.flatMap((rot) => [
-          { rot, flip: false },
-          { rot, flip: true },
-        ])
-      : [{ rot: 0, flip: false }];
-    for (const orientation of orientations) {
-      const eff = effectiveDelta(t.delta, t.relation, orientation);
-      const positiveX = eff.x > 0 && eff.y === 0;
-      const positiveY = eff.y > 0 && eff.x === 0;
-      if (!positiveX && !positiveY) continue;
-      const key = `${eff.x},${eff.y}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push({ delta: eff });
-    }
-  }
-  return out;
+function freezeMaps(maps: readonly ScratchMap[]): MultiMap {
+  return { maps: maps.map(freezeMap) };
 }
 
-/** Largest positive step available on an axis (0 if none). */
-function maxStep(movers: readonly AxisMover[], axis: "x" | "y"): number {
-  let best = 0;
-  for (const mv of movers) {
-    const v = axis === "x" ? (mv.delta.y === 0 ? mv.delta.x : 0) : mv.delta.x === 0 ? mv.delta.y : 0;
-    if (v > best) best = v;
-  }
-  return best;
-}
-
-// ───────────────────────────── origins ─────────────────────────────
-
-/**
- * Distinct per-map origins — the lever that makes decoupling possible (a `scale`
- * pulls each map toward a DIFFERENT origin, so positions diverge). The drug always
- * starts at (0,0); the four grid corners are handed out by map index, so for the
- * supported range N ∈ {2,3,4} every map gets a DISTINCT origin (and map 0's origin
- * (0,0) differs from the start-trapping tension hazards on the others). For N > 4
- * (out of the supported band) corners are reused via mod 4 — origins are no longer
- * guaranteed distinct, but the contract only promises N ≤ 4.
- */
 function originFor(mapIndex: MapIndex, width: number, height: number): Vec2 {
   const corners: readonly Vec2[] = [
     { x: 0, y: 0 },
@@ -199,57 +178,239 @@ function originFor(mapIndex: MapIndex, width: number, height: number): Vec2 {
     { x: width - 1, y: 0 },
     { x: 0, y: height - 1 },
   ];
-  const c = corners[mapIndex % corners.length];
-  return c ?? { x: 0, y: 0 };
+  return corners[mapIndex % corners.length] ?? { x: 0, y: 0 };
 }
 
-// ───────────────────────────── cure-cell selection ─────────────────────────────
+function axisMovers(catalog: readonly MachineCatalogEntry[]): AxisMover[] {
+  const movers: AxisMover[] = [];
+  const seen = new Set<string>();
+  for (const entry of catalog) {
+    if (entry.transform.kind !== "translate") continue;
+    const orientations: Orientation[] = entry.orientable
+      ? ALL_ROTATIONS.flatMap((rot) => [
+          { rot, flip: false },
+          { rot, flip: true },
+        ])
+      : [IDENTITY];
+    for (const orientation of orientations) {
+      const delta = effectiveDelta(
+        entry.transform.delta,
+        entry.transform.relation,
+        orientation,
+      );
+      const axis = delta.x > 0 && delta.y === 0 ? "x" : delta.y > 0 && delta.x === 0 ? "y" : null;
+      if (axis === null) continue;
+      const step = axis === "x" ? delta.x : delta.y;
+      const key = `${axis}:${step}:${entry.typeId}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      movers.push({
+        axis,
+        step,
+        machine: ownMachine({ typeId: entry.typeId, transform: entry.transform, orientation }),
+        cost: entry.cost,
+      });
+    }
+  }
+  return movers;
+}
 
-/**
- * Pick an interior cure cell. The cell's distance from the start sets the base
- * step count; the tension hazard + decoupling requirement add the rest. We keep
- * the cell strictly interior (never the start, never a border-degenerate cell) and
- * far enough from the start that the minimal solution needs at least a couple of
- * steps. The solver is the final difficulty arbiter — out-of-band picks are simply
- * rejected by the bounded loop, so this only has to be a sensible, in-range guess.
- */
-function pickCureCell(
+function smallestMover(movers: readonly AxisMover[], axis: "x" | "y"): AxisMover | null {
+  let best: AxisMover | null = null;
+  for (const mover of movers) {
+    if (mover.axis !== axis) continue;
+    if (best === null || mover.step < best.step) best = mover;
+  }
+  return best;
+}
+
+function swap01(catalog: readonly MachineCatalogEntry[]): { machine: Machine; cost: number } | null {
+  for (const entry of catalog) {
+    const transform = entry.transform;
+    if (
+      transform.kind === "swap" &&
+      ((transform.a === 0 && transform.b === 1) || (transform.a === 1 && transform.b === 0))
+    ) {
+      return {
+        machine: ownMachine({ typeId: entry.typeId, transform, orientation: IDENTITY }),
+        cost: entry.cost,
+      };
+    }
+  }
+  return null;
+}
+
+function referenceDifficulty(reference: Template): number {
+  const types = new Set(reference.steps.map((step) => step.typeId));
+  const diversityBonus = reference.steps.length === 0 ? 0 : types.size - 1;
+  const decouplingBonus = reference.steps.some((step) => {
+    const transform = step.transform;
+    return (
+      transform.kind === "swap" ||
+      transform.kind === "scale" ||
+      (transform.kind === "translate" && transform.relation !== "forward")
+    );
+  })
+    ? 2
+    : 0;
+  return reference.steps.length + diversityBonus + decouplingBonus;
+}
+
+function addBarrier(map: ScratchMap, axis: "x" | "y"): void {
+  if (axis === "x") {
+    for (let y = 0; y < map.height; y++) {
+      const i = idx(map.width, 1, y);
+      map.cell[i] = CellKind.Wall;
+      map.protectedCells[i] = 1;
+    }
+    return;
+  }
+  for (let x = 0; x < map.width; x++) {
+    const i = idx(map.width, x, 1);
+    map.cell[i] = CellKind.Wall;
+    map.protectedCells[i] = 1;
+  }
+}
+
+function protectReference(maps: readonly ScratchMap[], reference: Template): void {
+  const mm = freezeMaps(maps);
+  const start = initialState(mm);
+  const revealed = revealAlong(mm, start, reference);
+  const final = applyTemplate(mm, start, reference);
+  for (let mi = 0; mi < maps.length; mi++) {
+    const scratch = maps[mi];
+    const map = revealed.maps[mi];
+    const pos = final.pos[mi];
+    if (scratch === undefined || map === undefined || pos === undefined) continue;
+    for (let i = 0; i < map.fog.length; i++) {
+      if (map.fog[i] === 1) scratch.protectedCells[i] = 1;
+    }
+    scratch.protectedCells[idx(scratch.width, pos.x, pos.y)] = 1;
+  }
+}
+
+function constructDiseases(
   rng: Rng,
-  width: number,
-  height: number,
-  sx: number,
-  sy: number,
-): Vec2 {
-  // Stay inside [1, dim-1) and at least one full +x/+y step from the start so the
-  // forward-only endpoint (cx,cy) is a real, distinct cell to trap on the other map.
-  const loX = Math.min(sx, width - 2);
-  const loY = Math.min(sy, height - 2);
-  const x = loX + rng.int(Math.max(1, width - 1 - loX));
-  const y = loY + rng.int(Math.max(1, height - 1 - loY));
-  return { x, y };
+  maps: readonly ScratchMap[],
+  catalog: readonly MachineCatalogEntry[],
+  movers: readonly AxisMover[],
+  diseaseCount: number,
+  minDifficulty: number,
+  maxDifficulty: number,
+): BuiltDisease[] {
+  const swap = swap01(catalog);
+  const xMover = smallestMover(movers, "x");
+  const yMover = smallestMover(movers, "y");
+  if (swap === null || xMover === null || yMover === null) {
+    throw new Error("mapgen.generate: catalog needs +x/+y movers and a swap between maps 0 and 1");
+  }
+
+  const planned: PlannedDisease[] = [];
+  for (let id = 0; id < diseaseCount; id++) {
+    const map = id % maps.length;
+    const axis = id % 2 === 0 ? "x" : "y";
+    const mover = axis === "x" ? xMover : yMover;
+    const span = axis === "x" ? maps[map]!.width - 1 : maps[map]!.height - 1;
+    const minMoves = Math.ceil(2 / mover.step);
+    const maxMoves = Math.ceil(span / mover.step);
+    const fixedBonus = mover.machine.typeId === swap.machine.typeId ? 3 : 4;
+    const low = Math.max(minDifficulty, minMoves + fixedBonus);
+    const high = Math.min(maxDifficulty, maxMoves + fixedBonus);
+    if (low > high) {
+      throw new Error(
+        `mapgen.generate: difficulty [${minDifficulty},${maxDifficulty}] cannot be constructed ` +
+          `on ${maps[map]!.width}x${maps[map]!.height}`,
+      );
+    }
+
+    const desired = low + rng.int(high - low + 1);
+    const moveCount = desired - fixedBonus;
+    const steps: Machine[] = [];
+    for (let n = 0; n < moveCount; n++) steps.push(ownMachine(mover.machine));
+    steps.push(ownMachine(swap.machine));
+    const reference: Template = Object.freeze({ steps: Object.freeze(steps) });
+    const difficulty = referenceDifficulty(reference);
+
+    planned.push({
+      id,
+      map,
+      difficulty,
+      cost: moveCount * mover.cost + swap.cost,
+      reference,
+    });
+  }
+
+  addBarrier(maps[0]!, "x");
+  addBarrier(maps[1]!, "y");
+
+  const built: BuiltDisease[] = [];
+  for (const plan of planned) {
+    const mm = freezeMaps(maps);
+    const final = applyTemplate(mm, initialState(mm), plan.reference);
+    const node = final.pos[plan.map];
+    if (final.failed || node === undefined) {
+      throw new Error(
+        `mapgen invariant violation: constructed reference failed for disease ${plan.id}`,
+      );
+    }
+    const cellIndex = idx(maps[plan.map]!.width, node.x, node.y);
+    if (maps[plan.map]!.cell[cellIndex] !== CellKind.Empty) {
+      throw new Error(`mapgen.generate: constructed cure cell is blocked for disease ${plan.id}`);
+    }
+
+    protectReference(maps, plan.reference);
+    built.push({
+      id: plan.id,
+      map: plan.map,
+      node,
+      difficulty: plan.difficulty,
+      cost: plan.cost,
+      reference: plan.reference,
+    });
+  }
+  return built;
 }
 
-// ───────────────────────────── scatter ─────────────────────────────
+function placeCures(maps: readonly ScratchMap[], built: readonly BuiltDisease[]): void {
+  for (const disease of built) {
+    const map = maps[disease.map];
+    if (map === undefined) continue;
+    const i = idx(map.width, disease.node.x, disease.node.y);
+    if (map.cell[i] !== CellKind.Empty || map.cureId[i] !== -1) {
+      throw new Error(`mapgen.generate: duplicate or blocked cure cell for disease ${disease.id}`);
+    }
+    map.cell[i] = CellKind.Cure;
+    map.cureId[i] = disease.id;
+    map.protectedCells[i] = 1;
+  }
+}
 
-/**
- * Scatter Walls, Hazards and SideEffect cells at a modest density on non-protected,
- * Empty cells. Densities are deliberately light: the level must stay solvable for
- * the solver re-check (the tension hazards already supply the core obstacle), and
- * an over-dense map just wastes attempts. Side-effect ids cycle deterministically.
- */
+function placeTensionHazards(maps: readonly ScratchMap[], built: readonly BuiltDisease[]): void {
+  for (const disease of built) {
+    for (let mi = 0; mi < maps.length; mi++) {
+      if (mi === disease.map) continue;
+      const map = maps[mi];
+      if (map === undefined) continue;
+      const i = idx(map.width, disease.node.x, disease.node.y);
+      if (map.protectedCells[i] === 1 || map.cell[i] !== CellKind.Empty) continue;
+      map.cell[i] = CellKind.Hazard;
+      map.protectedCells[i] = 1;
+    }
+  }
+}
+
 function scatter(rng: Rng, map: ScratchMap, sideEffectBase: number): void {
   const len = map.width * map.height;
-  const wallCount = Math.floor(len * 0.04);
-  const hazardCount = Math.floor(len * 0.03);
-  const sideCount = Math.floor(len * 0.05);
+  const wallCount = Math.floor((len * 4) / 100);
+  const hazardCount = Math.floor((len * 3) / 100);
+  const sideCount = Math.floor((len * 5) / 100);
 
   const placeBlocking = (count: number, kind: number): void => {
     for (let n = 0; n < count; n++) {
       const x = rng.int(map.width);
       const y = rng.int(map.height);
       const i = idx(map.width, x, y);
-      if (map.protectedCells[i] === 1) continue;
-      if (map.cell[i] !== CellKind.Empty) continue;
+      if (map.protectedCells[i] === 1 || map.cell[i] !== CellKind.Empty) continue;
       map.cell[i] = kind;
     }
   };
@@ -262,165 +423,234 @@ function scatter(rng: Rng, map: ScratchMap, sideEffectBase: number): void {
     const x = rng.int(map.width);
     const y = rng.int(map.height);
     const i = idx(map.width, x, y);
-    if (map.protectedCells[i] === 1) continue;
-    if (map.cell[i] !== CellKind.Empty) continue;
+    if (map.protectedCells[i] === 1 || map.cell[i] !== CellKind.Empty) continue;
     map.cell[i] = CellKind.SideEffect;
     map.sideEffectId[i] = nextSide;
     nextSide += 1;
   }
 }
 
-// ───────────────────────────── tension predicate ─────────────────────────────
-
-/**
- * A "decoupling step" is a move that can make the maps' positions diverge: a swap,
- * a scale, or a translate whose relation is reverse / perpendicular / offset. A
- * forward-only lock-step solution contains NONE of these — so a solution that does
- * contain one had to break the maps apart, which is exactly the cross-map tension
- * we require. (This mirrors the solver's own `decouplingBonus` classification.)
- */
-function solutionDecouples(sol: Solution): boolean {
-  return sol.template.steps.some((m) => {
-    const t = m.transform;
-    if (t.kind === "swap" || t.kind === "scale") return true;
-    return (
-      t.kind === "translate" &&
-      (t.relation === "reverse" || t.relation === "perpendicular" || t.relation === "offset")
-    );
-  });
+function requireSafeInteger(name: string, value: number): void {
+  if (!Number.isSafeInteger(value)) {
+    throw new Error(`mapgen.generate: ${name} must be a safe integer, got ${String(value)}`);
+  }
 }
 
-// ───────────────────────────── generation ─────────────────────────────
+function validateCatalog(catalog: readonly MachineCatalogEntry[], nMaps: number): void {
+  if (!Array.isArray(catalog)) {
+    throw new Error("mapgen.generate: catalog must be an array");
+  }
+  if (catalog.length > MAX_GENERATION_CATALOG_ENTRIES) {
+    throw new Error(
+      `mapgen.generate: catalog must not exceed ${MAX_GENERATION_CATALOG_ENTRIES} entries`,
+    );
+  }
+  const ids = new Set<string>();
+  for (let index = 0; index < catalog.length; index++) {
+    const entry = catalog[index];
+    const path = `catalog[${index}]`;
+    if (entry === undefined || typeof entry.typeId !== "string" || entry.typeId.length === 0) {
+      throw new Error(`mapgen.generate: ${path}.typeId must be a non-empty string`);
+    }
+    if (ids.has(entry.typeId)) {
+      throw new Error(`mapgen.generate: duplicate typeId "${entry.typeId}" in catalog`);
+    }
+    ids.add(entry.typeId);
+    if (!Number.isSafeInteger(entry.cost) || entry.cost < 0 || entry.cost > 0x7fffffff) {
+      throw new Error(`mapgen.generate: ${path}.cost must be a non-negative safe integer within int32`);
+    }
+    if (!Number.isSafeInteger(entry.speed) || entry.speed < 1 || entry.speed > 0x7fffffff) {
+      throw new Error(`mapgen.generate: ${path}.speed must be a positive safe integer within int32`);
+    }
+    if (typeof entry.orientable !== "boolean") {
+      throw new Error(`mapgen.generate: ${path}.orientable must be boolean`);
+    }
 
-const MAX_ATTEMPTS = 400;
+    const transform = entry.transform;
+    if (transform.kind === "translate") {
+      if (
+        !Number.isSafeInteger(transform.delta.x) ||
+        !Number.isSafeInteger(transform.delta.y) ||
+        transform.delta.x < -0x80000000 ||
+        transform.delta.x > 0x7fffffff ||
+        transform.delta.y < -0x80000000 ||
+        transform.delta.y > 0x7fffffff
+      ) {
+        throw new Error(`mapgen.generate: ${path} translate delta must use safe integers within int32`);
+      }
+      if (
+        transform.relation !== "forward" &&
+        transform.relation !== "reverse" &&
+        transform.relation !== "perpendicular" &&
+        transform.relation !== "offset"
+      ) {
+        throw new Error(`mapgen.generate: ${path} has unknown translate relation`);
+      }
+      const orientations: readonly Orientation[] = entry.orientable
+        ? ALL_ROTATIONS.flatMap((rot) => [
+            { rot, flip: false },
+            { rot, flip: true },
+          ])
+        : [IDENTITY];
+      for (const orientation of orientations) {
+        const delta = effectiveDelta(transform.delta, transform.relation, orientation);
+        if (
+          delta.x < -0x80000000 ||
+          delta.x > 0x7fffffff ||
+          delta.y < -0x80000000 ||
+          delta.y > 0x7fffffff
+        ) {
+          throw new Error(`mapgen.generate: ${path} effective translate exceeds int32`);
+        }
+      }
+    } else if (transform.kind === "scale") {
+      if (
+        !Number.isSafeInteger(transform.num) ||
+        !Number.isSafeInteger(transform.den) ||
+        transform.num <= 0 ||
+        transform.num >= transform.den ||
+        transform.den > 0x7fffffff
+      ) {
+        throw new Error(
+          `mapgen.generate: ${path} scale requires safe integers satisfying 0 < num < den`,
+        );
+      }
+    } else if (transform.kind === "swap") {
+      requireSafeInteger(`${path}.transform.a`, transform.a);
+      requireSafeInteger(`${path}.transform.b`, transform.b);
+      if (transform.a === transform.b) {
+        throw new Error(`mapgen.generate: ${path} swap requires distinct map indices`);
+      }
+      if (transform.a < 0 || transform.a >= nMaps) {
+        throw new Error(
+          `mapgen.generate: ${path} swap index ${transform.a} outside 0..${nMaps - 1}`,
+        );
+      }
+      if (transform.b < 0 || transform.b >= nMaps) {
+        throw new Error(
+          `mapgen.generate: ${path} swap index ${transform.b} outside 0..${nMaps - 1}`,
+        );
+      }
+    } else {
+      throw new Error(`mapgen.generate: ${path} has unknown transform kind`);
+    }
+  }
+}
+
+function validateOptions(opts: Parameters<GenerateFn>[0]): void {
+  requireSafeInteger("seed", opts.seed);
+  if (opts.seed < 0 || opts.seed > 0xffffffff) {
+    throw new Error(`mapgen.generate: seed must be a uint32, got ${opts.seed}`);
+  }
+  requireSafeInteger("nMaps", opts.nMaps);
+  if (opts.nMaps < 2 || opts.nMaps > 4) {
+    throw new Error(`mapgen.generate: nMaps must be between 2 and 4, got ${opts.nMaps}`);
+  }
+  requireSafeInteger("width", opts.width);
+  if (opts.width < 3) {
+    throw new Error(`mapgen.generate: width must be at least 3, got ${opts.width}`);
+  }
+  requireSafeInteger("height", opts.height);
+  if (opts.height < 3) {
+    throw new Error(`mapgen.generate: height must be at least 3, got ${opts.height}`);
+  }
+  const mapArea = opts.width * opts.height;
+  if (!Number.isSafeInteger(mapArea) || mapArea > MAX_MAP_CELLS) {
+    throw new Error(`mapgen.generate: map area must not exceed ${MAX_MAP_CELLS} cells`);
+  }
+  requireSafeInteger("diseaseCount", opts.diseaseCount);
+  if (opts.diseaseCount < 1) {
+    throw new Error(`mapgen.generate: diseaseCount must be positive, got ${opts.diseaseCount}`);
+  }
+  if (opts.diseaseCount > opts.nMaps) {
+    throw new Error(
+      `mapgen.generate: diseaseCount must not exceed nMaps (seed=${opts.seed})`,
+    );
+  }
+  requireSafeInteger("difficulty.min", opts.difficulty.min);
+  if (opts.difficulty.min < 0) {
+    throw new Error(
+      `mapgen.generate: difficulty.min must be non-negative, got ${opts.difficulty.min}`,
+    );
+  }
+  requireSafeInteger("difficulty.max", opts.difficulty.max);
+  if (opts.difficulty.max < 0) {
+    throw new Error(
+      `mapgen.generate: difficulty.max must be non-negative, got ${opts.difficulty.max}`,
+    );
+  }
+  if (opts.difficulty.max < opts.difficulty.min) {
+    throw new Error(
+      "mapgen.generate: difficulty.max must be greater than or equal to difficulty.min",
+    );
+  }
+  if (opts.difficulty.max > MAX_GENERATION_DIFFICULTY) {
+    throw new Error(
+      `mapgen.generate: difficulty.max must not exceed ${MAX_GENERATION_DIFFICULTY}`,
+    );
+  }
+  validateCatalog(opts.catalog, opts.nMaps);
+}
 
 export const generate: GenerateFn = (opts) => {
-  const rng = makeRng(opts.seed);
+  validateOptions(opts);
   const { nMaps, width, height, catalog, diseaseCount, difficulty } = opts;
+  const seed = opts.seed >>> 0;
 
+  const rng = makeRng(seed);
   const movers = axisMovers(catalog);
-  const sx = maxStep(movers, "x");
-  const sy = maxStep(movers, "y");
-  if (sx <= 0 || sy <= 0) {
+  const start: Vec2 = { x: 0, y: 0 };
+  const scratch: ScratchMap[] = [];
+  for (let mi = 0; mi < nMaps; mi++) {
+    scratch.push(makeScratch(width, height, start, originFor(mi, width, height)));
+  }
+
+  let built: BuiltDisease[];
+  try {
+    built = constructDiseases(
+      rng,
+      scratch,
+      catalog,
+      movers,
+      diseaseCount,
+      difficulty.min,
+      difficulty.max,
+    );
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
     throw new Error(
-      `mapgen.generate: catalog has no positive +x/+y translate movers; cannot construct references (seed=${opts.seed})`,
+      `mapgen.generate: no constructive level for seed=${opts.seed}, difficulty ` +
+        `[${difficulty.min},${difficulty.max}]: ${reason}`,
+      { cause: error },
     );
   }
 
-  const start: Vec2 = { x: 0, y: 0 };
-
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    // 1. fresh empty maps for this attempt, each with its DISTINCT origin.
-    const scratch: ScratchMap[] = [];
-    for (let i = 0; i < nMaps; i++) {
-      scratch.push(makeScratch(width, height, start, originFor(i, width, height)));
-    }
-
-    // 2. place one cure per disease (round-robin maps); protect each cure cell.
-    interface Built {
-      readonly id: DiseaseId;
-      readonly map: MapIndex;
-      readonly node: Vec2;
-    }
-    const built: Built[] = [];
-    let ok = true;
-
-    for (let d = 0; d < diseaseCount && ok; d++) {
-      const mapIndex = d % nMaps;
-      const map = scratch[mapIndex];
-      if (map === undefined) {
-        ok = false;
-        break;
-      }
-
-      const cell = pickCureCell(rng, width, height, sx, sy);
-      const i = idx(width, cell.x, cell.y);
-      // Never stack two cures on one cell or on the start.
-      if ((cell.x === start.x && cell.y === start.y) || map.cell[i] !== CellKind.Empty) {
-        ok = false;
-        break;
-      }
-
-      map.cell[i] = CellKind.Cure;
-      map.cureId[i] = d;
-      map.protectedCells[i] = 1;
-      built.push({ id: d, map: mapIndex, node: cell });
-    }
-    if (!ok) continue;
-
-    // 3. CROSS-MAP TENSION: trap the naive lock-step endpoint of each cure on every
-    //    OTHER map. A forward push toward map A's cure moves every map to (cx,cy);
-    //    the hazard there spoils the drug unless the solution decouples the maps.
-    for (const b of built) {
-      const i = idx(width, b.node.x, b.node.y);
-      for (let mi = 0; mi < nMaps; mi++) {
-        if (mi === b.map) continue;
-        const other = scratch[mi];
-        if (other === undefined) continue;
-        if (other.protectedCells[i] === 1) continue; // never a start/cure/existing trap
-        if (other.cell[i] !== CellKind.Empty) continue;
-        other.cell[i] = CellKind.Hazard;
-        other.protectedCells[i] = 1;
-      }
-    }
-
-    // 4. scatter light non-protected features.
-    let sideBase = 0;
-    for (const map of scratch) {
-      scatter(rng, map, sideBase);
-      sideBase += map.width * map.height; // disjoint id ranges per map (cosmetic)
-    }
-
-    // Freeze to a real MultiMap for the drug-graph + solver.
-    const mm: MultiMap = { maps: scratch.map(freezeMap) };
-    const start0 = initialState(mm);
-
-    // 5. SCORE + VERIFY each disease with the canonical solver.
-    const diseases: DiseaseSpec[] = [];
-    let good = true;
-    let decouplingCount = 0;
-    for (const b of built) {
-      // Cap the search just past `max`: any disease needing more steps returns null
-      // and is rejected, keeping the (W·H)^N BFS tractable; in-band diseases are
-      // unaffected. (+2 headroom so a difficulty of exactly `max` is still found,
-      // since difficulty can exceed step count via diversity/decoupling bonuses.)
-      const sol = solve(mm, start0, {
-        catalog,
-        maxDepth: difficulty.max + 2,
-        targets: [b.id],
-      });
-      if (sol === null || sol.difficulty < difficulty.min || sol.difficulty > difficulty.max) {
-        good = false;
-        break;
-      }
-      // INV-9: the canonical solution actually cures the disease and never fails.
-      const out = evaluate(mm, start0, sol.template);
-      if (out.failed || !out.cured.includes(b.id)) {
-        good = false;
-        break;
-      }
-      if (solutionDecouples(sol)) decouplingCount += 1;
-      diseases.push({
-        id: b.id,
-        map: b.map,
-        node: b.node,
-        difficulty: sol.difficulty,
-        basePrice: difficultyToBasePrice(sol.difficulty, sol.cost),
-        // Canonical reference: the SOLVER's solution, so difficulty/cost/reference agree.
-        reference: sol.template,
-      });
-    }
-    if (!good) continue;
-
-    // 6. TENSION PREDICATE: at least one disease's canonical solution must decouple.
-    if (decouplingCount < 1) continue;
-
-    return { seed: opts.seed, mm, start: start0, diseases };
+  placeCures(scratch, built);
+  placeTensionHazards(scratch, built);
+  let sideEffectBase = 0;
+  for (const map of scratch) {
+    scatter(rng, map, sideEffectBase);
+    sideEffectBase += map.width * map.height;
   }
 
-  throw new Error(
-    `mapgen.generate: no level satisfied difficulty [${difficulty.min},${difficulty.max}] ` +
-      `with cross-map tension (≥1 decoupling disease) for seed=${opts.seed} within ${MAX_ATTEMPTS} attempts ` +
-      `(nMaps=${nMaps}, ${width}x${height}, diseaseCount=${diseaseCount})`,
-  );
+  const mm = freezeMaps(scratch);
+  const initial = initialState(mm);
+  const diseases: DiseaseSpec[] = built.map((disease) => {
+    const outcome = evaluate(mm, initial, disease.reference);
+    if (outcome.failed || !outcome.cured.includes(disease.id)) {
+      throw new Error(
+        `mapgen invariant violation: constructed reference does not cure disease ${disease.id}`,
+      );
+    }
+    return {
+      id: disease.id,
+      map: disease.map,
+      node: disease.node,
+      difficulty: disease.difficulty,
+      basePrice: difficultyToBasePrice(disease.difficulty, disease.cost),
+      reference: disease.reference,
+    };
+  });
+
+  return { seed, mm, start: initial, diseases };
 };

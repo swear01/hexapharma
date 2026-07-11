@@ -32,7 +32,7 @@ function emptyMap(
     start,
     cell: new Uint8Array(len),
     cureId: new Int16Array(len).fill(-1),
-    sideEffectId: new Int16Array(len).fill(-1),
+    sideEffectId: new Int32Array(len).fill(-1),
     fog: new Uint8Array(len),
   };
 }
@@ -47,7 +47,7 @@ function withCell(
 ): EffectMap {
   const cell = Uint8Array.from(m.cell);
   const cureId = Int16Array.from(m.cureId);
-  const sideEffectId = Int16Array.from(m.sideEffectId);
+  const sideEffectId = Int32Array.from(m.sideEffectId);
   const i = idx(m.width, x, y);
   cell[i] = kind;
   if (ids?.cure !== undefined) cureId[i] = ids.cure;
@@ -70,6 +70,7 @@ const PUSH_ONLY: readonly MachineCatalogEntry[] = [
     typeId: "push",
     transform: { kind: "translate", delta: { x: 1, y: 0 }, relation: "forward" },
     cost: 1,
+    speed: 1,
     orientable: true,
   },
 ];
@@ -79,12 +80,14 @@ const PUSH_AND_SWAP: readonly MachineCatalogEntry[] = [
     typeId: "push",
     transform: { kind: "translate", delta: { x: 1, y: 0 }, relation: "forward" },
     cost: 1,
+    speed: 1,
     orientable: true,
   },
   {
     typeId: "swap01",
     transform: { kind: "swap", a: 0, b: 1 },
     cost: 5,
+    speed: 1,
     orientable: false,
   },
 ];
@@ -175,6 +178,7 @@ describe("solver minimality (BFS shortest path)", () => {
         typeId: "push2",
         transform: { kind: "translate", delta: { x: 2, y: 0 }, relation: "forward" },
         cost: 2,
+        speed: 1,
         orientable: true,
       },
     ];
@@ -244,6 +248,7 @@ describe("solver composite difficulty (steps + diversity + decoupling)", () => {
         typeId: "push3",
         transform: { kind: "translate", delta: { x: 3, y: 0 }, relation: "forward" },
         cost: 3,
+        speed: 1,
         orientable: true,
       },
     ];
@@ -267,6 +272,7 @@ describe("solver composite difficulty (steps + diversity + decoupling)", () => {
         typeId: "skew",
         transform: { kind: "translate", delta: { x: 1, y: 0 }, relation: "offset" },
         cost: 2,
+        speed: 1,
         orientable: true,
       },
     ];
@@ -296,6 +302,7 @@ describe("solver composite difficulty (steps + diversity + decoupling)", () => {
         typeId: "skew",
         transform: { kind: "translate", delta: { x: 1, y: 0 }, relation: "offset" },
         cost: 2,
+        speed: 1,
         orientable: true,
       },
     ];

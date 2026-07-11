@@ -25,12 +25,29 @@ const LABEL_H = 24; // height reserved for each map's label
 const GAP_X = 28; // horizontal gap between maps in a row
 const GAP_Y = 20; // vertical gap between rows
 const COLS = 2; // maps per row (wrap to a grid for N ≥ 3)
+const MAX_CANVAS_WIDTH = 980;
+const MAX_CANVAS_HEIGHT = 980;
 
-/** Cell size in px for an N-map level — shrink as N grows so the canvas stays sane. */
-function cellSize(nMaps: number): number {
-  if (nMaps <= 2) return 32;
-  if (nMaps === 3) return 26;
-  return 22;
+/** Cell size in px, reduced further when a large authorized map must fit the UI. */
+function cellSize(mm: MultiMap): number {
+  const nMaps = mm.maps.length;
+  let preferred = 22;
+  if (nMaps <= 2) preferred = 32;
+  else if (nMaps === 3) preferred = 26;
+  const cols = Math.min(COLS, Math.max(1, nMaps));
+  const rows = Math.ceil(nMaps / COLS);
+  let mapWidth = 1;
+  let mapHeight = 1;
+  for (const map of mm.maps) {
+    if (map.width > mapWidth) mapWidth = map.width;
+    if (map.height > mapHeight) mapHeight = map.height;
+  }
+  const widthPixels = MAX_CANVAS_WIDTH - PAD * 2 - (cols - 1) * GAP_X;
+  const heightPixels =
+    MAX_CANVAS_HEIGHT - PAD * 2 - rows * LABEL_H - (rows - 1) * GAP_Y;
+  const widthBound = Math.floor(widthPixels / (cols * mapWidth));
+  const heightBound = Math.floor(heightPixels / (rows * mapHeight));
+  return Math.max(1, Math.min(preferred, widthBound, heightBound));
 }
 
 /** Grid placement (column/row) of map `i`. */
@@ -66,7 +83,7 @@ function mapPx(map: EffectMap | undefined, cell: number, fallbackW = 9, fallback
 /** Pixel size of the whole canvas for an N-map level (all maps assumed same W/H). */
 function canvasSize(mm: MultiMap): { width: number; height: number } {
   const n = mm.maps.length;
-  const cell = cellSize(n);
+  const cell = cellSize(mm);
   const { w: mapW, h: mapH } = mapPx(mm.maps[0], cell);
   const cols = Math.min(COLS, Math.max(1, n));
   const rows = Math.ceil(n / COLS);
@@ -78,7 +95,7 @@ function canvasSize(mm: MultiMap): { width: number; height: number } {
 
 /** Top-left pixel origin of map `i` (after outer pad + its label row). */
 function mapOriginPx(mm: MultiMap, i: number): { ox: number; oy: number } {
-  const cell = cellSize(mm.maps.length);
+  const cell = cellSize(mm);
   const { w: mapW, h: mapH } = mapPx(mm.maps[0], cell);
   const { col, row } = gridPos(i);
   return {
@@ -130,7 +147,7 @@ function drawMap(map: EffectMap, ox: number, oy: number, cell: number, g: Graphi
 
 /** Draw the drug token (a circle) at grid `pos` on map `i`. */
 function drawToken(mm: MultiMap, i: number, pos: Vec2, g: Graphics, failed: boolean): void {
-  const cell = cellSize(mm.maps.length);
+  const cell = cellSize(mm);
   const { ox, oy } = mapOriginPx(mm, i);
   const cx = ox + pos.x * cell + cell / 2;
   const cy = oy + pos.y * cell + cell / 2;
@@ -165,28 +182,37 @@ export async function createLabRenderer(mm: MultiMap): Promise<LabRenderer> {
   const token = new Graphics();
   const labels = new Container();
   app.stage.addChild(cells, fog, token, labels);
+  let destroyed = false;
+  let renderedMap: MultiMap | null = null;
+
+  function clearLabels(): void {
+    for (const child of labels.removeChildren()) child.destroy();
+  }
 
   function render(curr: MultiMap, drug: DrugState): void {
-    cells.clear();
-    fog.clear();
     token.clear();
-    labels.removeChildren();
+    if (renderedMap !== curr) {
+      renderedMap = curr;
+      cells.clear();
+      fog.clear();
+      clearLabels();
+      const cell = cellSize(curr);
+      for (let i = 0; i < curr.maps.length; i++) {
+        const map = curr.maps[i];
+        if (map === undefined) continue;
+        const { ox, oy } = mapOriginPx(curr, i);
+        drawMap(map, ox, oy, cell, cells, fog, labels);
 
-    const cell = cellSize(curr.maps.length);
+        const label = new Text({
+          text: `Map ${i}`,
+          style: { fontFamily: "Arial", fontSize: 15, fill: LABEL_COLOR, fontWeight: "bold" },
+        });
+        label.x = ox;
+        label.y = oy - LABEL_H + 2;
+        labels.addChild(label);
+      }
+    }
     for (let i = 0; i < curr.maps.length; i++) {
-      const map = curr.maps[i];
-      if (map === undefined) continue;
-      const { ox, oy } = mapOriginPx(curr, i);
-      drawMap(map, ox, oy, cell, cells, fog, labels);
-
-      const label = new Text({
-        text: `Map ${i}`,
-        style: { fontFamily: "Arial", fontSize: 15, fill: LABEL_COLOR, fontWeight: "bold" },
-      });
-      label.x = ox;
-      label.y = oy - LABEL_H + 2;
-      labels.addChild(label);
-
       const pos = drug.pos[i];
       if (pos !== undefined) drawToken(curr, i, pos, token, drug.failed);
     }
@@ -195,6 +221,16 @@ export async function createLabRenderer(mm: MultiMap): Promise<LabRenderer> {
   return {
     canvas: app.canvas,
     render,
-    destroy: () => app.destroy(true, { children: true }),
+    destroy: () => {
+      if (destroyed) return;
+      destroyed = true;
+      clearLabels();
+      app.stage.removeChildren();
+      cells.destroy();
+      fog.destroy();
+      token.destroy();
+      labels.destroy();
+      app.destroy({ removeView: true });
+    },
   };
 }

@@ -12,7 +12,7 @@ function revealedOf(text: string | null): number {
 }
 
 test("reveal-aid patent: unlocking it spends 80 and grows the revealed area", async ({ page }) => {
-  await page.goto("/?cash=9999");
+  await page.goto("/?cash=9999&research=9999");
 
   // Lab starts mostly fogged — record the revealed cell count.
   const revealed = page.getByTestId("revealed-count");
@@ -44,7 +44,7 @@ test("reveal-aid patent: unlocking it spends 80 and grows the revealed area", as
 });
 
 test("unlock-map patent: bench-2 + new-map spends 420 and deepens to 3 maps", async ({ page }) => {
-  await page.goto("/?cash=9999");
+  await page.goto("/?cash=9999&research=9999");
 
   const cash = page.getByTestId("cash");
   const cashBefore = Number((await cash.textContent())?.trim());
@@ -63,6 +63,10 @@ test("unlock-map patent: bench-2 + new-map spends 420 and deepens to 3 maps", as
 
   await expect(page.getByTestId("patent-state-new-map")).toHaveText("available");
   await page.getByTestId("patent-unlock-new-map").click();
+  await expect(page.getByTestId("patent-confirmation")).toContainText(
+    /recipe.*factory layout.*runtime.*waste.*inventory.*fog.*sales history/i,
+  );
+  await page.getByTestId("patent-confirm-new-map").click();
   await expect(page.getByTestId("patent-state-new-map")).toHaveText("unlocked");
 
   // Cash dropped by 120 + 300 = 420.
@@ -74,4 +78,26 @@ test("unlock-map patent: bench-2 + new-map spends 420 and deepens to 3 maps", as
   await expect(page.getByTestId("level-info")).toContainText("seed 15");
 
   await page.screenshot({ path: "test/e2e/__screenshots__/patents-deepened-3maps-lab.png", fullPage: true });
+});
+
+test("deeper-level unlock requires explicit confirmation and cancel dispatches nothing", async ({
+  page,
+}) => {
+  await page.goto("/?cash=9999&research=9999");
+  await page.getByTestId("view-patents").click();
+  await page.getByTestId("patent-unlock-bench-2").click();
+  const cashAfterBench = await page.getByTestId("cash").textContent();
+
+  await page.getByTestId("patent-unlock-new-map").click();
+  const confirmation = page.getByTestId("patent-confirmation");
+  await expect(confirmation).toContainText(
+    /recipe.*factory layout.*runtime.*waste.*inventory.*fog.*sales history/i,
+  );
+  await page.getByTestId("patent-cancel-new-map").click();
+
+  await expect(confirmation).toBeHidden();
+  await expect(page.getByTestId("patent-state-new-map")).toHaveText("available");
+  await expect(page.getByTestId("cash")).toHaveText(cashAfterBench ?? "");
+  await page.getByTestId("view-lab").click();
+  await expect(page.getByTestId("map-count")).toHaveText("2 maps");
 });

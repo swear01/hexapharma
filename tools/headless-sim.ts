@@ -6,6 +6,7 @@
 import { generate } from "../src/sim/mapgen/index";
 import { initialState, evaluate } from "../src/sim/drug-graph/index";
 import { DEFAULT_CATALOG, type GenOptions } from "../src/sim/phase0_interfaces";
+import { pathToFileURL } from "node:url";
 
 function optsFor(seed: number): GenOptions {
   return {
@@ -55,25 +56,39 @@ function cmdRun(seed: number): void {
   }
 }
 
-function main(): void {
-  const [cmd = "gen", seedArg = "1"] = process.argv.slice(2);
-  const seed = Number.parseInt(seedArg, 10);
-  if (!Number.isFinite(seed)) {
-    console.error(`invalid seed: ${seedArg}`);
-    process.exitCode = 1;
-    return;
+export function parseSeed(seedArg: string): number {
+  const seed = seedArg.trim() === "" ? Number.NaN : Number(seedArg);
+  if (!Number.isSafeInteger(seed) || seed < 0 || seed > 0xffff_ffff) {
+    throw new Error(`invalid seed: ${seedArg} (expected uint32 integer)`);
   }
-  switch (cmd) {
-    case "gen":
-      cmdGen(seed);
-      break;
-    case "run":
-      cmdRun(seed);
-      break;
-    default:
-      console.error(`unknown command: ${cmd} (expected: gen | run)`);
-      process.exitCode = 1;
+  return seed >>> 0;
+}
+
+export function parseCliArgs(args: readonly string[]): { readonly cmd: string; readonly seed: number } {
+  if (args.length > 2) {
+    throw new Error(`unexpected arguments: ${args.slice(2).join(" ")}`);
+  }
+  const [cmd = "gen", seedArg = "1"] = args;
+  return { cmd, seed: parseSeed(seedArg) };
+}
+
+export function main(args = process.argv.slice(2)): void {
+  try {
+    const { cmd, seed } = parseCliArgs(args);
+    switch (cmd) {
+      case "gen":
+        cmdGen(seed);
+        break;
+      case "run":
+        cmdRun(seed);
+        break;
+      default:
+        throw new Error(`unknown command: ${cmd} (expected: gen | run)`);
+    }
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
   }
 }
 
-main();
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) main();

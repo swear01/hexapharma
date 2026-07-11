@@ -20,6 +20,7 @@ import {
   evaluate,
   revealAlong,
 } from "./index";
+import { sweep, sweepInto } from "./sweep";
 
 // ───────────────────────────── fixture helpers ─────────────────────────────
 
@@ -35,7 +36,7 @@ function emptyMap(n: number, start: Vec2, origin: Vec2 = { x: 0, y: 0 }): Effect
     start,
     cell: new Uint8Array(len), // all Empty (0)
     cureId: new Int16Array(len).fill(-1),
-    sideEffectId: new Int16Array(len).fill(-1),
+    sideEffectId: new Int32Array(len).fill(-1),
     fog: new Uint8Array(len), // all fogged (0)
   };
 }
@@ -50,7 +51,7 @@ function withCell(
 ): EffectMap {
   const cell = Uint8Array.from(m.cell);
   const cureId = Int16Array.from(m.cureId);
-  const sideEffectId = Int16Array.from(m.sideEffectId);
+  const sideEffectId = Int32Array.from(m.sideEffectId);
   const i = idx(m.width, x, y);
   cell[i] = kind;
   if (ids?.cure !== undefined) cureId[i] = ids.cure;
@@ -424,6 +425,36 @@ describe("axis-aligned sweep regression (no corner duplicates)", () => {
           }
         },
       ),
+    );
+  });
+});
+
+describe("allocation-free sweep endpoint", () => {
+  it("matches the canonical sweep for arbitrary walls, hazards, and vectors", () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.integer({ min: CellKind.Empty, max: CellKind.Hazard }), {
+          minLength: 49,
+          maxLength: 49,
+        }),
+        fc.integer({ min: 0, max: 6 }),
+        fc.integer({ min: 0, max: 6 }),
+        fc.integer({ min: -3, max: 9 }),
+        fc.integer({ min: -3, max: 9 }),
+        (cells, fromX, fromY, targetX, targetY) => {
+          const map = emptyMap(7, { x: fromX, y: fromY });
+          map.cell.set(cells);
+          const expected = sweep(map, { x: fromX, y: fromY }, { x: targetX, y: targetY });
+          const out = new Int32Array(3);
+          sweepInto(map, fromX, fromY, targetX, targetY, out, 0);
+          expect([out[0], out[1], out[2]]).toEqual([
+            expected.pos.x,
+            expected.pos.y,
+            expected.failed ? 1 : 0,
+          ]);
+        },
+      ),
+      { numRuns: 250 },
     );
   });
 });

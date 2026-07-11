@@ -99,7 +99,7 @@ describe("balance: anti-degeneracy — 狂產單一藥 ≠ 最佳解 (§8)", () 
 
   /** Total revenue from selling `units[i]` units of disease i, with diminishing returns. */
   function totalRevenue(plan: readonly { disease: number; basePrice: number; units: number }[]): number {
-    let econ: EconomyState = { cash: 0, sold: [] };
+    let econ: EconomyState = { cash: 0, research: 0, sold: [] };
     let revenue = 0;
     for (const p of plan) {
       for (let n = 0; n < p.units; n++) {
@@ -142,7 +142,7 @@ describe("balance: anti-degeneracy — 狂產單一藥 ≠ 最佳解 (§8)", () 
 
     // GREEDY: each of the K units goes to the disease with the highest CURRENT
     // (post-diminishing) marginal price — the optimal diversified portfolio.
-    let econ: EconomyState = { cash: 0, sold: [] };
+    let econ: EconomyState = { cash: 0, research: 0, sold: [] };
     let greedy = 0;
     for (let i = 0; i < K; i++) {
       let bestId = diseases[0]!.id;

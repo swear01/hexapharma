@@ -6,7 +6,7 @@
 
 一款融合兩種玩法的 2D 遊戲：在**程序化隨機生成、迷霧覆蓋的多張效果地圖**上摸黑探索、解出藥方（Potion Craft 的鍊金地圖），再到工廠把藥方鋪成**確定性自動化產線、配平機器吞吐**量產（Big Pharma 的工廠）。美術走**平面、極簡、俯視正交**（Shapez 風）。
 
-- **核心模型一句話**：Big Pharma 的工廠 + Potion Craft 的地圖。把 BP 每種有效成分的 1D 濃度，換成「一張 2D 地圖上的位置」；多張地圖並存、一台機器同時移動所有圖；地圖隨機生成、種子即身分。
+- **核心模型一句話**：Big Pharma 的工廠 + Potion Craft 的地圖。把 BP 每種有效成分的 1D 濃度，換成「一張 2D 地圖上的位置」；多張地圖並存、一台機器同時移動所有圖；地圖隨機生成、seed + 生成設定即關卡身分。
 - **雙重目標**：(1) 把這款遊戲**真正做出來、出貨**；(2) 用它當 **AI 多 agent 編排**的實驗場。兩者同向——出貨一款確定性、可 headless 驗證的遊戲所需的工程紀律，恰好就是讓多 agent 平行、低人工介入協作的前提。
 - **規模錨點**：Potion Craft 級。中小型、機制驅動、單人本地。同屏移動物件數百～低千，**非** Factorio 百萬級。效能不是瓶頸，故全程採 code-as-truth（純程式碼、無隱藏編輯器狀態）。
 
@@ -57,7 +57,7 @@
 - **稀釋 scale-to-origin**：每張圖把位置以固定比例往該圖原點拉（= 降濃度、回退），適合 overshoot 後的救援 / 重置。比例用**有理數**（分子/分母）保證跨機確定、零浮點飄移。與朝向無關。
 - **換圖 swap-maps**：交換兩張圖上的位置（把一張圖的進度搬到另一張）。與朝向無關，需 ≥2 圖。
 
-機器有不同的 **processing cost（生產成本）** 與 **處理速度** 作為差異化（抄 Big Pharma）。
+機器有不同的 **processing cost（生產成本）** 與 **處理速度** 作為差異化（抄 Big Pharma）；兩者由 catalog 固定，玩家不能任意改 speed，而要用並聯與 routing 配平瓶頸。
 
 ### 1.2.4 移動解析（掃動）
 
@@ -84,7 +84,7 @@
 
 1. **防抄 / 防無腦旋轉**：把整張藥方藍圖一起旋轉 → 每台平移機器的朝向都轉 → 路徑繞起點旋轉、落到別處 → 失敗。加上機器種類異質（順/逆/垂直/偏移），更不存在單一剛性變換能把現成藍圖搬到新目標。
 2. **工廠可自由重排**：只要保持**每台機器的朝向 + 單顆處理順序**不變，輸送帶任意改道、慢機並聯都不改變效果結果 → 純粹做吞吐與空間最佳化。
-3. **研究室=人類創意，求解器=僅 AI 測試**：人在研究室找序列+朝向；自動求解器只用於 AI 自動測試與地圖難度評分，**絕不**做成遊戲內的一鍵自動解。
+3. **研究室=人類創意，求解器=僅 tests/tools**：人在研究室找序列+朝向；自動求解器只作 soundness、解耦與平衡稽核，**不進 production dependency graph，更絕不**做成遊戲內的一鍵自動解。
 
 ## 1.3 研究室（人類創意核心）
 
@@ -97,46 +97,59 @@
 - **空間打包**：機器有不同形狀與輸入/輸出口，用輸送帶串接 → Tetris 式擺放謎題。
 - **吞吐配平（核心機制）**：每台機器處理速度不同，慢機器造成瓶頸，輸送帶有吞吐上限 → 達最高效率必須**配平**（並聯慢機、調佈局匹配上下游速率）。
 - **允許重排**：在保持各機器朝向 + 處理順序的前提下，自由改 belt 走線、並聯，以優化吞吐與空間（效果結果不變，見 1.2.7）。
-- 產線即時運轉（可暫停擺放），每單位逐 tick 追蹤，抵達輸出口才算成品。
+- **Routing 契約**：splitter 只接受從 `inDir` 進入的單位，並以每個 splitter 自己的 round-robin cursor 選 `outDirs`；merger 只接受 `inDirs`，同 tick 競爭依 `inDirs` 陳列順序固定仲裁。cursor 會影響未來行為，必須跟著 runtime、cold snapshot、hash 與 save。
+- 產線即時運轉（可暫停擺放），每單位逐 tick 追蹤，抵達輸出口才算一個 sink outcome；是否成為可售成品仍由 Game 逐顆驗實際 `Outcome`，失敗、無療效或不符已存 recipe 的結果計 waste。
+- **Game 建地 authority**：未保存 recipe、也沒有既存 layout 時，手建工廠只能使用 base entitlement `9×6`，已解鎖的 expand patent 才能增加該 entitlement；一旦已有 layout，玩家編輯只能保持既存尺寸，尺寸改變只能由 patent reducer 進行。public `factory-sim` 可驗證至 65,536 格，但 Game/UI layout 另限每邊 256、總計 4,096 格。
+- **bounded diagnostics**：最多模擬100,000 ticks，且 layout-weighted work ≤100,000,000。`factoryOutcome`/`analyzeThroughput`會在任何runtime init/tick前，以`(area + machines + sources)² × observationTicks`作deterministic preflight；合法layout仍可因diagnostic成本過高而拒絕，避免同步`useMemo`鎖UI。`factoryOutcome`遇deadlock或首件產品exhaustion顯式throw，不能偽裝成藥物`failed`；`analyzeThroughput`對真正deadlock回確定`0/1`且不回報假機器瓶頸（兩個 bottleneck 欄位皆`null`），只有observation window/replay/work budget不足才throw。Factory UI以analysis alert顯示。serpentine regressions精確區分：throughput 20×20成功、21×21拒絕；first-product outcome 20×20成功、21×21仍低於work cap，22×22才拒絕。
 
 ## 1.5 經濟（極簡 + 反退化 + 難度驅動定價）
 
 目標不是經濟深度，而是**防止退化**——不要讓「狂產單一藥物」變成簡單最佳解。
 
-- **難度驅動定價**：每個疾病/藥方的**基礎藥價**由**難度分**決定（= 求解器找到的最小解難度 + 該參考解的生產花費），對難度呈**指數**（越難/越貴的藥指數級更值錢，給出 Big Pharma 的進程手感）。
-- **淨利 = 基礎藥價 − 實際生產成本 − 副作用扣分**，再乘當前需求。工廠配平越有效率、margin 越高 → 自我平衡。
-- **反退化機制**：多疾病並行需求（逼迫多樣化產線）+ 單品市場飽和遞減 + 隨機地圖（無全域最佳解可抄）。不做動態競爭對手。
+- **難度驅動定價**：每個疾病/藥方的基礎藥價 = `roundHalfUp(10 × (17/10)^difficulty) + 3 × referenceCost`。difficulty 的指數項用 BigInt 分子/分母精確計算，最後作正數 half-up rounding，不走 `Math.pow`/浮點；d=0..58 與既有曲線輸出相同，這次轉換是確定性/overflow authority 修正，**不是人工調平衡**。複合難度仍來自建構 reference 的步數 + 多樣性 + 解耦，tests/tools solver 另作最短解與平衡稽核，不參與 runtime 生成。
+- **淨利 = 當前單品售價 − 實際生產成本 − 副作用扣分**。當前單品售價從基礎藥價開始，依該疾病累計銷量逐件遞減；實際生產成本由這顆藥真正通過的機器累加，副作用扣分由 sink 成品的實際 `Outcome` 計算。
+- **物理庫存**：sink 交付的是帶實際 `DrugState`、`Outcome` 與生產成本的單顆成品，不是只記配方名稱或數量。失敗品/無療效品成廢料、不進可售庫存；一顆多療效藥可選一個疾病市場出售，但賣出後整顆移除，不能重複變現。單售與 bulk sale 的未知疾病、不存在／已售／重複產品或錯誤療效都在 reducer 原子地顯式拒絕，不會靜默視為 no-op。Game 最多保留 24,500 顆實體庫存；單一 bulk sale intent 最多 100,000 IDs（目前 inventory cap 更小，但 public intent boundary 仍獨立驗證）。
+- **反退化機制**：多個疾病市場 + 各疾病獨立累積的單品飽和遞減 + 隨機地圖（無全域最佳解可抄）。現行 vertical slice **沒有訂單系統或動態需求排程**；每次合法銷售另取得 1 R&D，供專利消耗，也不做動態競爭對手。
 - **避開 Big Pharma 的失衡反例**：不加入「一鍵指定位置/跳過導航」之類過便宜、會把地圖謎題玩穿的機器（BP 的 Sequencer 教訓）。
 
 ## 1.6 專利樹（= 天賦樹）
 
-投入利潤 + 研發點數解鎖：新機器/變換、擴廠面積、揭霧輔助、**解鎖新成分（= 新地圖）**。刻意保持簡單，不在經濟層做文章。
+投入現金 + R&D 解鎖：新機器/變換、擴廠面積、揭霧輔助、**解鎖新成分（= 新地圖）**。未解鎖機器不出現在可用palette/catalog；擴廠專利直接擴張layout，也決定無recipe手建工廠的`9×6 + patent delta`尺寸。public `canUnlock`/`unlockPatent`/`activeEffects`會驗tree、unlock order、unknown/duplicate state與cash/research boundary；`activeEffects`對factory width/height delta與reveal amount用checked safe-integer add，aggregate overflow顯式reject。兩段新地圖專利推進2→3→4圖，視為下一個deeper level：seed +1、重生目前關卡，清recipe/factory/runtime/waste/inventory/fog與`economy.sold`，保留扣款後cash/R&D、patents與global inventory ID；UI先完整警告並再次確認。
 
 ## 1.7 成分地圖、探索與解鎖
 
 **沒有獨立的「世界地圖」。** 採 Potion Craft 模型：玩家在「當前的數張成分地圖」上工作（成分 = 基底 = 原料 = 一張效果地圖）。兩條解鎖軸：
 
 - **探索 / 揭霧**：在當前地圖把藥物開進未知區揭露節點/牆/危險（研究室實驗 + 專利揭霧輔助）。
-- **解鎖新成分**：透過進度/專利解鎖新的成分地圖（= 新基底），整張新地圖同樣隨機生成。
+- **解鎖新成分**：透過專利進入含更多基底的下一個 seed-pure deeper level（2→3→4）；整組當前地圖重新生成，語意見 1.6 與 D16。
 
 多張地圖之間靠「一機同時影響多圖」耦合（從一開始就啟用）。
 
 ## 1.8 程序化生成
 
-- **種子決定一切**：地圖由 seeded PRNG 生成，**同種子可重現、異種子不可復用**。種子即地圖身分，堵死「上網抄藍圖」與「跨種子復用舊解」。**一個存檔一個種子。**
+- **種子決定隨機抽樣**：地圖由 seeded PRNG 生成；seed 的 canonical domain 是 uint32 `0..0xffffffff`（拒絕負數/超界 alias；deeper-level `+1` 以 uint32 wrap）。在同 build 與同一份完整 `GenOptions`（圖數/尺寸/catalog/疾病數/難度帶）下，**同種子可重現、不同 canonical seed 不可因 RNG 截斷而別名**。種子連同生成設定構成地圖身分，堵死「上網抄藍圖」與「跨關卡復用舊解」。**一個存檔保存一份目前的 seed + 生成設定。**
 - **建構式生成為主**：先構造一條保證存在的多圖合法解（用可用機器的變換），再沿各圖路徑長出療效節點、副作用區、牆、危險區 → **可解性由建構保證**。
-- **逐位置難度評分**：對每個疾病算「最小解難度 + 生產花費」分，**同時**用來 (1) 確保地圖合理（不無腦、不需荒謬機器數）、(2) 設定該藥的基礎藥價。
-- **求解器的角色**：算難度分 + AI 自動測試驗證可解。**不是遊戲內自動解**——人類解謎是樂趣核心。
+- **逐位置難度評分**：對每個疾病算 reference 的複合難度 + 生產花費，**同時**用來 (1) 把建構結果限制在難度區間、(2) 設定該藥的基礎藥價；tests/tools 再用 solver 稽核最短解是否暴露離群。
+- **求解器的角色**：只在 tests/tools 作 soundness、解耦與平衡 oracle。production `mapgen` 先選 reference 機器序列、重播並保護逐圖路徑，再放 cure 與散佈特徵；可解性由建構本身保證，runtime 不 import solver、也不做 reject-until-valid。求解器更**不是遊戲內自動解**——人類解謎是樂趣核心。
+- **public 與 Game 上限分層**：public headless mapgen 仍接受單圖 area ≤65,536；進入 `GameState`/UI 的 map authority 另限每邊 ≤32、每圖 ≤1,024 格。Lab 依實際 dimensions 從 preferred 32/26/22px cell再縮小，把2-column canvas限制在 ≤980×980；production preview覆蓋2-map最寬與4-map最大尺寸，default-size snapshot保持不變。副作用格的ID以`Int32Array`保存，不再受`Int16`正值上限截斷。
 
 ## 1.9 存檔
 
-多存檔點、允許回溯（非永久死亡）。配合隨機種子，玩家可安心實驗。
+Save v3 有兩個刻意分開的 wire 用途。完整 `serializeGame`/`deserializeGame` API 在 materialized wire ≤5,000,000 characters 時 round-trip 全 `GameState`（live runtime 轉 cold snapshot）；超限顯式拒絕，即使該 state 在 Game authority 下合法。24,500-item inventory 可讓 full wire 超過5,000,000 characters，所以**localStorage checkpoint v2 不為每個 retained entry 重複 materialized state fields**。checkpoint 的每個 head/history entry 都是 compact replay authority，只含 self-declared `origin`（初始 `GenOptions`/cash/research）、canonical normalized `intentTrace`、其 `replayTicks`，以及由完整 canonical state 算出的 non-cryptographic `stateHash`。decode 由 origin 重播 trace、驗 canonical tick total與 hash後才重建完整狀態；地圖仍由 seed-pure mapgen 重建。
+
+這個`stateHash`是一致性checksum，不是簽章。單一authority/head最多4,096 entries、100,000 ticks、100,000,000 weighted work；正常100,000-tick reference約31,000,000、24,500-inventory流程更低。work估算含map traversal、factory cold/layout/ticks、sale與patent reset。compact與materialized full readers都解析raw origin+intentTrace、重算tick/work後才semantic replay，不能信自報metadata。語意no-op不記錄，連續ticks/layout/same-disease sales正規化；full/compact wire另有5,000,000-character cap。
+
+UI 提供三個彼此隔離的 localStorage 槽位，每槽只寫一個 checkpoint envelope v2 key。write 先對**每個實際 retained state**做完整 semantic/replay 驗證並產生 cold-owned canonical clone，之後才單次 `setItem`；invalid state/save 顯示錯誤且不寫。每條 rewind timeline 必須使用完全相同的 origin 並形成 trace-prefix lineage；因 canonical normalization，最後一筆允許 `factoryTicks` 增量、同疾病 sale ID 前綴增長或 `setFactory` 被新版 layout 取代。把另一個 run/branch 存入已佔用 slot 時，UI 明示 replace 舊 timeline，絕不把兩個 origin 混進 rewind。
+
+head單獨存放且pruning不移除；older history受≤20、≤1,250,000 chars與共用rewind aggregate ≤12,000 ticks/≤8,192 entries/≤100,000,000 work。`deserializeSlots`先inspect整個materialized raw list，再做任何`parseGameState`→replay；`serializeSlots`也先驗同一aggregate。legacy storage先preflight history，必要時才head-alone，封住5,000,000-character legacy繞過compact budget。compact salvage同樣先驗候選集合，超限可只replay通過的head。
+
+舊版 `slot` + `history` 雙 key 只在各自通過 Save v3 驗證，且 history 也滿足同 origin、normalization-aware trace lineage 後才走明示 migration；legacy keys 不刪。mixed legacy timeline、malformed、部分有效或 interrupted-write 都回傳可見 invalid result，不從 migration path throw；若 head 有效，recovery 清成 head-only timeline，避免把跨 run history 帶入。玩家按 Recover 前不刪不覆寫；Load遇invalid/partial/disagreeing timeline不改目前遊戲或壞checkpoint，Save/Rewind也不踩掉。只有完整驗證成功的legacy migration或玩家明按Recover才寫canonical checkpoint。所有reducer intent rejection與save/load/storage failure都在UI顯式呈現。
 
 ## 1.10 詞彙約定
 
 - **成分 / 基底 / 原料**：三者同義 = 一張效果地圖（+ 起始位置）。對應 Potion Craft 的「基底」。
 - **機器**：對藥物多圖狀態的變換（translate / scale-to-origin / swap-maps…），有形狀、（平移類）可旋轉/flip、有 processing cost + 速度。由專利樹解鎖。
-- **模板 / 藥方**：研究室產出的配方（機器序列 + 各機器朝向 + 目標）。
+- **模板 / 藥方**：研究室產出的配方（機器序列 + 各機器朝向）。疾病目標不重複存進模板；療效由模板在目前 level 的實際 `Outcome` 推導。
 
 ---
 
@@ -150,7 +163,7 @@
 
 1. **效能不是瓶頸**：Potion Craft 級的物件量，任何現代棧跑 60fps 都輕鬆，故 native 效能、更硬編譯閘這類 C# 優勢在此量級幾乎無關。
 2. **AI 編輯效率最高**：TS 是 AI 最熟悉的語言之一，首輪正確率高 → 直接壓低人工介入次數。靜態型別能在編譯期攔下大量錯誤（agent 拿到型別錯立刻自修）。
-3. **平行 worktree 零摩擦**：純 TS 專案，各 agent 跑 `npm test` 即可，無編輯器、無 import 快取、無 port 衝突。
+3. **CLI 協作面單純**：純 TS 專案沒有編輯器/import-cache 隱藏狀態；環境有 worktree hook 時可一任務一 worktree，像目前這類共用主工作樹環境則只平行不相交檔案，公共介面與重疊檔案由 integrator 序列化。
 4. **headless 測試工具最強**：sim core 純 TS 用 vitest/node 測；視覺面用 Playwright headless 截圖 + pixel diff。
 5. **UI 已解**：本作 UI/互動偏重，React/DOM 疊在 canvas 上最順手。
 6. **PixiJS v8 對 agent 友善**：純 renderer、顯式 game loop、無框架隱藏狀態，且隨 npm 套件附帶 AI agent skills。不選 Phaser，因它會帶進自己的 scene/physics/input 觀點，把隱藏狀態請回來。
@@ -174,30 +187,37 @@
 
 - **單向資料流**：UI/渲染只「讀狀態、送 intent」；只有 sim core 在 tick 裡改狀態。
 - **sim core 不 import 任何 Pixi/React/DOM**——這條鐵律讓 core 能在 node 裡 headless 跑，是平行測試與可逆性的根本。
+- **renderer code split / 可見錯誤**：Lab/Factory只type-import renderer，mount時才`await import()` Pixi實作；載入或初始化失敗會顯示error，不以空canvas冒充成功。不使用會破壞Pixi初始化順序的手動vendor groups，也不靠提高warning threshold。Lab按實際map dimensions縮cell，Game canvas限制≤980×980。e2e production-preview先build、在throwaway`127.0.0.1:53348`切四tab，另驗2-map最寬/4-map最大；一般Chromium e2e用dev`:53347`。真人playtest仍只用`0.0.0.0:53346`。
+- **UI 派生狀態不冒充 authority**：Lab 在模板編輯、Run 開始、Reset 與換 level 時清掉舊 outcome，不能拿 stale 結果保存新模板。Factory 的 `producedTotal` 文案是「total sink outcomes（includes waste）」並另列 Game 權威 waste；bounded sample/throughput analysis 只作提示，thrown outcome/observation-budget diagnostic 顯示 `factory-analysis-error` alert（真正 throughput deadlock 是有效 `0/1`且無假瓶頸），live product validation 才決定入庫。
 
 ## 2.3 Sim Core 模組（各有 typed interface + 各自測試）
 
 - `drug-graph`：多圖效果引擎——正方格、四特徵、機器=transform（discriminated union：translate/scale/swap）、逐格掃動（牆停/危險失敗）、逐圖最終位置判定、迷霧揭露。
-- `mapgen`：建構式多圖生成（構造解 → 長特徵）+ 逐位置難度評分（種子決定）。
-- `solver`：在多圖空間搜尋合法藥方（**僅供難度評分 + AI 測試**，不接遊戲內自動解）。
-- `factory-sim`：輸送帶/機器 tick 模擬——含 processing cost / 速度 / 吞吐 / 瓶頸。
+- `mapgen`：建構式多圖生成（構造/重播 reference → 保護路徑 → 放 cure → 長特徵）+ 逐位置難度評分（種子決定）；production dependency graph 不含 solver。
+- `solver`：在多圖空間搜尋合法藥方（**僅供 tests/tools 的驗證與稽核**，不接 production mapgen 或遊戲內自動解）。
+- `factory-sim`：輸送帶/機器 tick 模擬——含processing cost /速度/吞吐/瓶頸；runtime綁layout + `MultiMap` identity；bounded diagnostics在init/tick前做100,000,000-unit layout-work preflight，throughput對真deadlock回`0/1`與null bottleneck、window/work exhaustion顯式throw。
 - `recipe`：模板 → 工廠產線轉換 + 重排驗證（保持朝向+順序 → 效果不變）。
-- `economy`：訂單/庫存/結算 + 難度分→基礎藥價 + 反退化。
+- `economy`：物理庫存單顆結算 + 難度分→基礎藥價 + 各疾病 sold counter 遞減（目前沒有訂單系統）。
 - `patent`：天賦樹（含解鎖新地圖）。
-- `save`：序列化/反序列化（多存檔 + 回溯）。
+- `save`：materialized wire ≤5,000,000 chars時的完整 Save v3 round-trip API，以及不重複full state的compact replay authority（origin/normalized trace/replayTicks/non-crypto stateHash）prepare/inspect/replay；UI checkpoint storage負責三槽preflight、cold-owned write與多重budget rewind timeline。
 - `rng`：自有 seeded PRNG（唯一隨機來源，mapgen 也走它）。
-- `state`：`SimState`、`step`、`hash`、`replay`。
+- `state`：工廠層 `hashFactory` / `replayFactory`。
+- `game`：完整 `GameState`、`GameIntent`、`applyGameIntent`、`hashGame`、`replayGame`；UI 只讀狀態並發 intent。
 
 ## 2.4 確定性需求
 
-- **同 build + 同 seed + 同 input trace → 必然得到同一結果**（不追求跨平台 bit-level，單人本地不需要）。
+- **同 build + 同完整 `GenOptions` + 同 seed + 同 input trace → 必然得到同一結果**（不追求跨平台 bit-level，單人本地不需要）。
 - **sim core 內嚴禁**：`Math.random()`（一律走 seeded PRNG）、`Date.now()`/`performance.now()`（時間只能來自 tick 計數）、依賴 `Set`/`Map` 迭代順序做有副作用的邏輯、async/微任務排序影響結果、浮點累積誤差影響離散決策（格子座標/物品數/tick 用整數；scale 比例等用有理數）。
-- **mapgen 必須純由 seed 決定。**
+- **mapgen 必須純由完整 `GenOptions`（其中包含 seed）決定；牆/危險/副作用 scatter比例以整數 rational `4/100`、`3/100`、`5/100` 計數，輸出不變但不讓 float 參與離散決策。**
+- CLI 工具也不繞過 boundary：`headless-sim` 的完整 seed argument 只接受 uint32 safe integer（拒絕 `14junk`、fractional、空值、負數/超界；`-0` canonicalize 為 `0`）；balance count 只接受 `1..100,000` safe integers，超限在 seed loop 前 fail-fast。
+- `GenOptions`/catalog 是不可信 boundary：seed 接受 uint32 `0..0xffffffff` 且把 `-0` canonicalize 為 `0`；public mapgen 單圖 area ≤65,536、difficulty max ≤64、catalog ≤256 entries，Game map 另限每邊 ≤32/每圖 ≤1,024 格。template ≤256 steps；public factory area ≤65,536，Game factory 另限每邊 ≤256/總計 ≤4,096 格；machines ≤area、每 shape cells/inPorts/outPorts 各 ≤256、aggregate shape cells ≤area、aggregate input/output ports 各 ≤262,144。Game inventory ≤24,500，bulk sale ≤100,000 physical product IDs，factory replay/whole-game cumulative factory ticks ≤100,000，Game weighted replay ≤100,000,000；零 ticks 是 no-op，正數 `factoryTicks` 沒有 authoritative layout 時必須拒絕。所有離散欄位須為範圍合法的 safe integer，catalog ID/transform/cost/speed/方向/geometry 必須 upfront 驗證；production source 的 static/dynamic solver import 由 ESLint 全域阻擋。
+- 進入 `GameState`/trace 的 `GenOptions`、catalog、Template、FactoryLayout 與 nested transform/shape/ports 會 canonical clone 並 deep-freeze，切斷 caller mutation 與 identity-cache 污染；共享 `DEFAULT_CATALOG`、`DEFAULT_SHAPES`、`DEFAULT_PATENTS` 也凍結。
 
 ## 2.5 資料導向（務實版）
 
-- 現階段（Potion Craft 級）：輸送帶物品用陣列裡的整數 ID / 輕量 struct 即可，**不需要 ECS**，可讀性優先。
-- 防 GC stutter：每 tick 跑的**熱迴圈**用 object pool、必要時用 TypedArray；**嚴禁熱迴圈內 `new` 物件或 `Array.map` 產生新陣列**。冷路徑（研究室/UI）照常寫。
+- 現階段（Potion Craft 級）不引入 ECS；工廠採專用固定容量 SoA `FactoryRuntime`，比通用 ECS 更容易驗證且足夠清楚。
+- 防 GC stutter：每 tick 跑的**熱迴圈**使用預配置 TypedArray；**嚴禁成功 tick 內 `new` 物件或 `Array.map` 產生新陣列**。冷路徑（研究室/UI、init、snapshot/restore、錯誤 throw）照常寫。
+- **目前實作狀態**：immutable layout geometry/index 依 identity 冷編譯並快取；active unit 的 id/grid/proc/machine/cost/failed/各 map 位置、occupancy/target scratch、splitter cursors 與當 tick product-event queue 全部固定容量重用。runtime 同時綁定建立它的 `MultiMap` object identity；即使另一份 map 的欄位/count 相同，也不能交給既存 runtime 混跑。`stepFactory(layout, mm, runtime): void` 的成功熱 tick 原地更新；測試以熱 call graph source/static guard 禁 allocating syntax/collection builders，並以長跑 buffer identity、mass/routing/replay 驗證守住。`FactoryState` 是 cold snapshot，供 save/replay/debug，且 whole-game reducer 的每個有效 `factoryTicks` intent 也必須 snapshot→restore 做 runtime ownership clone，維持舊 `GameState`/history 不被 alias；再逐 tick drain/clear event。sink 產品物化為永久 inventory object 是 Game 領域輸出邊界，不冒充 factory sim 的 temporary hot allocation。
 
 ## 2.6 格子形狀：正方形
 
@@ -213,15 +233,15 @@
 
 - **drug-graph**：各變換正確；旋轉/flip 正確（旋轉×4=原、flip×2=原）；逐圖療效=最終位置可重現；重排不變；防抄性質。
 - **mapgen + solver**：建構即可解；生成確定性（同 seed → 逐欄位相等）；難度界限；定價一致；求解器健全。
-- **factory-sim**：質量守恆；無物品憑空生成/消失；merge/split 不複製/吞物品；無死鎖（可偵測）；吞吐一致；確定性（replay 兩次 hash 相同）。
-- **economy**：帳務守恆；庫存非負；反退化遞減。
-- **save**：多存檔 round-trip 深等於原狀態。
+- **factory-sim**：質量守恆；無物品憑空生成/消失；固定 SoA/event/scratch buffers；成功熱 tick 零配置；layout/map identity authority；per-splitter cursor round-robin、input-side/merger priority 契約；cursor 進 snapshot/hash/save；outcome deadlock/budget exception與throughput deadlock `0/1`/window exception語意分明；吞吐一致；確定性。
+- **game/economy**：sink 實際成品才可入庫；一顆藥只賣一次；帳務採實際成本與副作用；庫存非負；反退化遞減；全局 intent replay hash 一致。
+- **save**：materialized full wire ≤5,000,000 chars時，完整Save v3 API round-trip深等於原狀態；合法state超full-wire cap顯式拒絕，checkpoint retained entries則走compact replay authority。prepare/write先驗證與cold-own，decode/salvage先preflight累計work再重播。declared-origin trace + non-crypto stateHash只證明core-reachability/一致性，不把本地JSON宣稱為可信簽章。
 
 ## 3.2 測試與除錯骨幹
 
 - **property test**（fast-check 之類）：對各變換/掃動、多圖生成、物流推進、重排、定價、存讀檔，下隨機輸入驗證不變式恆成立。
 - **replay harness**：每個 bug = `seed + tick 區間 + input trace`，任何 agent 都能 headless 重現。
-- **debug build 每 tick assert 不變式**：違反就 pin 出壞掉的精確 tick。release build 關閉。
+- **debug build 每 tick assert 不變式**：違反就 pin 出壞掉的精確 tick；高頻 assert 在 release 關閉，但 init/restore/save 等不可信冷邊界在 production 仍強制驗證。
 
 ---
 
@@ -230,13 +250,13 @@
 方法論主軸：用一款確定性遊戲，當多 agent 平行協作的實驗場。核心觀念——**讓多 agent 能跑的關鍵不是某個編排框架，而是模組邊界本身**；模組邊界就是編排基質。
 
 - **原則**：所有衝突都來自共享可變面。sim 子系統純、介面隔離 → 天生低衝突；渲染層最高衝突面 → 碰它的工作要序列化。「做完」= **過閘**，不是「人看起來 OK」。
-- **worktree + 模組擁有權**：一個任務一個 git worktree。鐵律：同一時間只有一個 agent 能改某模組的 public interface，其他人對著凍結的介面寫。見 [module-ownership.md](module-ownership.md)。
+- **隔離 + 模組擁有權**：有 worktree 能力時一任務一 worktree；目前 shared-tree runner 沒有 WorktreeCreate hook，故只平行 disjoint files，重疊檔案/公共介面由 integrator 序列化。鐵律不變：同一時間只有一個 agent 改某模組 public interface。見 [module-ownership.md](module-ownership.md)。
 - **契約即 spec**：每個模組先定好 typed interface + 不變式；agent 的「規格」= 介面 + 不變式 + 測試指令。
-- **唯一閘 `npm run check`**：`tsc --noEmit && lint && vitest run && playwright test --headless`。宣告完成前唯一驗收標準是這條跑綠。
-- **Integrator pass**：一個 session（或本人）當 integrator，整合各 worktree、跑完整閘、解跨模組衝突。
+- **唯一閘 `npm run check`**：`tsc --noEmit && lint && vitest run && playwright test`。Playwright 預設即 headless；不要傳不存在的 headless CLI flag。其 Chromium project 在 `:53347` 跑完整 e2e，production-preview project 會先 build 並在 `:53348` 驗四 tab lazy load/零 runtime errors。宣告完成前唯一驗收標準是這條跑綠。
+- **Integrator pass**：一個 session（或本人）當 integrator，整合隔離交付（或 shared tree 的 disjoint edits）、跑完整閘、解跨模組衝突。
 - **AGENTS.md（精簡、手寫）**：只放 AI 推不出來的硬規則。切勿用 LLM 自動生成肥檔。
 - **bug 協定**：回報任何 bug 一律附 `seed + tick 區間 + input trace`（+ 違反的不變式/壞掉的 tick）。
-- **MCP 不上關鍵路徑**：平行主路徑 = worktree + check script + session，純檔案 + CLI。
+- **MCP 不上關鍵路徑**：平行主路徑 = 可用時 worktree、shared tree 時 disjoint files + check script + integrator session，純檔案 + CLI。
 
 **一條保命紀律**：別讓編排鷹架變成研究專案。編排設施極簡、純粹服務出貨。遊戲是交付物，編排是方法，不要倒過來。
 
@@ -249,9 +269,9 @@
 1. **typecheck（tsc）**：型別/簽名/null 類錯誤，編譯期攔掉。
 2. **單元 + property（vitest, fast-check）**：sim 子系統邏輯 + 不變式。headless、最快。
 3. **整合測試**：跨模組（模板 → 產線 → 結算）端到端在 sim 層跑通，無畫面。
-4. **Playwright headless smoke + 截圖 diff**：啟動、跑數 tick、開關 UI、切場景；截圖比對抓視覺迴歸。
+4. **Playwright smoke + 固定截圖 baseline**：Chromium對throwaway dev server啟動、跑數tick、開關UI、切場景；Lab fogged與Factory reset以`toHaveScreenshot`做pixel-diff，另驗Factory bounded-analysis alert。production-preview先build再於`:53348`切四tab驗dynamic chunks/零pageerror，並分別載入2-map最寬與4-map最大32×32 authority，驗Lab動態縮cell且canvas ≤980×980。checkpoint tests另驗normalized lineage、不同run存進同slot會replace而非mixed timeline。兩個Playwright projects預設headless。
 
-**自動可守**：邏輯正確、結構完整、確定性、多圖可解+難度達標+定價一致、質量/帳務守恆、吞吐一致、視覺迴歸。
+**自動可守**：邏輯正確、結構完整、確定性、多圖可解+難度達標+定價一致、質量/帳務守恆、吞吐一致、固定場景視覺回歸。
 **不可約的人工**：好不好玩、謎題/平衡有沒有意思、版面順不順、配平節奏。截圖 diff 抓得到「變了」，抓不到「變好沒」。
 
 策略：能進自動層的全部塞進去，讓人只審本質主觀/視覺的差異——**最小化**人工，而非歸零。
@@ -260,24 +280,25 @@
 
 # 6. 儲存庫結構
 
-詳見 [structure.md](structure.md)。目標骨架：
+詳見 [structure.md](structure.md)。目前實作骨架：
 
 ```
 hexapharma/
-  AGENTS.md  package.json  vite.config.ts  tsconfig.json  playwright.config.ts
+  AGENTS.md  package.json  vite.config.ts  vitest.config.ts  playwright.config.ts
   src/
+    main.tsx             # React 進入點
     sim/                 # ★ 純 TS、零渲染依賴、可 headless ★
-      drug-graph/ mapgen/ solver/ factory-sim/ recipe/ economy/ patent/ save/
-      rng/  state.ts     # seeded PRNG（唯一隨機源）；SimState/step/hash/replay
-    render/              # PixiJS，只讀 sim，顯式 loop（平面俯視，多圖並列）
-    ui/                  # React 疊 canvas（Lab/ Factory/ Shop/）
-    main.ts              # 組裝三層
+      phase0_interfaces.ts  factory-geom.ts  hash.ts  state.ts  game.ts
+      drug-graph/ rng/ mapgen/ solver/ factory-sim/ recipe/ economy/ patent/ save/
+    render/              # PixiJS Lab/Factory renderer；只讀 sim
+    ui/                  # React App/Factory/Shop/Patents/Game + checkpointStorage
   test/
-    integration/  e2e/(__screenshots__/)  fixtures/
+    integration/  tools/  e2e/（含 *.spec.ts-snapshots/ expected images）
   tools/
-    headless-sim.ts  check.sh
+    headless-sim.ts  balance.ts
   docs/
-    design.md  invariants.md  module-ownership.md  decisions.md
+    design.md invariants.md module-ownership.md decisions.md overview.md
+    structure.md notes.md plan.md roadmap.md
 ```
 
 ---
@@ -301,8 +322,8 @@ hexapharma/
 | 編排鷹架兔子洞 | 把時間全花在 agent infra，遊戲出不了貨。 | 編排設施極簡、純服務出貨；只用已驗證原語。沒在降低本遊戲 cycle 的工具就砍。 |
 | 多圖 + 一般變換使求解/生成變難 | 在 N 維圖空間用 translate/scale/swap 構造保證可解、又算難度分。 | 限小 N（先 2）、小地圖、有界搜尋深度；transform 用 discriminated union；建構式生成；求解器只 dev/test 跑。 |
 | novel 移動模型手感未知 | 「跨圖拉扯 + 三種變換 + 牆停 + 危險即死」沒人這樣組過。 | Phase 1 就做出來實際玩；不行則退回傳統 BP 模型（D7 留了退路）。 |
-| 隨機地圖難度/定價失衡 | 可能太簡單/太難，或難度分→藥價不合理。 | 難度分 gate + 定價曲線可調；列為 mapgen 硬不變式。 |
-| GC stutter | 熱迴圈頻繁 `new` → 週期性卡頓。 | object pool + TypedArray；AGENTS.md 硬性規定熱迴圈禁 `new`。 |
+| 隨機地圖難度/定價失衡 | 可能太簡單/太難，或難度分→藥價不合理。 | 難度分 gate + 可人工調整曲線參數；目前 17/10 曲線以 BigInt 精確 half-up 實作，該機械修正不冒充平衡完成。 |
+| GC stutter | 熱迴圈頻繁 `new` → 週期性卡頓。 | FactoryRuntime 固定容量 SoA TypedArray + 固定 event/scratch buffers；熱 call graph source/static guard 禁 allocating syntax，長跑驗 buffer identity/mass；AGENTS.md 硬性規定熱迴圈禁 `new`。 |
 | 確定性飄移 | `Math.random`/`Date.now`/浮點/迭代順序滲進 sim 或 mapgen。 | seeded PRNG 唯一來源；禁時間/隨機 API；離散量整數、scale 有理數；CI 跑 replay-hash / mapgen-hash 比對。 |
 | 經濟退化 | 「狂產單一藥物」變簡單最佳解。 | 反退化（多疾病並行 + 單品遞減）+ 隨機地圖；禁加過便宜機器；求解器不接進遊戲內自動解。 |
 | 範圍蔓延 | 往 Factorio 規模/經營深坑長。 | 規模硬約束；超出 Potion Craft 級的提案先回到摘要。 |
@@ -311,16 +332,14 @@ hexapharma/
 
 # 9. 技術決策紀錄
 
-詳見 [decisions.md](decisions.md)（D1–D15，含理由與推翻條件）。**可逆性備註**：D5 的 sim core 與 D2/D3/D4/D9 解耦、是純邏輯；換語言/換渲染只需重寫薄層，core 不動。
+詳見 [decisions.md](decisions.md)（D1–D17，含理由與推翻條件）。**可逆性備註**：D5 的 sim core 與 D2/D3/D4/D9 解耦、是純邏輯；換語言/換渲染只需重寫薄層，core 不動。
 
 ---
 
 # 10. 附錄：Phase 0 契約
 
-Phase 0 的具體 TypeScript 介面契約（型別、函式簽名、15 條不變式、測試清單）放在獨立檔案 **`phase0_interfaces.ts`**（尚未加入 repo——待補）。那份是「契約，不是實作」——agent 的任務就是實作滿足那些介面的純函式、並讓 15 條不變式對應的 property/unit test 全綠。建議先 review，再依第 6 節的目錄拆進 `src/sim/` 下對應資料夾。
-
-**建議的第一個 agent 任務**：`drug-graph` 的 `orient`（朝向/flip 變換）+ `applyStep` 的掃動解析（牆停、危險即死）。它最核心、最適合先用 property test 釘死，也是後面 mapgen/solver 的地基。
+Phase 0 的具體 TypeScript 介面契約已在 **`src/sim/phase0_interfaces.ts`**。它仍是跨模組型別與核心資料契約；實作分布於 `src/sim/` 各模組，後續整局狀態與實體產物欄位也已在同一契約中演進，並由 unit/property/integration/e2e 測試守住。
 
 ---
 
-*v1.0 — 設計已定案，可開工。*
+*活文件 — Phase 3 vertical slice 已實作；人工玩測、平衡與出貨打磨持續中。*
