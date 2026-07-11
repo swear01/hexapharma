@@ -5,6 +5,7 @@
 ## 1. 環境
 
 - Node.js 20 以上。
+- 目前不保證跨 build 存檔相容；切到新的 breaking build 後，先清除該站點的 localStorage／站點資料再開始本輪驗證。
 - 第一次執行或 `package-lock.json` 改變後，在專案根目錄安裝依賴：
 
 ```bash
@@ -86,6 +87,8 @@ npm run preview -- --host 0.0.0.0 --port 53346 --strictPort
 7. 解鎖並確認 `deep-map-4`，預期顯示 4 maps、seed 17、出現 D tab，尺寸仍為`63×63`。
 
 ## 5. Save / Load / Rewind
+
+本節只驗證目前 build 內的存檔，不測任何舊 build migration。
 
 1. 選擇一個 slot，按 `Save`，確認出現成功訊息。
 2. 再做一個有效動作後再次 `Save`，建立同一 run 的 history。

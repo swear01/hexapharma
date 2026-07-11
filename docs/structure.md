@@ -5,7 +5,7 @@
 | Path | 狀態 | Purpose |
 |------|------|---------|
 | `AGENTS.md` | ✅ | AI agent 硬規則 + docs 指標（薄，base block 由 agents_rule 管理） |
-| `docs/` | ✅ | 活文件：design / invariants / module-ownership / decisions + overview/structure/notes/playtest/plan/roadmap |
+| `docs/` | ✅ | 活文件：design / invariants / module-ownership / decisions / development-policy + overview/structure/notes/playtest/plan/roadmap |
 | `src/sim/phase0_interfaces.ts` | ✅ | 契約與共用常數：Game/analysis work各100,000,000，rewind aggregate 12,000 ticks/8,192 entries/100,000,000，base`9×6`；`sideEffectId` Int32；defaults frozen |
 | `src/sim/drug-graph/` | ✅ | 多圖效果引擎：四特徵 / transform union（translate 四關係 順逆垂直偏移 / scale / swap）/ supercover 掃動（牆停·危險即死）/ fog / 最終位置判定 |
 | `src/sim/mapgen/` | ✅ | 建構式多圖生成；完整 GenOptions 決定關卡。difficulty price 以 BigInt exact `10×(17/10)^d` rational half-up + `3×refCost`（d0–58 保持舊輸出、非平衡調整）；production 不 import solver |
@@ -20,7 +20,7 @@
 | `src/sim/recipe/` | ✅ Phase 2 | 模板 → 真實形狀（DEFAULT_SHAPES）+ belt 佈線產線：每步取型別 footprint、正規化 footRot（首個 input port 朝 W）、左→右擺放於 spine、以確定性 BFS（鄰序 E,S,W,N）佈 belt 連 source→m0→…→sink（相鄰口直接交接免 belt）+ 重排驗證（保持朝向+順序 → 效果不變，INV-7） |
 | `src/sim/economy/` | ✅ | 各疾病 sold counter 的單品售價遞減、實際成本/副作用結算、銷售取得 R&D、帳務守恆；目前沒有訂單系統 |
 | `src/sim/patent/` | ✅ | deep-frozen tree；cash+R&D天賦樹；public helpers拒絕invalid tree/effect/state/cash/research，`activeEffects` factory/reveal aggregates用checked safe-integer add並拒overflow |
-| `src/sim/save/` | ✅ | full/compact raw origin+trace preflight；single ≤100,000,000 work。`serializeSlots`/`deserializeSlots`共用12,000 ticks/8,192 entries/100,000,000 aggregate，deserialize在任何`parseGameState`前拒超界；full wire cap 5,000,000 chars |
+| `src/sim/save/` | ✅ | 同 content build 內的 full/compact raw origin+trace preflight；single ≤100,000,000 work。`serializeSlots`/`deserializeSlots`共用12,000 ticks/8,192 entries/100,000,000 aggregate，deserialize在任何`parseGameState`前拒超界；full wire cap 5,000,000 chars；不承諾跨 build migration |
 | `src/render/labCamera.ts` | ✅ | Lab 純 camera math：固定 `704×512` viewport、pan、75–225% anchor zoom、focus/clamp、visible-cell bounds；單元測試不依賴 Pixi/DOM |
 | `src/render/labRenderer.ts` | ✅ | PixiJS v8 Lab渲染器（只讀sim；一次只畫 A–D active layer，約`11×8`局部視野並cull viewport外 cells；原創 substrate/fog/feature sprites；unknown由opaque fog遮蔽，不畫「?」；同map identity重用static layers） |
 | `public/assets/lab/` | ✅ | 原創 microscopic biochemical atlas：`manifest.json` 是 runtime asset contract，`README.md` 記錄生成來源／權利／遮霧規則；含 substrate、fog、wall、hazard、side-effect、cure、drug、token halo |
@@ -28,7 +28,7 @@
 | `src/ui/` | ✅ | viewport game shell、HUD/nav rail/hotbar/inspector/card lattice；Lab drag pan／wheel zoom／`F` follow／A–D layer tabs與單層Phase Exchange lock；Factory direct editor（drag build/erase、touch pan/tap、wheel zoom、pipette、clipboard、50-step history）與純 camera/grid/gesture/history helpers。visited views保留mount，但active guard隔離hotkeys。另含checkpoint同-origin lineage/cross-run replace、compact budgets、legacy recovery與可見錯誤 |
 | `src/main.tsx` | ✅ | React 進入點（掛載 `Root` → `Game`） |
 | `test/e2e/` | ✅ | Playwright Chromium對dev`:53347`跑完整smoke/regression、game shell／Lab局部camera+layer切換／active-key isolation／Factory drag build+erase／clipboard+history／compact responsive reachability、bounded-analysis alert與固定screenshot baseline；production-preview先build、對`:53348`切四view驗dynamic chunks/零runtime errors並載入最大`64×64` Game authority驗固定viewport/culling。Playwright預設headless；`*.spec.ts-snapshots/`是expected images，`__screenshots__/`只是artifact |
-| `test/integration/` | ✅ | 跨模組、無畫面（map→recipe→factory，加上economy/patent/save契約）；整局reducer vertical trace在`src/sim/game.test.ts`；checkpointStorage unit tests另守normalized lineage、different-run canonical replacement與mixed-legacy clean recovery |
+| `test/integration/` | ✅ | 跨模組、無畫面（map→recipe→factory，加上economy/patent/save契約）；整局reducer vertical trace在`src/sim/game.test.ts`；checkpointStorage unit tests另守目前 build 的normalized lineage、different-run canonical replacement與同 wire storage legacy clean recovery |
 | `test/tools/` | ✅ | CLI 邊界測試：headless seed 拒 partial/fractional/blank/out-of-uint32 並 canonicalize `-0`；balance count 1..100,000、超限在 loop 前 fail-fast；任一 seed/unknown machine 分析失敗必須 nonzero |
 | `tools/headless-sim.ts` | ✅ | CLI 僅有 `gen` / `run`；seed argument 必須完整轉為 uint32 safe integer（`-0`→`0`），不使用會接受 `14junk` 的 partial parser；其他 replay/loop 驗證由 Vitest harness 提供 |
 | `tools/balance.ts` | ✅ | 離線難度/價格/吞吐 sweep；count practical cap = 100,000 seeds，invalid/超限在配置 seed loop 前 fail-fast，任何 seed 分析失敗使報告 nonzero |

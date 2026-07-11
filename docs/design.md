@@ -135,7 +135,9 @@
 
 ## 1.9 存檔
 
-Save v3 有兩個刻意分開的 wire 用途。完整 `serializeGame`/`deserializeGame` API 在 materialized wire ≤5,000,000 characters 時 round-trip 全 `GameState`（live runtime 轉 cold snapshot）；超限顯式拒絕，即使該 state 在 Game authority 下合法。24,500-item inventory 可讓 full wire 超過5,000,000 characters，所以**localStorage checkpoint v2 不為每個 retained entry 重複 materialized state fields**。checkpoint 的每個 head/history entry 都是 compact replay authority，只含 self-declared `origin`（初始 `GenOptions`/cash/research）、canonical normalized `intentTrace`、其 `replayTicks`，以及由完整 canonical state 算出的 non-cryptographic `stateHash`。decode 由 origin 重播 trace、驗 canonical tick total與 hash後才重建完整狀態；地圖仍由 seed-pure mapgen 重建。這是同 content build 契約：2026-07 的中心地圖／phase-offset atlas 會讓舊 build hash 不同，舊 save 因此以可見 saved-build mismatch 拒絕且不覆寫，沒有把舊 seed geometry 靜默轉成新 geometry 的 migration。
+Save v3 有兩個刻意分開的 wire 用途。完整 `serializeGame`/`deserializeGame` API 在 materialized wire ≤5,000,000 characters 時 round-trip 全 `GameState`（live runtime 轉 cold snapshot）；超限顯式拒絕，即使該 state 在 Game authority 下合法。24,500-item inventory 可讓 full wire 超過5,000,000 characters，所以**localStorage checkpoint v2 不為每個 retained entry 重複 materialized state fields**。checkpoint 的每個 head/history entry 都是 compact replay authority，只含 self-declared `origin`（初始 `GenOptions`/cash/research）、canonical normalized `intentTrace`、其 `replayTicks`，以及由完整 canonical state 算出的 non-cryptographic `stateHash`。decode 由 origin 重播 trace、驗 canonical tick total與 hash後才重建完整狀態；地圖仍由 seed-pure mapgen 重建。
+
+目前是 pre-release 早期開發：以上正確性只保證同一 content build，不承諾跨 build 存檔相容。地圖、schema、經濟或 sim 語意調整時可直接使舊 checkpoint 失效或要求清除站點資料；不為開發中版本維護 legacy generator／migration chain。完整政策見 [development-policy.md](development-policy.md)。
 
 這個`stateHash`是一致性checksum，不是簽章。單一authority/head最多4,096 entries、100,000 ticks、100,000,000 weighted work；正常100,000-tick reference約31,000,000、24,500-inventory流程更低。work估算含map traversal、factory cold/layout/ticks、sale與patent reset。compact與materialized full readers都解析raw origin+intentTrace、重算tick/work後才semantic replay，不能信自報metadata。語意no-op不記錄，連續ticks/layout/same-disease sales正規化；full/compact wire另有5,000,000-character cap。
 
@@ -334,7 +336,7 @@ hexapharma/
 
 # 9. 技術決策紀錄
 
-詳見 [decisions.md](decisions.md)（D1–D17，含理由與推翻條件）。**可逆性備註**：D5 的 sim core 與 D2/D3/D4/D9 解耦、是純邏輯；換語言/換渲染只需重寫薄層，core 不動。
+詳見 [decisions.md](decisions.md)（D1–D18，含理由與推翻條件）。**可逆性備註**：D5 的 sim core 與 D2/D3/D4/D9 解耦、是純邏輯；換語言/換渲染只需重寫薄層，core 不動。
 
 ---
 

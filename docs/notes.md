@@ -32,7 +32,7 @@
 - **Layer start 與 Phase Exchange**：A 的 start/origin 位於正中央；B/C/D 共用中心 origin，但使用 deterministic near-center phase offsets。單層時 A↔B Phase Exchange 鎖定；B 解鎖後交換 A/B 的實際座標，因此不是沒有作用的0/1圖切換按鈕。internal type id `swap01` 只為資料/存檔身份，玩家文案用 Phase Exchange A↔B。
 - **map patent 是 deeper-level reset，不是 append**：`new-map` / `new-map-4` / `deep-map-4` 會把 nMaps 1→2→3→4、seed +1、維持`63×63`並重生整個目前 level；清 recipe/factory/runtime/waste/inventory/fog **與 `economy.sold`**（reveal-aid 會套到新 fog），保留扣款後 cash/R&D、patents 與全域 inventory ID 序列。Patents UI 必須完整列出破壞範圍並要求 confirmation，不能單擊即清。
 - **Lab atlas 不得洩霧或偷用競品素材**：`public/assets/lab/manifest.json` 是 substrate/fog/六種world sprites 的 runtime contract，旁邊 `README.md` 記錄原創生成來源與權利。先以opaque fog遮住unknown，只有revealed terrain才畫substrate/features；資產載入失敗須顯示renderer error，不能靜默退回debug格或「?」。
-- **2026-07 atlas 重做是明示的 content break**：center start、phase offsets、scatter 與初始 fog 都改變既有 seed 的逐欄位 state/hash；Save v3/checkpoint 的「同 build」承諾不等於跨 content build migration。舊 build 的 compact/full save 會以可見的 saved-build hash mismatch 拒絕，不得假裝成功載入或改寫原 blob；本輪沒有 legacy generator，玩家需在新 build 開新 slot。
+- **早期開發不維護跨 build 存檔**：Save／Load／Rewind 的 correctness 是同 content build 契約。地圖、schema、經濟或 sim 語意改動可直接使舊 localStorage 失效或要求清除，不建立 legacy generator／migration chain。測試中的 `legacy` 指目前 storage layout reader，不是歷史 build 支援承諾；詳見 [development-policy.md](development-policy.md)。
 - **map scatter 比例也是整數規則**：wall/hazard/side-effect counts分別用 `floor(len×4/100)`、`floor(len×3/100)`、`floor(len×5/100)`；不要改回 `0.04/0.03/0.05` float，即使目前輸出看似相同。
 - **authority inputs 要 owned + frozen，public/Game bounds 不可混寫**：whole-game reducer 會 canonical clone/deep-freeze `GenOptions`/catalog、Template、FactoryLayout 與 nested transform/shape/ports，再依 owned options identity 快取 seed-pure `GeneratedLevel`；caller 後續 mutation不得改 state/trace/cache。共享 `DEFAULT_CATALOG`、`DEFAULT_SHAPES`、`DEFAULT_PATENTS`也 deep-freeze。seed只收uint32，`-0` canonicalize為`0`，map patent `+1`明確uint32 wrap。public mapgen area ≤65,536，但 Game map ≤64/side、≤4,096 cells（renderer-safe，production max-map preview守住）；public factory area ≤65,536，但 Game factory ≤256/side、≤4,096 cells。template ≤256 steps、inventory ≤24,500、bulk sale ≤100,000、cumulative factory ticks ≤100,000、Game weighted replay ≤100,000,000；每 shape cells/inputs/outputs ≤256、aggregate shape cells ≤area、aggregate input/output ports各 ≤262,144。`sideEffectId` 是 `Int32Array`，不能降回Int16。
 - **工廠尺寸由 Game/patent 授權**：沒有 saved recipe/既存 factory 時，手建 `setFactory` 必須恰為 base `9×6` 加目前 expand-patent delta；有既存 layout 後只能同尺寸編輯，只有解鎖 expansion patent 能改尺寸。不要讓 UI 自己改 entitlement，也不要保留舊尺寸作 bypass 選項。
@@ -40,7 +40,7 @@
 
 ## Decisions
 
-完整決策表（D1–D17，含推翻條件）見 [decisions.md](decisions.md)。幾條最容易被「好心改掉」的：
+完整決策表（D1–D18，含推翻條件）見 [decisions.md](decisions.md)。幾條最容易被「好心改掉」的：
 
 - **為什麼是 TypeScript 而非 C#/Unity**（D2）：此規模效能非瓶頸；TS 對 AI agent 友善、純 CLI/headless 工具強；有 hook 時 worktree 隔離，shared-tree runner 則只平行 disjoint files。sim core 是純邏輯，日後要換語言/渲染只重寫薄層。
 - **為什麼正方格**（D8）：效果圖方向需與工廠物理方向對齊 → 同一種格子；工廠主導 → 正方形；旋轉/flip 四態最好預測、AI 最不易錯。

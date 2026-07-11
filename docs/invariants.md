@@ -63,6 +63,8 @@
 
 ## save
 
+本節只約束**目前 content build 內**的 save correctness，不構成跨 build 相容承諾。早期開發可直接淘汰舊 checkpoint；見 [development-policy.md](development-policy.md)。
+
 - **兩種 wire 邊界不可混稱**：只有當 materialized full wire ≤5,000,000 characters 時，完整 Save v3 API 才保證 `deserializeGame(serializeGame(state))` 深等於全 `GameState`（live runtime以cold `FactoryState` snapshot round-trip）；超限必須顯式拒絕。合法Game authority（例如24,500-item inventory）可能full wire超過5,000,000 characters，不得因此稱state非法。localStorage checkpoint v2 retained entries使用compact replay authority，只存self-declared `origin`、canonical normalized `intentTrace`、`replayTicks`與non-cryptographic `stateHash`；authority replay後仍須重建逐欄位等值的recipe、runtime/cursors、inventory/outcome/cost、fog、economy/R&D、patents、IDs與RNG。
 - **語意 authority / provenance 邊界**：compact與full `deserializeGame`皆須從materialized raw的origin+intentTrace重算ticks/work，通過才semantic replay；不得信declared metadata。full load仍拒絕非canonical/偽造/runtime不相容state；hash只證declared-origin reachability。
 - **rewind aggregate不可繞過**：phase共用≤12,000 ticks/≤8,192 entries/≤100,000,000 work。compact checkpoint、`serializeSlots`、`deserializeSlots`皆同界；`deserializeSlots`在任何`parseGameState`前inspect整段raw，serialize也先驗aggregate。legacy read先history preflight，必要時才head-alone。single head仍受100,000/4,096/100,000,000，compact另受20/1,250,000 chars；head不因history pruning移除。

@@ -25,6 +25,7 @@
 
 ### Phase 3 之後（進行中 / Next）
 - **In Progress**：真人完整循環玩測、實際淨利/吞吐/難度平衡與正式內容量。strict mutable factory runtime、存檔 authority、bundle split、工廠遊戲式 interaction redesign，以及Lab第一套原創production atlas已完成，不再列為技術債。
+- **Pre-release policy**：正式 save format freeze 前不做跨 build migration；breaking update 可淘汰舊開發存檔。進入 release candidate 時才規劃 migration matrix 與相容期。
 - **Post-MVP / Next**：內容量產（更多疾病/原料/機器變換/footprint = 純資料工作）、更多正式美術與上架打磨。這些是未來內容 roadmap，不是目前 vertical-slice correctness gap。1–4 圖功能已完成，當前仍需的是人工可玩性、平衡與出貨 UX 判斷。
 
 ## Recently Done
