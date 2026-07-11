@@ -143,11 +143,16 @@ test("Lab, Market, and Patents use game toolbelts and card/tree panels", async (
   await expect(page.getByTestId("game-shell")).toBeVisible();
 
   await page.keyboard.press("1");
-  await expect(page.getByTestId("template-list")).toContainText("push");
+  await expect(page.getByTestId("template-count")).toHaveText("0");
+  await expect(page.getByTestId("recipe-held")).toContainText(/push/i);
+  await page.getByTestId("recipe-insert-0").click();
+  await expect(page.getByTestId("template-list")).toContainText(/push/i);
   await page.keyboard.press("r");
-  await page.keyboard.press("1");
-  await expect(page.getByTestId("template-list")).toContainText("rot 90°");
-  await page.keyboard.press("Backspace");
+  await page.getByTestId("recipe-insert-1").click();
+  await expect(page.getByTestId("recipe-step-1")).toHaveAttribute("data-rotation", "1");
+  await page.keyboard.press("Escape");
+  await page.getByTestId("recipe-step-1").click();
+  await page.keyboard.press("Delete");
   await expect(page.getByTestId("template-count")).toHaveText("1");
 
   await page.keyboard.press("F3");
@@ -170,6 +175,7 @@ test("only the active world handles gameplay keys and focused tool buttons keep 
   await expect(page.getByTestId("brush-direction")).toContainText("S");
 
   await page.keyboard.press("F1");
+  await page.keyboard.press("1");
   await expect(page.getByTestId("rotate")).toContainText("0°");
   await page.keyboard.press("r");
   await expect(page.getByTestId("rotate")).toContainText("90°");

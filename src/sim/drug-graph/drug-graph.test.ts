@@ -16,6 +16,7 @@ import {
   effectiveDelta,
   initialState,
   applyStep,
+  previewStep,
   applyTemplate,
   evaluate,
   revealAlong,
@@ -575,6 +576,31 @@ describe("swap (INV-3)", () => {
     expect(s.failed).toBe(false);
     expect(s.pos[0]).toEqual({ x: 4, y: 3 });
     expect(s.pos[1]).toEqual({ x: 1, y: 1 });
+  });
+});
+
+describe("previewStep", () => {
+  it("returns the authoritative entered cells when a wall stops the sweep", () => {
+    const map = wall(emptyMap(7, { x: 1, y: 1 }), 4, 1);
+    const M = mm(map);
+    const start = initialState(M);
+    const machine = translate({ x: 5, y: 0 });
+
+    const preview = previewStep(M, start, machine);
+
+    expect(preview.trails).toEqual([[{ x: 2, y: 1 }, { x: 3, y: 1 }]]);
+    expect(preview.next).toEqual({ pos: [{ x: 3, y: 1 }], failed: false });
+    expect(preview.next).toEqual(applyStep(M, start, machine));
+  });
+
+  it("reports no swept cells for a phase exchange", () => {
+    const M = mm(emptyMap(7, { x: 1, y: 1 }), emptyMap(7, { x: 5, y: 5 }));
+    const start = initialState(M);
+
+    const preview = previewStep(M, start, swap(0, 1));
+
+    expect(preview.trails).toEqual([[], []]);
+    expect(preview.next.pos).toEqual([start.pos[1], start.pos[0]]);
   });
 });
 

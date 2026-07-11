@@ -37,11 +37,16 @@ function scaleTarget(pos: Vec2, origin: Vec2, num: number, den: number): Vec2 {
  * an already-failed/short-circuited step). Shared by applyStep + revealAlong so
  * they never diverge.
  */
-function stepWithTrails(
+export interface PreviewStepResult {
+  readonly next: DrugState;
+  readonly trails: readonly (readonly Vec2[])[];
+}
+
+export function previewStep(
   mm: MultiMap,
   s: DrugState,
   m: Machine,
-): { next: DrugState; trails: readonly (readonly Vec2[])[] } {
+): PreviewStepResult {
   const n = mm.maps.length;
   const empties: readonly Vec2[][] = mm.maps.map(() => []);
 
@@ -102,7 +107,7 @@ export const initialState: InitialStateFn = (mm) => ({
   failed: false,
 });
 
-export const applyStep: ApplyStepFn = (mm, s, m) => stepWithTrails(mm, s, m).next;
+export const applyStep: ApplyStepFn = (mm, s, m) => previewStep(mm, s, m).next;
 
 export const applyTemplate: ApplyTemplateFn = (mm, start, t) =>
   t.steps.reduce((s, m) => applyStep(mm, s, m), start);
@@ -143,7 +148,7 @@ export const revealAlong: RevealAlongFn = (mm, start, t) => {
 
   let s: DrugState = start;
   for (const m of t.steps) {
-    const { next, trails } = stepWithTrails(mm, s, m);
+    const { next, trails } = previewStep(mm, s, m);
     for (let i = 0; i < n; i++) {
       const map = mm.maps[i];
       const fog = fogs[i];

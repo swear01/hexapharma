@@ -62,6 +62,8 @@ export interface LabRenderView {
   readonly activeMap: number;
   readonly camera: LabCamera;
   readonly trail: readonly (Vec2 | null)[];
+  readonly previewTrail?: readonly (Vec2 | null)[];
+  readonly previewDrug?: DrugState;
 }
 
 export interface LabRenderer {
@@ -169,21 +171,76 @@ function drawToken(
   haloArt.alpha = 0.52;
 }
 
-function drawTrail(points: readonly (Vec2 | null)[], camera: LabCamera, route: Graphics): void {
+function drawTrail(
+  points: readonly (Vec2 | null)[],
+  camera: LabCamera,
+  route: Graphics,
+  preview = false,
+): void {
   if (points.length < 2) return;
   const cell = LAB_CELL_PIXELS * camera.zoom;
   let drawing = false;
+  let previous: Vec2 | null = null;
   for (const world of points) {
     if (world === null) {
       drawing = false;
+      previous = null;
       continue;
     }
     const point = cellScreen(camera, world.x, world.y);
-    if (drawing) route.lineTo(point.x + cell / 2, point.y + cell / 2);
-    else route.moveTo(point.x + cell / 2, point.y + cell / 2);
+    const x = point.x + cell / 2;
+    const y = point.y + cell / 2;
+    if (drawing && previous !== null && preview) {
+      const from = cellScreen(camera, previous.x, previous.y);
+      const x0 = from.x + cell / 2;
+      const y0 = from.y + cell / 2;
+      const dx = x - x0;
+      const dy = y - y0;
+      const length = Math.hypot(dx, dy);
+      const dash = Math.max(5, cell * 0.16);
+      const stride = dash * 1.75;
+      for (let offset = 0; offset < length; offset += stride) {
+        const a = offset / length;
+        const b = Math.min(length, offset + dash) / length;
+        route.moveTo(x0 + dx * a, y0 + dy * a);
+        route.lineTo(x0 + dx * b, y0 + dy * b);
+      }
+    } else if (drawing) {
+      route.lineTo(x, y);
+    } else {
+      route.moveTo(x, y);
+    }
     drawing = true;
+    previous = world;
   }
-  route.stroke({ color: TOKEN_COLOR, width: Math.max(3, cell * 0.09), alpha: 0.72 });
+  route.stroke({
+    color: preview ? 0xffb968 : TOKEN_COLOR,
+    width: Math.max(3, cell * (preview ? 0.075 : 0.09)),
+    alpha: preview ? 0.94 : 0.62,
+  });
+}
+
+function drawPreviewToken(
+  pos: Vec2,
+  camera: LabCamera,
+  token: Graphics,
+  art: Sprite,
+  failed: boolean,
+): void {
+  const cell = LAB_CELL_PIXELS * camera.zoom;
+  const screen = cellScreen(camera, pos.x, pos.y);
+  const cx = screen.x + cell / 2;
+  const cy = screen.y + cell / 2;
+  token.circle(cx, cy, cell * 0.38).fill({ color: failed ? 0xee6b6b : 0xffb968, alpha: 0.18 });
+  token.circle(cx, cy, cell * 0.34).stroke({ color: failed ? 0xee6b6b : 0xffb968, width: 3, alpha: 0.96 });
+  art.visible = true;
+  art.anchor.set(0.5);
+  art.x = cx;
+  art.y = cy;
+  art.width = cell * 0.66;
+  art.height = cell * 0.66;
+  art.tint = failed ? 0xee6b6b : 0xffd7a4;
+  art.alpha = 0.62;
 }
 
 export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
@@ -211,6 +268,7 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
   substrate.alpha = 0.82;
   const terrain = new Graphics();
   const route = new Graphics();
+  const previewRoute = new Graphics();
   const featureLayer = new Container();
   const featureSprites: Sprite[] = [];
   for (let i = 0; i < MAX_VISIBLE_CELLS; i++) {
@@ -228,7 +286,23 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
   haloArt.visible = false;
   const tokenArt = new Sprite(textures.drug);
   tokenArt.visible = false;
-  app.stage.addChild(fogBackdrop, substrate, revealMask, terrain, route, featureLayer, haloArt, token, tokenArt);
+  const previewToken = new Graphics();
+  const previewTokenArt = new Sprite(textures.drug);
+  previewTokenArt.visible = false;
+  app.stage.addChild(
+    fogBackdrop,
+    substrate,
+    revealMask,
+    terrain,
+    route,
+    previewRoute,
+    featureLayer,
+    haloArt,
+    token,
+    tokenArt,
+    previewToken,
+    previewTokenArt,
+  );
   let destroyed = false;
 
   return {
@@ -236,9 +310,12 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
     render: (mm, drug, view) => {
       terrain.clear();
       route.clear();
+      previewRoute.clear();
       token.clear();
+      previewToken.clear();
       haloArt.visible = false;
       tokenArt.visible = false;
+      previewTokenArt.visible = false;
       for (const sprite of featureSprites) sprite.visible = false;
       revealMask.clear();
       const map = mm.maps[view.activeMap];
@@ -253,8 +330,13 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
       fogBackdrop.tileScale.copyFrom(substrate.tileScale);
       drawVisibleMap(map, view.camera, textures, terrain, featureSprites, revealMask);
       drawTrail(view.trail, view.camera, route);
+      if (view.previewTrail !== undefined) drawTrail(view.previewTrail, view.camera, previewRoute, true);
       const pos = drug.pos[view.activeMap];
       if (pos !== undefined) drawToken(pos, view.camera, token, tokenArt, haloArt, drug.failed);
+      const previewPos = view.previewDrug?.pos[view.activeMap];
+      if (previewPos !== undefined) {
+        drawPreviewToken(previewPos, view.camera, previewToken, previewTokenArt, view.previewDrug?.failed ?? false);
+      }
     },
     destroy: () => {
       if (destroyed) return;
@@ -265,6 +347,7 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
       substrate.destroy();
       terrain.destroy();
       route.destroy();
+      previewRoute.destroy();
       featureLayer.destroy({ children: true });
       revealMask.filters = null;
       revealBlur.destroy();
@@ -272,6 +355,8 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
       token.destroy();
       haloArt.destroy();
       tokenArt.destroy();
+      previewToken.destroy();
+      previewTokenArt.destroy();
       app.destroy({ removeView: true });
     },
   };

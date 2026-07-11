@@ -36,6 +36,7 @@
 - **持久化/analysis regression coverage** ✅：checkpoint tests守raw-work preflight、normalization-aware same-origin lineage、different-run canonical replacement、mixed-legacy invalid/head-only recovery與24,500-item compact/full-wire-cap分離；Playwright守Factory analysis alert；production-preview實際載入最大Game-authorized `64×64` map。
 - **固定視覺回歸** ✅：Lab fogged + Factory reset 的 Playwright `toHaveScreenshot` expected baselines 已納入本輪工作成果與 e2e pixel diff；在目前未 commit 工作樹不宣稱已提交。
 - **直接操作 UI** ✅：全螢幕 shell、HUD、F1–F4 rail、hotbars、inspectors、Market cards、Patent lattice；Factory 支援 drag build/erase、touch tap/pan、wheel zoom、Q/R/H/V、clipboard 與 50-step history。active-view key isolation、modal focus、compact HUD／world reachability與 chrome click-through 由 Playwright 守住；Before／After 與競品差異見 `ui-interaction.md`。
+- **Recipe 指令軌／預覽** ✅：Lab hotbar 改為 cursor-held machine，底部 pictogram cards／插入槽在 commit 前顯示完整逐格 candidate route；牆停、hazard、Phase Exchange break 與 apply/reveal 共用 sim preview authority，fog mask 不洩漏 unknown。支援 select/scrub、R/H/Q/Delete/Escape、drag reorder、50-step undo/redo與Run playhead，desktop/compact皆保留高頻操作。
 - **設計對齊大改** ✅：把工廠那半做真——機器多格形狀 + 多 port + footRot 空間打包、傳送帶 splitter/merger 真分流匯流、真並聯吞吐（measured，非 heuristic）；Lab改為預設1張`63×63`中心開場、局部viewport與原創生化fog/貼圖；map patents 依序1→2→3→4且尺寸固定，後續layer phase offsets讓A↔B交換有實際意義。
 
 - **Phase 3 — 經濟/存讀檔/專利 + 完整循環** ✅：economy（遞減定價+反退化+帳務守恆）、save（round-trip+多存檔/回溯）、patent（天賦樹+解鎖新地圖）、循環 UI（Lab→Factory→Shop→Patents）。headless 整合測試跑通整條循環。

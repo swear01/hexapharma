@@ -46,10 +46,11 @@ npm run preview -- --host 0.0.0.0 --port 53346 --strictPort
 
 1. 確認畫面只是一張大地圖的局部，不是全 `63×63` 或多圖並排；未知區應是原創 defocused biochemical fog，不應看到「?」debug 格。
 2. 在圖上 drag 平移、wheel 以游標錨定縮放；按 `F` 或 `Focus` 回到藥物並進入 follow。100% 約可見 `11×8` 格，canvas intrinsic size 應為 `704×512`。
-3. 用底部 hotbar 或數字鍵加入 `push2` 四次（`push2 × 4`，預設朝東）；`R` 旋轉下一台機器、`H` flip、Backspace 移除最後一步。Phase Exchange A↔B 在目前單層必須顯示 locked／不可選。
-4. 按 `Run` 或 Space；動畫中再次按 Space／`Stop` 應可取消。
-5. 預期結果治療 disease 0，且右側 `Run a valid recipe to ship` 變為可按的送廠動作。
-6. 送往 Factory 後，F2 Factory rail 應 active，右側顯示 saved recipe。
+3. 點 `Long Push` pictogram 或按 `2`；確認它先進入 held 狀態，Recipe step 數仍為 0，尾端插入槽與地圖橙色虛線／capsule 先顯示結果。點插入槽 commit，重複到 `push2 × 4`。預設朝東；held 或選取卡片後以 `R/H` 旋轉／鏡射，Escape 取消 held。
+4. 把任一卡拖到另一插入位置，放下前應先看到完整重排 route；放下後用 `Ctrl+Z/Y` 復原／重做。點卡片後 Delete 只刪所選步，`Q` 可 pipette。Phase Exchange A↔B 在目前單層必須顯示 locked／不可選，未知 fog 內不能顯示精確 route 或 endpoint。
+5. 按 `Run` 或 Space；指令軌 playhead 應逐步前進，動畫中再次按 Space／`Stop` 應可取消。
+6. 預期結果治療 disease 0，且右側 `Run a valid recipe to ship` 變為可按的送廠動作。
+7. 送往 Factory 後，F2 Factory rail 應 active，右側顯示 saved recipe。
 
 ### Factory
 

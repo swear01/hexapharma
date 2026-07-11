@@ -19,8 +19,8 @@
 | economy | `src/sim/economy/` | integrator（agent 交付） | ✅ 完成（遞減定價 + 實際成本/副作用 + R&D + 帳務守恆） |
 | save | `src/sim/save/` | integrator（agent 交付） | ✅ 完成（同 build full/compact raw-work preflight；single 100,000,000；serialize/deserializeSlots共用12,000/8,192/100,000,000 aggregate；storage-layout legacy replay-before-work封堵；不負責跨 build migration） |
 | patent | `src/sim/patent/` | integrator（agent 交付） | ✅ 完成（frozen tree；invalid authority rejection；activeEffects checked aggregate overflow；cash+R&D、鎖機/擴廠/揭霧、1→2→3→4 reset含`deep-map-4`） |
-| render | `src/render/`、`public/assets/lab/` | integrator（agent 交付） | ✅ 完成（Lab固定704×512 active-layer viewport/culling、camera pure helpers、原創biochemical atlas + SoA Factory renderer、static layer cache、multi-Application-safe teardown） |
-| ui | `src/ui/` | integrator（agent 交付） | ✅ 完成（Lab pan/zoom/F follow/A–D tabs/Phase Exchange lock、stale guards/authority labels/confirmations、intent+save+analysis error alerts、renderer split、目前 build 的compact checkpoint lineage/cross-run replace/storage-layout migration/recovery；真人 :53346） |
+| render | `src/render/`、`public/assets/lab/` | integrator（agent 交付） | ✅ 完成（Lab固定704×512 active-layer viewport/culling、cyan route + orange dashed candidate/ghost、camera helpers、原創biochemical atlas + SoA Factory renderer、safe teardown） |
+| ui | `src/ui/` | integrator（agent 交付） | ✅ 完成（Lab camera/layers + pure Recipe editor/preview/fog mask/SVG icons + held insertion/drag/history/playhead；stale guards/errors；Factory direct editor；checkpoint lineage/recovery；真人 :53346） |
 
 ## 規則
 

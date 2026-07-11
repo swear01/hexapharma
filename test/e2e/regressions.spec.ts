@@ -155,18 +155,21 @@ async function unlockRecipeMachines(page: Page, includeSkew = false): Promise<vo
 }
 
 async function buildTemplate(page: Page, template: Template): Promise<void> {
-  let rot: Rotation = 0;
-  let flip = false;
-  for (const machine of template.steps) {
+  for (let index = 0; index < template.steps.length; index++) {
+    const machine = template.steps[index]!;
+    const palette = page.getByTestId(`palette-${machine.typeId}`);
+    await palette.click();
+    await expect(palette).toHaveClass(/is-selected/);
+    let rot: Rotation = 0;
     while (rot !== machine.orientation.rot) {
+      await expect(page.getByTestId("rotate")).toBeEnabled();
       await page.getByTestId("rotate").click();
       rot = ((rot + 1) % 4) as Rotation;
     }
-    if (flip !== machine.orientation.flip) {
+    if (machine.orientation.flip) {
       await page.getByTestId("flip").click();
-      flip = !flip;
     }
-    await page.getByTestId(`palette-${machine.typeId}`).click();
+    await page.getByTestId(`recipe-insert-${index}`).click();
   }
 }
 

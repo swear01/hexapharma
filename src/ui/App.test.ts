@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { EffectMap, MultiMap } from "../sim/phase0_interfaces";
-import { validateLabFogAuthority } from "./App";
+import { recipeCandidateFailedAtInsertion, validateLabFogAuthority } from "./App";
 
 function map(size: number): EffectMap {
   return {
@@ -25,5 +25,14 @@ describe("Lab fog authority", () => {
   it("reports layer count and cell-count mismatches instead of falling back", () => {
     expect(validateLabFogAuthority(mm, [])).toMatch(/layer count/i);
     expect(validateLabFogAuthority(mm, [new Uint8Array(8)])).toMatch(/layer A/i);
+  });
+});
+
+describe("Recipe candidate failure marker", () => {
+  it("marks only a held machine that itself fails at its active insertion slot", () => {
+    expect(recipeCandidateFailedAtInsertion(1, 1, 1)).toBe(true);
+    expect(recipeCandidateFailedAtInsertion(0, 1, 0)).toBe(false);
+    expect(recipeCandidateFailedAtInsertion(2, 1, 2)).toBe(false);
+    expect(recipeCandidateFailedAtInsertion(1, 1, null)).toBe(false);
   });
 });

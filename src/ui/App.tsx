@@ -16,7 +16,7 @@
  * persistent fog — Reset keeps what's explored. A debug "Reveal all" toggle paints
  * a fully-revealed COPY for convenience (sim + persistent fog untouched).
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from "react";
 import type {
   MultiMap,
@@ -26,14 +26,12 @@ import type {
   Template,
   Outcome,
   Rotation,
-  Orientation,
   MachineCatalogEntry,
-  Transform,
   DiseaseId,
   GeneratedLevel,
 } from "../sim/phase0_interfaces";
 import { DEFAULT_CATALOG } from "../sim/phase0_interfaces";
-import { applyStep, evaluate } from "../sim/drug-graph";
+import { evaluate } from "../sim/drug-graph";
 import type { LabRenderer } from "../render/labRenderer";
 import {
   LAB_VIEWPORT,
@@ -44,6 +42,9 @@ import {
   zoomLabCameraAt,
   type LabCamera,
 } from "../render/labCamera";
+import { MachineIcon } from "./MachineIcon";
+import { createRecipeEditor, recipeEditorReducer } from "./recipeEditor";
+import { buildFogSafeRecipePreview, buildRecipePreview, maskRecipeTrailForFog } from "./recipePreview";
 
 // ───────────────────────────── level generation ─────────────────────────────
 
@@ -76,24 +77,68 @@ export function validateLabFogAuthority(mm: MultiMap, fog: readonly Uint8Array[]
 
 const ROT_LABEL: Record<Rotation, string> = { 0: "0°", 1: "90°", 2: "180°", 3: "270°" };
 
-function isOrientableTranslate(entry: MachineCatalogEntry): boolean {
-  return entry.transform.kind === "translate" && entry.orientable;
+const MACHINE_NAMES: Readonly<Record<string, string>> = {
+  push: "Push",
+  push2: "Long Push",
+  pull: "Pull",
+  shear: "Shear",
+  skew: "Skew",
+  dilute: "Dilute",
+  swap01: "Phase Exchange",
+};
+
+function machineName(machine: Pick<Machine, "typeId">): string {
+  return MACHINE_NAMES[machine.typeId] ?? machine.typeId;
 }
 
-/** Short human label for a transform kind (palette + template list). */
-function transformLabel(t: Transform): string {
-  if (t.kind === "translate") return `translate ${t.relation} (${t.delta.x},${t.delta.y})`;
-  if (t.kind === "scale") return `scale ${t.num}/${t.den}`;
-  return `Phase Exchange ${String.fromCharCode(65 + t.a)}↔${String.fromCharCode(65 + t.b)}`;
-}
-
-/** One template step, described for the ordered list. */
-function stepLabel(m: Machine): string {
-  const base = transformLabel(m.transform);
-  if (m.transform.kind === "translate") {
-    return `${m.typeId} · ${base} · rot ${ROT_LABEL[m.orientation.rot]}${m.orientation.flip ? " · flip" : ""}`;
+function machineEffect(machine: Machine): string {
+  if (machine.transform.kind === "translate") {
+    const distance = Math.max(Math.abs(machine.transform.delta.x), Math.abs(machine.transform.delta.y));
+    const direction = machine.transform.relation === "reverse"
+      ? "pulls backward"
+      : machine.transform.relation === "perpendicular"
+        ? "turns movement right"
+        : machine.transform.relation === "offset"
+          ? "moves diagonally"
+          : `pushes ${distance} ${distance === 1 ? "cell" : "cells"}`;
+    return `${direction} · ${ROT_LABEL[machine.orientation.rot]}${machine.orientation.flip ? " · mirrored" : ""}`;
   }
-  return `${m.typeId} · ${base}`;
+  if (machine.transform.kind === "scale") return "draws every layer toward its origin";
+  return `exchanges layer ${String.fromCharCode(65 + machine.transform.a)} and ${String.fromCharCode(65 + machine.transform.b)}`;
+}
+
+function insertMachine(steps: readonly Machine[], machine: Machine, requested: number): readonly Machine[] {
+  const index = Math.min(steps.length, Math.max(0, Math.trunc(requested)));
+  const next = [...steps];
+  next.splice(index, 0, machine);
+  return next;
+}
+
+function moveMachine(steps: readonly Machine[], from: number, insertion: number): readonly Machine[] {
+  if (steps[from] === undefined) return steps;
+  const target = insertion > from ? insertion - 1 : insertion;
+  if (target === from) return steps;
+  const next = [...steps];
+  const [machine] = next.splice(from, 1);
+  if (machine === undefined) return steps;
+  next.splice(Math.min(next.length, Math.max(0, target)), 0, machine);
+  return next;
+}
+
+function drugIsRevealed(mm: MultiMap, drug: DrugState, mapIndex: number): boolean {
+  const map = mm.maps[mapIndex];
+  const pos = drug.pos[mapIndex];
+  if (map === undefined || pos === undefined) return false;
+  if (pos.x < 0 || pos.y < 0 || pos.x >= map.width || pos.y >= map.height) return false;
+  return map.fog[pos.y * map.width + pos.x] === 1;
+}
+
+export function recipeCandidateFailedAtInsertion(
+  slotIndex: number,
+  heldInsertion: number,
+  failedStep: number | null,
+): boolean {
+  return slotIndex === heldInsertion && failedStep === heldInsertion;
 }
 
 // ───────────────────────────── outcome banner ─────────────────────────────
@@ -144,11 +189,8 @@ export function App({ active, level, fog, catalog, onExplore, onSaveRecipe }: Ap
   // Debug aid: show the full map ignoring fog (pure render; never touches sim/fog).
   const [reveal, setReveal] = useState<boolean>(false);
 
-  // Player-built recipe.
-  const [steps, setSteps] = useState<readonly Machine[]>([]);
-  // Pending orientation for the NEXT orientable translate machine added.
-  const [rot, setRot] = useState<Rotation>(0);
-  const [flip, setFlip] = useState<boolean>(false);
+  const [editor, edit] = useReducer(recipeEditorReducer, undefined, () => createRecipeEditor());
+  const steps = editor.steps;
 
   // The animating drug token state (fog is external/persistent, not stored here).
   const [shownDrug, setShownDrug] = useState<DrugState>(start);
@@ -171,6 +213,8 @@ export function App({ active, level, fog, catalog, onExplore, onSaveRecipe }: Ap
   // Result of the last Run.
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [running, setRunning] = useState<boolean>(false);
+  const [runStep, setRunStep] = useState<number | null>(null);
+  const [drag, setDrag] = useState<{ readonly from: number; readonly over: number; readonly moved: boolean } | null>(null);
 
   const won = useMemo(() => {
     if (outcome === null || outcome.failed) return false;
@@ -195,13 +239,59 @@ export function App({ active, level, fog, catalog, onExplore, onSaveRecipe }: Ap
     () => fogError === null ? withFog(mm, fog, reveal) : mm,
     [fog, fogError, mm, reveal],
   );
+  const committedDisplaySteps = useMemo(
+    () => editor.selectedIndex === null ? steps : steps.slice(0, editor.selectedIndex + 1),
+    [editor.selectedIndex, steps],
+  );
+  const committedPreview = useMemo(
+    () => buildFogSafeRecipePreview(renderMap, start, committedDisplaySteps),
+    [committedDisplaySteps, renderMap, start],
+  );
+  const candidateSteps = useMemo(() => {
+    if (drag?.moved) return moveMachine(steps, drag.from, drag.over);
+    if (editor.held !== null) {
+      return insertMachine(steps, editor.held, editor.insertionIndex ?? steps.length);
+    }
+    return null;
+  }, [drag, editor.held, editor.insertionIndex, steps]);
+  const candidatePreview = useMemo(
+    () => candidateSteps === null ? null : buildFogSafeRecipePreview(renderMap, start, candidateSteps),
+    [candidateSteps, renderMap, start],
+  );
+  const visibleCommittedTrail = useMemo(() => {
+    const map = renderMap.maps[activeMap];
+    return map === undefined
+      ? []
+      : maskRecipeTrailForFog(map, committedPreview.trails[activeMap] ?? []);
+  }, [activeMap, committedPreview.trails, renderMap.maps]);
+  const visibleCandidateTrail = useMemo(() => {
+    const map = renderMap.maps[activeMap];
+    if (map === undefined || candidatePreview === null) return undefined;
+    return maskRecipeTrailForFog(map, candidatePreview.trails[activeMap] ?? []);
+  }, [activeMap, candidatePreview, renderMap.maps]);
+  const displayPreview = candidatePreview ?? committedPreview;
+  const displayPreviewHasSteps = (candidateSteps ?? committedDisplaySteps).length > 0;
+  const visiblePreviewDrug = displayPreviewHasSteps && displayPreview.uncertainStep === null &&
+    drugIsRevealed(renderMap, displayPreview.final, activeMap)
+    ? displayPreview.final
+    : undefined;
+  const committedFailureStep = candidatePreview === null ? committedPreview.failedStep : null;
+  const renderView = useMemo(() => running
+    ? { activeMap, camera, trail: trails[activeMap] ?? [] }
+    : {
+        activeMap,
+        camera,
+        trail: visibleCommittedTrail,
+        previewTrail: visibleCandidateTrail,
+        previewDrug: visiblePreviewDrug,
+      }, [activeMap, camera, running, trails, visibleCandidateTrail, visibleCommittedTrail, visiblePreviewDrug]);
   // Latest fogged map + drug for the async mount paint (avoids a one-frame unfogged flash).
   const renderMapRef = useRef(renderMap);
   renderMapRef.current = renderMap;
   const shownDrugRef = useRef(shownDrug);
   shownDrugRef.current = shownDrug;
-  const viewRef = useRef({ activeMap, camera, trail: trails[activeMap] ?? [] });
-  viewRef.current = { activeMap, camera, trail: trails[activeMap] ?? [] };
+  const viewRef = useRef(renderView);
+  viewRef.current = renderView;
 
   // ── mount / unmount the Pixi renderer ─────────────────────────────────────
   useEffect(() => {
@@ -249,12 +339,13 @@ export function App({ active, level, fog, catalog, onExplore, onSaveRecipe }: Ap
   // ── repaint whenever shown state (or reveal toggle) changes ────────────────
   useEffect(() => {
     if (fogError !== null) return;
-    rendererRef.current?.render(renderMap, shownDrug, { activeMap, camera, trail: trails[activeMap] ?? [] });
-  }, [activeMap, camera, fogError, renderMap, shownDrug, trails]);
+    rendererRef.current?.render(renderMap, shownDrug, renderView);
+  }, [fogError, renderMap, renderView, shownDrug]);
 
   useEffect(() => {
     if (!followingDrug) return;
-    const pos = shownDrug.pos[activeMap];
+    const focusTarget = !running && visiblePreviewDrug !== undefined ? visiblePreviewDrug : shownDrug;
+    const pos = focusTarget.pos[activeMap];
     const map = mm.maps[activeMap];
     if (pos === undefined || map === undefined) return;
     setCameras((current) => {
@@ -269,49 +360,48 @@ export function App({ active, level, fog, catalog, onExplore, onSaveRecipe }: Ap
       updated[activeMap] = next;
       return updated;
     });
-  }, [activeMap, followingDrug, mm.maps, shownDrug]);
+  }, [activeMap, followingDrug, mm.maps, running, shownDrug, visiblePreviewDrug]);
 
   // ── palette / template editing ────────────────────────────────────────────
-  const addMachine = useCallback(
+  const invalidateOutcome = useCallback(() => {
+    setOutcome(null);
+    setRunStep(null);
+    setShownDrug(start);
+    setTrails(labTrailsForFrames([start], mm.maps.length));
+  }, [mm.maps.length, start]);
+
+  const pickMachine = useCallback(
     (entry: MachineCatalogEntry) => {
       if (running || (entry.transform.kind === "swap" && mm.maps.length < 2)) return;
-      const orientation: Orientation = isOrientableTranslate(entry)
-        ? { rot, flip }
-        : { rot: 0, flip: false };
       const machine: Machine = {
         typeId: entry.typeId,
         transform: entry.transform,
-        orientation,
+        orientation: { rot: 0, flip: false },
       };
-      setOutcome(null);
-      setShownDrug(start);
-      setTrails(labTrailsForFrames([start], mm.maps.length));
-      setSteps((s) => [...s, machine]);
+      edit({ type: "pick", machine });
     },
-    [mm.maps.length, running, rot, flip, start],
+    [mm.maps.length, running],
   );
 
-  const removeLast = useCallback(() => {
-    if (running) return;
-    setOutcome(null);
-    setShownDrug(start);
-    setTrails(labTrailsForFrames([start], mm.maps.length));
-    setSteps((s) => s.slice(0, -1));
-  }, [mm.maps.length, running, start]);
+  const commitHeld = useCallback((index: number) => {
+    if (running || editor.held === null) return;
+    invalidateOutcome();
+    edit({ type: "commitHeld", index });
+  }, [editor.held, invalidateOutcome, running]);
 
   const clearTemplate = useCallback(() => {
-    if (running) return;
-    setOutcome(null);
-    setShownDrug(start);
-    setTrails(labTrailsForFrames([start], mm.maps.length));
-    setSteps([]);
-  }, [mm.maps.length, running, start]);
+    if (running || steps.length === 0) return;
+    invalidateOutcome();
+    edit({ type: "clear" });
+  }, [invalidateOutcome, running, steps.length]);
 
   // ── Run: reveal fog, animate the drug across BOTH maps, then evaluate ──────
   const run = useCallback(() => {
     if (running || steps.length === 0) return;
     setRunning(true);
     setOutcome(null);
+    setRunStep(null);
+    edit({ type: "cancel" });
 
     const t: Template = { steps };
     // Reveal fog along every sweep path (sim does the work); the Game unions the
@@ -319,15 +409,8 @@ export function App({ active, level, fog, catalog, onExplore, onSaveRecipe }: Ap
     onExplore(t);
     setShownDrug(start);
 
-    // Precompute the per-step drug states by folding applyStep (sim only).
-    const frames: DrugState[] = [start];
-    let s = start;
-    for (const m of steps) {
-      s = applyStep(mm, s, m);
-      frames.push(s);
-    }
-    const trailBreaks = [false, ...steps.map((machine) => machine.transform.kind === "swap")];
-    setTrails(labTrailsForFrames(frames.slice(0, 1), mm.maps.length));
+    const frames = buildRecipePreview(mm, start, steps).frames;
+    setTrails(buildRecipePreview(mm, start, []).trails);
 
     const myRun = ++runIdRef.current;
     let k = 0;
@@ -336,12 +419,9 @@ export function App({ active, level, fog, catalog, onExplore, onSaveRecipe }: Ap
       k++;
       const frame = frames[k];
       if (frame !== undefined) {
+        setRunStep(k - 1);
         setShownDrug(frame);
-        setTrails(labTrailsForFrames(
-          frames.slice(0, k + 1),
-          mm.maps.length,
-          trailBreaks.slice(0, k + 1),
-        ));
+        setTrails(buildRecipePreview(mm, start, steps.slice(0, k)).trails);
       }
       if (k < frames.length - 1) {
         window.setTimeout(tick, 260);
@@ -356,6 +436,7 @@ export function App({ active, level, fog, catalog, onExplore, onSaveRecipe }: Ap
   const cancelRun = useCallback(() => {
     runIdRef.current++;
     setRunning(false);
+    setRunStep(null);
     setOutcome(null);
     setShownDrug(start);
     setTrails(labTrailsForFrames([start], mm.maps.length));
@@ -365,9 +446,9 @@ export function App({ active, level, fog, catalog, onExplore, onSaveRecipe }: Ap
   const reset = useCallback(() => {
     runIdRef.current++; // cancel any in-flight animation
     setRunning(false);
-    setSteps([]);
-    setRot(0);
-    setFlip(false);
+    setRunStep(null);
+    setDrag(null);
+    edit({ type: "reset" });
     setOutcome(null);
     setShownDrug(start);
     setTrails(labTrailsForFrames([start], mm.maps.length));
@@ -378,9 +459,9 @@ export function App({ active, level, fog, catalog, onExplore, onSaveRecipe }: Ap
   useEffect(() => {
     runIdRef.current++;
     setRunning(false);
-    setSteps([]);
-    setRot(0);
-    setFlip(false);
+    setRunStep(null);
+    setDrag(null);
+    edit({ type: "reset" });
     setOutcome(null);
     setShownDrug(start);
     setTrails(labTrailsForFrames([start], mm.maps.length));
@@ -468,6 +549,44 @@ export function App({ active, level, fog, catalog, onExplore, onSaveRecipe }: Ap
     });
   }, [activeMap, camera, mm.maps]);
 
+  const recipeDragRef = useRef<{ readonly pointerId: number; readonly startX: number } | null>(null);
+  const onRecipePointerDown = useCallback((event: ReactPointerEvent<HTMLButtonElement>, index: number) => {
+    if (running || event.button !== 0) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    recipeDragRef.current = { pointerId: event.pointerId, startX: event.clientX };
+    setDrag({ from: index, over: index, moved: false });
+    edit({ type: "select", index });
+  }, [running]);
+
+  const onRecipePointerMove = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    const current = recipeDragRef.current;
+    if (current === null || current.pointerId !== event.pointerId) return;
+    const moved = Math.abs(event.clientX - current.startX) > 6;
+    if (!moved && !drag?.moved) return;
+    const track = event.currentTarget.closest("[data-recipe-track]");
+    const cards = track?.querySelectorAll<HTMLElement>("[data-recipe-step-index]");
+    let over = 0;
+    cards?.forEach((card) => {
+      const rect = card.getBoundingClientRect();
+      if (event.clientX > rect.left + rect.width / 2) over++;
+    });
+    setDrag((previous) => previous === null ? null : { ...previous, over, moved: true });
+  }, [drag?.moved]);
+
+  const onRecipePointerUp = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    const current = recipeDragRef.current;
+    if (current === null || current.pointerId !== event.pointerId) return;
+    recipeDragRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    if (drag?.moved) {
+      invalidateOutcome();
+      edit({ type: "move", from: drag.from, toInsertionIndex: drag.over });
+    }
+    setDrag(null);
+  }, [drag, invalidateOutcome]);
+
   useEffect(() => {
     if (!active) return;
     const onKeyDown = (event: KeyboardEvent) => {
@@ -489,6 +608,7 @@ export function App({ active, level, fog, catalog, onExplore, onSaveRecipe }: Ap
         }
         return;
       }
+      if (running && event.code !== "Space" && event.key.toLowerCase() !== "f") return;
       if (/^Digit[1-9]$/.test(event.code)) {
         const index = Number(event.code.slice(5)) - 1;
         const entry = DEFAULT_CATALOG[index];
@@ -498,22 +618,50 @@ export function App({ active, level, fog, catalog, onExplore, onSaveRecipe }: Ap
           (entry.transform.kind !== "swap" || mm.maps.length > 1)
         ) {
           event.preventDefault();
-          addMachine(entry);
+          pickMachine(entry);
         }
         return;
       }
       if (event.key.toLowerCase() === "r") {
+        const machine = editor.held ?? (editor.selectedIndex === null ? null : steps[editor.selectedIndex] ?? null);
+        if (machine?.transform.kind !== "translate") return;
         event.preventDefault();
-        setRot((value) => ((value + 1) % 4) as Rotation);
+        if (editor.selectedIndex !== null) invalidateOutcome();
+        edit({ type: "rotate" });
       } else if (event.key.toLowerCase() === "h") {
+        const machine = editor.held ?? (editor.selectedIndex === null ? null : steps[editor.selectedIndex] ?? null);
+        if (machine?.transform.kind !== "translate") return;
         event.preventDefault();
-        setFlip((value) => !value);
+        if (editor.selectedIndex !== null) invalidateOutcome();
+        edit({ type: "flip" });
       } else if (event.key.toLowerCase() === "f") {
         event.preventDefault();
         focusDrug();
-      } else if (event.key === "Backspace" || event.key === "Delete") {
+      } else if (event.key.toLowerCase() === "q" && editor.selectedIndex !== null) {
+        const machine = steps[editor.selectedIndex];
+        if (machine !== undefined) {
+          event.preventDefault();
+          edit({ type: "pick", machine });
+        }
+      } else if (event.key === "Escape") {
         event.preventDefault();
-        removeLast();
+        edit({ type: "cancel" });
+      } else if (event.key === "Backspace" || event.key === "Delete") {
+        if (editor.selectedIndex !== null) {
+          event.preventDefault();
+          invalidateOutcome();
+          edit({ type: "removeSelected" });
+        }
+      } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
+        if (event.shiftKey ? editor.future.length === 0 : editor.past.length === 0) return;
+        event.preventDefault();
+        invalidateOutcome();
+        edit({ type: event.shiftKey ? "redo" : "undo" });
+      } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "y") {
+        if (editor.future.length === 0) return;
+        event.preventDefault();
+        invalidateOutcome();
+        edit({ type: "redo" });
       } else if (event.code === "Space") {
         event.preventDefault();
         if (running) cancelRun();
@@ -522,7 +670,26 @@ export function App({ active, level, fog, catalog, onExplore, onSaveRecipe }: Ap
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [active, addMachine, cancelRun, catalog, focusDrug, mm.maps, removeLast, run, running]);
+  }, [active, cancelRun, catalog, editor, focusDrug, invalidateOutcome, mm.maps, pickMachine, run, running, steps]);
+
+  const activeMachine = editor.held ?? (
+    editor.selectedIndex === null ? null : steps[editor.selectedIndex] ?? null
+  );
+  const canOrientActive = activeMachine?.transform.kind === "translate";
+  const previewStatusBase = drag?.moved
+    ? `Preview move: step ${drag.from + 1} to slot ${drag.over + 1}`
+    : editor.held !== null
+      ? `Preview step ${(editor.insertionIndex ?? steps.length) + 1}: place ${machineName(editor.held)}`
+      : editor.selectedIndex !== null
+        ? `Step ${editor.selectedIndex + 1} selected · R rotate · H mirror · drag to reorder`
+        : steps.length === 0
+          ? "Pick a machine, inspect its route, then choose an insertion slot."
+          : "Route ready · select a step to inspect or drag it to reorder.";
+  const previewStatus = displayPreview.uncertainStep !== null
+    ? `${previewStatusBase} · route enters unknown territory`
+    : displayPreview.failedStep !== null
+      ? `${previewStatusBase} · hazard at step ${displayPreview.failedStep + 1}`
+      : previewStatusBase;
 
   return (
     <div className="game-view lab-workspace" data-testid="lab-workspace">
@@ -585,31 +752,158 @@ export function App({ active, level, fog, catalog, onExplore, onSaveRecipe }: Ap
             {outcomeText(outcome, won)}
           </div>
 
-          <div className="toolbelt" role="toolbar" aria-label="Lab machine hotbar" data-testid="lab-toolbelt">
-            {DEFAULT_CATALOG.map((entry, index) => {
-              const unlocked = catalog.some((candidate) => candidate.typeId === entry.typeId);
-              const phaseExchange = entry.transform.kind === "swap";
-              const available = unlocked && (!phaseExchange || mm.maps.length > 1);
-              const phaseCue = phaseExchange
-                ? ` · Before A(${shownDrug.pos[0]?.x ?? "–"},${shownDrug.pos[0]?.y ?? "–"}) B(${shownDrug.pos[1]?.x ?? "–"},${shownDrug.pos[1]?.y ?? "–"}) → after A takes B, B takes A`
-                : "";
-              return (
+          <section className="lab-command-deck" aria-label="Recipe editor">
+            <header className="recipe-dock-header">
+              <div>
+                <strong>Recipe track</strong>
+                <span data-testid="template-count">{steps.length}</span>
+              </div>
+              <output className="recipe-preview-state" data-testid="lab-preview-state">
+                {previewStatus}
+              </output>
+              {editor.held !== null && (
+                <div className="recipe-held" data-testid="recipe-held">
+                  <MachineIcon {...editor.held} size={24} />
+                  <span>{machineName(editor.held)}</span>
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => onSaveRecipe({ steps })}
+                className="recipe-ship"
+                disabled={!canShip}
+                title="Send valid recipe to Factory"
+              >
+                ⇢ Factory
+              </button>
+              <div className="recipe-edit-actions" role="toolbar" aria-label="Recipe editing controls">
                 <button
-                  key={entry.typeId}
                   type="button"
-                  onClick={() => addMachine(entry)}
-                  disabled={running || !available}
-                  className={`tool-slot${available ? "" : " is-locked"}`}
-                  title={`${transformLabel(entry.transform)}${phaseCue} · ${index + 1}`}
-                  data-testid={`palette-${entry.typeId}`}
+                  onClick={() => {
+                    if (editor.selectedIndex !== null) invalidateOutcome();
+                    edit({ type: "rotate" });
+                  }}
+                  disabled={running || !canOrientActive}
+                  className="game-control"
+                  data-testid="rotate"
+                  title="Rotate held or selected machine (R)"
                 >
-                  <span className="tool-symbol" aria-hidden="true">{phaseExchange ? "A↔B" : entry.typeId.slice(0, 2).toUpperCase()}</span>
-                  <span className="tool-name">{phaseExchange ? "Phase Exchange" : entry.typeId}</span>
-                  <span className="hotkey">{index + 1}</span>
+                  ↻ <span>{activeMachine === null ? "R" : ROT_LABEL[activeMachine.orientation.rot]}</span>
                 </button>
-              );
-            })}
-          </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (editor.selectedIndex !== null) invalidateOutcome();
+                    edit({ type: "flip" });
+                  }}
+                  disabled={running || !canOrientActive}
+                  className={`game-control${activeMachine?.orientation.flip ? " is-active" : ""}`}
+                  data-testid="flip"
+                  title="Mirror held or selected machine (H)"
+                >
+                  ⇋ <span>H</span>
+                </button>
+                <button type="button" onClick={() => { invalidateOutcome(); edit({ type: "undo" }); }} disabled={running || editor.past.length === 0} className="game-control" data-testid="recipe-undo" title="Undo (Ctrl+Z)">↶</button>
+                <button type="button" onClick={() => { invalidateOutcome(); edit({ type: "redo" }); }} disabled={running || editor.future.length === 0} className="game-control" data-testid="recipe-redo" title="Redo (Ctrl+Y)">↷</button>
+                <button type="button" onClick={clearTemplate} disabled={running || steps.length === 0} className="game-control" data-testid="clear" title="Clear recipe">Clear</button>
+              </div>
+            </header>
+
+            <div
+              className={`recipe-track${editor.held !== null ? " is-placing" : ""}${drag?.moved ? " is-dragging" : ""}`}
+              data-testid="template-list"
+              data-recipe-track
+            >
+              {steps.length === 0 && editor.held === null && (
+                <span className="recipe-empty">Choose a machine from the hotbar.</span>
+              )}
+              {Array.from({ length: steps.length + 1 }, (_, index) => {
+                const machine = steps[index];
+                const previewing = (
+                  editor.held !== null && (editor.insertionIndex ?? steps.length) === index
+                ) || (drag?.moved === true && drag.over === index);
+                const heldInsertion = editor.insertionIndex ?? steps.length;
+                const candidateFailedHere = editor.held !== null && recipeCandidateFailedAtInsertion(
+                  index,
+                  heldInsertion,
+                  candidatePreview?.failedStep ?? null,
+                );
+                return (
+                  <div className="recipe-track-slot" key={index}>
+                    <button
+                      type="button"
+                      className={`recipe-insertion${previewing ? " is-previewing" : ""}${candidateFailedHere ? " is-failed" : ""}`}
+                      disabled={running || editor.held === null}
+                      aria-label={`Insert machine at step ${index + 1}`}
+                      data-testid={`recipe-insert-${index}`}
+                      data-insertion-index={index}
+                      data-previewing={previewing ? "true" : "false"}
+                      onPointerEnter={() => edit({ type: "hoverInsertion", index })}
+                      onFocus={() => edit({ type: "hoverInsertion", index })}
+                      onClick={() => commitHeld(index)}
+                    >
+                      <span aria-hidden="true">＋</span>
+                    </button>
+                    {machine !== undefined && (
+                      <button
+                        type="button"
+                        disabled={running}
+                        className={`recipe-step${editor.selectedIndex === index ? " is-selected" : ""}${runStep === index ? " is-running" : ""}${committedFailureStep === index ? " is-failed" : ""}${drag?.from === index && drag.moved ? " is-drag-source" : ""}`}
+                        aria-selected={editor.selectedIndex === index}
+                        aria-label={`Step ${index + 1}: ${machineName(machine)}, ${machineEffect(machine)}`}
+                        data-testid={`recipe-step-${index}`}
+                        data-recipe-step-index={index}
+                        data-rotation={machine.orientation.rot}
+                        title={`${machineName(machine)} · ${machineEffect(machine)} · drag to reorder`}
+                        onClick={() => {
+                          if (!running) edit({ type: "select", index });
+                        }}
+                        onPointerDown={(event) => onRecipePointerDown(event, index)}
+                        onPointerMove={onRecipePointerMove}
+                        onPointerUp={onRecipePointerUp}
+                        onPointerCancel={onRecipePointerUp}
+                      >
+                        <span className="recipe-step-number">{index + 1}</span>
+                        <MachineIcon {...machine} size={31} />
+                        <span className="recipe-step-name">{machineName(machine)}</span>
+                        {machine.transform.kind === "translate" && (
+                          <span className="recipe-orientation-badge">{ROT_LABEL[machine.orientation.rot]}{machine.orientation.flip ? " ⇋" : ""}</span>
+                        )}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="toolbelt" role="toolbar" aria-label="Lab machine hotbar" data-testid="lab-toolbelt">
+              {DEFAULT_CATALOG.map((entry, index) => {
+                const unlocked = catalog.some((candidate) => candidate.typeId === entry.typeId);
+                const phaseExchange = entry.transform.kind === "swap";
+                const available = unlocked && (!phaseExchange || mm.maps.length > 1);
+                const machine: Machine = {
+                  typeId: entry.typeId,
+                  transform: entry.transform,
+                  orientation: { rot: 0, flip: false },
+                };
+                return (
+                  <button
+                    key={entry.typeId}
+                    type="button"
+                    onClick={() => pickMachine(entry)}
+                    disabled={running || !available}
+                    className={`tool-slot${available ? "" : " is-locked"}${editor.held?.typeId === entry.typeId ? " is-selected" : ""}`}
+                    title={`${machineName(machine)} · ${machineEffect(machine)} · ${index + 1}`}
+                    data-testid={`palette-${entry.typeId}`}
+                  >
+                    <MachineIcon {...machine} size={29} />
+                    <span className="tool-name">{machineName(machine)}</span>
+                    <span className="hotkey">{index + 1}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
         </section>
 
         <aside className="inspector lab-inspector" data-testid="lab-inspector">
@@ -629,21 +923,28 @@ export function App({ active, level, fog, catalog, onExplore, onSaveRecipe }: Ap
             ))}
           </div>
 
-          <div className="panel-section">
+          <div className="panel-section machine-inspector" data-testid="recipe-inspector">
             <div className="panel-heading">
-              <h2>Recipe timeline</h2>
-              <span data-testid="template-count">{steps.length}</span>
+              <h2>{editor.held !== null ? "Placing machine" : editor.selectedIndex !== null ? "Selected step" : "Recipe editing"}</h2>
+              {editor.selectedIndex !== null && <span>#{editor.selectedIndex + 1}</span>}
             </div>
-            <ol data-testid="template-list" className="recipe-timeline">
-              {steps.length === 0 ? (
-                <li className="is-empty">Choose a machine from the hotbar.</li>
-              ) : (
-                steps.map((machine, index) => <li key={index}><span>{index + 1}</span>{stepLabel(machine)}</li>)
-              )}
-            </ol>
-            <div className="panel-actions">
-              <button type="button" onClick={removeLast} disabled={running || steps.length === 0} className="game-control" data-testid="remove-last">⌫ Last</button>
-              <button type="button" onClick={clearTemplate} disabled={running || steps.length === 0} className="game-control" data-testid="clear">Clear</button>
+            {activeMachine === null ? (
+              <p className="panel-copy">Choose a pictogram below, then inspect the orange route before placing it between two steps.</p>
+            ) : (
+              <div className="machine-inspector-card">
+                <MachineIcon {...activeMachine} size={54} title={machineName(activeMachine)} />
+                <div>
+                  <strong>{machineName(activeMachine)}</strong>
+                  <span>{machineEffect(activeMachine)}</span>
+                </div>
+              </div>
+            )}
+            <div className="machine-effect-diagram" aria-label="Machine effect preview">
+              <span className="effect-capsule">●</span>
+              <span aria-hidden="true">→</span>
+              <span className="effect-machine">{activeMachine === null ? "?" : <MachineIcon {...activeMachine} size={28} />}</span>
+              <span aria-hidden="true">→</span>
+              <span className="effect-capsule is-result">●</span>
             </div>
           </div>
 
@@ -664,18 +965,6 @@ export function App({ active, level, fog, catalog, onExplore, onSaveRecipe }: Ap
             )}
           </div>
 
-          <div className="panel-section">
-            <h2>Next machine orientation</h2>
-            <div className="panel-actions">
-              <button type="button" onClick={() => setRot((value) => ((value + 1) % 4) as Rotation)} disabled={running} className="game-control" data-testid="rotate">
-                R · {ROT_LABEL[rot]}
-              </button>
-              <button type="button" onClick={() => setFlip((value) => !value)} disabled={running} className={`game-control${flip ? " is-active" : ""}`} data-testid="flip">
-                H · Flip {flip ? "on" : "off"}
-              </button>
-            </div>
-          </div>
-
           <button
             type="button"
             onClick={() => onSaveRecipe({ steps })}
@@ -687,7 +976,7 @@ export function App({ active, level, fog, catalog, onExplore, onSaveRecipe }: Ap
               ? won ? "Send complete cure to Factory" : "Send recipe to Factory"
               : "Run a valid recipe to ship"}
           </button>
-          <div className="key-help"><span className="hotkey">Space</span> run · <span className="hotkey">A–D</span> layers · <span className="hotkey">F</span> focus · <span className="hotkey">R</span> rotate · <span className="hotkey">H</span> mirror · <span className="hotkey">⌫</span> remove</div>
+          <div className="key-help"><span className="hotkey">1–7</span> hold machine · <span className="hotkey">R/H</span> orient · <span className="hotkey">Q</span> pipette · <span className="hotkey">⌫</span> delete · <span className="hotkey">Ctrl Z/Y</span> undo/redo · <span className="hotkey">Space</span> run</div>
         </aside>
       </div>
     </div>

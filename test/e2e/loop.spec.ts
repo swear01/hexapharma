@@ -32,7 +32,10 @@ test("the full loop is playable: cure → produce → sell → patents", async (
   // ── Lab: reveal, build a curing template, run, then ship the recipe. ──
   await expect(page.getByTestId("view-lab")).toHaveAttribute("data-testid", "view-lab");
   await page.getByTestId("reveal").check();
-  for (let i = 0; i < 4; i++) await page.getByTestId("palette-push2").click();
+  for (let i = 0; i < 4; i++) {
+    await page.getByTestId("palette-push2").click();
+    await page.getByTestId(`recipe-insert-${i}`).click();
+  }
   await page.getByTestId("run").click();
 
   await expect(page.getByTestId("status")).toContainText(/Run complete|WIN/i, { timeout: 10_000 });
