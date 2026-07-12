@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import type { Template } from "../sim/phase0_interfaces";
 import { DEFAULT_CATALOG } from "../sim/phase0_interfaces";
-import { buildInitialPrototype, tryBuildInitialPrototype } from "./PilotBench";
+import { PilotBench, buildInitialPrototype, tryBuildInitialPrototype } from "./PilotBench";
 
 function template(...ids: readonly string[]): Template {
   return {
@@ -39,8 +41,20 @@ describe("Pilot Bench initial prototype", () => {
   });
 
   it("reports an over-capacity recipe without throwing the Lab view", () => {
-    const result = tryBuildInitialPrototype(template(...Array.from({ length: 20 }, () => "push2")));
+    const overCapacity = template(...Array.from({ length: 20 }, () => "push2"));
+    const result = tryBuildInitialPrototype(overCapacity);
     expect(result.prototype).toBeNull();
     expect(result.error).toMatch(/cannot fit/i);
+    const markup = renderToStaticMarkup(
+      createElement(PilotBench, {
+        template: overCapacity,
+        width: 24,
+        height: 12,
+        onLayoutChange: () => undefined,
+      }),
+    );
+    expect(markup).toContain('role="alert"');
+    expect(markup).toContain("does not fit this Pilot Bench");
+    expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>Auto arrange<\/button>/);
   });
 });

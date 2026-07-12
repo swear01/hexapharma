@@ -7,6 +7,7 @@ import {
   panCamera,
   rasterizeGridLine,
   redoEditorHistory,
+  reconcilePendingCommit,
   screenToGrid,
   undoEditorHistory,
   pushEditorHistory,
@@ -147,6 +148,25 @@ describe("factory editor gestures", () => {
 });
 
 describe("factory editor history", () => {
+  it("does not let stale prop acknowledgements overwrite rapid local commits", () => {
+    const pending = ["layout-a", "layout-b", "layout-c"];
+    expect(reconcilePendingCommit(pending, "layout-a")).toEqual({
+      pendingKeys: ["layout-b", "layout-c"],
+      applyIncoming: false,
+      resetHistory: false,
+    });
+    expect(reconcilePendingCommit(pending, "layout-c")).toEqual({
+      pendingKeys: [],
+      applyIncoming: true,
+      resetHistory: false,
+    });
+    expect(reconcilePendingCommit(pending, "external-layout")).toEqual({
+      pendingKeys: [],
+      applyIncoming: true,
+      resetHistory: true,
+    });
+  });
+
   it("commits one completed gesture as exactly one undo entry", () => {
     const initial = createEditorHistory("empty");
     const afterGesture = pushEditorHistory(initial, "five painted cells");

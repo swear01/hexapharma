@@ -55,16 +55,25 @@ test("HexaPharma Lab loads a generated level, runs a template, and reports an ou
 test("a moved Pilot machine keeps its exact anchor when the cure is sent to Factory", async ({
   page,
 }) => {
+  test.setTimeout(120_000);
   await page.goto("/");
   for (let index = 0; index < 8; index++) await placeAtEnd(page, "push");
+  await page.getByTestId("run").click();
+  await expect(page.getByTestId("status")).toContainText(/WIN/i, { timeout: 10_000 });
+  await expect(page.getByTestId("save-recipe")).toBeEnabled();
 
   const pilot = page.getByTestId("pilot-bench");
   await pilot.locator("[data-x='1'][data-y='6']").click();
+  await pilot.locator("[data-x='23'][data-y='11']").click();
+  await expect(pilot.getByRole("status")).toContainText(/outside the pilot bench/i);
+  await expect(page.getByTestId("save-recipe")).toBeDisabled();
+  await pilot.getByRole("button", { name: "Auto arrange" }).click();
+  await expect(pilot.getByRole("status")).toContainText(/auto-arranged/i);
+  await expect(page.getByTestId("save-recipe")).toBeEnabled();
+
+  await pilot.locator("[data-x='1'][data-y='6']").click();
   await pilot.locator("[data-x='1'][data-y='3']").click();
   await expect(pilot.getByRole("status")).toContainText(/moved.*rerouted/i);
-
-  await page.getByTestId("run").click();
-  await expect(page.getByTestId("status")).toContainText(/WIN/i, { timeout: 10_000 });
   await page.getByTestId("save-recipe").click();
 
   const canvas = page.locator("[data-testid='factory-canvas'] canvas");

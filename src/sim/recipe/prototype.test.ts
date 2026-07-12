@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import fc from "fast-check";
 import type { EffectMap, FactoryTile, Machine, MultiMap, Template } from "../phase0_interfaces";
 import {
   BASE_GAME_FACTORY_HEIGHT,
@@ -7,6 +8,7 @@ import {
   DEFAULT_CATALOG,
 } from "../phase0_interfaces";
 import { evaluate, initialState } from "../drug-graph";
+import { generate } from "../mapgen";
 import {
   compileEntitledPrototype,
   compilePrototype,
@@ -122,6 +124,41 @@ describe("compilePrototype", () => {
     expect(layout.tiles.filter((tile) => tile.kind === "belt")).toHaveLength(6);
     expect(derivePrototypeTemplate(layout)).toEqual(template);
   });
+
+  for (const nMaps of [1, 2, 3, 4]) {
+    it(`preserves generated reference recipes on the exact entitlement at ${nMaps} map${nMaps === 1 ? "" : "s"}`, () => {
+      fc.assert(
+        fc.property(fc.integer({ min: 0, max: 0xffffffff }), (seed) => {
+          const level = generate({
+            seed,
+            nMaps,
+            width: 63,
+            height: 63,
+            catalog: DEFAULT_CATALOG.filter((entry) =>
+              ["push", "push2", "pull", "shear"].includes(entry.typeId),
+            ),
+            diseaseCount: nMaps,
+            difficulty: { min: 4, max: 12 },
+          });
+
+          for (const disease of level.diseases) {
+            const { layout } = compileEntitledPrototype(
+              disease.reference,
+              BASE_GAME_FACTORY_WIDTH,
+              BASE_GAME_FACTORY_HEIGHT,
+            );
+            expect(layout.width).toBe(BASE_GAME_FACTORY_WIDTH);
+            expect(layout.height).toBe(BASE_GAME_FACTORY_HEIGHT);
+            expect(derivePrototypeTemplate(layout)).toEqual(disease.reference);
+            expect(factoryOutcome(layout, level.mm, level.start)).toEqual(
+              evaluate(level.mm, level.start, disease.reference),
+            );
+          }
+        }),
+        { numRuns: 12, seed: 0x5eed + nMaps },
+      );
+    });
+  }
 
   it("rejects colliding placements instead of silently repacking them", () => {
     const template: Template = { steps: [step("push"), step("push")] };

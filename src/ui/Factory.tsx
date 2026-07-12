@@ -58,6 +58,7 @@ import {
   panCamera,
   pushEditorHistory,
   rasterizeGridLine,
+  reconcilePendingCommit,
   redoEditorHistory,
   screenToGrid,
   undoEditorHistory,
@@ -508,12 +509,10 @@ export function Factory({
     setPlaying(false);
     if (factory !== null || onFactoryChange(next)) {
       const key = JSON.stringify(next);
-      const pendingIndex = pendingCommittedKeysRef.current.indexOf(key);
-      if (pendingIndex >= 0) {
-        pendingCommittedKeysRef.current.splice(0, pendingIndex + 1);
-        if (pendingCommittedKeysRef.current.length > 0) return;
-      } else {
-        pendingCommittedKeysRef.current.length = 0;
+      const reconciliation = reconcilePendingCommit(pendingCommittedKeysRef.current, key);
+      pendingCommittedKeysRef.current = [...reconciliation.pendingKeys];
+      if (!reconciliation.applyIncoming) return;
+      if (reconciliation.resetHistory) {
         const resetHistory = createEditorHistory(next);
         historyRef.current = resetHistory;
         setHistory(resetHistory);

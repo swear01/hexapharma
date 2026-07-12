@@ -263,3 +263,25 @@ export function redoEditorHistory<T>(history: EditorHistory<T>): EditorHistory<T
     future: history.future.slice(1),
   };
 }
+
+export interface CommitReconciliation {
+  readonly pendingKeys: readonly string[];
+  readonly applyIncoming: boolean;
+  readonly resetHistory: boolean;
+}
+
+export function reconcilePendingCommit(
+  pendingKeys: readonly string[],
+  incomingKey: string,
+): CommitReconciliation {
+  const index = pendingKeys.indexOf(incomingKey);
+  if (index < 0) {
+    return { pendingKeys: [], applyIncoming: true, resetHistory: true };
+  }
+  const remaining = pendingKeys.slice(index + 1);
+  return {
+    pendingKeys: remaining,
+    applyIncoming: remaining.length === 0,
+    resetHistory: false,
+  };
+}

@@ -262,6 +262,7 @@ test("a cured sink output that diverges from the saved recipe is counted as wast
 test("save/load restores recipe, inventory, fog, and factory layout and remains playable", async ({
   page,
 }) => {
+  test.setTimeout(120_000);
   await page.goto("/?cash=9999&research=9999");
   await unlockRecipeMachines(page);
   const disease = await saveReferenceRecipe(page);
