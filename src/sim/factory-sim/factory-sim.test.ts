@@ -122,6 +122,15 @@ function products(states: readonly FactoryState[]) {
 // ───────────────────────────── basic line ─────────────────────────────
 
 describe("factory-sim straight line", () => {
+  it("sizes hot runtime storage from carrier and machine slots, not empty floor area", () => {
+    const b = blank(100, 100);
+    set(b, 0, 0, { kind: "source", dir: E, period: 1 });
+    set(b, 1, 0, { kind: "belt", dir: E });
+    set(b, 2, 0, { kind: "sink" });
+    const mm: MultiMap = { maps: [emptyMap(40, { x: 20, y: 20 })] };
+    expect(initFactory(finish(b, []), mm, initialState(mm)).capacity).toBe(1);
+  });
+
   it("runs a one-layer factory without requiring a phase-exchange layer", () => {
     const b = blank(3, 1);
     set(b, 0, 0, { kind: "source", dir: E, period: 1 });

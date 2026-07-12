@@ -257,7 +257,7 @@ describe("compileTemplate / factoryOutcome", () => {
     const mutableOrientation = machine.orientation as { rot: Rotation };
     mutableDelta.x = 7;
     mutableOrientation.rot = 2;
-    expect(layout.machines[0]?.def.transform).toMatchObject({ delta: { x: 1, y: 0 } });
+    expect(layout.machines[0]?.def.transform).toMatchObject({ delta: { x: 3, y: 0 } });
     expect(layout.machines[0]?.def.orientation).toEqual({ rot: 0, flip: false });
 
     const testLevel = fixture();

@@ -298,13 +298,13 @@ function deepFreezeData<T>(value: T): T {
 }
 
 export const DEFAULT_CATALOG: readonly MachineCatalogEntry[] = deepFreezeData([
-  { typeId: "push", transform: { kind: "translate", delta: { x: 1, y: 0 }, relation: "forward" }, cost: 1, speed: 1, orientable: true },
-  { typeId: "push2", transform: { kind: "translate", delta: { x: 2, y: 0 }, relation: "forward" }, cost: 2, speed: 2, orientable: true },
-  { typeId: "pull", transform: { kind: "translate", delta: { x: 1, y: 0 }, relation: "reverse" }, cost: 1, speed: 2, orientable: true },
-  { typeId: "shear", transform: { kind: "translate", delta: { x: 1, y: 0 }, relation: "perpendicular" }, cost: 2, speed: 3, orientable: true },
-  { typeId: "skew", transform: { kind: "translate", delta: { x: 1, y: 0 }, relation: "offset" }, cost: 2, speed: 3, orientable: true },
-  { typeId: "dilute", transform: { kind: "scale", num: 1, den: 2 }, cost: 3, speed: 4, orientable: false },
-  { typeId: "swap01", transform: { kind: "swap", a: 0, b: 1 }, cost: 1, speed: 1, orientable: false },
+  { typeId: "push", transform: { kind: "translate", delta: { x: 3, y: 0 }, relation: "forward" }, cost: 2, speed: 2, orientable: true },
+  { typeId: "push2", transform: { kind: "translate", delta: { x: 7, y: 0 }, relation: "forward" }, cost: 6, speed: 7, orientable: true },
+  { typeId: "pull", transform: { kind: "translate", delta: { x: 3, y: 0 }, relation: "reverse" }, cost: 2, speed: 3, orientable: true },
+  { typeId: "shear", transform: { kind: "translate", delta: { x: 4, y: 0 }, relation: "perpendicular" }, cost: 4, speed: 5, orientable: true },
+  { typeId: "skew", transform: { kind: "translate", delta: { x: 4, y: 0 }, relation: "offset" }, cost: 5, speed: 6, orientable: true },
+  { typeId: "dilute", transform: { kind: "scale", num: 1, den: 2 }, cost: 6, speed: 8, orientable: false },
+  { typeId: "swap01", transform: { kind: "swap", a: 0, b: 1 }, cost: 7, speed: 9, orientable: false },
 ]);
 
 // ═══════════════════════════════ Phase 2 — factory (spatial packing + throughput) ═══════════════════════════════
@@ -333,8 +333,8 @@ export const MAX_GAME_INVENTORY_PRODUCTS = 24_500;
 export const MAX_BULK_SALE_PRODUCTS = 100_000;
 export const MAX_GAME_FACTORY_CELLS = 4_096;
 export const MAX_GAME_FACTORY_DIMENSION = 256;
-export const BASE_GAME_FACTORY_WIDTH = 9;
-export const BASE_GAME_FACTORY_HEIGHT = 6;
+export const BASE_GAME_FACTORY_WIDTH = 24;
+export const BASE_GAME_FACTORY_HEIGHT = 12;
 export const MAX_GAME_MAP_CELLS = 4_096;
 export const MAX_GAME_MAP_DIMENSION = 64;
 export const MAX_GAME_REPLAY_WORK = 100_000_000;
@@ -580,15 +580,65 @@ export const SHAPE_2x2: MachineShape = deepFreezeData({
   outPorts: [{ cell: { x: 1, y: 0 }, side: SH_E }],
 });
 
+/** Compact three-cell pump body. */
+export const SHAPE_PUMP: MachineShape = deepFreezeData({
+  cells: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }],
+  inPorts: [{ cell: { x: 0, y: 0 }, side: SH_W }],
+  outPorts: [{ cell: { x: 1, y: 0 }, side: SH_E }],
+});
+/** Four-cell return chamber with ports on opposite corners. */
+export const SHAPE_RETURN: MachineShape = deepFreezeData({
+  cells: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }],
+  inPorts: [{ cell: { x: 0, y: 0 }, side: SH_W }],
+  outPorts: [{ cell: { x: 1, y: 1 }, side: SH_E }],
+});
+/** Long-bed reactor: a conspicuous eight-cell throughput bottleneck. */
+export const SHAPE_LONG_BED: MachineShape = deepFreezeData({
+  cells: [
+    { x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }, { x: 3, y: 0 },
+    { x: 0, y: 1 }, { x: 1, y: 1 }, { x: 2, y: 1 }, { x: 3, y: 1 },
+  ],
+  inPorts: [{ cell: { x: 0, y: 0 }, side: SH_W }],
+  outPorts: [{ cell: { x: 3, y: 1 }, side: SH_E }],
+});
+/** Five-cell centrifuge with a south-facing discharge. */
+export const SHAPE_CENTRIFUGE: MachineShape = deepFreezeData({
+  cells: [
+    { x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 },
+    { x: 2, y: 1 }, { x: 2, y: 2 },
+  ],
+  inPorts: [{ cell: { x: 0, y: 0 }, side: SH_W }],
+  outPorts: [{ cell: { x: 2, y: 2 }, side: SH_S }],
+});
+/** Six-cell diagonal reactor whose silhouette exposes its offset effect. */
+export const SHAPE_SKEW: MachineShape = deepFreezeData({
+  cells: [
+    { x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 },
+    { x: 2, y: 1 }, { x: 2, y: 2 }, { x: 3, y: 2 },
+  ],
+  inPorts: [{ cell: { x: 0, y: 0 }, side: SH_W }],
+  outPorts: [{ cell: { x: 3, y: 2 }, side: SH_E }],
+});
+/** Seven-cell vat; broad rather than long so it packs differently from reactors. */
+export const SHAPE_VAT: MachineShape = deepFreezeData({
+  cells: [
+    { x: 0, y: 0 }, { x: 1, y: 0 },
+    { x: 0, y: 1 }, { x: 1, y: 1 }, { x: 2, y: 1 },
+    { x: 0, y: 2 }, { x: 1, y: 2 },
+  ],
+  inPorts: [{ cell: { x: 0, y: 1 }, side: SH_W }],
+  outPorts: [{ cell: { x: 2, y: 1 }, side: SH_E }],
+});
+
 /** Canonical footprint per machine type (each type has a fixed shape, Big-Pharma style). */
 export const DEFAULT_SHAPES: Readonly<Record<MachineTypeId, MachineShape>> = deepFreezeData({
-  push: SHAPE_1x1,
-  push2: SHAPE_2x1,
-  pull: SHAPE_1x1,
-  shear: SHAPE_L,
-  skew: SHAPE_1x1,
-  dilute: SHAPE_2x2,
-  swap01: SHAPE_2x1,
+  push: SHAPE_PUMP,
+  push2: SHAPE_LONG_BED,
+  pull: SHAPE_RETURN,
+  shear: SHAPE_CENTRIFUGE,
+  skew: SHAPE_SKEW,
+  dilute: SHAPE_VAT,
+  swap01: SHAPE_LONG_BED,
 });
 
 // ═══════════════════════════════ Phase 3 — economy / patent / save ═══════════════════════════════
@@ -694,7 +744,7 @@ export interface GameOrigin {
 
 /** Every authoritative whole-game state transition; consecutive factory ticks are normalized. */
 export type GameIntent =
-  | { readonly kind: "saveRecipe"; readonly recipe: Template }
+  | { readonly kind: "saveRecipe"; readonly recipe: Template; readonly factory: FactoryLayout }
   | { readonly kind: "setFactory"; readonly factory: FactoryLayout }
   | { readonly kind: "factoryTicks"; readonly ticks: number }
   | { readonly kind: "resetFactory" }

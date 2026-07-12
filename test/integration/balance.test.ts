@@ -21,8 +21,8 @@ function opts(seed: number): GenOptions {
   return {
     seed,
     nMaps: 2,
-    width: 10,
-    height: 10,
+    width: 32,
+    height: 32,
     catalog: DEFAULT_CATALOG,
     diseaseCount: 2,
     difficulty: BAND,

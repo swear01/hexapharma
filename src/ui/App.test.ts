@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { EffectMap, MultiMap } from "../sim/phase0_interfaces";
-import { recipeCandidateFailedAtInsertion, validateLabFogAuthority } from "./App";
+import { recipeCandidateFailedAtInsertion, validateLabFogAuthority, withFog } from "./App";
 
 function map(size: number): EffectMap {
   return {
@@ -25,6 +25,13 @@ describe("Lab fog authority", () => {
   it("reports layer count and cell-count mismatches instead of falling back", () => {
     expect(validateLabFogAuthority(mm, [])).toMatch(/layer count/i);
     expect(validateLabFogAuthority(mm, [new Uint8Array(8)])).toMatch(/layer A/i);
+  });
+
+  it("creates a fully revealed render copy without mutating persistent fog", () => {
+    const fog = new Uint8Array(9);
+    const rendered = withFog(mm, [fog], true);
+    expect([...rendered.maps[0]!.fog]).toEqual(new Array(9).fill(1));
+    expect([...fog]).toEqual(new Array(9).fill(0));
   });
 });
 

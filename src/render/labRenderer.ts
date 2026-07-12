@@ -12,11 +12,16 @@ import type { DrugState, EffectMap, MultiMap, Vec2 } from "../sim/phase0_interfa
 import { CellKind } from "../sim/phase0_interfaces";
 import {
   LAB_CELL_PIXELS,
+  LAB_MIN_ZOOM,
   LAB_VIEWPORT,
+  labGridKindForBoundary,
+  labGridLineStyle,
   visibleLabCells,
   type LabCamera,
+  type LabGridLineKind,
 } from "./labCamera";
 import { labAssetUrls } from "./labAssets";
+import { revealedRegionEdges } from "./labRegions";
 
 const CELL_COLOR: Record<number, number> = {
   [CellKind.Empty]: 0xdce4dc,
@@ -28,7 +33,9 @@ const CELL_COLOR: Record<number, number> = {
 
 const BG = 0x111a1b;
 const TOKEN_COLOR = 0x28a9d6;
-const MAX_VISIBLE_CELLS = 320;
+const MAX_VISIBLE_CELLS =
+  (Math.ceil(LAB_VIEWPORT.width / (LAB_CELL_PIXELS * LAB_MIN_ZOOM)) + 3) *
+  (Math.ceil(LAB_VIEWPORT.height / (LAB_CELL_PIXELS * LAB_MIN_ZOOM)) + 3);
 
 interface LabTextures {
   readonly substrate: Texture;
@@ -89,8 +96,52 @@ function featureTexture(textures: LabTextures, kind: number): Texture | null {
   if (kind === CellKind.Wall) return textures.wall;
   if (kind === CellKind.Hazard) return textures.hazard;
   if (kind === CellKind.SideEffect) return textures.sideEffect;
-  if (kind === CellKind.Cure) return textures.cure;
+  if (kind === CellKind.Cure) return null;
   return null;
+}
+
+function drawGridKind(
+  grid: Graphics,
+  kind: Exclude<LabGridLineKind, "origin">,
+  camera: LabCamera,
+  bounds: ReturnType<typeof visibleLabCells>,
+): void {
+  const topLeft = cellScreen(camera, bounds.x0, bounds.y0);
+  const bottomRight = cellScreen(camera, bounds.x1, bounds.y1);
+  let drewLine = false;
+  for (let x = bounds.x0; x <= bounds.x1; x++) {
+    if (labGridKindForBoundary(x) !== kind) continue;
+    const screen = cellScreen(camera, x, bounds.y0);
+    grid.moveTo(screen.x, topLeft.y).lineTo(screen.x, bottomRight.y);
+    drewLine = true;
+  }
+  for (let y = bounds.y0; y <= bounds.y1; y++) {
+    if (labGridKindForBoundary(y) !== kind) continue;
+    const screen = cellScreen(camera, bounds.x0, y);
+    grid.moveTo(topLeft.x, screen.y).lineTo(bottomRight.x, screen.y);
+    drewLine = true;
+  }
+  if (drewLine) grid.stroke(labGridLineStyle(kind, camera.zoom));
+}
+
+function drawLabGrid(map: EffectMap, camera: LabCamera, grid: Graphics): void {
+  const bounds = visibleLabCells(camera, LAB_VIEWPORT, map);
+  drawGridKind(grid, "minor", camera, bounds);
+  drawGridKind(grid, "major", camera, bounds);
+
+  const cell = LAB_CELL_PIXELS * camera.zoom;
+  const topLeft = cellScreen(camera, bounds.x0, bounds.y0);
+  const bottomRight = cellScreen(camera, bounds.x1, bounds.y1);
+  const origin = cellScreen(camera, map.origin.x, map.origin.y);
+  const style = labGridLineStyle("origin", camera.zoom);
+  if (map.origin.x >= bounds.x0 && map.origin.x < bounds.x1) {
+    const x = origin.x + cell / 2;
+    grid.moveTo(x, topLeft.y).lineTo(x, bottomRight.y).stroke(style);
+  }
+  if (map.origin.y >= bounds.y0 && map.origin.y < bounds.y1) {
+    const y = origin.y + cell / 2;
+    grid.moveTo(topLeft.x, y).lineTo(bottomRight.x, y).stroke(style);
+  }
 }
 
 function drawVisibleMap(
@@ -114,9 +165,9 @@ function drawVisibleMap(
 
       const kind = map.cell[y * map.width + x] ?? CellKind.Empty;
       if (kind !== CellKind.Empty) {
-        terrain.circle(screen.x + cell / 2, screen.y + cell / 2, cell * 0.44).fill({
+        terrain.rect(screen.x, screen.y, cell, cell).fill({
           color: CELL_COLOR[kind] ?? CELL_COLOR[CellKind.Empty],
-          alpha: 0.22,
+          alpha: kind === CellKind.Cure ? 0.3 : 0.2,
         });
       }
       const texture = featureTexture(textures, kind);
@@ -131,11 +182,17 @@ function drawVisibleMap(
         sprite.height = cell * (kind === CellKind.Wall ? 1.08 : 0.88);
         sprite.rotation = ((x * 7 + y * 11) & 3) * Math.PI / 2;
       }
-      if (kind === CellKind.Cure) {
-        const cx = screen.x + cell / 2;
-        const cy = screen.y + cell / 2;
-        terrain.circle(cx, cy, cell * 0.3).stroke({ color: 0xeafff5, width: 3 });
-        terrain.circle(cx, cy, cell * 0.1).fill({ color: 0xeafff5 });
+      if (kind !== CellKind.Empty) {
+        const edges = revealedRegionEdges(map, x, y);
+        const edgeStyle = {
+          color: kind === CellKind.Cure ? 0x75f0b8 : (CELL_COLOR[kind] ?? 0xffffff),
+          width: Math.max(2, cell * (kind === CellKind.Cure ? 0.07 : 0.045)),
+          alpha: kind === CellKind.Cure ? 0.9 : 0.7,
+        };
+        if (edges.top) terrain.moveTo(screen.x, screen.y).lineTo(screen.x + cell, screen.y).stroke(edgeStyle);
+        if (edges.right) terrain.moveTo(screen.x + cell, screen.y).lineTo(screen.x + cell, screen.y + cell).stroke(edgeStyle);
+        if (edges.bottom) terrain.moveTo(screen.x, screen.y + cell).lineTo(screen.x + cell, screen.y + cell).stroke(edgeStyle);
+        if (edges.left) terrain.moveTo(screen.x, screen.y).lineTo(screen.x, screen.y + cell).stroke(edgeStyle);
       }
     }
   }
@@ -266,6 +323,7 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
   });
   substrate.tileScale.set(0.42);
   substrate.alpha = 0.82;
+  const grid = new Graphics();
   const terrain = new Graphics();
   const route = new Graphics();
   const previewRoute = new Graphics();
@@ -293,6 +351,7 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
     fogBackdrop,
     substrate,
     revealMask,
+    grid,
     terrain,
     route,
     previewRoute,
@@ -308,6 +367,7 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
   return {
     canvas: app.canvas,
     render: (mm, drug, view) => {
+      grid.clear();
       terrain.clear();
       route.clear();
       previewRoute.clear();
@@ -328,6 +388,7 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
       substrate.tileScale.set(0.42 * view.camera.zoom);
       fogBackdrop.tilePosition.copyFrom(substrate.tilePosition);
       fogBackdrop.tileScale.copyFrom(substrate.tileScale);
+      drawLabGrid(map, view.camera, grid);
       drawVisibleMap(map, view.camera, textures, terrain, featureSprites, revealMask);
       drawTrail(view.trail, view.camera, route);
       if (view.previewTrail !== undefined) drawTrail(view.previewTrail, view.camera, previewRoute, true);
@@ -345,6 +406,7 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
       fogBackdrop.destroy();
       substrate.mask = null;
       substrate.destroy();
+      grid.destroy();
       terrain.destroy();
       route.destroy();
       previewRoute.destroy();

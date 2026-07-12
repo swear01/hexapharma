@@ -8,8 +8,8 @@ async function factoryCell(page: Page, x: number, y: number): Promise<{ x: numbe
     width: (element as HTMLCanvasElement).width,
     height: (element as HTMLCanvasElement).height,
   }));
-  const px = 12 + x * 56 + 28;
-  const py = 12 + y * 56 + 28;
+  const px = 12 + x * 42 + 21;
+  const py = 12 + y * 42 + 21;
   return {
     x: box.x + px / intrinsic.width * box.width,
     y: box.y + py / intrinsic.height * box.height,
@@ -278,7 +278,7 @@ test("touch tap builds while touch drag pans without editing", async ({ browser 
     element.scrollLeft = (element.scrollWidth - element.clientWidth) / 2;
     element.scrollTop = (element.scrollHeight - element.clientHeight) / 2;
   });
-  const point = await factoryCell(page, 3, 2);
+  const point = await factoryCell(page, 15, 8);
 
   await page.touchscreen.tap(point.x, point.y);
   await expect(page.getByTestId("factory-undo")).toBeEnabled();

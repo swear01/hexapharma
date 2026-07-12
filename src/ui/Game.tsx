@@ -159,8 +159,8 @@ export function Game() {
     }
   }, []);
 
-  const saveRecipe = useCallback((recipe: Template) => {
-    if (dispatch({ kind: "saveRecipe", recipe })) openTab("factory");
+  const saveRecipe = useCallback((recipe: Template, factory: FactoryLayout) => {
+    if (dispatch({ kind: "saveRecipe", recipe, factory })) openTab("factory");
   }, [dispatch, openTab]);
 
   const explore = useCallback((template: Template) => {
@@ -383,6 +383,8 @@ export function Game() {
             level={level}
             fog={game.fog}
             catalog={catalog}
+            pilotWidth={BASE_GAME_FACTORY_WIDTH + patentEffects.factoryDw}
+            pilotHeight={BASE_GAME_FACTORY_HEIGHT + patentEffects.factoryDh}
             onExplore={explore}
             onSaveRecipe={saveRecipe}
           />

@@ -989,6 +989,144 @@ textarea:focus-visible,
   backdrop-filter: blur(12px);
 }
 
+.pilot-bench {
+  position: absolute;
+  z-index: 20;
+  top: 68px;
+  right: 18px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: min(46%, 620px);
+  height: min(38%, 330px);
+  min-height: 210px;
+  overflow: hidden;
+  border: 1px solid rgb(85 221 203 / 42%);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(160deg, rgb(22 34 41 / 97%), rgb(8 13 17 / 98%));
+  box-shadow: 0 18px 54px rgb(0 0 0 / 56%);
+  backdrop-filter: blur(10px);
+  touch-action: manipulation;
+}
+
+.pilot-bench-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 7px 8px 6px 11px;
+  gap: 8px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.pilot-bench-header > div:first-child {
+  display: grid;
+  min-width: 0;
+}
+
+.pilot-bench-header strong {
+  color: var(--teal-400);
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.pilot-bench-header span,
+.pilot-message {
+  overflow: hidden;
+  color: var(--steel-300);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pilot-bench-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 5px;
+}
+
+.pilot-bench-actions button {
+  min-height: 32px;
+  padding: 3px 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  color: var(--steel-200);
+  background: var(--steel-800);
+  font-size: 9px;
+}
+
+.pilot-scroll {
+  min-height: 0;
+  overflow: auto;
+  padding: 8px;
+  background:
+    linear-gradient(90deg, rgb(85 221 203 / 3%) 1px, transparent 1px),
+    linear-gradient(rgb(85 221 203 / 3%) 1px, transparent 1px),
+    #091014;
+  background-size: 150px 150px;
+}
+
+.pilot-grid {
+  display: grid;
+  width: max-content;
+  border-top: 1px solid rgb(157 176 184 / 30%);
+  border-left: 1px solid rgb(157 176 184 / 30%);
+}
+
+.pilot-cell {
+  display: grid;
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  min-height: 40px;
+  place-items: center;
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  border-right: 1px solid rgb(157 176 184 / 22%);
+  border-bottom: 1px solid rgb(157 176 184 / 22%);
+  border-radius: 0;
+  color: var(--steel-300);
+  background: rgb(13 20 25 / 72%);
+  font-size: 15px;
+  cursor: crosshair;
+}
+
+.pilot-cell.is-major-column {
+  border-right-color: rgb(85 221 203 / 38%);
+}
+
+.pilot-cell.has-machine {
+  border-color: rgb(245 158 66 / 54%);
+  background: linear-gradient(145deg, #70411f, #352619);
+  cursor: grab;
+}
+
+.pilot-cell.has-machine.is-selected {
+  position: relative;
+  z-index: 2;
+  outline: 2px solid var(--orange-400);
+  outline-offset: -2px;
+  filter: brightness(1.22);
+}
+
+.pilot-source,
+.pilot-sink {
+  color: var(--teal-400);
+  background: rgb(17 137 121 / 30%);
+}
+
+.pilot-belt {
+  color: var(--orange-400);
+  background: rgb(184 94 27 / 14%);
+}
+
+.pilot-message {
+  min-height: 25px;
+  padding: 6px 10px;
+  border-top: 1px solid var(--line-soft);
+}
+
 .recipe-dock-header {
   display: flex;
   align-items: center;

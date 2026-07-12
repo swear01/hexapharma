@@ -28,6 +28,7 @@ import type {
   Rotation,
   MachineCatalogEntry,
   DiseaseId,
+  FactoryLayout,
   GeneratedLevel,
 } from "../sim/phase0_interfaces";
 import { DEFAULT_CATALOG } from "../sim/phase0_interfaces";
@@ -45,6 +46,7 @@ import {
 import { MachineIcon } from "./MachineIcon";
 import { createRecipeEditor, recipeEditorReducer } from "./recipeEditor";
 import { buildFogSafeRecipePreview, buildRecipePreview, maskRecipeTrailForFog } from "./recipePreview";
+import { PilotBench } from "./PilotBench";
 
 // ───────────────────────────── level generation ─────────────────────────────
 
@@ -54,7 +56,7 @@ import { buildFogSafeRecipePreview, buildRecipePreview, maskRecipeTrailForFog } 
  * renderer reads `map.fog`, drawing fogged cells as UNKNOWN. The persistent arrays
  * must match the level exactly; authority mismatches are shown as renderer errors.
  */
-function withFog(mm: MultiMap, fog: readonly Uint8Array[], revealAll: boolean): MultiMap {
+export function withFog(mm: MultiMap, fog: readonly Uint8Array[], revealAll: boolean): MultiMap {
   return {
     maps: mm.maps.map((m, i): EffectMap => {
       if (revealAll) return { ...m, fog: new Uint8Array(m.fog.length).fill(1) };
@@ -160,12 +162,23 @@ interface AppProps {
   /** Persistent exploration fog (one Uint8Array per map), owned by the Game. */
   readonly fog: readonly Uint8Array[];
   readonly catalog: readonly MachineCatalogEntry[];
+  readonly pilotWidth: number;
+  readonly pilotHeight: number;
   readonly onExplore: (template: Template) => void;
   /** Called with the winning template when the player saves a cure to the Factory. */
-  readonly onSaveRecipe: (winning: Template) => void;
+  readonly onSaveRecipe: (winning: Template, prototype: FactoryLayout) => void;
 }
 
-export function App({ active, level, fog, catalog, onExplore, onSaveRecipe }: AppProps) {
+export function App({
+  active,
+  level,
+  fog,
+  catalog,
+  pilotWidth,
+  pilotHeight,
+  onExplore,
+  onSaveRecipe,
+}: AppProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<LabRenderer | null>(null);
   const [rendererError, setRendererError] = useState<string | null>(null);
@@ -191,6 +204,7 @@ export function App({ active, level, fog, catalog, onExplore, onSaveRecipe }: Ap
 
   const [editor, edit] = useReducer(recipeEditorReducer, undefined, () => createRecipeEditor());
   const steps = editor.steps;
+  const currentTemplate = useMemo<Template>(() => ({ steps }), [steps]);
 
   // The animating drug token state (fog is external/persistent, not stored here).
   const [shownDrug, setShownDrug] = useState<DrugState>(start);
@@ -215,6 +229,8 @@ export function App({ active, level, fog, catalog, onExplore, onSaveRecipe }: Ap
   const [running, setRunning] = useState<boolean>(false);
   const [runStep, setRunStep] = useState<number | null>(null);
   const [drag, setDrag] = useState<{ readonly from: number; readonly over: number; readonly moved: boolean } | null>(null);
+  const [pilotLayout, setPilotLayout] = useState<FactoryLayout | null>(null);
+  const updatePilotLayout = useCallback((layout: FactoryLayout | null) => setPilotLayout(layout), []);
 
   const won = useMemo(() => {
     if (outcome === null || outcome.failed) return false;
@@ -225,10 +241,10 @@ export function App({ active, level, fog, catalog, onExplore, onSaveRecipe }: Ap
   // A recipe is shippable once it cures at least one target (cross-map tension
   // means a single drug usually cures one disease; each is a sellable product).
   const canShip = useMemo(() => {
-    if (outcome === null || outcome.failed) return false;
+    if (outcome === null || outcome.failed || pilotLayout === null) return false;
     const targetSet = new Set(targets);
     return outcome.cured.some((c) => targetSet.has(c));
-  }, [outcome, targets]);
+  }, [outcome, pilotLayout, targets]);
 
   // Cancel token so a Reset (or unmount) stops an in-flight animation.
   const runIdRef = useRef(0);
@@ -752,6 +768,13 @@ export function App({ active, level, fog, catalog, onExplore, onSaveRecipe }: Ap
             {outcomeText(outcome, won)}
           </div>
 
+          <PilotBench
+            template={currentTemplate}
+            width={pilotWidth}
+            height={pilotHeight}
+            onLayoutChange={updatePilotLayout}
+          />
+
           <section className="lab-command-deck" aria-label="Recipe editor">
             <header className="recipe-dock-header">
               <div>
@@ -769,7 +792,7 @@ export function App({ active, level, fog, catalog, onExplore, onSaveRecipe }: Ap
               )}
               <button
                 type="button"
-                onClick={() => onSaveRecipe({ steps })}
+                onClick={() => { if (pilotLayout !== null) onSaveRecipe({ steps }, pilotLayout); }}
                 className="recipe-ship"
                 disabled={!canShip}
                 title="Send valid recipe to Factory"
@@ -967,7 +990,7 @@ export function App({ active, level, fog, catalog, onExplore, onSaveRecipe }: Ap
 
           <button
             type="button"
-            onClick={() => onSaveRecipe({ steps })}
+            onClick={() => { if (pilotLayout !== null) onSaveRecipe({ steps }, pilotLayout); }}
             className="primary-action"
             data-testid="save-recipe"
             disabled={!canShip}

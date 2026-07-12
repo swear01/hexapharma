@@ -25,7 +25,7 @@ import { worldCells, worldInPorts, worldOutPorts } from "../sim/factory-geom";
 
 // ───────────────────────────── layout constants ─────────────────────────────
 
-const CELL = 56; // px per grid cell
+const CELL = 42; // px per grid cell
 const PAD = 12; // outer padding
 
 // ───────────────────────────── palette ─────────────────────────────

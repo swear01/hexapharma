@@ -44,7 +44,7 @@ import {
   snapshotFactory,
   stepFactory,
 } from "./factory-sim";
-import { compileTemplate } from "./recipe";
+import { derivePrototypeTemplate, factoryOutcome } from "./recipe";
 import { hashInit, hashU32 } from "./hash";
 import { worldCells } from "./factory-geom";
 import { estimateGameReplayWork } from "./replay-work";
@@ -272,7 +272,11 @@ function ownFactoryLayout(layout: FactoryLayout): FactoryLayout {
 function ownGameIntent(intent: GameIntent): GameIntent {
   switch (intent.kind) {
     case "saveRecipe":
-      return Object.freeze({ kind: "saveRecipe", recipe: ownTemplate(intent.recipe) });
+      return Object.freeze({
+        kind: "saveRecipe",
+        recipe: ownTemplate(intent.recipe),
+        factory: ownFactoryLayout(intent.factory),
+      });
     case "setFactory":
       return Object.freeze({ kind: "setFactory", factory: ownFactoryLayout(intent.factory) });
     case "factoryTicks":
@@ -784,12 +788,25 @@ function reduceGameIntent(game: GameState, intent: GameIntent): GameState {
       if (outcome.failed || outcome.cured.length === 0) {
         throw new Error("game intent: saved recipe must produce a non-failed cure");
       }
+      validateFactoryLayout(game, intent.factory);
       const effects = activeEffects(DEFAULT_PATENTS, game.patents);
-      const factory = expandFactory(
-        ownFactoryLayout(compileTemplate(intent.recipe)),
-        effects.factoryDw,
-        effects.factoryDh,
-      );
+      const entitledWidth = BASE_GAME_FACTORY_WIDTH + effects.factoryDw;
+      const entitledHeight = BASE_GAME_FACTORY_HEIGHT + effects.factoryDh;
+      if (intent.factory.width !== entitledWidth || intent.factory.height !== entitledHeight) {
+        throw new Error(
+          `game intent: pilot prototype must use the entitled ` +
+            `${entitledWidth}x${entitledHeight} Factory floor`,
+        );
+      }
+      const derivedRecipe = derivePrototypeTemplate(intent.factory);
+      if (canonical(derivedRecipe) !== canonical(intent.recipe)) {
+        throw new Error("game intent: physical pilot topology does not match the submitted recipe");
+      }
+      const physicalOutcome = factoryOutcome(intent.factory, level.mm, level.start);
+      if (canonical(physicalOutcome) !== canonical(outcome)) {
+        throw new Error("game intent: pilot prototype routing does not realize the saved recipe");
+      }
+      const factory = ownFactoryLayout(intent.factory);
       if (
         game.recipe !== null &&
         game.factory !== null &&
@@ -1168,6 +1185,7 @@ function validateTraceIntent(intent: unknown, index: number): asserts intent is 
   switch (intent.kind) {
     case "saveRecipe":
       requireObject(intent.recipe, `${path}.recipe`);
+      requireObject(intent.factory, `${path}.factory`);
       return;
     case "setFactory":
       requireObject(intent.factory, `${path}.factory`);
@@ -1295,7 +1313,12 @@ function validateDrugState(
 function validateRuntime(game: GameState, runtime: FactoryRuntime, level: GeneratedLevel): void {
   const layout = game.factory;
   if (layout === null) throw new Error("game state: factory runtime requires a layout");
-  const capacity = layout.width * layout.height + layout.machines.length;
+  const capacity = layout.machines.length + layout.tiles.reduce(
+    (count, tile) => count + (
+      tile.kind === "belt" || tile.kind === "splitter" || tile.kind === "merger" ? 1 : 0
+    ),
+    0,
+  );
   const sourceCount = layout.tiles.reduce(
     (count, tile) => count + (tile.kind === "source" ? 1 : 0),
     0,

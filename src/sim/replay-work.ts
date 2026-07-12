@@ -5,11 +5,11 @@ import {
   MAX_GAME_MAP_CELLS,
   MAX_GAME_MAP_DIMENSION,
   MAX_GAME_REPLAY_WORK,
+  MAX_FACTORY_REPLAY_TICKS,
   type FactoryLayout,
   type GameIntent,
   type GenOptions,
 } from "./phase0_interfaces";
-import { compileTemplate } from "./recipe";
 
 interface FactoryWorkProfile {
   readonly width: number;
@@ -77,7 +77,8 @@ function profile(
         `${MAX_GAME_FACTORY_DIMENSION} and ${MAX_GAME_FACTORY_CELLS} cells`,
     );
   }
-  const capacity = area + machines;
+  const coldCapacity = area + machines;
+  const carrierCapacity = carriers + machines;
   const activeWidth = carriers + machines + sources;
   return {
     width,
@@ -85,8 +86,14 @@ function profile(
     machines,
     sources,
     carriers,
-    cold: Math.min(MAX_GAME_REPLAY_WORK + 1, capacity * 16 + geometry * 4),
-    perTick: cappedAdd(cappedMultiply(capacity, 4), cappedMultiply(activeWidth, activeWidth)),
+    cold: Math.min(MAX_GAME_REPLAY_WORK + 1, coldCapacity * 16 + geometry * 4),
+    perTick: cappedAdd(
+      area,
+      cappedAdd(
+        cappedMultiply(carrierCapacity, 4),
+        cappedMultiply(activeWidth, activeWidth),
+      ),
+    ),
   };
 }
 
@@ -134,6 +141,22 @@ function mapTraversalWork(mapCells: number, steps: number): number {
   return cappedMultiply(mapCells, steps + 4);
 }
 
+function factoryOutcomeWork(layout: FactoryLayout, factory: FactoryWorkProfile): number {
+  const area = cappedMultiply(factory.width, factory.height);
+  let ticks = Math.min(MAX_FACTORY_REPLAY_TICKS, cappedAdd(area, 16));
+  for (const machine of layout.machines) {
+    const speed = machine.def.speed;
+    if (!Number.isSafeInteger(speed) || speed < 0) return MAX_GAME_REPLAY_WORK + 1;
+    if (ticks >= MAX_FACTORY_REPLAY_TICKS - speed) {
+      ticks = MAX_FACTORY_REPLAY_TICKS;
+      break;
+    }
+    ticks += speed;
+  }
+  const activeWidth = cappedAdd(area, cappedAdd(factory.machines, factory.sources));
+  return cappedMultiply(cappedMultiply(activeWidth, activeWidth), ticks);
+}
+
 export function estimateGameReplayWork(
   origin: GenOptions,
   intents: readonly GameIntent[],
@@ -141,20 +164,15 @@ export function estimateGameReplayWork(
   let mapCells = requireMapCells(origin);
   let total = cappedMultiply(mapCells, 32);
   let factory: FactoryWorkProfile | null = null;
-  let factoryWidthDelta = 0;
-  const factoryHeightDelta = 0;
   let nMaps = origin.nMaps;
   for (const intent of intents) {
     let intentWork = 0;
     switch (intent.kind) {
       case "saveRecipe": {
-        factory = layoutProfile(compileTemplate(intent.recipe));
-        if (factoryWidthDelta !== 0 || factoryHeightDelta !== 0) {
-          factory = expandProfile(factory, factoryWidthDelta, factoryHeightDelta);
-        }
+        factory = layoutProfile(intent.factory);
         intentWork = cappedAdd(
           mapTraversalWork(mapCells, intent.recipe.steps.length),
-          factory.cold,
+          cappedAdd(factory.cold, factoryOutcomeWork(intent.factory, factory)),
         );
         break;
       }
@@ -182,7 +200,6 @@ export function estimateGameReplayWork(
       case "unlockPatent":
         intentWork = 262_144;
         if (intent.id === "bench-2") {
-          factoryWidthDelta += 2;
           if (factory !== null) {
             factory = expandProfile(factory, 2, 0);
             intentWork = cappedAdd(intentWork, factory.cold);

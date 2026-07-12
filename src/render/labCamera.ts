@@ -1,7 +1,15 @@
 export const LAB_VIEWPORT = { width: 704, height: 512 } as const;
-export const LAB_CELL_PIXELS = 64;
+export const LAB_CELL_PIXELS = 40;
 export const LAB_MIN_ZOOM = 0.75;
 export const LAB_MAX_ZOOM = 2.25;
+
+export type LabGridLineKind = "minor" | "major" | "origin";
+
+export interface LabGridLineStyle {
+  readonly color: number;
+  readonly alpha: number;
+  readonly width: number;
+}
 
 export interface LabCamera {
   readonly x: number;
@@ -24,6 +32,21 @@ export interface VisibleLabCells {
   readonly y0: number;
   readonly x1: number;
   readonly y1: number;
+}
+
+export function labGridKindForBoundary(coordinate: number): Exclude<LabGridLineKind, "origin"> {
+  return coordinate % 5 === 0 ? "major" : "minor";
+}
+
+export function labGridLineStyle(kind: LabGridLineKind, zoom: number): LabGridLineStyle {
+  const normalizedZoom = Math.min(1, Math.max(0, (zoom - LAB_MIN_ZOOM) / (1 - LAB_MIN_ZOOM)));
+  if (kind === "origin") {
+    return { color: 0x7ce5d1, alpha: 0.48 + normalizedZoom * 0.06, width: 2.25 };
+  }
+  if (kind === "major") {
+    return { color: 0xb2c9c4, alpha: 0.2 + normalizedZoom * 0.05, width: 1.4 };
+  }
+  return { color: 0xa4b6b2, alpha: 0.055 + normalizedZoom * 0.055, width: 1 };
 }
 
 export function focusLabCamera(cell: Point): LabCamera {

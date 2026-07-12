@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  LAB_CELL_PIXELS,
+  LAB_MIN_ZOOM,
   clampLabCamera,
   focusLabCamera,
+  labGridKindForBoundary,
+  labGridLineStyle,
   labScreenToWorld,
   labTrailsForFrames,
   panLabCamera,
@@ -14,13 +18,42 @@ const viewport = { width: 704, height: 512 };
 const map = { width: 63, height: 63 };
 
 describe("Lab camera", () => {
-  it("shows only a local 11 by 8 cell window at the default zoom", () => {
+  it("uses a compact 40 px atlas grid and still shows only a local map window", () => {
+    expect(LAB_CELL_PIXELS).toBe(40);
     const camera = focusLabCamera({ x: 31, y: 31 });
     const bounds = visibleLabCells(camera, viewport, map);
-    expect(bounds.x1 - bounds.x0).toBeLessThanOrEqual(13);
-    expect(bounds.y1 - bounds.y0).toBeLessThanOrEqual(11);
+    expect(bounds.x1 - bounds.x0).toBeGreaterThanOrEqual(18);
+    expect(bounds.x1 - bounds.x0).toBeLessThanOrEqual(21);
+    expect(bounds.y1 - bounds.y0).toBeGreaterThanOrEqual(14);
+    expect(bounds.y1 - bounds.y0).toBeLessThanOrEqual(16);
     expect(bounds.x0).toBeGreaterThan(0);
     expect(bounds.y0).toBeGreaterThan(0);
+  });
+
+  it("keeps major and origin grid lines stronger than minor lines", () => {
+    const minor = labGridLineStyle("minor", 1);
+    const major = labGridLineStyle("major", 1);
+    const origin = labGridLineStyle("origin", 1);
+    expect(minor.alpha).toBeGreaterThan(0);
+    expect(major.alpha).toBeGreaterThan(minor.alpha);
+    expect(origin.alpha).toBeGreaterThan(major.alpha);
+    expect(origin.width).toBeGreaterThan(major.width);
+  });
+
+  it("marks every fifth cell boundary as a major line", () => {
+    expect(labGridKindForBoundary(0)).toBe("major");
+    expect(labGridKindForBoundary(4)).toBe("minor");
+    expect(labGridKindForBoundary(5)).toBe("major");
+    expect(labGridKindForBoundary(10)).toBe("major");
+  });
+
+  it("fades minor grid lines when zoomed out without hiding the major grid", () => {
+    const zoomedOutMinor = labGridLineStyle("minor", LAB_MIN_ZOOM);
+    const defaultMinor = labGridLineStyle("minor", 1);
+    const zoomedOutMajor = labGridLineStyle("major", LAB_MIN_ZOOM);
+    expect(zoomedOutMinor.alpha).toBeLessThan(defaultMinor.alpha);
+    expect(zoomedOutMajor.alpha).toBeGreaterThan(zoomedOutMinor.alpha);
+    expect(zoomedOutMajor.alpha).toBeGreaterThanOrEqual(0.18);
   });
 
   it("focuses a grid cell at the viewport centre", () => {
@@ -44,12 +77,12 @@ describe("Lab camera", () => {
 
   it("pans in pixels and clamps the camera to a map", () => {
     const camera = focusLabCamera({ x: 31, y: 31 });
-    const moved = panLabCamera(camera, 128, 64, viewport, map);
+    const moved = panLabCamera(camera, 80, 40, viewport, map);
     expect(moved.x).toBeCloseTo(29.5);
     expect(moved.y).toBeCloseTo(30.5);
     expect(clampLabCamera({ x: -99, y: 99, zoom: 1 }, viewport, map)).toEqual({
-      x: 5.5,
-      y: 59,
+      x: 8.8,
+      y: 56.6,
       zoom: 1,
     });
   });

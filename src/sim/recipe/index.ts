@@ -13,6 +13,7 @@ import type {
   FactoryMachineDef,
   Machine,
   MachineShape,
+  Template,
   CompileTemplateFn,
   FactoryOutcomeFn,
 } from "../phase0_interfaces";
@@ -194,6 +195,380 @@ interface Placed {
   readonly inMoveDir: Dir; // direction a unit moves to enter the input port
   readonly outExit: Vec2; // free cell just outside the output port (belt leaves here)
   readonly outSide: Dir; // the world side the output port faces (units leave toward here)
+}
+
+export interface PrototypePlacement {
+  readonly anchor: Vec2;
+  readonly footRot: Rotation;
+}
+
+export interface CompiledPrototype {
+  readonly placements: readonly PrototypePlacement[];
+  readonly layout: FactoryLayout;
+}
+
+function emptyFactoryTiles(width: number, height: number): FactoryTile[] {
+  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 3 || height < 3) {
+    throw new Error("compilePrototype: bench dimensions must be safe integers >= 3");
+  }
+  const tiles: FactoryTile[] = [];
+  for (let cell = 0; cell < width * height; cell++) tiles.push({ kind: "empty" });
+  return tiles;
+}
+
+function inside(width: number, height: number, point: Vec2): boolean {
+  return point.x >= 0 && point.y >= 0 && point.x < width && point.y < height;
+}
+
+/**
+ * Route a real pilot-bench prototype through player-owned machine anchors. The returned
+ * layout is already a valid FactoryLayout and is transferred byte-for-byte to Factory;
+ * no later packing pass is required.
+ */
+export function compilePrototype(
+  template: Template,
+  width: number,
+  height: number,
+  placements: readonly PrototypePlacement[],
+): FactoryLayout {
+  if (placements.length !== template.steps.length) {
+    throw new Error("compilePrototype: every recipe step needs exactly one physical placement");
+  }
+  const tiles = emptyFactoryTiles(width, height);
+  const blocked = new Uint8Array(width * height);
+  const source: Vec2 = { x: 0, y: Math.floor(height / 2) };
+  const sink: Vec2 = { x: width - 1, y: Math.floor(height / 2) };
+  tiles[at(width, source.x, source.y)] = { kind: "source", dir: E, period: 1 };
+  tiles[at(width, sink.x, sink.y)] = { kind: "sink" };
+  blocked[at(width, source.x, source.y)] = 1;
+  blocked[at(width, sink.x, sink.y)] = 1;
+
+  const placed: Placed[] = [];
+  for (let index = 0; index < template.steps.length; index++) {
+    const step = template.steps[index]!;
+    const placement = placements[index]!;
+    const shape = shapeOf(step.typeId);
+    const machine: PlacedMachine = {
+      id: index,
+      def: defOf(step),
+      anchor: { x: placement.anchor.x, y: placement.anchor.y },
+      footRot: placement.footRot,
+      shape,
+    };
+    const cells = worldCells(machine);
+    for (const cell of cells) {
+      if (!inside(width, height, cell)) {
+        throw new Error(`compilePrototype: machine ${index} extends outside the pilot bench`);
+      }
+      const cellIndex = at(width, cell.x, cell.y);
+      if (blocked[cellIndex]) {
+        throw new Error(`compilePrototype: machine ${index} overlaps another occupied cell`);
+      }
+      blocked[cellIndex] = 1;
+    }
+    const input = worldInPorts(machine)[0];
+    const output = worldOutPorts(machine)[0];
+    if (input === undefined || output === undefined) {
+      throw new Error(`compilePrototype: machine ${index} needs an input and output port`);
+    }
+    const inApproach = {
+      x: input.x + (DIR_DX[input.side] ?? 0),
+      y: input.y + (DIR_DY[input.side] ?? 0),
+    };
+    const outExit = {
+      x: output.x + (DIR_DX[output.side] ?? 0),
+      y: output.y + (DIR_DY[output.side] ?? 0),
+    };
+    if (!inside(width, height, inApproach) || !inside(width, height, outExit)) {
+      throw new Error(`compilePrototype: machine ${index} port faces outside the pilot bench`);
+    }
+    placed.push({
+      machine,
+      inPortCell: { x: input.x, y: input.y },
+      inPortSide: input.side,
+      inApproach,
+      inMoveDir: ((input.side + 2) & 3) as Dir,
+      outExit,
+      outSide: output.side,
+    });
+  }
+
+  function layBelt(x: number, y: number, dir: Dir): void {
+    tiles[at(width, x, y)] = { kind: "belt", dir };
+    blocked[at(width, x, y)] = 1;
+  }
+  let routeFinalDir: Dir = E;
+  function routeAndLay(from: Vec2, to: Vec2): void {
+    if (!inside(width, height, from) || !inside(width, height, to)) {
+      throw new Error("compilePrototype: a route endpoint lies outside the pilot bench");
+    }
+    const fromIndex = at(width, from.x, from.y);
+    const toIndex = at(width, to.x, to.y);
+    const toIsSink = to.x === sink.x && to.y === sink.y;
+    if (blocked[fromIndex]) {
+      throw new Error(`compilePrototype: route start ${from.x},${from.y} is occupied`);
+    }
+    if (blocked[toIndex] && !toIsSink) {
+      throw new Error(`compilePrototype: route end ${to.x},${to.y} is occupied`);
+    }
+    const wasToBlocked = blocked[toIndex] ?? 0;
+    if (toIsSink) blocked[toIndex] = 0;
+    const path = bfsPath(width, height, blocked, from, to);
+    blocked[toIndex] = wasToBlocked;
+    if (path === null) {
+      throw new Error(
+        `compilePrototype: no belt route ${from.x},${from.y} -> ${to.x},${to.y}`,
+      );
+    }
+    for (let pathIndex = 0; pathIndex < path.length; pathIndex++) {
+      const cell = path[pathIndex]!;
+      if ((cell.x === source.x && cell.y === source.y) ||
+          (cell.x === sink.x && cell.y === sink.y)) continue;
+      const next = path[pathIndex + 1];
+      layBelt(cell.x, cell.y, next === undefined ? routeFinalDir : dirBetween(cell, next));
+    }
+  }
+  const same = (a: Vec2, b: Vec2): boolean => a.x === b.x && a.y === b.y;
+  const opposite = (dir: Dir): Dir => ((dir + 2) & 3) as Dir;
+  const sourceExit = { x: source.x + 1, y: source.y };
+  if (placed.length === 0) {
+    routeAndLay(sourceExit, sink);
+  } else {
+    const first = placed[0]!;
+    if (!(same(sourceExit, first.inPortCell) && first.inPortSide === W)) {
+      routeFinalDir = first.inMoveDir;
+      routeAndLay(sourceExit, first.inApproach);
+    }
+    for (let index = 0; index + 1 < placed.length; index++) {
+      const current = placed[index]!;
+      const next = placed[index + 1]!;
+      if (same(current.outExit, next.inPortCell) && opposite(current.outSide) === next.inPortSide) {
+        continue;
+      }
+      routeFinalDir = next.inMoveDir;
+      routeAndLay(current.outExit, next.inApproach);
+    }
+    const last = placed[placed.length - 1]!;
+    if (!same(last.outExit, sink)) routeAndLay(last.outExit, sink);
+  }
+  const layout = { width, height, tiles, machines: placed.map((entry) => entry.machine) };
+  const derived = derivePrototypeTemplate(layout);
+  if (JSON.stringify(derived) !== JSON.stringify(template)) {
+    throw new Error("compilePrototype: routed topology changed the submitted machine sequence");
+  }
+  return layout;
+}
+
+function machineStep(placed: PlacedMachine): Machine {
+  return {
+    typeId: placed.def.typeId,
+    transform: placed.def.transform.kind === "translate"
+      ? {
+          kind: "translate",
+          delta: { x: placed.def.transform.delta.x, y: placed.def.transform.delta.y },
+          relation: placed.def.transform.relation,
+        }
+      : placed.def.transform.kind === "scale"
+        ? { kind: "scale", num: placed.def.transform.num, den: placed.def.transform.den }
+        : { kind: "swap", a: placed.def.transform.a, b: placed.def.transform.b },
+    orientation: {
+      rot: placed.def.orientation.rot,
+      flip: placed.def.orientation.flip,
+    },
+  };
+}
+
+/**
+ * Derive the effect recipe from one physical, acyclic source-to-sink prototype.
+ * Pilot benches intentionally reject branches, mergers, loops, disconnected machines,
+ * and ambiguous ports; those industrial concerns belong to Factory after transfer.
+ */
+export function derivePrototypeTemplate(layout: FactoryLayout): Template {
+  let source: { readonly x: number; readonly y: number; readonly dir: Dir } | null = null;
+  let sinks = 0;
+  for (let index = 0; index < layout.tiles.length; index++) {
+    const tile = layout.tiles[index];
+    if (tile?.kind === "splitter" || tile?.kind === "merger") {
+      throw new Error("pilot prototype: splitters and mergers are Factory-only");
+    }
+    if (tile?.kind === "source") {
+      if (source !== null) throw new Error("pilot prototype: exactly one source is required");
+      source = { x: index % layout.width, y: Math.floor(index / layout.width), dir: tile.dir };
+    }
+    if (tile?.kind === "sink") sinks++;
+  }
+  if (source === null || sinks !== 1) {
+    throw new Error("pilot prototype: exactly one source and one analyzer sink are required");
+  }
+
+  const area = layout.width * layout.height;
+  const inputOwner = new Int32Array(area * 4);
+  const outputX = new Int32Array(layout.machines.length);
+  const outputY = new Int32Array(layout.machines.length);
+  const outputSide = new Int8Array(layout.machines.length);
+  for (let slot = 0; slot < layout.machines.length; slot++) {
+    const machine = layout.machines[slot]!;
+    for (const port of worldInPorts(machine)) {
+      if (port.x < 0 || port.y < 0 || port.x >= layout.width || port.y >= layout.height) {
+        throw new Error("pilot prototype: machine input lies outside the bench");
+      }
+      const moveDir = ((port.side + 2) & 3) as Dir;
+      const key = (at(layout.width, port.x, port.y) * 4) + moveDir;
+      inputOwner[key] = inputOwner[key] === 0 ? slot + 1 : -1;
+    }
+    const outputs = worldOutPorts(machine);
+    if (outputs.length !== 1) throw new Error("pilot prototype: each machine needs one output port");
+    outputX[slot] = outputs[0]!.x;
+    outputY[slot] = outputs[0]!.y;
+    outputSide[slot] = outputs[0]!.side;
+  }
+
+  const steps: Machine[] = [];
+  const usedMachines = new Uint8Array(layout.machines.length);
+  const visited = new Uint8Array(area * 4);
+  const visitedBelts = new Uint8Array(area);
+  let usedMachineCount = 0;
+  let x = source.x + (DIR_DX[source.dir] ?? 0);
+  let y = source.y + (DIR_DY[source.dir] ?? 0);
+  let moveDir = source.dir;
+  const maxHops = layout.width * layout.height + layout.machines.length + 1;
+  for (let hop = 0; hop < maxHops; hop++) {
+    if (x < 0 || y < 0 || x >= layout.width || y >= layout.height) {
+      throw new Error("pilot prototype: route leaves the bench before reaching the analyzer");
+    }
+    const stateKey = (at(layout.width, x, y) * 4) + moveDir;
+    if (visited[stateKey] === 1) throw new Error("pilot prototype: route contains a cycle");
+    visited[stateKey] = 1;
+
+    const owner = inputOwner[stateKey] ?? 0;
+    if (owner < 0) throw new Error("pilot prototype: route has an ambiguous machine input");
+    if (owner > 0) {
+      const slot = owner - 1;
+      const machine = layout.machines[slot]!;
+      if (usedMachines[slot] === 1) throw new Error("pilot prototype: route revisits a machine");
+      usedMachines[slot] = 1;
+      usedMachineCount++;
+      steps.push(machineStep(machine));
+      moveDir = (outputSide[slot] ?? 0) as Dir;
+      x = (outputX[slot] ?? 0) + (DIR_DX[moveDir] ?? 0);
+      y = (outputY[slot] ?? 0) + (DIR_DY[moveDir] ?? 0);
+      continue;
+    }
+
+    const cellIndex = at(layout.width, x, y);
+    const tile = layout.tiles[cellIndex];
+    if (tile?.kind === "sink") {
+      if (usedMachineCount !== layout.machines.length) {
+        throw new Error("pilot prototype: every placed machine must belong to the source-to-sink route");
+      }
+      for (let tileIndex = 0; tileIndex < layout.tiles.length; tileIndex++) {
+        if (layout.tiles[tileIndex]?.kind === "belt" && visitedBelts[tileIndex] !== 1) {
+          throw new Error("pilot prototype: every belt must belong to the source-to-sink route");
+        }
+      }
+      return { steps };
+    }
+    if (tile?.kind !== "belt") {
+      throw new Error("pilot prototype: route is broken before reaching the analyzer");
+    }
+    visitedBelts[cellIndex] = 1;
+    moveDir = tile.dir;
+    x += DIR_DX[moveDir] ?? 0;
+    y += DIR_DY[moveDir] ?? 0;
+  }
+  throw new Error("pilot prototype: route exceeds the acyclic traversal bound");
+}
+
+function straightPrototypePlacements(
+  machines: readonly PlacedMachine[],
+  width: number,
+  height: number,
+): readonly PrototypePlacement[] | null {
+  const occupied = new Uint8Array(width * height);
+  const placements: PrototypePlacement[] = [];
+  let nextInput: Vec2 = { x: 1, y: Math.floor(height / 2) };
+  for (const packed of machines) {
+    const probe = { ...packed, anchor: { x: 0, y: 0 }, footRot: 0 as Rotation };
+    const input = worldInPorts(probe)[0];
+    const output = worldOutPorts(probe)[0];
+    if (input === undefined || output === undefined || input.side !== W || output.side !== E) {
+      return null;
+    }
+    const anchor = { x: nextInput.x - input.x, y: nextInput.y - input.y };
+    const placed = { ...probe, anchor };
+    for (const cell of worldCells(placed)) {
+      if (
+        cell.x < 1 || cell.y < 0 || cell.x >= width - 1 || cell.y >= height ||
+        occupied[at(width, cell.x, cell.y)] === 1
+      ) {
+        return null;
+      }
+      occupied[at(width, cell.x, cell.y)] = 1;
+    }
+    placements.push({ anchor, footRot: 0 });
+    nextInput = { x: anchor.x + output.x + 1, y: anchor.y + output.y };
+  }
+  return nextInput.x < width ? placements : null;
+}
+
+/** Deterministically straight-pack when possible, then snake-pack the exact entitled floor. */
+export function compileEntitledPrototype(
+  template: Template,
+  width: number,
+  height: number,
+): CompiledPrototype {
+  const packed = compileTemplate(template);
+  const straight = straightPrototypePlacements(packed.machines, width, height);
+  if (straight !== null) {
+    return { placements: straight, layout: compilePrototype(template, width, height, straight) };
+  }
+  const portRows = [Math.floor(height / 2), 1, height - 2];
+  const placements: PrototypePlacement[] = [];
+  let rowIndex = 0;
+  let cursorX = 1;
+  for (let index = 0; index < packed.machines.length; index++) {
+    const machine = packed.machines[index]!;
+    const probe = { ...machine, anchor: { x: 0, y: 0 }, footRot: 0 as Rotation };
+    const localCells = worldCells(probe);
+    const localInput = worldInPorts(probe)[0];
+    if (localInput === undefined) throw new Error(`compilePrototype: machine ${index} has no input port`);
+    const minY = Math.min(...localCells.map((cell) => cell.y));
+    const maxX = Math.max(...localCells.map((cell) => cell.x));
+    const maxY = Math.max(...localCells.map((cell) => cell.y));
+    let anchor = {
+      x: cursorX - localInput.x,
+      y: (portRows[rowIndex] ?? 0) - localInput.y,
+    };
+    if (
+      anchor.x + maxX > width - 3 ||
+      anchor.y + minY < 0 ||
+      anchor.y + maxY >= height
+    ) {
+      rowIndex++;
+      cursorX = 2;
+      const portRow = portRows[rowIndex];
+      if (portRow === undefined) {
+        throw new Error("compilePrototype: entitlement cannot fit the machine sequence");
+      }
+      anchor = { x: cursorX - localInput.x, y: portRow - localInput.y };
+    }
+    if (
+      anchor.x < 1 ||
+      anchor.x + maxX > width - 3 ||
+      anchor.y + minY < 0 ||
+      anchor.y + maxY >= height
+    ) {
+      throw new Error("compilePrototype: entitlement cannot fit the machine sequence");
+    }
+    placements.push({ anchor, footRot: 0 });
+    cursorX = anchor.x + maxX + 3;
+  }
+  const layout = compilePrototype(template, width, height, placements);
+  const derived = derivePrototypeTemplate(layout);
+  if (JSON.stringify(derived) !== JSON.stringify(template)) {
+    throw new Error("compilePrototype: auto-arrangement changed the physical machine order");
+  }
+  return { placements, layout };
 }
 
 export const compileTemplate: CompileTemplateFn = (template) => {

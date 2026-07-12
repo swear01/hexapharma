@@ -27,12 +27,13 @@ import {
   replayGame,
 } from "./game";
 import { deserializeGame, serializeGame } from "./save";
+import { compileEntitledPrototype } from "./recipe";
 
 const opts = {
   seed: 14,
   nMaps: 2,
-  width: 12,
-  height: 12,
+  width: 32,
+  height: 32,
   catalog: DEFAULT_CATALOG,
   diseaseCount: 2,
   difficulty: { min: 4, max: 12 },
@@ -40,6 +41,18 @@ const opts = {
 
 function recipe(): Template {
   return generate(opts).diseases[0]!.reference;
+}
+
+function saveIntent(savedRecipe: Template): Extract<GameIntent, { readonly kind: "saveRecipe" }> {
+  return {
+    kind: "saveRecipe",
+    recipe: savedRecipe,
+    factory: compileEntitledPrototype(
+      savedRecipe,
+      BASE_GAME_FACTORY_WIDTH,
+      BASE_GAME_FACTORY_HEIGHT,
+    ).layout,
+  };
 }
 
 const emptyFactory: FactoryLayout = {
@@ -70,7 +83,7 @@ describe("whole-game deterministic state", () => {
     expect(savedOutcome.pos).not.toEqual(level.start.pos);
 
     let game = createGameState(opts, 200, 0);
-    game = applyGameIntent(game, { kind: "saveRecipe", recipe: savedRecipe });
+    game = applyGameIntent(game, saveIntent(savedRecipe));
 
     game = applyGameIntent(game, {
       kind: "setFactory",
@@ -88,7 +101,7 @@ describe("whole-game deterministic state", () => {
     }, 0);
 
     let game = createGameState(opts, 200, 0);
-    game = applyGameIntent(game, { kind: "saveRecipe", recipe: savedRecipe });
+    game = applyGameIntent(game, saveIntent(savedRecipe));
     game = applyGameIntent(game, { kind: "factoryTicks", ticks: 200 });
     expect(game.inventory.length).toBeGreaterThan(0);
     expect(game.inventory[0]?.productionCost).toBe(expectedCost);
@@ -114,8 +127,8 @@ describe("whole-game deterministic state", () => {
 
   it("sells more than the trace-entry cap atomically with one replayable bulk intent", () => {
     let game = createGameState(opts, 200, 0);
-    game = applyGameIntent(game, { kind: "saveRecipe", recipe: recipe() });
-    game = applyGameIntent(game, { kind: "factoryTicks", ticks: MAX_INTENT_TRACE + 220 });
+    game = applyGameIntent(game, saveIntent(recipe()));
+    game = applyGameIntent(game, { kind: "factoryTicks", ticks: MAX_INTENT_TRACE * 2 + 512 });
     const disease = game.inventory[0]!.outcome.cured[0]!;
     const productIds = game.inventory
       .filter((product) => product.outcome.cured.includes(disease))
@@ -132,8 +145,8 @@ describe("whole-game deterministic state", () => {
 
   it("normalizes consecutive same-disease single sales into one bulk trace entry", () => {
     let game = createGameState(opts, 200, 0);
-    game = applyGameIntent(game, { kind: "saveRecipe", recipe: recipe() });
-    game = applyGameIntent(game, { kind: "factoryTicks", ticks: 20 });
+    game = applyGameIntent(game, saveIntent(recipe()));
+    game = applyGameIntent(game, { kind: "factoryTicks", ticks: 100 });
     const first = game.inventory[0]!;
     const disease = first.outcome.cured[0]!;
     const second = game.inventory[1]!;
@@ -150,7 +163,7 @@ describe("whole-game deterministic state", () => {
   it("does not regenerate an unchanged level on every factory tick intent", () => {
     const generateSpy = vi.spyOn(mapgenModule, "generate");
     let game = createGameState(opts, 200, 0);
-    game = applyGameIntent(game, { kind: "saveRecipe", recipe: recipe() });
+    game = applyGameIntent(game, saveIntent(recipe()));
     const callsBeforeTick = generateSpy.mock.calls.length;
     game = applyGameIntent(game, { kind: "factoryTicks", ticks: 1 });
     expect(game.factoryState?.tick).toBe(1);
@@ -164,12 +177,37 @@ describe("whole-game deterministic state", () => {
       steps: [{ typeId: skew.typeId, transform: skew.transform, orientation: { rot: 0, flip: false } }],
     };
     const game = createGameState(opts, 200, 0);
-    expect(() => applyGameIntent(game, { kind: "saveRecipe", recipe: lockedRecipe })).toThrow(/locked/i);
+    expect(() => applyGameIntent(game, saveIntent(lockedRecipe))).toThrow(/locked/i);
   });
 
   it("rejects saving an uncured recipe instead of relying on the Lab button", () => {
     const game = createGameState(opts, 200, 0);
-    expect(() => applyGameIntent(game, { kind: "saveRecipe", recipe: { steps: [] } })).toThrow(/cure/i);
+    expect(() => applyGameIntent(game, saveIntent({ steps: [] }))).toThrow(/cure/i);
+  });
+
+  it("transfers the submitted Pilot layout to Factory without repacking it", () => {
+    const game = createGameState(opts, 200, 0);
+    const intent = saveIntent(recipe());
+    const saved = applyGameIntent(game, intent);
+    expect(saved.factory).toEqual(intent.factory);
+    expect(saved.factory?.machines.map((machine) => machine.anchor)).toEqual(
+      intent.factory.machines.map((machine) => machine.anchor),
+    );
+  });
+
+  it("rejects a valid Pilot topology on a floor outside the patent entitlement", () => {
+    const game = createGameState(opts, 200, 0);
+    const savedRecipe = recipe();
+    const oversized = compileEntitledPrototype(
+      savedRecipe,
+      BASE_GAME_FACTORY_WIDTH + 1,
+      BASE_GAME_FACTORY_HEIGHT,
+    ).layout;
+    expect(() => applyGameIntent(game, {
+      kind: "saveRecipe",
+      recipe: savedRecipe,
+      factory: oversized,
+    })).toThrow(/entitled.*24x12/i);
   });
 
   it("rejects Game maps too large for the bounded UI authority before generation", () => {
@@ -213,7 +251,7 @@ describe("whole-game deterministic state", () => {
       applyGameIntent(patentFirst, { kind: "setFactory", factory: expandedBase }).factory,
     ).toEqual(expandedBase);
 
-    game = applyGameIntent(game, { kind: "saveRecipe", recipe: recipe() });
+    game = applyGameIntent(game, saveIntent(recipe()));
     const base = game.factory!;
     const unauthorizedResize: FactoryLayout = {
       width: base.width + 1,
@@ -294,13 +332,13 @@ describe("whole-game deterministic state", () => {
 
   it("records a normalized, bounded authoritative intent trace", () => {
     let game = createGameState(opts, 200, 0);
-    game = applyGameIntent(game, { kind: "saveRecipe", recipe: recipe() });
+    game = applyGameIntent(game, saveIntent(recipe()));
     const factory = directSinkFactory(game.factory!);
     game = applyGameIntent(game, { kind: "setFactory", factory });
     game = applyGameIntent(game, { kind: "factoryTicks", ticks: 1 });
     game = applyGameIntent(game, { kind: "factoryTicks", ticks: 2 });
     expect(game.intentTrace).toEqual([
-      { kind: "saveRecipe", recipe: recipe() },
+      saveIntent(recipe()),
       { kind: "setFactory", factory },
       { kind: "factoryTicks", ticks: 3 },
     ]);
@@ -314,7 +352,7 @@ describe("whole-game deterministic state", () => {
 
   it("normalizes consecutive layout edits and omits semantic no-op exploration", () => {
     let game = createGameState(opts, 200, 0);
-    game = applyGameIntent(game, { kind: "saveRecipe", recipe: recipe() });
+    game = applyGameIntent(game, saveIntent(recipe()));
     const first = directSinkFactory(game.factory!);
     const second = directSinkFactory(game.factory!, 2);
     game = applyGameIntent(game, { kind: "setFactory", factory: first });
@@ -329,10 +367,10 @@ describe("whole-game deterministic state", () => {
   it("omits semantic no-op recipe saves and factory resets from the authoritative trace", () => {
     let game = createGameState(opts, 200, 0);
     const savedRecipe = recipe();
-    game = applyGameIntent(game, { kind: "saveRecipe", recipe: savedRecipe });
+    game = applyGameIntent(game, saveIntent(savedRecipe));
     const pristine = game;
 
-    expect(applyGameIntent(pristine, { kind: "saveRecipe", recipe: savedRecipe })).toBe(pristine);
+    expect(applyGameIntent(pristine, saveIntent(savedRecipe))).toBe(pristine);
     expect(applyGameIntent(pristine, { kind: "resetFactory" })).toBe(pristine);
 
     game = applyGameIntent(game, { kind: "factoryTicks", ticks: 1 });
@@ -344,8 +382,8 @@ describe("whole-game deterministic state", () => {
 
   it("rejects invalid bulk-sale members atomically without mutating inventory or economy", () => {
     let game = createGameState(opts, 200, 0);
-    game = applyGameIntent(game, { kind: "saveRecipe", recipe: recipe() });
-    game = applyGameIntent(game, { kind: "factoryTicks", ticks: 20 });
+    game = applyGameIntent(game, saveIntent(recipe()));
+    game = applyGameIntent(game, { kind: "factoryTicks", ticks: 100 });
     const first = game.inventory[0]!;
     const disease = first.outcome.cured[0]!;
     const otherDisease = generate(opts).diseases.find((candidate) => candidate.id !== disease)!.id;
@@ -365,8 +403,8 @@ describe("whole-game deterministic state", () => {
 
   it("rejects invalid single-product sales instead of silently accepting a no-op", () => {
     let game = createGameState(opts, 200, 0);
-    game = applyGameIntent(game, { kind: "saveRecipe", recipe: recipe() });
-    game = applyGameIntent(game, { kind: "factoryTicks", ticks: 20 });
+    game = applyGameIntent(game, saveIntent(recipe()));
+    game = applyGameIntent(game, { kind: "factoryTicks", ticks: 100 });
     const first = game.inventory[0]!;
     const disease = first.outcome.cured[0]!;
     const otherDisease = generate(opts).diseases.find((candidate) => candidate.id !== disease)!.id;
@@ -409,10 +447,10 @@ describe("whole-game deterministic state", () => {
     (mutableOptions as unknown as { seed: number }).seed = 99;
     (mutableOptions.catalog[0] as unknown as { speed: number }).speed = 99;
     expect(game.genOptions.seed).toBe(14);
-    expect(game.genOptions.catalog[0]?.speed).toBe(1);
+    expect(game.genOptions.catalog[0]?.speed).toBe(2);
     expect(Object.is(game.economy.cash, -0)).toBe(false);
 
-    game = applyGameIntent(game, { kind: "saveRecipe", recipe: recipe() });
+    game = applyGameIntent(game, saveIntent(recipe()));
     const mutableLayout = directSinkFactory(game.factory!);
     game = applyGameIntent(game, { kind: "setFactory", factory: mutableLayout });
     (mutableLayout.tiles as FactoryLayout["tiles"] & { 0: { kind: "source"; dir: 0; period: number } })[0].period = 2;
@@ -425,7 +463,7 @@ describe("whole-game deterministic state", () => {
 
   it("canonicalizes intent objects and rejects oversized templates/layouts before allocation", () => {
     let game = createGameState(opts, 200, 0);
-    game = applyGameIntent(game, { kind: "saveRecipe", recipe: recipe() });
+    game = applyGameIntent(game, saveIntent(recipe()));
     game = applyGameIntent(game, {
       kind: "setFactory",
       factory: directSinkFactory(game.factory!),
@@ -462,22 +500,23 @@ describe("whole-game deterministic state", () => {
       footRot: 0 as const,
       shape: DEFAULT_SHAPES.push!,
     });
+    const tiles: FactoryLayout["tiles"][number][] = Array.from(
+      { length: 8 * 3 },
+      () => ({ kind: "empty" }),
+    );
+    tiles[0] = { kind: "source", dir: 0, period: 1 };
+    tiles[7] = { kind: "sink" };
     const base: FactoryLayout = {
-      width: 4,
-      height: 1,
-      tiles: [
-        { kind: "source", dir: 0, period: 1 },
-        { kind: "empty" },
-        { kind: "empty" },
-        { kind: "sink" },
-      ],
+      width: 8,
+      height: 3,
+      tiles,
       machines: [],
     };
     const game = createGameState(opts, 200, 0);
 
     expect(() => applyGameIntent(game, {
       kind: "setFactory",
-      factory: { ...base, machines: [placed(0, 1), placed(0, 2)] },
+      factory: { ...base, machines: [placed(0, 1), placed(0, 4)] },
     })).toThrow(/duplicate.*id/i);
     expect(() => applyGameIntent(game, {
       kind: "setFactory",
@@ -485,7 +524,7 @@ describe("whole-game deterministic state", () => {
     })).toThrow(/overlap/i);
     expect(() => applyGameIntent(game, {
       kind: "setFactory",
-      factory: { ...base, machines: [placed(0, 4)] },
+      factory: { ...base, machines: [placed(0, 8)] },
     })).toThrow(/bounds/i);
     expect(() => applyGameIntent(game, {
       kind: "setFactory",
@@ -529,7 +568,7 @@ describe("whole-game deterministic state", () => {
 
   it("drains every product in a multi-tick batch exactly once", () => {
     let game = createGameState(opts, 200, 0);
-    game = applyGameIntent(game, { kind: "saveRecipe", recipe: recipe() });
+    game = applyGameIntent(game, saveIntent(recipe()));
     game = applyGameIntent(game, { kind: "factoryTicks", ticks: 200 });
     expect(game.factoryState?.producedTotal).toBeGreaterThan(1);
     expect(game.inventory).toHaveLength(game.factoryState!.producedTotal);
@@ -549,8 +588,8 @@ describe("whole-game deterministic state", () => {
 
   it("rejects materialized inventory beyond the practical authority bound", () => {
     let game = createGameState(opts, 200, 0);
-    game = applyGameIntent(game, { kind: "saveRecipe", recipe: recipe() });
-    game = applyGameIntent(game, { kind: "factoryTicks", ticks: 20 });
+    game = applyGameIntent(game, saveIntent(recipe()));
+    game = applyGameIntent(game, { kind: "factoryTicks", ticks: 100 });
     const product = game.inventory[0]!;
     const oversized = {
       ...game,
@@ -561,11 +600,11 @@ describe("whole-game deterministic state", () => {
 
   it("does not mutate the input runtime while advancing factory ticks", () => {
     let game = createGameState(opts, 200, 0);
-    game = applyGameIntent(game, { kind: "saveRecipe", recipe: recipe() });
+    game = applyGameIntent(game, saveIntent(recipe()));
     const runtime = game.factoryState!;
     const before = snapshotFactory(runtime);
 
-    const next = applyGameIntent(game, { kind: "factoryTicks", ticks: 20 });
+    const next = applyGameIntent(game, { kind: "factoryTicks", ticks: 100 });
 
     expect(next.factoryState).not.toBe(runtime);
     expect(snapshotFactory(runtime)).toEqual(before);
@@ -573,7 +612,7 @@ describe("whole-game deterministic state", () => {
 
   it("rejects an externally stepped runtime with undrained product events", () => {
     let game = createGameState(opts, 200, 0);
-    game = applyGameIntent(game, { kind: "saveRecipe", recipe: recipe() });
+    game = applyGameIntent(game, saveIntent(recipe()));
     game = applyGameIntent(game, {
       kind: "setFactory",
       factory: directSinkFactory(game.factory!),
@@ -602,18 +641,18 @@ describe("whole-game deterministic state", () => {
   it("preserves physical inventory when saving another recipe on the same level", () => {
     const savedRecipe = recipe();
     let game = createGameState(opts, 200, 0);
-    game = applyGameIntent(game, { kind: "saveRecipe", recipe: savedRecipe });
+    game = applyGameIntent(game, saveIntent(savedRecipe));
     game = applyGameIntent(game, { kind: "factoryTicks", ticks: 200 });
     expect(game.inventory.length).toBeGreaterThan(0);
     const inventory = game.inventory;
 
-    game = applyGameIntent(game, { kind: "saveRecipe", recipe: savedRecipe });
+    game = applyGameIntent(game, saveIntent(savedRecipe));
     expect(game.inventory).toEqual(inventory);
   });
 
   it("applies machine unlock, factory expansion, and 2→3→4 map patents", () => {
     let game = createGameState(opts, 10_000, 100);
-    game = applyGameIntent(game, { kind: "saveRecipe", recipe: recipe() });
+    game = applyGameIntent(game, saveIntent(recipe()));
     const baseWidth = game.factory!.width;
     game = applyGameIntent(game, { kind: "unlockPatent", id: "skew-unlock" });
     expect(availableCatalog(game.patents).map((entry) => entry.typeId)).toContain("skew");
@@ -638,10 +677,10 @@ describe("whole-game deterministic state", () => {
   it("replays the same intent trace to the same whole-game hash", () => {
     const initial = createGameState(opts, 200, 0);
     const savedRecipe = recipe();
-    const withRecipe = applyGameIntent(initial, { kind: "saveRecipe", recipe: savedRecipe });
+    const withRecipe = applyGameIntent(initial, saveIntent(savedRecipe));
     const factory = directSinkFactory(withRecipe.factory!);
     const intents = [
-      { kind: "saveRecipe", recipe: savedRecipe },
+      saveIntent(savedRecipe),
       { kind: "setFactory", factory },
     ] as const;
     const a = replayGame(initial, intents);
@@ -652,10 +691,10 @@ describe("whole-game deterministic state", () => {
 
   it("keeps the whole-game hash wire-compatible without materializing one giant JSON string", () => {
     const empty = createGameState(opts, 200, 0);
-    expect(hashGame(empty)).toBe(50_069_012);
-    let produced = applyGameIntent(empty, { kind: "saveRecipe", recipe: recipe() });
-    produced = applyGameIntent(produced, { kind: "factoryTicks", ticks: 20 });
-    expect(hashGame(produced)).toBe(1_970_000_602);
+    expect(hashGame(empty)).toBe(373_381_604);
+    let produced = applyGameIntent(empty, saveIntent(recipe()));
+    produced = applyGameIntent(produced, { kind: "factoryTicks", ticks: 100 });
+    expect(hashGame(produced)).toBe(701_995_677);
 
     const source = readFileSync(new URL("./game.ts", import.meta.url), "utf8");
     const hashBody = source.slice(source.indexOf("export function hashGame"));
@@ -667,7 +706,7 @@ describe("whole-game deterministic state", () => {
     const savedRecipe = recipe();
     const produced = replayGame(initial, [
       { kind: "runLab", template: savedRecipe },
-      { kind: "saveRecipe", recipe: savedRecipe },
+      saveIntent(savedRecipe),
       { kind: "factoryTicks", ticks: 200 },
     ]);
     const product = produced.inventory[0];

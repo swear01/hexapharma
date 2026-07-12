@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
-import type { FactoryLayout, GameState, GenOptions } from "../phase0_interfaces";
+import type { FactoryLayout, GameIntent, GameState, GenOptions, Template } from "../phase0_interfaces";
 import {
   DEFAULT_CATALOG,
+  BASE_GAME_FACTORY_HEIGHT,
+  BASE_GAME_FACTORY_WIDTH,
   MAX_BULK_SALE_PRODUCTS,
   MAX_FACTORY_CELLS,
   MAX_TEMPLATE_STEPS,
 } from "../phase0_interfaces";
 import { MAX_INTENT_TRACE, applyGameIntent, createGameState } from "../game";
 import { generate } from "../mapgen";
+import { compileEntitledPrototype } from "../recipe";
 import {
   SAVE_VERSION,
   MAX_SLOT_STATES,
@@ -27,19 +30,28 @@ import {
 const OPTIONS: GenOptions = {
   seed: 14,
   nMaps: 2,
-  width: 12,
-  height: 12,
+  width: 32,
+  height: 32,
   catalog: DEFAULT_CATALOG,
   diseaseCount: 2,
   difficulty: { min: 4, max: 12 },
 };
 
+function saveIntent(recipe: Template): GameIntent {
+  return {
+    kind: "saveRecipe",
+    recipe,
+    factory: compileEntitledPrototype(
+      recipe,
+      BASE_GAME_FACTORY_WIDTH,
+      BASE_GAME_FACTORY_HEIGHT,
+    ).layout,
+  };
+}
+
 function baseGame(): GameState {
   let game = createGameState(OPTIONS, 10_000, 100);
-  game = applyGameIntent(game, {
-    kind: "saveRecipe",
-    recipe: generate(OPTIONS).diseases[0]!.reference,
-  });
+  game = applyGameIntent(game, saveIntent(generate(OPTIONS).diseases[0]!.reference));
   return applyGameIntent(game, { kind: "factoryTicks", ticks: 80 });
 }
 
@@ -79,10 +91,7 @@ describe("serializeGame / deserializeGame", () => {
 
   it("round-trips valid states with no factory, an empty factory, and negative cash", () => {
     const empty = createGameState(OPTIONS, 0, 0);
-    const saved = applyGameIntent(empty, {
-      kind: "saveRecipe",
-      recipe: generate(OPTIONS).diseases[0]!.reference,
-    });
+    const saved = applyGameIntent(empty, saveIntent(generate(OPTIONS).diseases[0]!.reference));
     const withFactory = applyGameIntent(saved, {
       kind: "setFactory",
       factory: emptyFactory(saved.factory!),
@@ -103,10 +112,7 @@ describe("serializeGame / deserializeGame", () => {
 
   it("round-trips behavior-affecting splitter round-robin cursors", () => {
     let game = createGameState(OPTIONS, 0, 0);
-    game = applyGameIntent(game, {
-      kind: "saveRecipe",
-      recipe: generate(OPTIONS).diseases[0]!.reference,
-    });
+    game = applyGameIntent(game, saveIntent(generate(OPTIONS).diseases[0]!.reference));
     game = applyGameIntent(game, { kind: "setFactory", factory: splitterFactory(game.factory!) });
     game = applyGameIntent(game, { kind: "factoryTicks", ticks: 2 });
     expect(game.factoryState?.splitterCursors).toEqual(new Int32Array([1]));
@@ -402,10 +408,7 @@ describe("deserializeGame semantic authority", () => {
 
   it("rejects forged or out-of-range splitter routing cursors", () => {
     let game = createGameState(OPTIONS, 0, 0);
-    game = applyGameIntent(game, {
-      kind: "saveRecipe",
-      recipe: generate(OPTIONS).diseases[0]!.reference,
-    });
+    game = applyGameIntent(game, saveIntent(generate(OPTIONS).diseases[0]!.reference));
     game = applyGameIntent(game, { kind: "setFactory", factory: splitterFactory(game.factory!) });
     game = applyGameIntent(game, { kind: "factoryTicks", ticks: 2 });
     const outOfRange = wire(game);

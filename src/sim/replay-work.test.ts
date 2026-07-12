@@ -2,19 +2,22 @@ import { describe, expect, it } from "vitest";
 import { generate } from "./mapgen";
 import {
   DEFAULT_CATALOG,
+  MAX_GAME_FACTORY_CELLS,
   MAX_GAME_REPLAY_WORK,
   MAX_FACTORY_REPLAY_TICKS,
+  type FactoryLayout,
   type GenOptions,
   type GameIntent,
 } from "./phase0_interfaces";
 import { MAX_INTENT_TRACE } from "./game";
 import { estimateGameReplayWork } from "./replay-work";
+import { compileEntitledPrototype, compileTemplate } from "./recipe";
 
 const options: GenOptions = {
   seed: 14,
   nMaps: 2,
-  width: 12,
-  height: 12,
+  width: 32,
+  height: 32,
   catalog: DEFAULT_CATALOG,
   diseaseCount: 2,
   difficulty: { min: 4, max: 12 },
@@ -24,14 +27,170 @@ describe("game replay work", () => {
   it("accepts a single ingredient layer", () => {
     expect(estimateGameReplayWork({ ...options, nMaps: 1, diseaseCount: 1 }, [])).toBeGreaterThan(0);
   });
-  it("uses the compiled factory instead of blocking a normal recipe trace early", () => {
-    const recipe = generate(options).diseases[0]!.reference;
+  it("keeps the production entitled seed-14 recipe within the 100k-tick replay budget", () => {
+    const productionOptions: GenOptions = {
+      ...options,
+      nMaps: 1,
+      width: 63,
+      height: 63,
+      diseaseCount: 1,
+    };
+    const recipe = generate(productionOptions).diseases[0]!.reference;
+    const factory = compileEntitledPrototype(recipe, 24, 12).layout;
     const trace: readonly GameIntent[] = [
-      { kind: "saveRecipe", recipe },
+      { kind: "saveRecipe", recipe, factory },
       { kind: "factoryTicks", ticks: MAX_FACTORY_REPLAY_TICKS },
     ];
 
-    expect(estimateGameReplayWork(options, trace)).toBeLessThanOrEqual(MAX_GAME_REPLAY_WORK);
+    expect(estimateGameReplayWork(productionOptions, trace)).toBeLessThanOrEqual(
+      MAX_GAME_REPLAY_WORK,
+    );
+  });
+
+  it("prices per-tick carrier capacity, one area scan, and active-width arbitration exactly", () => {
+    const width = 4;
+    const height = 3;
+    const tiles: FactoryLayout["tiles"][number][] = Array.from(
+      { length: width * height },
+      () => ({ kind: "empty" }),
+    );
+    tiles[0] = { kind: "source", dir: 0, period: 1 };
+    tiles[1] = { kind: "belt", dir: 0 };
+    tiles[2] = { kind: "belt", dir: 0 };
+    tiles[3] = { kind: "sink" };
+    const factory: FactoryLayout = { width, height, tiles, machines: [] };
+    const mapCells = options.nMaps * options.width * options.height;
+    const cold = width * height * 16 + width * height * 4;
+    const carriers = 2;
+    const sources = 1;
+    const perTick =
+      width * height +
+      4 * carriers +
+      (carriers + sources) * (carriers + sources);
+
+    expect(estimateGameReplayWork(options, [
+      { kind: "setFactory", factory },
+      { kind: "factoryTicks", ticks: 10 },
+    ])).toBe(mapCells * 32 + cold + cold + perTick * 10);
+  });
+
+  it("charges exact prototype geometry instead of recompiling a smaller recipe line", () => {
+    const recipe = generate(options).diseases[0]!.reference;
+    const packed = compileTemplate(recipe);
+    const width = packed.width + 8;
+    const height = packed.height + 5;
+    const tiles: FactoryLayout["tiles"][number][] = Array.from(
+      { length: width * height },
+      () => ({ kind: "empty" }),
+    );
+    for (let y = 0; y < packed.height; y++) {
+      for (let x = 0; x < packed.width; x++) {
+        tiles[y * width + x] = packed.tiles[y * packed.width + x]!;
+      }
+    }
+    const exact = { width, height, tiles, machines: packed.machines };
+    const packedWork = estimateGameReplayWork(options, [
+      { kind: "saveRecipe", recipe, factory: packed },
+      { kind: "factoryTicks", ticks: 100 },
+    ]);
+    const exactWork = estimateGameReplayWork(options, [
+      { kind: "saveRecipe", recipe, factory: exact },
+      { kind: "factoryTicks", ticks: 100 },
+    ]);
+    expect(exactWork).toBeGreaterThan(packedWork);
+  });
+
+  it("charges the conservative first-product analysis performed by every recipe save", () => {
+    const width = 24;
+    const height = 12;
+    const tiles: FactoryLayout["tiles"][number][] = Array.from(
+      { length: width * height },
+      () => ({ kind: "empty" }),
+    );
+    tiles[0] = { kind: "source", dir: 0, period: 1 };
+    tiles[1] = { kind: "sink" };
+    const factory: FactoryLayout = { width, height, tiles, machines: [] };
+    const mapCells = options.nMaps * options.width * options.height;
+    const coldWork = width * height * 16 + width * height * 4;
+    const outcomeTicks = width * height + 16;
+    const outcomeWidth = width * height + 1;
+    const expected =
+      mapCells * 32 +
+      mapCells * 4 +
+      coldWork +
+      outcomeWidth * outcomeWidth * outcomeTicks;
+
+    expect(estimateGameReplayWork(options, [{
+      kind: "saveRecipe",
+      recipe: { steps: [] },
+      factory,
+    }])).toBe(expected);
+  });
+
+  it("rejects an aggregate trace whose repeated recipe validations exceed the replay cap", () => {
+    const width = 24;
+    const height = 12;
+    const alternateTiles: FactoryLayout["tiles"][number][] = Array.from(
+      { length: width * height },
+      () => ({ kind: "empty" }),
+    );
+    alternateTiles[0] = { kind: "source", dir: 0, period: 1 };
+    alternateTiles[1] = { kind: "sink" };
+    const recipe = generate(options).diseases[0]!.reference;
+    const factory = compileEntitledPrototype(recipe, width, height).layout;
+    const save: GameIntent = {
+      kind: "saveRecipe",
+      recipe,
+      factory,
+    };
+    const alternate: GameIntent = {
+      kind: "setFactory",
+      factory: { width, height, tiles: alternateTiles, machines: [] },
+    };
+
+    expect(estimateGameReplayWork(options, [
+      save,
+      alternate,
+      save,
+      alternate,
+      save,
+      alternate,
+      save,
+    ])).toBeGreaterThan(MAX_GAME_REPLAY_WORK);
+  });
+
+  it("saturates oversized first-product analysis with capped arithmetic", () => {
+    const width = 64;
+    const height = MAX_GAME_FACTORY_CELLS / width;
+    const tiles: FactoryLayout["tiles"][number][] = Array.from(
+      { length: width * height },
+      () => ({ kind: "empty" }),
+    );
+    tiles[0] = { kind: "source", dir: 0, period: 1 };
+    tiles[1] = { kind: "sink" };
+
+    expect(estimateGameReplayWork(options, [{
+      kind: "saveRecipe",
+      recipe: { steps: [] },
+      factory: { width, height, tiles, machines: [] },
+    }])).toBe(MAX_GAME_REPLAY_WORK + 1);
+  });
+
+  it("retains the quadratic active-width bound for a carrier-dense floor", () => {
+    const width = 24;
+    const height = 12;
+    const tiles: FactoryLayout["tiles"][number][] = Array.from(
+      { length: width * height },
+      () => ({ kind: "belt", dir: 0 }),
+    );
+    tiles[0] = { kind: "source", dir: 0, period: 1 };
+    tiles[tiles.length - 1] = { kind: "sink" };
+    const factory: FactoryLayout = { width, height, tiles, machines: [] };
+
+    expect(estimateGameReplayWork(options, [
+      { kind: "setFactory", factory },
+      { kind: "factoryTicks", ticks: 1_200 },
+    ])).toBeGreaterThan(MAX_GAME_REPLAY_WORK);
   });
 
   it("charges no-op lab intents for their map-sized allocation and traversal work", () => {

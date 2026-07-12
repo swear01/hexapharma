@@ -1197,7 +1197,13 @@ export const initFactory: InitFactoryFn = (layout, mm, start) => {
       throw new Error(`factory init: swap indices exceed map count for machine ${compiled.machineIds[slot]}`);
     }
   }
-  const capacity = layout.width * layout.height + layout.machines.length;
+  let carrierCount = 0;
+  for (const tile of layout.tiles) {
+    if (tile.kind === "belt" || tile.kind === "splitter" || tile.kind === "merger") {
+      carrierCount += 1;
+    }
+  }
+  const capacity = carrierCount + layout.machines.length;
   const eventCapacity = capacity + compiled.sourceCells.length;
   const productEvents: MutableProductEvents = {
     capacity: eventCapacity,

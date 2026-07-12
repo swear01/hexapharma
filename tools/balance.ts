@@ -68,8 +68,8 @@ function optsFor(seed: number, catalog: readonly MachineCatalogEntry[] = DEFAULT
   return {
     seed,
     nMaps: 2,
-    width: 16,
-    height: 16,
+    width: 32,
+    height: 32,
     catalog,
     diseaseCount: 2,
     difficulty: { min: 2, max: 12 },

@@ -106,29 +106,31 @@ describe("mapgen production boundary", () => {
 // ───────────────────────────── fixtures ─────────────────────────────
 
 /**
- * Test-friendly options: small maps + a broad constructive difficulty band. The
+ * Test-friendly options: compact maps that still fit the current catalog's
+ * multi-cell movement scale + a broad constructive difficulty band. The
  * (W·H)^N solver checks stay fast while exercising multi-map generation.
  */
 function smallOpts(seed: number, over: Partial<GenOptions> = {}): GenOptions {
   return {
     seed,
     nMaps: 2,
-    width: 10,
-    height: 12,
+    width: 16,
+    height: 16,
     catalog: DEFAULT_CATALOG,
     diseaseCount: 2,
-    difficulty: { min: 4, max: 12 },
+    difficulty: { min: 2, max: 6 },
     ...over,
   };
 }
 
 /**
  * N-map options. The solver is a BFS over (W·H)^N, so map size must shrink as N
- * grows to keep the per-attempt re-checks fast: N=3 at 7×7, N=4 at 6×6, both with a
- * modest band. diseaseCount defaults to nMaps so each disease gets its own map.
+ * grows to keep the per-attempt re-checks fast. A 9×9 map gives every phase start
+ * room for at least one current-catalog axis move; the low band keeps solver checks
+ * shallow. diseaseCount defaults to nMaps so each disease gets its own map.
  */
 function nMapOpts(seed: number, nMaps: number, over: Partial<GenOptions> = {}): GenOptions {
-  const dims = nMaps >= 4 ? 6 : 7;
+  const dims = 9;
   return {
     seed,
     nMaps,
@@ -136,7 +138,7 @@ function nMapOpts(seed: number, nMaps: number, over: Partial<GenOptions> = {}): 
     height: dims,
     catalog: DEFAULT_CATALOG,
     diseaseCount: nMaps,
-    difficulty: { min: 3, max: 12 },
+    difficulty: { min: 1, max: 4 },
     ...over,
   };
 }
@@ -194,9 +196,9 @@ describe("mapgen GenOptions validation", () => {
   });
 
   it("accepts seed zero and an exact integer difficulty band", () => {
-    const level = generate(smallOpts(0, { difficulty: { min: 8, max: 8 } }));
+    const level = generate(smallOpts(0, { difficulty: { min: 4, max: 4 } }));
     expect(level.seed).toBe(0);
-    expect(level.diseases.every((disease) => disease.difficulty === 8)).toBe(true);
+    expect(level.diseases.every((disease) => disease.difficulty === 4)).toBe(true);
   });
 
   it("canonicalizes negative zero to the unique uint32 zero seed", () => {
@@ -382,6 +384,49 @@ function cureAt(level: GeneratedLevel, map: number, x: number, y: number, id: nu
   return m.cell[i] === CellKind.Cure && m.cureId[i] === id;
 }
 
+function featureComponentSizes(
+  level: GeneratedLevel,
+  mapIndex: number,
+  kind: CellKind,
+  cureId?: number,
+): number[] {
+  const map = level.mm.maps[mapIndex];
+  if (map === undefined) return [];
+  const visited = new Uint8Array(map.cell.length);
+  const queue = new Int32Array(map.cell.length);
+  const sizes: number[] = [];
+  const matches = (index: number): boolean =>
+    map.cell[index] === kind && (cureId === undefined || map.cureId[index] === cureId);
+
+  for (let start = 0; start < map.cell.length; start++) {
+    if (visited[start] === 1 || !matches(start)) continue;
+    let head = 0;
+    let tail = 0;
+    let size = 0;
+    queue[tail++] = start;
+    visited[start] = 1;
+    while (head < tail) {
+      const current = queue[head++]!;
+      size++;
+      const x = current % map.width;
+      const y = Math.floor(current / map.width);
+      const neighbors = [
+        x + 1 < map.width ? current + 1 : -1,
+        y + 1 < map.height ? current + map.width : -1,
+        x > 0 ? current - 1 : -1,
+        y > 0 ? current - map.width : -1,
+      ];
+      for (const next of neighbors) {
+        if (next < 0 || visited[next] === 1 || !matches(next)) continue;
+        visited[next] = 1;
+        queue[tail++] = next;
+      }
+    }
+    sizes.push(size);
+  }
+  return sizes;
+}
+
 // ───────────────────────────── INV-9: constructive solvability ─────────────────────────────
 
 describe("mapgen INV-9 (constructive solvability)", () => {
@@ -425,6 +470,25 @@ describe("mapgen INV-9 (constructive solvability)", () => {
       expect(out.failed).toBe(false);
       expect(out.cured).toContain(d.id);
     }
+  });
+
+  it("grows every disease into a 5–9-cell connected cure region containing its reference node", () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 0, max: 500_000 }), (seed) => {
+        const level = generate(smallOpts(seed));
+        for (const disease of level.diseases) {
+          const sizes = featureComponentSizes(level, disease.map, CellKind.Cure, disease.id);
+          expect(sizes).toHaveLength(1);
+          expect(sizes[0]).toBeGreaterThanOrEqual(5);
+          expect(sizes[0]).toBeLessThanOrEqual(9);
+          expect(cureAt(level, disease.map, disease.node.x, disease.node.y, disease.id)).toBe(true);
+          const outcome = evaluate(level.mm, level.start, disease.reference);
+          expect(outcome.failed).toBe(false);
+          expect(outcome.cured).toContain(disease.id);
+        }
+      }),
+      { numRuns: 40 },
+    );
   });
 });
 
@@ -471,12 +535,15 @@ describe("mapgen centered multi-map progression", () => {
       difficulty: { min: 4, max: 12 },
     }));
     const push = DEFAULT_CATALOG.find((entry) => entry.typeId === "push");
+    const push2 = DEFAULT_CATALOG.find((entry) => entry.typeId === "push2");
     const exchange = DEFAULT_CATALOG.find((entry) => entry.typeId === "swap01");
-    if (push === undefined || exchange === undefined) throw new Error("missing phase recipe fixture");
-    const movement = ([1, 1, 3, 0, 3] as const).map((rot) => ({
-      typeId: push.typeId,
-      transform: push.transform,
-      orientation: { rot, flip: false },
+    if (push === undefined || push2 === undefined || exchange === undefined) {
+      throw new Error("missing phase recipe fixture");
+    }
+    const movement = [push, push2, push2].map((entry) => ({
+      typeId: entry.typeId,
+      transform: entry.transform,
+      orientation: { rot: 0 as const, flip: false },
     }));
     const withoutExchange = evaluate(level.mm, level.start, { steps: movement });
     const withExchange = evaluate(level.mm, level.start, {
@@ -488,7 +555,6 @@ describe("mapgen centered multi-map progression", () => {
     });
     expect(withoutExchange.cured).toEqual([]);
     expect(withExchange.cured).toContain(0);
-    expect(withExchange.sideEffects.length).toBeGreaterThan(0);
   });
 });
 
@@ -623,9 +689,9 @@ describe("mapgen INV-11 (difficulty bounds)", () => {
   });
 
   it("respects a tightened range (min===max forces an exact difficulty)", () => {
-    const level = generate(smallOpts(0, { difficulty: { min: 8, max: 8 } }));
+    const level = generate(smallOpts(0, { difficulty: { min: 4, max: 4 } }));
     for (const d of level.diseases) {
-      expect(d.difficulty).toBe(8);
+      expect(d.difficulty).toBe(4);
     }
   });
 
@@ -782,6 +848,27 @@ describe("mapgen scatter never corrupts the reference", () => {
         }
       }),
       { numRuns: 50 },
+    );
+  });
+
+  it("places walls, hazards, and side effects as connected regions instead of isolated scatter", () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 0, max: 500_000 }), (seed) => {
+        const level = generate({
+          ...smallOpts(seed),
+          width: 24,
+          height: 24,
+          difficulty: { min: 4, max: 12 },
+        });
+        for (let mapIndex = 0; mapIndex < level.mm.maps.length; mapIndex++) {
+          for (const kind of [CellKind.Wall, CellKind.Hazard, CellKind.SideEffect]) {
+            const sizes = featureComponentSizes(level, mapIndex, kind);
+            expect(sizes).toHaveLength(1);
+            expect(sizes[0]).toBeGreaterThanOrEqual(3);
+          }
+        }
+      }),
+      { numRuns: 30 },
     );
   });
 });

@@ -20,6 +20,7 @@
  * throughput rise; full editing lets the player build it by hand.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { MachineIcon } from "./MachineIcon";
 import type {
   Dir,
   Vec2,
@@ -39,7 +40,13 @@ import type {
   ThroughputReport,
   Outcome,
 } from "../sim/phase0_interfaces";
-import { DEFAULT_CATALOG, DEFAULT_SHAPES, IDENTITY } from "../sim/phase0_interfaces";
+import {
+  BASE_GAME_FACTORY_HEIGHT,
+  BASE_GAME_FACTORY_WIDTH,
+  DEFAULT_CATALOG,
+  DEFAULT_SHAPES,
+  IDENTITY,
+} from "../sim/phase0_interfaces";
 import { initFactory, analyzeThroughput } from "../sim/factory-sim";
 import { compileTemplate, factoryOutcome } from "../sim/recipe";
 import { evaluate } from "../sim/drug-graph";
@@ -67,8 +74,8 @@ const S: Dir = 1;
 const W: Dir = 2;
 const N: Dir = 3;
 
-const GRID_W = 9;
-const GRID_H = 6;
+const GRID_W = BASE_GAME_FACTORY_WIDTH;
+const GRID_H = BASE_GAME_FACTORY_HEIGHT;
 
 function opposite(d: Dir): Dir {
   return ((d + 2) & 3) as Dir;
@@ -144,26 +151,14 @@ function machineDef(typeId: MachineTypeId, requestedOrientation: Orientation = I
 }
 
 /**
- * Default factory: compile a 3-stage template (push → pull → push2) to a straight
- * 1×1-machine line (compileTemplate), then re-lay it onto a roomy GRID_W×GRID_H grid
- * with catalog-defined machine speeds — leaving empty space
- * below for the player to add a parallel `pull` and raise throughput.
+ * Default factory: compile a 3-stage template (push → pull → push2) with the
+ * catalog's real multi-cell footprints, then pad it onto the base floor.
  */
 function defaultLayout(): FactoryLayout {
   const fixture: Template = {
     steps: [fixtureStep("push"), fixtureStep("pull"), fixtureStep("push2")],
   };
-  const line = compileTemplate(fixture); // height 1: source, belt, m, belt, ... , sink
-  const tiles = emptyTiles(GRID_W, GRID_H);
-  const w = Math.min(line.width, GRID_W);
-  for (let x = 0; x < w; x++) tiles[x] = line.tiles[x]!;
-
-  const machines: PlacedMachine[] = [];
-  for (const m of line.machines) {
-    if (m.anchor.x >= GRID_W) continue;
-    machines.push(m);
-  }
-  return { width: GRID_W, height: GRID_H, tiles, machines };
+  return recipeLayout(fixture);
 }
 
 /**
@@ -188,17 +183,7 @@ function recipeLayout(recipe: Template): FactoryLayout {
 
 /** Preset: one catalog-speed pull on one row (the slow baseline). */
 function singlePreset(): FactoryLayout {
-  const tiles = emptyTiles(GRID_W, GRID_H);
-  const at = (x: number, y: number) => y * GRID_W + x;
-  tiles[at(0, 0)] = { kind: "source", dir: E, period: 1 };
-  tiles[at(1, 0)] = { kind: "belt", dir: E };
-  tiles[at(3, 0)] = { kind: "belt", dir: E };
-  tiles[at(4, 0)] = { kind: "belt", dir: E };
-  tiles[at(5, 0)] = { kind: "sink" };
-  const machines: PlacedMachine[] = [
-    { id: 0, def: machineDef("pull"), anchor: { x: 2, y: 0 }, footRot: 0, shape: DEFAULT_SHAPES.pull! },
-  ];
-  return { width: GRID_W, height: GRID_H, tiles, machines };
+  return recipeLayout({ steps: [fixtureStep("pull")] });
 }
 
 /**
@@ -208,17 +193,26 @@ function singlePreset(): FactoryLayout {
 function parallelPreset(): FactoryLayout {
   const tiles = emptyTiles(GRID_W, GRID_H);
   const at = (x: number, y: number) => y * GRID_W + x;
-  tiles[at(0, 0)] = { kind: "source", dir: E, period: 1 };
-  tiles[at(1, 0)] = { kind: "splitter", inDir: W, outDirs: [E, S] };
+  tiles[at(0, 2)] = { kind: "source", dir: E, period: 1 };
+  tiles[at(1, 2)] = { kind: "splitter", inDir: W, outDirs: [N, S] };
   tiles[at(1, 1)] = { kind: "belt", dir: E };
-  tiles[at(3, 0)] = { kind: "belt", dir: E };
-  tiles[at(4, 0)] = { kind: "merger", inDirs: [W, S], outDir: E };
-  tiles[at(5, 0)] = { kind: "sink" };
-  tiles[at(3, 1)] = { kind: "belt", dir: E };
-  tiles[at(4, 1)] = { kind: "belt", dir: N };
+  tiles[at(2, 1)] = { kind: "belt", dir: E };
+  tiles[at(1, 3)] = { kind: "belt", dir: S };
+  tiles[at(1, 4)] = { kind: "belt", dir: E };
+  tiles[at(2, 4)] = { kind: "belt", dir: E };
+  tiles[at(5, 2)] = { kind: "belt", dir: E };
+  tiles[at(6, 2)] = { kind: "belt", dir: E };
+  tiles[at(5, 5)] = { kind: "belt", dir: E };
+  tiles[at(6, 5)] = { kind: "belt", dir: E };
+  tiles[at(7, 5)] = { kind: "belt", dir: N };
+  tiles[at(7, 4)] = { kind: "belt", dir: N };
+  tiles[at(7, 3)] = { kind: "belt", dir: N };
+  tiles[at(7, 2)] = { kind: "merger", inDirs: [W, S], outDir: E };
+  tiles[at(8, 2)] = { kind: "belt", dir: E };
+  tiles[at(9, 2)] = { kind: "sink" };
   const machines: PlacedMachine[] = [
-    { id: 0, def: machineDef("pull"), anchor: { x: 2, y: 0 }, footRot: 0, shape: DEFAULT_SHAPES.pull! },
-    { id: 1, def: machineDef("pull"), anchor: { x: 2, y: 1 }, footRot: 0, shape: DEFAULT_SHAPES.pull! },
+    { id: 0, def: machineDef("pull"), anchor: { x: 3, y: 1 }, footRot: 0, shape: DEFAULT_SHAPES.pull! },
+    { id: 1, def: machineDef("pull"), anchor: { x: 3, y: 4 }, footRot: 0, shape: DEFAULT_SHAPES.pull! },
   ];
   return { width: GRID_W, height: GRID_H, tiles, machines };
 }
@@ -356,12 +350,12 @@ function paint(
   return { ...layout, tiles, machines };
 }
 
-const CELL = 56;
+const CELL = 42;
 const PAD = 12;
 
 // ───────────────────────────── component ─────────────────────────────
 
-const TICK_MS = 220;
+const TICK_MS = 80;
 
 interface FactoryProps {
   readonly active: boolean;
@@ -435,7 +429,7 @@ export function Factory({
   );
   const historyRef = useRef(history);
   historyRef.current = history;
-  const lastCommittedKeyRef = useRef<string | null>(null);
+  const pendingCommittedKeysRef = useRef<string[]>([]);
   const clipboardRef = useRef<ClipboardBrush | null>(null);
   const gestureRef = useRef<{
     readonly pointerId: number;
@@ -513,14 +507,19 @@ export function Factory({
     const next = startingLayout(factory, recipe, entitledWidth, entitledHeight);
     setPlaying(false);
     if (factory !== null || onFactoryChange(next)) {
-      setLayout(next);
       const key = JSON.stringify(next);
-      if (lastCommittedKeyRef.current !== key) {
+      const pendingIndex = pendingCommittedKeysRef.current.indexOf(key);
+      if (pendingIndex >= 0) {
+        pendingCommittedKeysRef.current.splice(0, pendingIndex + 1);
+        if (pendingCommittedKeysRef.current.length > 0) return;
+      } else {
+        pendingCommittedKeysRef.current.length = 0;
         const resetHistory = createEditorHistory(next);
         historyRef.current = resetHistory;
         setHistory(resetHistory);
       }
-      lastCommittedKeyRef.current = null;
+      layoutRef.current = next;
+      setLayout(next);
     }
   }, [recipe, mm, start, factory, entitledWidth, entitledHeight, onFactoryChange]);
 
@@ -529,7 +528,8 @@ export function Factory({
       setPlaying(false);
       if (next === layoutRef.current) return false;
       if (!onFactoryChange(next)) return false;
-      lastCommittedKeyRef.current = JSON.stringify(next);
+      pendingCommittedKeysRef.current.push(JSON.stringify(next));
+      layoutRef.current = next;
       setLayout(next);
       const nextHistory = pushEditorHistory(historyRef.current, next);
       historyRef.current = nextHistory;
@@ -541,9 +541,10 @@ export function Factory({
 
   const restoreHistory = useCallback((next: EditorHistory<FactoryLayout>) => {
     if (next === historyRef.current || !onFactoryChange(next.present)) return;
-    lastCommittedKeyRef.current = JSON.stringify(next.present);
+    pendingCommittedKeysRef.current.push(JSON.stringify(next.present));
     historyRef.current = next;
     setHistory(next);
+    layoutRef.current = next.present;
     setLayout(next.present);
     setPlaying(false);
   }, [onFactoryChange]);
@@ -610,7 +611,7 @@ export function Factory({
   useEffect(() => {
     if (!playing) return;
     const id = window.setInterval(() => {
-      if (!onAdvance(1)) setPlaying(false);
+      if (!onAdvance(8)) setPlaying(false);
     }, TICK_MS);
     return () => window.clearInterval(id);
   }, [playing, onAdvance]);
@@ -1044,7 +1045,9 @@ export function Factory({
                   data-testid={`brush-machine-${entry.typeId}`}
                   title={`${machineUiName(entry.typeId)} · ${entry.speed} ticks/unit`}
                 >
-                  <span className="tool-symbol">{entry.typeId === "swap01" ? "PX" : entry.typeId.slice(0, 2).toUpperCase()}</span>
+                  <span className="tool-symbol">
+                    <MachineIcon typeId={entry.typeId} transform={entry.transform} orientation={IDENTITY} size={26} />
+                  </span>
                   <span className="tool-name">{machineUiName(entry.typeId)}</span>
                   {shortcutIndex >= 0 && shortcutIndex < 4 && (
                     <span className="hotkey">{(shortcutIndex + 7) % 10}</span>

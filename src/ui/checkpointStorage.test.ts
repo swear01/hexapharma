@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_CATALOG, type GameState, type GenOptions } from "../sim/phase0_interfaces";
+import {
+  BASE_GAME_FACTORY_HEIGHT,
+  BASE_GAME_FACTORY_WIDTH,
+  DEFAULT_CATALOG,
+  type GameIntent,
+  type GameState,
+  type GenOptions,
+  type Template,
+} from "../sim/phase0_interfaces";
 import { applyGameIntent, createGameState, hashGame } from "../sim/game";
 import { generate } from "../sim/mapgen";
+import { compileEntitledPrototype, compilePrototype } from "../sim/recipe";
 import { serializeGame, serializeGameAuthority, serializeSlots } from "../sim/save";
 import {
   SLOT_CHECKPOINT_CHARACTER_LIMIT,
@@ -45,21 +54,30 @@ class MemoryStorage implements Storage {
 const options: GenOptions = {
   seed: 14,
   nMaps: 2,
-  width: 12,
-  height: 12,
+  width: 32,
+  height: 32,
   catalog: DEFAULT_CATALOG,
   diseaseCount: 2,
   difficulty: { min: 4, max: 12 },
 };
 
+function saveIntent(recipe: Template): GameIntent {
+  return {
+    kind: "saveRecipe",
+    recipe,
+    factory: compileEntitledPrototype(
+      recipe,
+      BASE_GAME_FACTORY_WIDTH,
+      BASE_GAME_FACTORY_HEIGHT,
+    ).layout,
+  };
+}
+
 describe("checkpoint storage budget", () => {
   it("retains rewind lineage across normalized tick, sale, and layout extensions", () => {
     let ticksEarlier = createGameState(options, 200, 0);
-    ticksEarlier = applyGameIntent(ticksEarlier, {
-      kind: "saveRecipe",
-      recipe: generate(options).diseases[0]!.reference,
-    });
-    ticksEarlier = applyGameIntent(ticksEarlier, { kind: "factoryTicks", ticks: 20 });
+    ticksEarlier = applyGameIntent(ticksEarlier, saveIntent(generate(options).diseases[0]!.reference));
+    ticksEarlier = applyGameIntent(ticksEarlier, { kind: "factoryTicks", ticks: 100 });
     const ticksLater = applyGameIntent(ticksEarlier, { kind: "factoryTicks", ticks: 5 });
 
     const tickWrite = saveSlot(new MemoryStorage(), 0, [ticksEarlier], ticksLater);
@@ -163,11 +181,8 @@ describe("checkpoint storage budget", () => {
 
   it("atomically persists long-run physical inventory as compact replay authority", () => {
     let game = createGameState(options, 200, 0);
-    game = applyGameIntent(game, {
-      kind: "saveRecipe",
-      recipe: generate(options).diseases[0]!.reference,
-    });
-    game = applyGameIntent(game, { kind: "factoryTicks", ticks: 6_000 });
+    game = applyGameIntent(game, saveIntent(generate(options).diseases[0]!.reference));
+    game = applyGameIntent(game, { kind: "factoryTicks", ticks: 12_000 });
     expect(game.inventory.length).toBeGreaterThan(5_000);
     const storage = new MemoryStorage();
 
@@ -252,10 +267,7 @@ describe("checkpoint storage budget", () => {
 
   it("computes replay ticks from the raw trace instead of trusting declared metadata", () => {
     let game = createGameState(options, 200, 0);
-    game = applyGameIntent(game, {
-      kind: "saveRecipe",
-      recipe: generate(options).diseases[0]!.reference,
-    });
+    game = applyGameIntent(game, saveIntent(generate(options).diseases[0]!.reference));
     game = applyGameIntent(game, { kind: "factoryTicks", ticks: 20 });
     const authority = JSON.parse(serializeGameAuthority(game)) as {
       authority: { replayTicks: number };
@@ -326,14 +338,24 @@ describe("checkpoint storage budget", () => {
 
   it("recovers compact history whose materialized full-save wire exceeds its separate cap", () => {
     let game = createGameState(options, 200, 0);
+    const recipe = generate(options).diseases[0]!.reference;
+    const row = Math.floor(BASE_GAME_FACTORY_HEIGHT / 2);
+    const factory = compilePrototype(
+      recipe,
+      BASE_GAME_FACTORY_WIDTH,
+      BASE_GAME_FACTORY_HEIGHT,
+      recipe.steps.map((_, index) => ({ anchor: { x: 1 + index * 2, y: row }, footRot: 0 })),
+    );
     game = applyGameIntent(game, {
       kind: "saveRecipe",
-      recipe: generate(options).diseases[0]!.reference,
+      recipe,
+      factory,
     });
-    game = applyGameIntent(game, { kind: "factoryTicks", ticks: 24_500 });
+    game = applyGameIntent(game, { kind: "factoryTicks", ticks: 49_022 });
+    expect(game.inventory).toHaveLength(24_500);
     const beforeRejectedBatch = game;
     const beforeRejectedHash = hashGame(game);
-    expect(() => applyGameIntent(game, { kind: "factoryTicks", ticks: 20 })).toThrow(
+    expect(() => applyGameIntent(game, { kind: "factoryTicks", ticks: 200 })).toThrow(
       /inventory exceeds/i,
     );
     expect(game).toBe(beforeRejectedBatch);
@@ -354,10 +376,7 @@ describe("checkpoint storage budget", () => {
 
   it("refuses invalid state before writing and cold-clones retained runtime ownership", () => {
     let game = createGameState(options, 200, 0);
-    game = applyGameIntent(game, {
-      kind: "saveRecipe",
-      recipe: generate(options).diseases[0]!.reference,
-    });
+    game = applyGameIntent(game, saveIntent(generate(options).diseases[0]!.reference));
     const invalid: GameState = {
       ...game,
       economy: { ...game.economy, cash: game.economy.cash + 1 },

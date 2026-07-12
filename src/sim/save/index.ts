@@ -62,7 +62,7 @@ import { estimateGameReplayWork } from "../replay-work";
 // blob field-by-field and rebuilding a structurally-equal GameState — never
 // defaulting silently on missing/wrong fields.
 
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 export const MAX_SLOT_STATES = 20;
 export const MAX_SAVE_CHARACTERS = 5_000_000;
 
@@ -500,7 +500,11 @@ function parseGameIntent(v: unknown, index: number, tracePath = "intentTrace"): 
   const kind = reqString(o.kind, `${path}.kind`);
   switch (kind) {
     case "saveRecipe":
-      return { kind, recipe: parseTemplate(o.recipe, `${path}.recipe`) };
+      return {
+        kind,
+        recipe: parseTemplate(o.recipe, `${path}.recipe`),
+        factory: parseFactory(o.factory, `${path}.factory`),
+      };
     case "setFactory":
       return { kind, factory: parseFactory(o.factory, `${path}.factory`) };
     case "factoryTicks":
@@ -566,7 +570,12 @@ function parseFactoryState(
   const units = reqArray(o.units, `${path}.units`);
   const splitterCursors = reqArray(o.splitterCursors, `${path}.splitterCursors`);
   const producedEvents = reqArray(o.producedEvents, `${path}.producedEvents`);
-  const capacity = factory.width * factory.height + factory.machines.length;
+  const capacity = factory.machines.length + factory.tiles.reduce(
+    (count, tile) => count + (
+      tile.kind === "belt" || tile.kind === "splitter" || tile.kind === "merger" ? 1 : 0
+    ),
+    0,
+  );
   const splitterCount = factory.tiles.reduce(
     (count, tile) => count + (tile.kind === "splitter" ? 1 : 0),
     0,

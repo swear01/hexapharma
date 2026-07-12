@@ -1,5 +1,7 @@
-import { test, expect, type Locator, type Page } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import {
+  BASE_GAME_FACTORY_HEIGHT,
+  BASE_GAME_FACTORY_WIDTH,
   DEFAULT_CATALOG,
   type FactoryTile,
   type Rotation,
@@ -8,7 +10,7 @@ import {
 import { evaluate, initialState } from "../../src/sim/drug-graph";
 import { applyGameIntent, createGameState } from "../../src/sim/game";
 import { generate } from "../../src/sim/mapgen";
-import { compileTemplate } from "../../src/sim/recipe";
+import { compileEntitledPrototype } from "../../src/sim/recipe";
 import { serializeGame, serializeGameAuthority } from "../../src/sim/save";
 import { defaultGenOptions } from "../../src/ui/Game";
 
@@ -23,21 +25,12 @@ const reference: Template = (() => {
   return found;
 })();
 const referenceOutcome = evaluate(level.mm, initialState(level.mm), reference);
-const push = DEFAULT_CATALOG.find((entry) => entry.typeId === "push");
-if (push === undefined) throw new Error("missing push fixture machine");
-const factoryContractRecipe: Template = {
-  steps: [
-    ...reference.steps,
-    { typeId: push.typeId, transform: push.transform, orientation: { rot: 0, flip: false } },
-    { typeId: push.typeId, transform: push.transform, orientation: { rot: 2, flip: false } },
-  ],
-};
-if (
-  JSON.stringify(evaluate(level.mm, initialState(level.mm), factoryContractRecipe)) !==
-  JSON.stringify(referenceOutcome)
-) {
-  throw new Error("expanded factory contract fixture no longer preserves the reference outcome");
-}
+const factoryContractRecipe = reference;
+const factoryContractLayout = compileEntitledPrototype(
+  factoryContractRecipe,
+  BASE_GAME_FACTORY_WIDTH,
+  BASE_GAME_FACTORY_HEIGHT,
+).layout;
 const referenceDisease: number = (() => {
   const found = referenceOutcome.cured[0];
   if (found === undefined) throw new Error(`seed ${SEED} reference did not cure a disease`);
@@ -54,12 +47,14 @@ function templateOf(steps: readonly (readonly [string, Rotation])[]): Template {
 }
 
 const sideEffectTemplate = templateOf([
-  ["push", 1],
-  ["push", 1],
-  ["push", 3],
   ["push", 0],
-  ["push", 3],
+  ["skew", 3],
+  ["push", 0],
+  ["push2", 0],
   ["swap01", 0],
+  ["push2", 2],
+  ["push2", 2],
+  ["push", 1],
 ]);
 const sideEffectOutcome = evaluate(level.mm, initialState(level.mm), sideEffectTemplate);
 if (sideEffectOutcome.failed || sideEffectOutcome.cured.length === 0 || sideEffectOutcome.sideEffects.length === 0) {
@@ -71,46 +66,54 @@ const sideEffectProductionCost = sideEffectTemplate.steps.reduce((total, step) =
 }, 0);
 const failedTemplate = templateOf([
   ["push", 3],
-  ["push", 3],
-  ["push", 3],
-  ["push", 2],
+  ["push2", 3],
+  ["push2", 3],
 ]);
 const failedOutcome = evaluate(level.mm, initialState(level.mm), failedTemplate);
 if (!failedOutcome.failed) throw new Error(`seed ${SEED} failed fixture no longer crosses a hazard`);
 function saveWithFactory(template: Template): string {
   let game = createGameState(fixtureOptions, 9999, 9999);
-  game = applyGameIntent(game, { kind: "saveRecipe", recipe: factoryContractRecipe });
+  game = applyGameIntent(game, {
+    kind: "saveRecipe",
+    recipe: factoryContractRecipe,
+    factory: factoryContractLayout,
+  });
+  game = applyGameIntent(game, { kind: "unlockPatent", id: "skew-unlock" });
   const target = game.factory!;
-  const source = compileTemplate(template);
-  if (source.width > target.width || source.height > target.height) {
-    throw new Error("divergent factory fixture exceeds its recipe-authorized dimensions");
-  }
-  const tiles: FactoryTile[] = Array.from(
-    { length: target.width * target.height },
-    () => ({ kind: "empty" as const }),
-  );
-  for (let y = 0; y < source.height; y++) {
-    for (let x = 0; x < source.width; x++) {
-      tiles[y * target.width + x] = source.tiles[y * source.width + x]!;
-    }
-  }
+  const source = compileEntitledPrototype(template, target.width, target.height).layout;
   game = applyGameIntent(game, {
     kind: "setFactory",
-    factory: {
-      width: target.width,
-      height: target.height,
-      tiles,
-      machines: source.machines,
-    },
+    factory: source,
   });
   return serializeGame(game);
 }
 const failedSave = saveWithFactory(failedTemplate);
 const divergentCureSave = saveWithFactory(sideEffectTemplate);
+const directSinkSave = (() => {
+  let game = createGameState(fixtureOptions, 9999, 9999);
+  game = applyGameIntent(game, {
+    kind: "saveRecipe",
+    recipe: factoryContractRecipe,
+    factory: factoryContractLayout,
+  });
+  const target = game.factory!;
+  const tiles: FactoryTile[] = target.tiles.map(() => ({ kind: "empty" }));
+  tiles[0] = { kind: "source", dir: 0, period: 1 };
+  tiles[1] = { kind: "sink" };
+  game = applyGameIntent(game, {
+    kind: "setFactory",
+    factory: { ...target, tiles, machines: [] },
+  });
+  return serializeGame(game);
+})();
 const freshNoFactorySave = serializeGame(createGameState(fixtureOptions, 200, 0));
 let bulkSaleGame = createGameState(fixtureOptions, 200, 0);
-bulkSaleGame = applyGameIntent(bulkSaleGame, { kind: "saveRecipe", recipe: reference });
-bulkSaleGame = applyGameIntent(bulkSaleGame, { kind: "factoryTicks", ticks: 4_200 });
+bulkSaleGame = applyGameIntent(bulkSaleGame, {
+  kind: "saveRecipe",
+  recipe: reference,
+  factory: factoryContractLayout,
+});
+bulkSaleGame = applyGameIntent(bulkSaleGame, { kind: "factoryTicks", ticks: 10_000 });
 const bulkSaleCount = bulkSaleGame.inventory.filter((product) =>
   product.outcome.cured.includes(referenceDisease),
 ).length;
@@ -130,12 +133,6 @@ function revealedOf(text: string | null): number {
   const match = /revealed\s+(\d+)\s*\/\s*\d+/.exec(text ?? "");
   if (!match) throw new Error(`could not parse revealed count from "${text}"`);
   return Number(match[1]);
-}
-
-async function canvasCell(canvas: Locator, x: number, y: number): Promise<{ x: number; y: number }> {
-  const box = await canvas.boundingBox();
-  if (!box) throw new Error("factory canvas has no bounding box");
-  return { x: box.x + 12 + x * 56 + 28, y: box.y + 12 + y * 56 + 28 };
 }
 
 async function unlock(page: Page, id: string): Promise<void> {
@@ -184,10 +181,6 @@ async function saveReferenceRecipe(page: Page): Promise<number> {
   return referenceDisease;
 }
 
-async function stepFactory(page: Page, ticks: number): Promise<void> {
-  for (let i = 0; i < ticks; i++) await page.getByTestId("factory-step").click();
-}
-
 test("unsafe cash and negative research query values fall back without crashing", async ({ page }) => {
   await page.goto("/?cash=1e100&research=-1");
   await expect(page.getByTestId("view-lab")).toBeVisible();
@@ -216,23 +209,17 @@ test("Sell all dispatches one replayable bulk sale beyond the trace-entry cap", 
 });
 
 test("a source-to-sink factory cannot mint inventory for the saved recipe", async ({ page }) => {
-  await page.goto("/?cash=9999&research=9999");
-  await unlockRecipeMachines(page);
-  const disease = await saveReferenceRecipe(page);
-
-  await page.getByTestId("preset-single").click();
-  const canvas = page.locator("[data-testid='factory-canvas'] canvas");
-  const machineCell = await canvasCell(canvas, 2, 0);
-  await page.getByTestId("brush-erase").click();
-  await page.mouse.click(machineCell.x, machineCell.y);
-  await page.getByTestId("brush-belt").click();
-  await page.mouse.click(machineCell.x, machineCell.y);
-  await stepFactory(page, 20);
+  await page.goto("/");
+  await page.evaluate((blob) => localStorage.setItem("hexapharma.save.slot.0", blob), directSinkSave);
+  await page.getByTestId("load").click();
+  await page.getByTestId("view-factory").click();
+  await page.getByTestId("factory-step").click();
+  await expect(page.getByTestId("factory-tick")).toHaveText("1");
   await expect(page.getByTestId("factory-waste")).not.toHaveText("0");
 
   await page.getByTestId("view-shop").click();
-  await expect(page.getByTestId(`shop-inv-${disease}`)).toHaveText("0");
-  await expect(page.getByTestId(`shop-sell-${disease}`)).toBeDisabled();
+  await expect(page.getByTestId(`shop-inv-${referenceDisease}`)).toHaveText("0");
+  await expect(page.getByTestId(`shop-sell-${referenceDisease}`)).toBeDisabled();
 });
 
 test("a failed sink output becomes waste instead of cure inventory", async ({ page }) => {
@@ -456,7 +443,7 @@ test("machine patents gate both palettes and expansion patents enlarge the facto
   await expect(page.getByTestId("brush-machine-skew")).toBeEnabled();
   await expect
     .poll(async () => Number(await expandedCanvas.getAttribute("width")))
-    .toBe(widthBefore + 2 * 56);
+    .toBe(widthBefore + 2 * 42);
   await page.getByTestId("view-lab").click();
   await expect(page.getByTestId("palette-skew")).toBeEnabled();
 });

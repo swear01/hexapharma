@@ -3,11 +3,26 @@ import { applyGameIntent, createGameState } from "../../src/sim/game";
 import { generate } from "../../src/sim/mapgen";
 import { serializeGame } from "../../src/sim/save";
 import { defaultGenOptions } from "../../src/ui/Game";
+import { compileEntitledPrototype } from "../../src/sim/recipe";
+import {
+  BASE_GAME_FACTORY_HEIGHT,
+  BASE_GAME_FACTORY_WIDTH,
+} from "../../src/sim/phase0_interfaces";
+
+test.setTimeout(60_000);
 
 const analysisOptions = defaultGenOptions(14);
 const analysisRecipe = generate(analysisOptions).diseases[0]!.reference;
 let analysisGame = createGameState(analysisOptions, 200, 0);
-analysisGame = applyGameIntent(analysisGame, { kind: "saveRecipe", recipe: analysisRecipe });
+analysisGame = applyGameIntent(analysisGame, {
+  kind: "saveRecipe",
+  recipe: analysisRecipe,
+  factory: compileEntitledPrototype(
+    analysisRecipe,
+    BASE_GAME_FACTORY_WIDTH,
+    BASE_GAME_FACTORY_HEIGHT,
+  ).layout,
+});
 const analysisBelt = analysisGame.factory!.tiles.findIndex((tile) => tile.kind === "belt");
 if (analysisBelt < 0) throw new Error("analysis fixture has no belt to erase");
 const analysisSave = serializeGame(analysisGame);
@@ -75,7 +90,7 @@ test("a divergent factory reports bounded-analysis errors without crashing React
   const x = analysisBelt % width;
   const y = Math.floor(analysisBelt / width);
   await page.getByTestId("brush-erase").click();
-  await canvas.click({ position: { x: 12 + x * 56 + 28, y: 12 + y * 56 + 28 } });
+  await canvas.click({ position: { x: 12 + x * 42 + 21, y: 12 + y * 42 + 21 } });
 
   await expect(page.getByTestId("factory-analysis-error")).toBeVisible();
   expect(pageErrors).toEqual([]);
@@ -114,8 +129,8 @@ test("Factory editing places a machine + a tile via the palette", async ({ page 
 
   const canvas = page.locator("[data-testid='factory-canvas'] canvas");
   await expect(canvas).toBeVisible();
-  // Cell center math mirrors the renderer: PAD=12, CELL=56 → center = 12 + c*56 + 28.
-  const center = (c: number) => 12 + c * 56 + 28;
+  // Cell center math mirrors the renderer: PAD=12, CELL=42 → center = 12 + c*42 + 21.
+  const center = (c: number) => 12 + c * 42 + 21;
 
   // Select a machine type and rotate its drug effect independently from its footprint.
   await page.getByTestId("brush-machine-pull").click();

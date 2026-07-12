@@ -20,7 +20,7 @@
 | save | `src/sim/save/` | integrator（agent 交付） | ✅ 完成（同 build full/compact raw-work preflight；single 100,000,000；serialize/deserializeSlots共用12,000/8,192/100,000,000 aggregate；storage-layout legacy replay-before-work封堵；不負責跨 build migration） |
 | patent | `src/sim/patent/` | integrator（agent 交付） | ✅ 完成（frozen tree；invalid authority rejection；activeEffects checked aggregate overflow；cash+R&D、鎖機/擴廠/揭霧、1→2→3→4 reset含`deep-map-4`） |
 | render | `src/render/`、`public/assets/lab/` | integrator（agent 交付） | ✅ 完成（Lab固定704×512 active-layer viewport/culling、cyan route + orange dashed candidate/ghost、camera helpers、原創biochemical atlas + SoA Factory renderer、safe teardown） |
-| ui | `src/ui/` | integrator（agent 交付） | ✅ 完成（Lab camera/layers + pure Recipe editor/preview/fog mask/SVG icons + held insertion/drag/history/playhead；stale guards/errors；Factory direct editor；checkpoint lineage/recovery；真人 :53346） |
+| ui | `src/ui/` | integrator（agent 交付） | 🔧 Phase 4（Lab camera/layers、Pilot auto-layout/move/rotate、preview/fog mask/SVG icons、Factory direct editor、checkpoint lineage/recovery與真人 :53346 已完成；Bench直接增刪／belt/history/ghost、雙向高亮與唯讀derived timeline待完成） |
 
 ## 規則
 

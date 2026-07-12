@@ -24,19 +24,21 @@
 - **完成定義**：可循環 vertical slice（探索→研發→量產配平→賣→投專利/解新地圖→更深）；多存檔回溯正常；驗證「狂產單一藥物 ≠ 簡單最佳解」
 
 ### Phase 3 之後（進行中 / Next）
-- **In Progress**：真人完整循環玩測、實際淨利/吞吐/難度平衡與正式內容量。strict mutable factory runtime、存檔 authority、bundle split、工廠遊戲式 interaction redesign，以及Lab第一套原創production atlas已完成，不再列為技術債。
+- **Phase 4 — Spatial Lab / exact prototype transfer（In Progress）**：Lab 改為同步 Effect Atlas + Pilot Bench；約40px adaptive major/minor grid；cure/side-effect/hazard/wall連通區；small 3／medium 4–5／large 6–9+效果尺度與對應 footprint/ports/throughput tradeoff；Bench實體layout為authority，由唯一source→sink拓撲推導唯讀Recipe timeline；保存exact ProductionBlueprint並原位轉入Factory，移除Lab→Factory auto-pack路徑。
+- **Phase 4 完成定義**：玩家從 Atlas 探索連通療效區，在 Bench 以真實 footprint／ports 建出可執行原型；timeline 只讀且與拓撲一致；invalid/ambiguous graph 明示拒絕；Lab→Factory 前後 layout 逐欄位相等；desktop/compact Playwright、視覺 baseline、property/integration tests 與 `npm run check` 全過，再以`:53346`完成真人循環玩測與一輪UX修正。
+- **之後**：真人完整循環玩測、實際淨利／吞吐／難度平衡與正式內容量。strict mutable factory runtime、存檔 authority、bundle split、Factory interaction redesign，以及 Lab 第一套原創 production atlas 已完成，不再列為技術債；Recipe-list authority 與 auto-pack 則由 Phase 4 明確取代。
 - **Pre-release policy**：正式 save format freeze 前不做跨 build migration；breaking update 可淘汰舊開發存檔。進入 release candidate 時才規劃 migration matrix 與相容期。
-- **Post-MVP / Next**：內容量產（更多疾病/原料/機器變換/footprint = 純資料工作）、更多正式美術與上架打磨。這些是未來內容 roadmap，不是目前 vertical-slice correctness gap。1–4 圖功能已完成，當前仍需的是人工可玩性、平衡與出貨 UX 判斷。
+- **Post-MVP / Next**：更多疾病／原料／非同質機器變換、更多正式美術與上架打磨。Lab 空間化、核心 machine footprint/scale、連通區域與 exact transfer 是 Phase 4 必修，不再歸類為可延後的純內容工作。
 
 ## Recently Done
 
-- **2026-07 TDD 計劃書對齊修正** ✅：Game single authority/head≤4,096 entries/≤100,000 ticks/≤100,000,000 work，正常100,000-tick reference約31,000,000。full/compact raw-work preflight；rewind/legacy/slots共用12,000 ticks/8,192 entries/100,000,000 aggregate，deserializeSlots先aggregate後state replay，serializeSlots同界。compact另限20/1,250,000 chars；timeline/cross-run/legacy recovery完成。
-- **strict factory runtime / routing / authority bounds** ✅：fixed SoA runtime綁layout + `MultiMap` identity，routing cursor進snapshot/hash/save，成功tick零配置。public mapgen/factory各≤65,536 cells；Game map≤64/side/≤4,096、factory≤256/side/≤4,096；base entitlement`9×6 + patent delta`。`sideEffectId`為Int32；public patent invalid state與effect aggregate overflow顯式reject。
+- **2026-07 TDD 計劃書對齊修正** ✅：Game single authority/head≤4,096 entries/≤100,000 ticks/≤100,000,000 work，正常`24×12` Pilot reference的100,000-tick trace約85,313,612。full/compact raw-work preflight；rewind/legacy/slots共用12,000 ticks/8,192 entries/100,000,000 aggregate，deserializeSlots先aggregate後state replay，serializeSlots同界。compact另限20/1,250,000 chars；timeline/cross-run/legacy recovery完成。
+- **strict factory runtime / routing / authority bounds** ✅：fixed SoA runtime綁layout + `MultiMap` identity，routing cursor進snapshot/hash/save，成功tick零配置。public mapgen/factory各≤65,536 cells；Game map≤64/side/≤4,096、factory≤256/side/≤4,096；base entitlement`24×12 + patent delta`。`sideEffectId`為Int32；public patent invalid state與effect aggregate overflow顯式reject。
 - **build、UI authority 與 renderer lifecycle** ✅：renderer dynamic import/error可見；Lab無stale outcome，Factory分標sink outcomes/waste。diagnostics在init/tick前驗100,000,000-unit layout-work cap，避免大layout同步鎖UI；exhaustion顯示alert，throughput真deadlock回`0/1`與null bottleneck。Lab固定`704×512` + culling；production-preview守最大`64×64`。chunks <500 kB；StrictMode teardown安全。
 - **持久化/analysis regression coverage** ✅：checkpoint tests守raw-work preflight、normalization-aware same-origin lineage、different-run canonical replacement、mixed-legacy invalid/head-only recovery與24,500-item compact/full-wire-cap分離；Playwright守Factory analysis alert；production-preview實際載入最大Game-authorized `64×64` map。
 - **固定視覺回歸** ✅：Lab fogged + Factory reset 的 Playwright `toHaveScreenshot` expected baselines 已納入本輪工作成果與 e2e pixel diff；在目前未 commit 工作樹不宣稱已提交。
 - **直接操作 UI** ✅：全螢幕 shell、HUD、F1–F4 rail、hotbars、inspectors、Market cards、Patent lattice；Factory 支援 drag build/erase、touch tap/pan、wheel zoom、Q/R/H/V、clipboard 與 50-step history。active-view key isolation、modal focus、compact HUD／world reachability與 chrome click-through 由 Playwright 守住；Before／After 與競品差異見 `ui-interaction.md`。
-- **Recipe 指令軌／預覽** ✅：Lab hotbar 改為 cursor-held machine，底部 pictogram cards／插入槽在 commit 前顯示完整逐格 candidate route；牆停、hazard、Phase Exchange break 與 apply/reveal 共用 sim preview authority，fog mask 不洩漏 unknown。支援 select/scrub、R/H/Q/Delete/Escape、drag reorder、50-step undo/redo與Run playhead，desktop/compact皆保留高頻操作。
+- **Recipe 指令軌／預覽（歷史基線）** ✅：Lab hotbar、pictogram、逐格 candidate route、fog-safe preview、scrub/playhead與50-step history已完成；Phase 4重用 preview/pictogram/playhead，但以Pilot Bench topology取代插入槽、drag reorder與Recipe-list authority。
 - **設計對齊大改** ✅：把工廠那半做真——機器多格形狀 + 多 port + footRot 空間打包、傳送帶 splitter/merger 真分流匯流、真並聯吞吐（measured，非 heuristic）；Lab改為預設1張`63×63`中心開場、局部viewport與原創生化fog/貼圖；map patents 依序1→2→3→4且尺寸固定，後續layer phase offsets讓A↔B交換有實際意義。
 
 - **Phase 3 — 經濟/存讀檔/專利 + 完整循環** ✅：economy（遞減定價+反退化+帳務守恆）、save（round-trip+多存檔/回溯）、patent（天賦樹+解鎖新地圖）、循環 UI（Lab→Factory→Shop→Patents）。headless 整合測試跑通整條循環。

@@ -384,17 +384,130 @@ function constructDiseases(
   return built;
 }
 
-function placeCures(maps: readonly ScratchMap[], built: readonly BuiltDisease[]): void {
+const REGION_DIRECTIONS: readonly Vec2[] = [
+  { x: 1, y: 0 },
+  { x: 0, y: 1 },
+  { x: -1, y: 0 },
+  { x: 0, y: -1 },
+];
+
+function forEachNeighbor(map: ScratchMap, cellIndex: number, visit: (neighbor: number) => void): void {
+  const x = cellIndex % map.width;
+  const y = Math.floor(cellIndex / map.width);
+  for (const direction of REGION_DIRECTIONS) {
+    const nx = x + direction.x;
+    const ny = y + direction.y;
+    if (nx < 0 || ny < 0 || nx >= map.width || ny >= map.height) continue;
+    visit(idx(map.width, nx, ny));
+  }
+}
+
+function connectedComponent(
+  map: ScratchMap,
+  seed: number,
+  available: (cellIndex: number) => boolean,
+): number[] {
+  if (!available(seed)) return [];
+  const visited = new Uint8Array(map.cell.length);
+  const queue = new Int32Array(map.cell.length);
+  const cells: number[] = [];
+  let head = 0;
+  let tail = 0;
+  queue[tail++] = seed;
+  visited[seed] = 1;
+  while (head < tail) {
+    const current = queue[head++]!;
+    cells.push(current);
+    forEachNeighbor(map, current, (neighbor) => {
+      if (visited[neighbor] === 1 || !available(neighbor)) return;
+      visited[neighbor] = 1;
+      queue[tail++] = neighbor;
+    });
+  }
+  return cells;
+}
+
+function largestAvailableComponent(
+  map: ScratchMap,
+  available: (cellIndex: number) => boolean,
+): number[] {
+  const visited = new Uint8Array(map.cell.length);
+  const queue = new Int32Array(map.cell.length);
+  let largest: number[] = [];
+  for (let seed = 0; seed < map.cell.length; seed++) {
+    if (visited[seed] === 1 || !available(seed)) continue;
+    const component: number[] = [];
+    let head = 0;
+    let tail = 0;
+    queue[tail++] = seed;
+    visited[seed] = 1;
+    while (head < tail) {
+      const current = queue[head++]!;
+      component.push(current);
+      forEachNeighbor(map, current, (neighbor) => {
+        if (visited[neighbor] === 1 || !available(neighbor)) return;
+        visited[neighbor] = 1;
+        queue[tail++] = neighbor;
+      });
+    }
+    if (component.length > largest.length) largest = component;
+  }
+  return largest;
+}
+
+function growConnectedRegion(
+  rng: Rng,
+  map: ScratchMap,
+  seed: number,
+  target: number,
+  available: (cellIndex: number) => boolean,
+  place: (cellIndex: number) => void,
+): number {
+  const queued = new Uint8Array(map.cell.length);
+  const frontier: number[] = [seed];
+  queued[seed] = 1;
+  let placed = 0;
+  while (placed < target && frontier.length > 0) {
+    const choice = rng.int(frontier.length);
+    const current = frontier[choice]!;
+    const last = frontier.pop()!;
+    if (choice < frontier.length) frontier[choice] = last;
+    if (!available(current)) continue;
+    place(current);
+    placed++;
+    forEachNeighbor(map, current, (neighbor) => {
+      if (queued[neighbor] === 1 || !available(neighbor)) return;
+      queued[neighbor] = 1;
+      frontier.push(neighbor);
+    });
+  }
+  return placed;
+}
+
+function placeCures(rng: Rng, maps: readonly ScratchMap[], built: readonly BuiltDisease[]): void {
   for (const disease of built) {
     const map = maps[disease.map];
     if (map === undefined) continue;
-    const i = idx(map.width, disease.node.x, disease.node.y);
-    if (map.cell[i] !== CellKind.Empty || map.cureId[i] !== -1) {
+    const seed = idx(map.width, disease.node.x, disease.node.y);
+    const startIndex = idx(map.width, map.start.x, map.start.y);
+    const available = (cellIndex: number): boolean =>
+      cellIndex !== startIndex &&
+      map.cell[cellIndex] === CellKind.Empty &&
+      map.cureId[cellIndex] === -1;
+    const component = connectedComponent(map, seed, available);
+    if (component.length < 5) {
       throw new Error(`mapgen.generate: duplicate or blocked cure cell for disease ${disease.id}`);
     }
-    map.cell[i] = CellKind.Cure;
-    map.cureId[i] = disease.id;
-    map.protectedCells[i] = 1;
+    const maxSize = Math.min(9, component.length);
+    const target = 5 + rng.int(maxSize - 4);
+    const placed = growConnectedRegion(rng, map, seed, target, available, (cellIndex) => {
+      map.cell[cellIndex] = CellKind.Cure;
+      map.cureId[cellIndex] = disease.id;
+      map.protectedCells[cellIndex] = 1;
+    });
+    if (placed !== target) {
+      throw new Error(`mapgen invariant violation: cure region could not grow for disease ${disease.id}`);
+    }
   }
 }
 
@@ -404,29 +517,28 @@ function scatter(rng: Rng, map: ScratchMap, sideEffectBase: number): void {
   const hazardCount = Math.floor((len * 3) / 100);
   const sideCount = Math.floor((len * 5) / 100);
 
-  const placeBlocking = (count: number, kind: number): void => {
-    for (let n = 0; n < count; n++) {
-      const x = rng.int(map.width);
-      const y = rng.int(map.height);
-      const i = idx(map.width, x, y);
-      if (map.protectedCells[i] === 1 || map.cell[i] !== CellKind.Empty) continue;
-      map.cell[i] = kind;
+  const placeRegion = (count: number, kind: number, sideEffect = false): void => {
+    let remaining = count;
+    let nextSide = sideEffectBase;
+    const available = (cellIndex: number): boolean =>
+      map.protectedCells[cellIndex] !== 1 && map.cell[cellIndex] === CellKind.Empty;
+    while (remaining > 0) {
+      const component = largestAvailableComponent(map, available);
+      if (component.length === 0) break;
+      const target = Math.min(remaining, component.length);
+      const seed = component[rng.int(component.length)]!;
+      const placed = growConnectedRegion(rng, map, seed, target, available, (cellIndex) => {
+        map.cell[cellIndex] = kind;
+        if (sideEffect) map.sideEffectId[cellIndex] = nextSide++;
+      });
+      if (placed === 0) break;
+      remaining -= placed;
     }
   };
 
-  placeBlocking(wallCount, CellKind.Wall);
-  placeBlocking(hazardCount, CellKind.Hazard);
-
-  let nextSide = sideEffectBase;
-  for (let n = 0; n < sideCount; n++) {
-    const x = rng.int(map.width);
-    const y = rng.int(map.height);
-    const i = idx(map.width, x, y);
-    if (map.protectedCells[i] === 1 || map.cell[i] !== CellKind.Empty) continue;
-    map.cell[i] = CellKind.SideEffect;
-    map.sideEffectId[i] = nextSide;
-    nextSide += 1;
-  }
+  placeRegion(wallCount, CellKind.Wall);
+  placeRegion(hazardCount, CellKind.Hazard);
+  placeRegion(sideCount, CellKind.SideEffect, true);
 }
 
 function requireSafeInteger(name: string, value: number): void {
@@ -623,7 +735,7 @@ export const generate: GenerateFn = (opts) => {
     );
   }
 
-  placeCures(scratch, built);
+  placeCures(rng, scratch, built);
   let sideEffectBase = 0;
   for (const map of scratch) {
     scatter(rng, map, sideEffectBase);

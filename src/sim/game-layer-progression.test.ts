@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_CATALOG, type GenOptions } from "./phase0_interfaces";
+import {
+  BASE_GAME_FACTORY_HEIGHT,
+  BASE_GAME_FACTORY_WIDTH,
+  DEFAULT_CATALOG,
+  type GenOptions,
+} from "./phase0_interfaces";
 import { applyGameIntent, createGameState } from "./game";
+import { compileEntitledPrototype } from "./recipe";
 
 const singleLayerOptions: GenOptions = {
   seed: 14,
@@ -25,7 +31,15 @@ describe("ingredient-layer progression", () => {
       }],
     };
     expect(() => applyGameIntent(game, { kind: "runLab", template })).toThrow(/phase exchange.*layer/i);
-    expect(() => applyGameIntent(game, { kind: "saveRecipe", recipe: template })).toThrow(/phase exchange.*layer/i);
+    expect(() => applyGameIntent(game, {
+      kind: "saveRecipe",
+      recipe: template,
+      factory: compileEntitledPrototype(
+        template,
+        BASE_GAME_FACTORY_WIDTH,
+        BASE_GAME_FACTORY_HEIGHT,
+      ).layout,
+    })).toThrow(/phase exchange.*layer/i);
   });
 
   it("deepens a centered run from A to A/B to A/B/C to A/B/C/D", () => {

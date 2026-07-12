@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
+  BASE_GAME_FACTORY_HEIGHT,
+  BASE_GAME_FACTORY_WIDTH,
   DEFAULT_CATALOG,
   type GenOptions,
   type EconomyState,
@@ -8,21 +10,25 @@ import {
 import { generate } from "../../src/sim/mapgen/index";
 import { solve } from "../../src/sim/solver/index";
 import { initialState, evaluate } from "../../src/sim/drug-graph/index";
-import { compileTemplate, factoryOutcome } from "../../src/sim/recipe/index";
+import {
+  compileEntitledPrototype,
+  compileTemplate,
+  factoryOutcome,
+} from "../../src/sim/recipe/index";
 import { replayFactory } from "../../src/sim/state";
 import { analyzeThroughput } from "../../src/sim/factory-sim/index";
 import { sellUnit } from "../../src/sim/economy/index";
 import { DEFAULT_PATENTS, canUnlock, unlockPatent } from "../../src/sim/patent/index";
 import { serializeGame, deserializeGame } from "../../src/sim/save/index";
-import { applyGameIntent, createGameState } from "../../src/sim/game";
+import { applyGameIntent, availableCatalog, createGameState } from "../../src/sim/game";
 
 /** Small, fast options for an end-to-end loop. */
 function opts(seed: number): GenOptions {
   return {
     seed,
     nMaps: 2,
-    width: 10,
-    height: 10,
+    width: 32,
+    height: 32,
     catalog: DEFAULT_CATALOG,
     diseaseCount: 2,
     difficulty: { min: 2, max: 8 },
@@ -37,7 +43,7 @@ describe("integration: map → recipe → factory plus economy/patent/save contr
 
     // research: solver finds a sound recipe for the disease (INV-13)
     const sol = solve(level.mm, start, {
-      catalog: DEFAULT_CATALOG,
+      catalog: availableCatalog({ unlocked: [] }),
       maxDepth: disease.difficulty + 4,
       targets: [disease.id],
     });
@@ -109,12 +115,20 @@ describe("integration: map → recipe → factory plus economy/patent/save contr
     const options = opts(7);
     const level = generate(options);
     const template = solve(level.mm, initialState(level.mm), {
-      catalog: DEFAULT_CATALOG,
+      catalog: availableCatalog({ unlocked: [] }),
       maxDepth: 12,
       targets: [0],
     })!.template;
     let g = createGameState(options, 10_000, 100);
-    g = applyGameIntent(g, { kind: "saveRecipe", recipe: template });
+    g = applyGameIntent(g, {
+      kind: "saveRecipe",
+      recipe: template,
+      factory: compileEntitledPrototype(
+        template,
+        BASE_GAME_FACTORY_WIDTH,
+        BASE_GAME_FACTORY_HEIGHT,
+      ).layout,
+    });
     g = applyGameIntent(g, { kind: "factoryTicks", ticks: 200 });
     const product = g.inventory[0]!;
     g = applyGameIntent(g, {
