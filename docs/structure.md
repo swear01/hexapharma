@@ -1,49 +1,48 @@
 # Structure
 
-> 狀態：✅ 已實作｜🔧 進行中｜📋 規劃中。
+> 狀態：✅ 已實作｜🔧 驗證中｜📋 後續。
 
-| Path | 狀態 | Purpose |
-|------|------|---------|
-| `AGENTS.md` | ✅ | AI agent 硬規則 + docs 指標（薄，base block 由 agents_rule 管理） |
-| `docs/` | ✅ | 活文件：design / invariants / module-ownership / decisions / development-policy + overview/structure/notes/playtest/plan/roadmap |
-| `src/sim/phase0_interfaces.ts` | ✅ | 契約與共用常數：Game/analysis work各100,000,000，rewind aggregate 12,000 ticks/8,192 entries/100,000,000，base`24×12`；`sideEffectId` Int32；defaults frozen |
-| `src/sim/drug-graph/` | ✅ | 多圖效果引擎：transform union／supercover掃動／fog／preview authority已完成；療效使用5–9格連通region，現行沒有potency分層，apply/reveal/preview維持同源與整數確定性 |
-| `src/sim/mapgen/` | ✅ | 建構式多圖生成與exact difficulty price；cure生長成5–9格，side effect／wall／hazard保留5%／4%／3%整數密度並生長成連通 biome；property tests守面積／連通／reference可解／seed逐欄位相等；production不import solver |
-| `src/sim/solver/` | ✅ | 多圖 BFS 搜尋（**僅 tests/tools 驗證與平衡稽核**，D14） |
-| `src/sim/rng/` | ✅ | 自有 seeded PRNG（**唯一隨機來源**，mapgen 也走它） |
-| `src/sim/hash.ts` | ✅ | FNV-1a（replay/determinism） |
-| `src/sim/state.ts` | ✅ | `hashFactory` / `replayFactory`（live `FactoryRuntime` 走 cold snapshot 後 FNV-1a；交付 INV-15） |
-| `src/sim/game.ts` | 🔧 Phase 4 | 完整GameState/reducer/replay/hash/bounds已完成；新增Lab committed ProductionBlueprint authority與原子save/transfer validation，保存exact layout + derived Template並逐欄位轉Factory，不得走auto-pack。仍維持canonical clone/deep-freeze、trace/work bounds與factoryTicks cold ownership |
-| `src/sim/replay-work.ts` | ✅ | 從 origin + raw intents 估算 map traversal、factory cold/layout/tick、sales 與 patent/map reset replay work；上限運算不 overflow，供 Game/Save/checkpoint replay-before-work 防護 |
-| `src/sim/factory-geom.ts` | ✅ | 共用工廠幾何（純）：`rotateVec` / `worldCells` / `worldInPorts` / `worldOutPorts`——把 PlacedMachine 的 LOCAL shape 依 footRot（CW, y-down）+ anchor 解到世界座標，port side =(localSide+footRot)&3。factory-sim 與 factoryRenderer 同源引用（不再各自重複幾何） |
-| `src/sim/factory-sim/` | ✅ | public area≤65,536的fixed SoA runtime，hot unit capacity只按carrier tiles + machines配置並綁layout + `MultiMap` identity；routing/cursors進snapshot/hash/save，成功tick零配置。diagnostics ≤100,000 ticks/≤100,000,000 work，init/tick前驗`(area+machines+sources)²×observationTicks`；throughput真deadlock回`0/1`與null bottleneck。serpentine throughput 20×20成功/21×21拒絕；outcome 20×20成功/22×22拒絕，21×21 outcome仍低於cap |
-| `src/sim/recipe/` | 🔧 Phase 4 | 現行 template→shape／BFS auto-pack compiler 是歷史基線；production Lab→Factory path 將改為驗證 exact ProductionBlueprint 的唯一、無循環、無split/merge source→sink 拓撲並推導Template。Factory重排仍驗 effect order contract；auto-pack不得再介入Lab transfer |
-| `src/sim/economy/` | ✅ | 各疾病 sold counter 的單品售價遞減、實際成本/副作用結算、銷售取得 R&D、帳務守恆；目前沒有訂單系統 |
-| `src/sim/patent/` | ✅ | deep-frozen tree；cash+R&D天賦樹；public helpers拒絕invalid tree/effect/state/cash/research，`activeEffects` factory/reveal aggregates用checked safe-integer add並拒overflow |
-| `src/sim/save/` | ✅ | 同 content build 內的 full/compact raw origin+trace preflight；single ≤100,000,000 work。`serializeSlots`/`deserializeSlots`共用12,000 ticks/8,192 entries/100,000,000 aggregate，deserialize在任何`parseGameState`前拒超界；full wire cap 5,000,000 chars；不承諾跨 build migration |
-| `src/render/labCamera.ts` | ✅ | 固定`704×512`viewport、40px cell、pan、75–225% anchor zoom、focus/clamp、visible bounds與adaptive major/minor grid math已完成 |
-| `src/render/labRenderer.ts` | 🔧 | PixiJS v8 Effect Atlas renderer；每格minor／每5格major／origin axes與所有revealed feature的連通fill/border已完成。grid可穿fog但不洩漏feature；route/preview仍共用sim authority。Bench selection segment highlight尚未完成 |
-| `public/assets/lab/` | ✅ | 原創 microscopic biochemical atlas：`manifest.json` 是 runtime asset contract，`README.md` 記錄生成來源／權利／遮霧規則；含 substrate、fog、wall、hazard、side-effect、cure、drug、token halo。asset integrity tests 逐檔驗存在、格式header尺寸、alpha、repeat metadata與未宣告raster |
-| `src/render/factoryRenderer.ts` | ✅ | PixiJS v8 dumb Factory renderer與靜態layer快取已完成；100%地板格為42px，和40px Pilot Bench共享shape/port幾何語言並容納現行3–8格footprint。只畫、不跑sim |
-| `src/ui/` | 🔧 Phase 4 | viewport shell與Factory direct editor已完成；Lab已有同步 Effect Atlas + Pilot Bench、真實footprint/ports、anchor移動、footRot與自動重路由。底部Recipe track仍是過渡編輯authority；Bench直接增刪／belt/history/ghost、雙向highlight與唯讀derived timeline尚未完成。desktop約65/35可交換焦點，compact保留live overview |
-| `src/main.tsx` | ✅ | React 進入點（掛載 `Root` → `Game`） |
-| `test/e2e/` | 🔧 Phase 4 | shell／Factory／responsive／production-preview、Atlas grid、hidden/revealed connected-region baselines、Pilot move/invalid recovery、exact Lab→Factory transfer，以及Factory快速連續edit/undo/redo race皆有coverage；overcapacity alert/disabled action由SSR component test守住。Bench direct build/history、雙向highlight與唯讀timeline隨對應功能落地後補齊；仍由`npm run check`統一驗收 |
-| `test/integration/` | ✅ | 跨模組、無畫面（map→recipe→factory，加上economy/patent/save契約）；整局reducer vertical trace在`src/sim/game.test.ts`；checkpointStorage unit tests另守目前 build 的normalized lineage、different-run canonical replacement與同 wire storage legacy clean recovery |
-| `test/tools/` | ✅ | CLI 邊界測試：headless seed 拒 partial/fractional/blank/out-of-uint32 並 canonicalize `-0`；balance count 1..100,000、超限在 loop 前 fail-fast；任一 seed/unknown machine 分析失敗必須 nonzero |
-| `tools/headless-sim.ts` | ✅ | CLI 僅有 `gen` / `run`；seed argument 必須完整轉為 uint32 safe integer（`-0`→`0`），不使用會接受 `14junk` 的 partial parser；其他 replay/loop 驗證由 Vitest harness 提供 |
-| `tools/balance.ts` | ✅ | 離線難度/價格/吞吐 sweep；count practical cap = 100,000 seeds，invalid/超限在配置 seed loop 前 fail-fast，任何 seed 分析失敗使報告 nonzero |
-| `npm run check` | ✅ | 唯一閘（無 `check.sh`；= tsc + lint + vitest + `playwright test`）；e2e webServer 另含 production build + preview smoke，CLI 不加額外 headless flag |
+| Path | 狀態 | Responsibility |
+|---|---:|---|
+| `AGENTS.md` | ✅ | 專案硬規則、唯一 gate、真人伺服器 port、文件 lifecycle。 |
+| `docs/` | 🔧 | active design／overview／invariants／decisions／plan／roadmap／playtest／UI 契約。 |
+| `src/sim/phase0_interfaces.ts` | ✅ | sim 共用型別、catalog/shapes、Research/Pilot/Production/GameState/GameIntent 契約。 |
+| `src/sim/drug-graph/` | ✅ | translate/scale/swap、supercover sweep、evaluate、preview 與 fog reveal。 |
+| `src/sim/mapgen/` | ✅ | seed-pure constructive map generation、連通 regions、difficulty/price。 |
+| `src/sim/solver/` | ✅ | dev/test-only soundness 與平衡搜尋；production dependency graph 禁止 import。 |
+| `src/sim/rng/`, `hash.ts`, `state.ts` | ✅ | 唯一 seeded RNG、hash、factory replay determinism。 |
+| `src/sim/factory-geom.ts` | ✅ | footprint/ports 的共享世界幾何。 |
+| `src/sim/factory-sim/` | ✅ | fixed-capacity SoA runtime、routing/cursors、product events、throughput/deadlock diagnostics。 |
+| `src/sim/recipe/` | ✅ | 嚴格驗證 Research 唯一線性 source→machines→sink route，推導 deep-frozen descriptor/template。 |
+| `src/sim/game.ts` | ✅ | 三場域 reducer、ResearchShot、exact transfers、Production ticks、inventory/economy/deeper reset、replay/hash。 |
+| `src/sim/replay-work.ts` | ✅ | 三場域 intents 的 raw replay work preflight。 |
+| `src/sim/economy/`, `patent/` | ✅ | 實體藥結算、Knowledge、遞減收益、Technology tree/deeper-level reset。 |
+| `src/sim/save/` | ✅ | Save v5 full/compact codecs、semantic replay、slots 與 budget boundaries。 |
+| `src/blueprint/format.ts` | ✅ | portable Blueprint v1、strict schema、canonical SHA-256 checksum、layout materialization。 |
+| `src/blueprint/storage.ts` | ✅ | 與 save slots 分離的 cross-save Blueprint Library；64 entries/4 MiB bounds。 |
+| `src/render/labCamera.ts` | ✅ | `704×512` 局部鏡頭、pan/zoom/focus/culling、origin-aligned minor/5×5 major grid。 |
+| `src/render/labRenderer.ts` | ✅ | Effect Atlas Pixi renderer；無玩家 XY 十字軸、opaque fog、revealed features、route/token。 |
+| `src/render/factoryRenderer.ts` | ✅ | Research/Pilot/Production 共用的 dumb spatial renderer。 |
+| `public/assets/lab/` | ✅ | 原創 atlas raster assets、manifest 與來源/權利說明。 |
+| `src/ui/App.tsx` | ✅ | Effect Atlas React wrapper、active layer cameras、手動 focus、無 auto-follow。 |
+| `src/ui/Factory.tsx` | ✅ | `research|pilot|production` 共用直接操作 editor；Production 才顯示 transport。 |
+| `src/ui/Game.tsx` | ✅ | F1 Research、F2 Pilot、F3 Production，Market/Technology/Blueprint drawers，save/checkpoint shell。 |
+| `src/ui/BlueprintLibrary.tsx` | ✅ | capture/import/upload/download/apply/delete Blueprint UI。 |
+| `src/ui/checkpointStorage.ts` | ✅ | Save v5 compact checkpoint、lineage、rewind/recovery。 |
+| `test/integration/` | ✅ | 無畫面 Research→Pilot→Production→Market→Technology vertical loop。 |
+| `test/e2e/` | 🔧 | 三場域、atlas/grid/fog、exact transfer、drawers、Blueprint cross-save、responsive 與 production preview。 |
+| `tools/` | ✅ | headless sim 與 balance sweep；不進遊戲內自動解。 |
 
 ## Module Boundaries
 
-三層架構，**單向資料流**：UI/渲染只「讀 sim 狀態、送 intent」；只有 sim core 在 tick 裡改狀態。
-
-```
-UI（React/DOM）  →  只讀 sim + 發 intent
-渲染（PixiJS v8）→  只讀 sim、顯式 loop、嚴禁改任何 sim 數值
-Sim Core（純 TS）→  tick-based、固定 seed、完全可 headless 測
+```text
+React UI          → read GameState + dispatch GameIntent
+Pixi renderer     → read-only drawing
+Pure TS sim core  → authoritative deterministic transitions
 ```
 
-**鐵律**：`src/sim/**` 不得 import 任何 Pixi / React / DOM。這條讓 core 能在 node headless 跑，是平行測試與可逆性的根本。
-
-每個 sim 模組有 typed interface + 各自測試；模組擁有權見 [module-ownership.md](module-ownership.md)。
+- `src/sim/**` 禁止 Pixi／React／DOM。
+- `GameState` 是遊戲 authority；editor history/camera/hover/drawer 是 UI-local state。
+- `FactoryLayout` 是三場域共用的幾何語言；Research/Pilot/Production 各持有自己的 owned layout。
+- Blueprint Library 不是 GameState，也不在 Save/Rewind lineage 內。
+- 模組擁有權見 [module-ownership.md](module-ownership.md)。

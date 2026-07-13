@@ -120,16 +120,22 @@ describe("integration: map → recipe → factory plus economy/patent/save contr
       targets: [0],
     })!.template;
     let g = createGameState(options, 10_000, 100);
+    const layout = compileEntitledPrototype(
+      template,
+      BASE_GAME_FACTORY_WIDTH,
+      BASE_GAME_FACTORY_HEIGHT,
+    ).layout;
     g = applyGameIntent(g, {
-      kind: "saveRecipe",
-      recipe: template,
-      factory: compileEntitledPrototype(
-        template,
-        BASE_GAME_FACTORY_WIDTH,
-        BASE_GAME_FACTORY_HEIGHT,
-      ).layout,
+      kind: "setResearchLayout",
+      layout,
     });
-    g = applyGameIntent(g, { kind: "factoryTicks", ticks: 200 });
+    g = applyGameIntent(g, { kind: "beginResearchShot" });
+    while (g.research.shot !== null) {
+      g = applyGameIntent(g, { kind: "advanceResearchShot" });
+    }
+    g = applyGameIntent(g, { kind: "sendResearchToPilot" });
+    g = applyGameIntent(g, { kind: "sendPilotToProduction" });
+    g = applyGameIntent(g, { kind: "productionTicks", ticks: 200 });
     const product = g.inventory[0]!;
     g = applyGameIntent(g, {
       kind: "sellProduct",

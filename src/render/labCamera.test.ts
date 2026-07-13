@@ -8,6 +8,7 @@ import {
   labGridLineStyle,
   labScreenToWorld,
   labTrailsForFrames,
+  labWorldToRelativeCell,
   panLabCamera,
   visibleLabCells,
   zoomLabCameraAt,
@@ -30,21 +31,24 @@ describe("Lab camera", () => {
     expect(bounds.y0).toBeGreaterThan(0);
   });
 
-  it("keeps major and origin grid lines stronger than minor lines", () => {
+  it("keeps major grid lines stronger than minor lines", () => {
     const minor = labGridLineStyle("minor", 1);
     const major = labGridLineStyle("major", 1);
-    const origin = labGridLineStyle("origin", 1);
     expect(minor.alpha).toBeGreaterThan(0);
     expect(major.alpha).toBeGreaterThan(minor.alpha);
-    expect(origin.alpha).toBeGreaterThan(major.alpha);
-    expect(origin.width).toBeGreaterThan(major.width);
   });
 
-  it("marks every fifth cell boundary as a major line", () => {
-    expect(labGridKindForBoundary(0)).toBe("major");
-    expect(labGridKindForBoundary(4)).toBe("minor");
-    expect(labGridKindForBoundary(5)).toBe("major");
-    expect(labGridKindForBoundary(10)).toBe("major");
+  it("centres the origin cell in a five-by-five major-grid block", () => {
+    expect(labGridKindForBoundary(28, 31)).toBe("minor");
+    expect(labGridKindForBoundary(29, 31)).toBe("major");
+    expect(labGridKindForBoundary(33, 31)).toBe("minor");
+    expect(labGridKindForBoundary(34, 31)).toBe("major");
+    expect(labGridKindForBoundary(39, 31)).toBe("major");
+  });
+
+  it("converts world cells to player-facing coordinates relative to the origin", () => {
+    expect(labWorldToRelativeCell({ x: 31, y: 31 }, { x: 31, y: 31 })).toEqual({ x: 0, y: 0 });
+    expect(labWorldToRelativeCell({ x: 29, y: 34 }, { x: 31, y: 31 })).toEqual({ x: -2, y: 3 });
   });
 
   it("fades minor grid lines when zoomed out without hiding the major grid", () => {

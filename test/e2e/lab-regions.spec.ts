@@ -44,7 +44,7 @@ async function panFromStartToRegion(page: Page, frame: Locator): Promise<void> {
   await page.mouse.up();
 }
 
-test("revealed Lab regions retain connected boundaries over the grid without leaking through fog", async ({
+test("fogged Research regions pan over the large grid without a reveal-all bypass", async ({
   page,
 }) => {
   const counts = fixtureRegionCounts();
@@ -57,9 +57,5 @@ test("revealed Lab regions retain connected boundaries over the grid without lea
   await expect(frame.locator("canvas")).toBeVisible({ timeout: 15_000 });
   await panFromStartToRegion(page, frame);
   await expect(page.getByTestId("lab-zoom")).toContainText("100%");
-  await expect(page.getByTestId("lab-zoom")).not.toContainText("follow");
-
-  expect(await frame.screenshot({ animations: "disabled" })).toMatchSnapshot("lab-regions-hidden.png");
-  await page.getByTestId("reveal").check();
-  expect(await frame.screenshot({ animations: "disabled" })).toMatchSnapshot("lab-regions-revealed.png");
+  await expect(page.getByTestId("reveal")).toHaveCount(0);
 });

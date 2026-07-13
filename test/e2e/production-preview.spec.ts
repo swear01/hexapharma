@@ -34,15 +34,24 @@ test("production preview loads every lazy UI surface without runtime errors", as
   await expect(page.locator("[data-testid='lab-canvas'] canvas")).toBeVisible();
   await expect(page.getByTestId("lab-render-error")).toHaveCount(0);
 
-  await page.getByTestId("view-factory").click();
+  await page.getByTestId("research-show-floor").click();
   await expect(page.locator("[data-testid='factory-canvas'] canvas")).toBeVisible();
   await expect(page.getByTestId("factory-render-error")).toHaveCount(0);
 
-  await page.getByTestId("view-shop").click();
+  await page.getByTestId("view-pilot").click();
+  await expect(page.locator("[data-testid='factory-canvas'] canvas").last()).toBeVisible();
+
+  await page.getByTestId("view-production").click();
+  await expect(page.getByTestId("production-uncommissioned")).toBeVisible();
+
+  await page.getByTestId("view-market").click();
   await expect(page.getByTestId("shop-table")).toBeVisible();
 
-  await page.getByTestId("view-patents").click();
+  await page.getByTestId("view-technology").click();
   await expect(page.getByTestId("patents-table")).toBeVisible();
+
+  await page.getByTestId("view-blueprints").click();
+  await expect(page.getByTestId("blueprint-library")).toBeVisible();
 
   expect(errors).toEqual([]);
 });

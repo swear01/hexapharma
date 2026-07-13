@@ -3,6 +3,7 @@ import type {
   FactoryRuntime,
   FactoryTile,
   Dir,
+  DrugState,
   GameIntent as GameIntentContract,
   GameState,
   GeneratedLevel,
@@ -11,6 +12,7 @@ import type {
   Machine,
   MachineCatalogEntry,
   MultiMap,
+  Outcome,
   PatentState,
   Template,
 } from "./phase0_interfaces";
@@ -33,7 +35,7 @@ import {
   MAX_GAME_REPLAY_WORK,
   MAX_BULK_SALE_PRODUCTS,
 } from "./phase0_interfaces";
-import { evaluate, revealAlong } from "./drug-graph";
+import { applyTemplate, evaluate, previewStep } from "./drug-graph";
 import { sellUnit } from "./economy";
 import { MAX_GENERATION_CATALOG_ENTRIES, generate } from "./mapgen";
 import { DEFAULT_PATENTS, activeEffects, unlockPatent } from "./patent";
@@ -44,7 +46,7 @@ import {
   snapshotFactory,
   stepFactory,
 } from "./factory-sim";
-import { derivePrototypeTemplate, factoryOutcome } from "./recipe";
+import { deriveLinearRoute, factoryOutcome } from "./recipe";
 import { hashInit, hashU32 } from "./hash";
 import { worldCells } from "./factory-geom";
 import { estimateGameReplayWork } from "./replay-work";
@@ -101,6 +103,28 @@ function ownTemplate(template: Template): Template {
     throw new Error(`game intent: recipe must not exceed ${MAX_TEMPLATE_STEPS} steps`);
   }
   return Object.freeze({ steps: Object.freeze(template.steps.map(ownMachine)) });
+}
+
+function ownDrugState(drug: DrugState): DrugState {
+  return Object.freeze({
+    pos: Object.freeze(drug.pos.map((pos) => Object.freeze({
+      x: canonicalNumber(pos.x),
+      y: canonicalNumber(pos.y),
+    }))),
+    failed: drug.failed,
+  });
+}
+
+function ownOutcome(outcome: Outcome): Outcome {
+  return Object.freeze({
+    failed: outcome.failed,
+    final: Object.freeze(outcome.final.map((pos) => Object.freeze({
+      x: canonicalNumber(pos.x),
+      y: canonicalNumber(pos.y),
+    }))),
+    cured: Object.freeze(outcome.cured.map(canonicalNumber)),
+    sideEffects: Object.freeze(outcome.sideEffects.map(canonicalNumber)),
+  });
 }
 
 function ownGenOptions(genOptions: GenOptions): GenOptions {
@@ -271,18 +295,21 @@ function ownFactoryLayout(layout: FactoryLayout): FactoryLayout {
 
 function ownGameIntent(intent: GameIntent): GameIntent {
   switch (intent.kind) {
-    case "saveRecipe":
-      return Object.freeze({
-        kind: "saveRecipe",
-        recipe: ownTemplate(intent.recipe),
-        factory: ownFactoryLayout(intent.factory),
-      });
-    case "setFactory":
-      return Object.freeze({ kind: "setFactory", factory: ownFactoryLayout(intent.factory) });
-    case "factoryTicks":
-      return Object.freeze({ kind: "factoryTicks", ticks: canonicalNumber(intent.ticks) });
-    case "resetFactory":
-      return Object.freeze({ kind: "resetFactory" });
+    case "setResearchLayout":
+      return Object.freeze({ kind: "setResearchLayout", layout: ownFactoryLayout(intent.layout) });
+    case "beginResearchShot":
+    case "advanceResearchShot":
+    case "abortResearchShot":
+    case "sendResearchToPilot":
+    case "sendPilotToProduction":
+    case "resetProduction":
+      return Object.freeze({ kind: intent.kind });
+    case "setPilotLayout":
+      return Object.freeze({ kind: "setPilotLayout", layout: ownFactoryLayout(intent.layout) });
+    case "setProductionLayout":
+      return Object.freeze({ kind: "setProductionLayout", layout: ownFactoryLayout(intent.layout) });
+    case "productionTicks":
+      return Object.freeze({ kind: "productionTicks", ticks: canonicalNumber(intent.ticks) });
     case "sellProduct":
       return Object.freeze({
         kind: "sellProduct",
@@ -304,8 +331,6 @@ function ownGameIntent(intent: GameIntent): GameIntent {
         productIds: Object.freeze(intent.productIds.map(canonicalNumber)),
         disease: canonicalNumber(intent.disease),
       });
-    case "runLab":
-      return Object.freeze({ kind: "runLab", template: ownTemplate(intent.template) });
     case "unlockPatent":
       return Object.freeze({ kind: "unlockPatent", id: intent.id });
   }
@@ -551,22 +576,28 @@ function freshFog(mm: MultiMap, radius = BASE_LAB_VISIBILITY_RADIUS): Uint8Array
   return mm.maps.map((map) => revealStartRadius(map, radius));
 }
 
-function unionFog(dst: readonly Uint8Array[], src: MultiMap, radius: number): readonly Uint8Array[] {
+const RESEARCH_SENSOR_RADIUS = 1;
+
+function revealResearchTrails(
+  dst: readonly Uint8Array[],
+  mm: MultiMap,
+  trails: readonly (readonly { readonly x: number; readonly y: number }[])[],
+  endpoints: readonly { readonly x: number; readonly y: number }[],
+): readonly Uint8Array[] {
   let result: Uint8Array[] | null = null;
   for (let mapIndex = 0; mapIndex < dst.length; mapIndex++) {
     const current = dst[mapIndex];
-    const map = src.maps[mapIndex];
-    if (current === undefined || map === undefined) continue;
+    const map = mm.maps[mapIndex];
+    const trail = trails[mapIndex];
+    const endpoint = endpoints[mapIndex];
+    if (current === undefined || map === undefined || trail === undefined || endpoint === undefined) continue;
     let next: Uint8Array | null = null;
-    for (let i = 0; i < map.fog.length; i++) {
-      if (map.fog[i] !== 1) continue;
-      const sourceX = i % map.width;
-      const sourceY = Math.floor(i / map.width);
-      for (let dy = -radius; dy <= radius; dy++) {
-        const y = sourceY + dy;
+    const revealPoint = (point: { readonly x: number; readonly y: number }): void => {
+      for (let dy = -RESEARCH_SENSOR_RADIUS; dy <= RESEARCH_SENSOR_RADIUS; dy++) {
+        const y = point.y + dy;
         if (y < 0 || y >= map.height) continue;
-        for (let dx = -radius; dx <= radius; dx++) {
-          const x = sourceX + dx;
+        for (let dx = -RESEARCH_SENSOR_RADIUS; dx <= RESEARCH_SENSOR_RADIUS; dx++) {
+          const x = point.x + dx;
           if (x < 0 || x >= map.width) continue;
           const target = y * map.width + x;
           if ((next ?? current)[target] === 1) continue;
@@ -574,7 +605,11 @@ function unionFog(dst: readonly Uint8Array[], src: MultiMap, radius: number): re
           next[target] = 1;
         }
       }
+    };
+    for (const point of trail) {
+      revealPoint(point);
     }
+    revealPoint(endpoint);
     if (next === null) continue;
     if (result === null) result = [...dst];
     result[mapIndex] = next;
@@ -635,10 +670,9 @@ export function createGameState(genOptions: GenOptions, cash: number, research: 
     genOptions: ownedOptions,
     economy: { cash: ownedCash, research: ownedResearch, sold: [] },
     patents: { unlocked: [] },
-    recipe: null,
-    factory: null,
-    factoryState: null,
-    factoryWaste: 0,
+    research: Object.freeze({ layout: null, shot: null, lastOutcome: null }),
+    pilot: Object.freeze({ layout: null, contract: null }),
+    production: Object.freeze({ layout: null, contract: null, runtime: null, waste: 0 }),
     inventory: [],
     nextInventoryId: 0,
     fog: freshFog(level.mm),
@@ -766,8 +800,8 @@ function sellPhysicalProducts(
 }
 
 function factoryRuntimeIsInitial(game: GameState): boolean {
-  if (game.factoryState === null || game.factoryWaste !== 0) return false;
-  const snapshot = snapshotFactory(game.factoryState);
+  if (game.production.runtime === null || game.production.waste !== 0) return false;
+  const snapshot = snapshotFactory(game.production.runtime);
   return (
     snapshot.tick === 0 &&
     snapshot.units.length === 0 &&
@@ -779,134 +813,245 @@ function factoryRuntimeIsInitial(game: GameState): boolean {
   );
 }
 
+function requireEntitledFacilityLayout(game: GameState, layout: FactoryLayout, facility: string): void {
+  validateFactoryLayout(game, layout);
+  const effects = activeEffects(DEFAULT_PATENTS, game.patents);
+  const entitledWidth = BASE_GAME_FACTORY_WIDTH + effects.factoryDw;
+  const entitledHeight = BASE_GAME_FACTORY_HEIGHT + effects.factoryDh;
+  if (layout.width !== entitledWidth || layout.height !== entitledHeight) {
+    throw new Error(
+      `game intent: ${facility} must use the entitled ${entitledWidth}x${entitledHeight} floor`,
+    );
+  }
+}
+
+function researchContract(game: GameState): Template {
+  const layout = game.research.layout;
+  if (layout === null) throw new Error("game intent: Research has no physical route");
+  requireEntitledFacilityLayout(game, layout, "Research");
+  const template = deriveLinearRoute(layout).template;
+  if (template.steps.length === 0) {
+    throw new Error("game intent: Research route must contain at least one machine");
+  }
+  requireAllowedTemplate(game, template);
+  return template;
+}
+
+function researchShotCost(template: Template): number {
+  let cost = 0;
+  for (const step of template.steps) {
+    const entry = DEFAULT_CATALOG.find((candidate) => candidate.typeId === step.typeId);
+    if (entry === undefined || cost > Number.MAX_SAFE_INTEGER - entry.cost) {
+      throw new Error("game intent: Research shot cost exceeds safe-integer range");
+    }
+    cost += entry.cost;
+  }
+  return Math.max(1, cost);
+}
+
 function reduceGameIntent(game: GameState, intent: GameIntent): GameState {
   switch (intent.kind) {
-    case "saveRecipe": {
-      requireAllowedTemplate(game, intent.recipe);
-      const level = levelFor(game.genOptions);
-      const outcome = evaluate(level.mm, level.start, intent.recipe);
-      if (outcome.failed || outcome.cured.length === 0) {
-        throw new Error("game intent: saved recipe must produce a non-failed cure");
+    case "setResearchLayout": {
+      requireEntitledFacilityLayout(game, intent.layout, "Research");
+      if (game.research.shot !== null) {
+        throw new Error("game intent: cannot edit Research while a shot is running");
       }
-      validateFactoryLayout(game, intent.factory);
-      const effects = activeEffects(DEFAULT_PATENTS, game.patents);
-      const entitledWidth = BASE_GAME_FACTORY_WIDTH + effects.factoryDw;
-      const entitledHeight = BASE_GAME_FACTORY_HEIGHT + effects.factoryDh;
-      if (intent.factory.width !== entitledWidth || intent.factory.height !== entitledHeight) {
-        throw new Error(
-          `game intent: pilot prototype must use the entitled ` +
-            `${entitledWidth}x${entitledHeight} Factory floor`,
-        );
-      }
-      const derivedRecipe = derivePrototypeTemplate(intent.factory);
-      if (canonical(derivedRecipe) !== canonical(intent.recipe)) {
-        throw new Error("game intent: physical pilot topology does not match the submitted recipe");
-      }
-      const physicalOutcome = factoryOutcome(intent.factory, level.mm, level.start);
-      if (canonical(physicalOutcome) !== canonical(outcome)) {
-        throw new Error("game intent: pilot prototype routing does not realize the saved recipe");
-      }
-      const factory = ownFactoryLayout(intent.factory);
-      if (
-        game.recipe !== null &&
-        game.factory !== null &&
-        canonical(game.recipe) === canonical(intent.recipe) &&
-        canonical(game.factory) === canonical(factory) &&
-        factoryRuntimeIsInitial(game)
-      ) {
-        return game;
-      }
+      if (canonical(game.research.layout) === canonical(intent.layout)) return game;
       return {
         ...game,
-        recipe: intent.recipe,
-        factory,
-        factoryState: initFactory(factory, level.mm, level.start),
-        factoryWaste: 0,
+        research: Object.freeze({
+          layout: ownFactoryLayout(intent.layout),
+          shot: null,
+          lastOutcome: null,
+        }),
       };
     }
-    case "setFactory": {
-      validateFactoryLayout(game, intent.factory);
-      if (game.factory === null) {
-        const effects = activeEffects(DEFAULT_PATENTS, game.patents);
-        const entitledWidth = BASE_GAME_FACTORY_WIDTH + effects.factoryDw;
-        const entitledHeight = BASE_GAME_FACTORY_HEIGHT + effects.factoryDh;
-        if (
-          intent.factory.width !== entitledWidth ||
-          intent.factory.height !== entitledHeight
-        ) {
-          throw new Error(
-            `game intent: a factory without a saved recipe must use the ` +
-              `${entitledWidth}x${entitledHeight} patent-authorized base dimensions`,
-          );
-        }
-      } else if (
-        intent.factory.width !== game.factory.width ||
-        intent.factory.height !== game.factory.height
-      ) {
-        throw new Error(
-          "game intent: factory dimensions can change only through an expansion patent",
-        );
+    case "beginResearchShot": {
+      if (game.research.shot !== null) {
+        throw new Error("game intent: a Research shot is already running");
       }
-      if (game.factory !== null && canonical(game.factory) === canonical(intent.factory)) return game;
+      const template = researchContract(game);
+      const cost = researchShotCost(template);
+      if (game.economy.cash < cost) {
+        throw new Error(`game intent: Research shot requires ${cost} cash`);
+      }
       const level = levelFor(game.genOptions);
       return {
         ...game,
-        factory: intent.factory,
-        factoryState: initFactory(intent.factory, level.mm, level.start),
-        factoryWaste: 0,
+        economy: Object.freeze({ ...game.economy, cash: game.economy.cash - cost }),
+        research: Object.freeze({
+          ...game.research,
+          shot: Object.freeze({ step: 0, drug: ownDrugState(level.start), cost }),
+          lastOutcome: null,
+        }),
       };
     }
-    case "factoryTicks": {
+    case "advanceResearchShot": {
+      const shot = game.research.shot;
+      if (shot === null) throw new Error("game intent: no Research shot is running");
+      const template = researchContract(game);
+      const machine = template.steps[shot.step];
+      if (machine === undefined) throw new Error("game intent: Research shot progress exceeds its route");
+      const level = levelFor(game.genOptions);
+      const preview = previewStep(level.mm, shot.drug, machine);
+      const drug = ownDrugState(preview.next);
+      const fog = revealResearchTrails(game.fog, level.mm, preview.trails, drug.pos);
+      const step = shot.step + 1;
+      if (drug.failed || step === template.steps.length) {
+        return {
+          ...game,
+          fog,
+          research: Object.freeze({
+            ...game.research,
+            shot: null,
+            lastOutcome: ownOutcome(evaluate(level.mm, drug, { steps: [] })),
+          }),
+        };
+      }
+      return {
+        ...game,
+        fog,
+        research: Object.freeze({
+          ...game.research,
+          shot: Object.freeze({ step, drug, cost: shot.cost }),
+        }),
+      };
+    }
+    case "abortResearchShot": {
+      if (game.research.shot === null) return game;
+      return {
+        ...game,
+        research: Object.freeze({ ...game.research, shot: null, lastOutcome: null }),
+      };
+    }
+    case "sendResearchToPilot": {
+      if (game.research.shot !== null) {
+        throw new Error("game intent: wait for the Research shot to finish");
+      }
+      const layout = game.research.layout;
+      const outcome = game.research.lastOutcome;
+      if (layout === null || outcome === null || outcome.failed || outcome.cured.length === 0) {
+        throw new Error("game intent: Research must complete a non-failed cure before Pilot transfer");
+      }
+      const contract = ownTemplate(researchContract(game));
+      const level = levelFor(game.genOptions);
+      if (canonical(evaluate(level.mm, level.start, contract)) !== canonical(outcome)) {
+        throw new Error("game intent: Research result no longer matches its physical route");
+      }
+      return {
+        ...game,
+        pilot: Object.freeze({ layout: ownFactoryLayout(layout), contract }),
+      };
+    }
+    case "setPilotLayout": {
+      requireEntitledFacilityLayout(game, intent.layout, "Pilot Plant");
+      if (canonical(game.pilot.layout) === canonical(intent.layout)) return game;
+      return {
+        ...game,
+        pilot: Object.freeze({ ...game.pilot, layout: ownFactoryLayout(intent.layout) }),
+      };
+    }
+    case "sendPilotToProduction": {
+      const layout = game.pilot.layout;
+      const contract = game.pilot.contract;
+      if (layout === null || contract === null) {
+        throw new Error("game intent: Pilot Plant requires a Research contract and layout");
+      }
+      requireEntitledFacilityLayout(game, layout, "Pilot Plant");
+      requireAllowedTemplate(game, contract);
+      const level = levelFor(game.genOptions);
+      const expected = evaluate(level.mm, level.start, contract);
+      const physical = factoryOutcome(layout, level.mm, level.start);
+      if (canonical(expected) !== canonical(physical)) {
+        throw new Error("game intent: Pilot Plant does not realize its Research contract");
+      }
+      const ownedLayout = ownFactoryLayout(layout);
+      return {
+        ...game,
+        production: Object.freeze({
+          layout: ownedLayout,
+          contract: ownTemplate(contract),
+          runtime: initFactory(ownedLayout, level.mm, level.start),
+          waste: 0,
+        }),
+      };
+    }
+    case "setProductionLayout": {
+      requireEntitledFacilityLayout(game, intent.layout, "Production");
+      if (game.production.contract === null) {
+        throw new Error("game intent: Production requires a commissioned Pilot contract");
+      }
+      if (canonical(game.production.layout) === canonical(intent.layout)) return game;
+      const level = levelFor(game.genOptions);
+      const layout = ownFactoryLayout(intent.layout);
+      return {
+        ...game,
+        production: Object.freeze({
+          ...game.production,
+          layout,
+          runtime: initFactory(layout, level.mm, level.start),
+          waste: 0,
+        }),
+      };
+    }
+    case "productionTicks": {
       if (!Number.isSafeInteger(intent.ticks) || intent.ticks < 0) {
         throw new Error("game intent: factory ticks must be a non-negative safe integer");
       }
       if (intent.ticks === 0) return game;
-      if (game.factory === null) {
-        throw new Error("game intent: no authoritative factory layout is active");
+      if (game.production.layout === null) {
+        throw new Error("game intent: no authoritative Production layout is active");
       }
-      if (game.factoryState !== null && game.factoryState.producedEvents.count !== 0) {
+      if (game.production.runtime !== null && game.production.runtime.producedEvents.count !== 0) {
         throw new Error("game intent: factory product events must be drained before advancing");
       }
       const level = levelFor(game.genOptions);
-      const state = game.factoryState === null
-        ? initFactory(game.factory, level.mm, level.start)
+      const layout = game.production.layout;
+      const state = game.production.runtime === null
+        ? initFactory(layout, level.mm, level.start)
         : restoreFactory(
-            game.factory,
+            layout,
             level.mm,
             level.start,
-            snapshotFactory(game.factoryState),
+            snapshotFactory(game.production.runtime),
           );
-      const expectedKey = game.recipe === null
+      const expectedKey = game.production.contract === null
         ? null
-        : canonical(evaluate(level.mm, level.start, game.recipe));
+        : canonical(evaluate(level.mm, level.start, game.production.contract));
       const drained: ProductDrain = {
         sourceInventory: game.inventory,
         inventory: null,
         nextInventoryId: game.nextInventoryId,
-        factoryWaste: game.factoryWaste,
+        factoryWaste: game.production.waste,
       };
       clearFactoryProductEvents(state);
       for (let i = 0; i < intent.ticks; i++) {
-        stepFactory(game.factory, level.mm, state);
+        stepFactory(layout, level.mm, state);
         drainProducts(state, expectedKey, level, drained);
         clearFactoryProductEvents(state);
       }
       return {
         ...game,
-        factoryState: state,
+        production: Object.freeze({
+          ...game.production,
+          runtime: state,
+          waste: drained.factoryWaste,
+        }),
         inventory: drained.inventory ?? game.inventory,
         nextInventoryId: drained.nextInventoryId,
-        factoryWaste: drained.factoryWaste,
       };
     }
-    case "resetFactory": {
-      if (game.factory === null) return game;
+    case "resetProduction": {
+      if (game.production.layout === null) return game;
       if (factoryRuntimeIsInitial(game)) return game;
       const level = levelFor(game.genOptions);
       return {
         ...game,
-        factoryState: initFactory(game.factory, level.mm, level.start),
-        factoryWaste: 0,
+        production: Object.freeze({
+          ...game.production,
+          runtime: initFactory(game.production.layout, level.mm, level.start),
+          waste: 0,
+        }),
       };
     }
     case "sellProduct": {
@@ -922,19 +1067,6 @@ function reduceGameIntent(game: GameState, intent: GameIntent): GameState {
     }
     case "sellProducts":
       return sellPhysicalProducts(game, intent.productIds, intent.disease);
-    case "runLab": {
-      requireAllowedTemplate(game, intent.template);
-      if (intent.template.steps.length === 0) return game;
-      const level = levelFor(game.genOptions);
-      const revealRadius = BASE_LAB_VISIBILITY_RADIUS +
-        activeEffects(DEFAULT_PATENTS, game.patents).revealAid;
-      const fog = unionFog(
-        game.fog,
-        revealAlong(level.mm, level.start, intent.template),
-        revealRadius,
-      );
-      return fog === game.fog ? game : { ...game, fog };
-    }
     case "unlockPatent": {
       const node = DEFAULT_PATENTS.find((candidate) => candidate.id === intent.id);
       if (node === undefined) throw new Error(`game intent: unknown patent "${intent.id}"`);
@@ -950,12 +1082,25 @@ function reduceGameIntent(game: GameState, intent: GameIntent): GameState {
         patents: unlocked.patents,
         economy: { ...game.economy, cash: unlocked.cash, research: unlocked.research },
       };
-      if (node.effect.kind === "expandFactory" && next.factory !== null) {
+      if (node.effect.kind === "expandFactory") {
+        const { dw, dh } = node.effect;
+        const expand = (layout: FactoryLayout | null): FactoryLayout | null => layout === null
+          ? null
+          : ownFactoryLayout(expandFactory(layout, dw, dh));
         next = {
           ...next,
-          factory: expandFactory(next.factory, node.effect.dw, node.effect.dh),
-          factoryState: null,
-          factoryWaste: 0,
+          research: Object.freeze({
+            ...next.research,
+            layout: expand(next.research.layout),
+            shot: null,
+          }),
+          pilot: Object.freeze({ ...next.pilot, layout: expand(next.pilot.layout) }),
+          production: Object.freeze({
+            ...next.production,
+            layout: expand(next.production.layout),
+            runtime: null,
+            waste: 0,
+          }),
         };
       }
       if (node.effect.kind === "revealAid") {
@@ -987,10 +1132,9 @@ function reduceGameIntent(game: GameState, intent: GameIntent): GameState {
           ...next,
           genOptions,
           economy: { ...next.economy, sold: [] },
-          recipe: null,
-          factory: null,
-          factoryState: null,
-          factoryWaste: 0,
+          research: Object.freeze({ layout: null, shot: null, lastOutcome: null }),
+          pilot: Object.freeze({ layout: null, contract: null }),
+          production: Object.freeze({ layout: null, contract: null, runtime: null, waste: 0 }),
           inventory: [],
           fog,
           rng: { s: genOptions.seed >>> 0 },
@@ -1003,13 +1147,13 @@ function reduceGameIntent(game: GameState, intent: GameIntent): GameState {
 
 function appendIntentTrace(game: GameState, intent: GameIntent, next: GameState): GameState {
   if (next === game) return game;
-  if (intent.kind === "factoryTicks") {
+  if (intent.kind === "productionTicks") {
     const replayTicks = game.replayTicks + intent.ticks;
     if (!Number.isSafeInteger(replayTicks) || replayTicks > MAX_REPLAY_TICKS) {
       throw new Error(`game intent: cumulative factory ticks exceed ${MAX_REPLAY_TICKS}`);
     }
     const previous = game.intentTrace[game.intentTrace.length - 1];
-    if (previous?.kind === "factoryTicks") {
+    if (previous?.kind === "productionTicks") {
       const ticks = previous.ticks + intent.ticks;
       if (!Number.isSafeInteger(ticks)) {
         throw new Error("game intent: normalized factory tick batch exceeds safe integer range");
@@ -1018,7 +1162,7 @@ function appendIntentTrace(game: GameState, intent: GameIntent, next: GameState)
         ...next,
         intentTrace: Object.freeze([
           ...game.intentTrace.slice(0, -1),
-          Object.freeze({ kind: "factoryTicks" as const, ticks }),
+          Object.freeze({ kind: "productionTicks" as const, ticks }),
         ]),
         replayTicks,
       };
@@ -1029,7 +1173,12 @@ function appendIntentTrace(game: GameState, intent: GameIntent, next: GameState)
     return { ...next, intentTrace: Object.freeze([...game.intentTrace, intent]), replayTicks };
   }
   const previous = game.intentTrace[game.intentTrace.length - 1];
-  if (intent.kind === "setFactory" && previous?.kind === "setFactory") {
+  if (
+    (intent.kind === "setResearchLayout" ||
+      intent.kind === "setPilotLayout" ||
+      intent.kind === "setProductionLayout") &&
+    previous?.kind === intent.kind
+  ) {
     return {
       ...next,
       intentTrace: Object.freeze([...game.intentTrace.slice(0, -1), intent]),
@@ -1062,12 +1211,12 @@ function appendIntentTrace(game: GameState, intent: GameIntent, next: GameState)
 }
 
 export function applyGameIntent(game: GameState, intent: GameIntent): GameState {
-  if (intent.kind === "factoryTicks") {
+  if (intent.kind === "productionTicks") {
     if (!Number.isSafeInteger(intent.ticks) || intent.ticks < 0) {
       throw new Error("game intent: factory ticks must be a non-negative safe integer");
     }
     if (
-      game.factory !== null &&
+      game.production.layout !== null &&
       intent.ticks > 0 &&
       (intent.ticks > MAX_REPLAY_TICKS || game.replayTicks > MAX_REPLAY_TICKS - intent.ticks)
     ) {
@@ -1075,13 +1224,17 @@ export function applyGameIntent(game: GameState, intent: GameIntent): GameState 
     }
   }
   const ownedIntent = ownGameIntent(intent);
-  if (ownedIntent.kind === "factoryTicks" && game.factory !== null && ownedIntent.ticks > 0) {
+  if (
+    ownedIntent.kind === "productionTicks" &&
+    game.production.layout !== null &&
+    ownedIntent.ticks > 0
+  ) {
     const previous = game.intentTrace[game.intentTrace.length - 1];
-    const prospectiveTrace = previous?.kind === "factoryTicks"
+    const prospectiveTrace = previous?.kind === "productionTicks"
       ? [
           ...game.intentTrace.slice(0, -1),
           Object.freeze({
-            kind: "factoryTicks" as const,
+            kind: "productionTicks" as const,
             ticks: previous.ticks + ownedIntent.ticks,
           }),
         ]
@@ -1183,17 +1336,22 @@ function validateTraceIntent(intent: unknown, index: number): asserts intent is 
   const path = `game state: intent trace[${index}]`;
   requireObject(intent, path);
   switch (intent.kind) {
-    case "saveRecipe":
-      requireObject(intent.recipe, `${path}.recipe`);
-      requireObject(intent.factory, `${path}.factory`);
+    case "setResearchLayout":
+    case "setPilotLayout":
+    case "setProductionLayout":
+      requireObject(intent.layout, `${path}.layout`);
       return;
-    case "setFactory":
-      requireObject(intent.factory, `${path}.factory`);
+    case "beginResearchShot":
+    case "advanceResearchShot":
+    case "abortResearchShot":
+    case "sendResearchToPilot":
+    case "sendPilotToProduction":
+    case "productionTicks":
+      if (intent.kind === "productionTicks") {
+        requireSafeInteger(intent.ticks as number, `${path}.ticks`, 1);
+      }
       return;
-    case "factoryTicks":
-      requireSafeInteger(intent.ticks as number, `${path}.ticks`, 1);
-      return;
-    case "resetFactory":
+    case "resetProduction":
       return;
     case "sellProduct":
       requireSafeInteger(intent.productId as number, `${path}.productId`, 0);
@@ -1210,9 +1368,6 @@ function validateTraceIntent(intent: unknown, index: number): asserts intent is 
       requireSafeInteger(intent.disease as number, `${path}.disease`, 0);
       return;
     }
-    case "runLab":
-      requireObject(intent.template, `${path}.template`);
-      return;
     case "unlockPatent":
       if (typeof intent.id !== "string") throw new Error(`${path}.id must be a string`);
       return;
@@ -1280,7 +1435,12 @@ function firstDifference(expected: unknown, actual: unknown, path: string): stri
 function comparableGame(game: GameState): unknown {
   return {
     ...game,
-    factoryState: game.factoryState === null ? null : snapshotFactory(game.factoryState),
+    production: {
+      ...game.production,
+      runtime: game.production.runtime === null
+        ? null
+        : snapshotFactory(game.production.runtime),
+    },
   };
 }
 
@@ -1310,9 +1470,11 @@ function validateDrugState(
   }
 }
 
-function validateRuntime(game: GameState, runtime: FactoryRuntime, level: GeneratedLevel): void {
-  const layout = game.factory;
-  if (layout === null) throw new Error("game state: factory runtime requires a layout");
+function validateRuntime(
+  layout: FactoryLayout,
+  runtime: FactoryRuntime,
+  level: GeneratedLevel,
+): void {
   const capacity = layout.machines.length + layout.tiles.reduce(
     (count, tile) => count + (
       tile.kind === "belt" || tile.kind === "splitter" || tile.kind === "merger" ? 1 : 0
@@ -1472,12 +1634,12 @@ export function validateGameState(game: GameState): GameState {
   requireSafeInteger(game.replayTicks, "game state: replay ticks", 0);
   let traceTicks = 0;
   let previousWasTicks = false;
-  let previousWasFactory = false;
+  let previousLayoutKind: GameIntent["kind"] | null = null;
   let previousSaleDisease: number | null = null;
   for (let index = 0; index < game.intentTrace.length; index++) {
     const intent: unknown = game.intentTrace[index];
     validateTraceIntent(intent, index);
-    if (intent.kind === "factoryTicks") {
+    if (intent.kind === "productionTicks") {
       if (previousWasTicks) {
         throw new Error("game state: consecutive factory tick intents must be normalized");
       }
@@ -1486,14 +1648,23 @@ export function validateGameState(game: GameState): GameState {
       }
       traceTicks += intent.ticks;
       previousWasTicks = true;
-      previousWasFactory = false;
+      previousLayoutKind = null;
       previousSaleDisease = null;
     } else {
       previousWasTicks = false;
-      if (intent.kind === "setFactory" && previousWasFactory) {
-        throw new Error("game state: consecutive factory layouts must be normalized");
+      if (
+        (intent.kind === "setResearchLayout" ||
+          intent.kind === "setPilotLayout" ||
+          intent.kind === "setProductionLayout") &&
+        previousLayoutKind === intent.kind
+      ) {
+        throw new Error("game state: consecutive same-facility layouts must be normalized");
       }
-      previousWasFactory = intent.kind === "setFactory";
+      previousLayoutKind = intent.kind === "setResearchLayout" ||
+        intent.kind === "setPilotLayout" ||
+        intent.kind === "setProductionLayout"
+        ? intent.kind
+        : null;
       if (intent.kind === "sellProduct" || intent.kind === "sellProducts") {
         if (previousSaleDisease === intent.disease) {
           throw new Error("game state: consecutive same-disease sales must be normalized");
@@ -1564,21 +1735,66 @@ export function validateGameState(game: GameState): GameState {
     throw new Error("game state: deep-map-4 patent requires a 4-map level");
   }
 
-  if (game.recipe !== null) {
-    requireAllowedTemplate(game, game.recipe);
-    const outcome = evaluate(level.mm, level.start, game.recipe);
-    if (outcome.failed || outcome.cured.length === 0) {
-      throw new Error("game state: saved recipe must produce a non-failed cure");
+  if (game.research.layout !== null) requireEntitledFacilityLayout(game, game.research.layout, "Research");
+  if (game.research.shot !== null) {
+    if (game.research.layout === null || game.research.lastOutcome !== null) {
+      throw new Error("game state: active Research shot requires a layout and no final outcome");
+    }
+    const route = researchContract(game);
+    requireSafeInteger(game.research.shot.step, "game state: Research shot step", 0);
+    requireSafeInteger(game.research.shot.cost, "game state: Research shot cost", 1);
+    if (game.research.shot.step >= route.steps.length) {
+      throw new Error("game state: Research shot step exceeds its route");
+    }
+    validateDrugState(game.research.shot.drug, level, "game state: Research shot drug");
+    const expectedDrug = applyTemplate(level.mm, level.start, {
+      steps: route.steps.slice(0, game.research.shot.step),
+    });
+    if (canonical(expectedDrug) !== canonical(game.research.shot.drug)) {
+      throw new Error("game state: Research shot drug does not match completed route steps");
+    }
+    if (researchShotCost(route) !== game.research.shot.cost) {
+      throw new Error("game state: Research shot cost does not match its physical route");
     }
   }
-  if (game.factory !== null) validateFactoryLayout(game, game.factory);
-  if (game.factoryState !== null) validateRuntime(game, game.factoryState, level);
-  requireSafeInteger(game.factoryWaste, "game state: factory waste", 0);
-  if (game.factoryState === null && game.factoryWaste !== 0) {
-    throw new Error("game state: factory waste requires a live factory runtime");
+  if (game.research.lastOutcome !== null) {
+    if (game.research.layout === null || game.research.shot !== null) {
+      throw new Error("game state: Research outcome requires a finished physical route");
+    }
+    const expected = evaluate(level.mm, level.start, researchContract(game));
+    if (canonical(expected) !== canonical(game.research.lastOutcome)) {
+      throw new Error("game state: Research outcome does not match its physical route");
+    }
   }
-  if (game.factoryState !== null && game.factoryWaste > game.factoryState.producedTotal) {
-    throw new Error("game state: factory waste exceeds total production");
+
+  if (game.pilot.layout !== null) requireEntitledFacilityLayout(game, game.pilot.layout, "Pilot Plant");
+  if (game.pilot.contract !== null) requireAllowedTemplate(game, game.pilot.contract);
+  if (game.pilot.contract !== null && game.pilot.layout === null) {
+    throw new Error("game state: Pilot contract requires a physical layout");
+  }
+
+  if (game.production.layout !== null) {
+    requireEntitledFacilityLayout(game, game.production.layout, "Production");
+  }
+  if (game.production.contract !== null) requireAllowedTemplate(game, game.production.contract);
+  if (game.production.contract !== null && game.production.layout === null) {
+    throw new Error("game state: Production contract requires a physical layout");
+  }
+  if (game.production.runtime !== null) {
+    if (game.production.layout === null) {
+      throw new Error("game state: Production runtime requires a physical layout");
+    }
+    validateRuntime(game.production.layout, game.production.runtime, level);
+  }
+  requireSafeInteger(game.production.waste, "game state: Production waste", 0);
+  if (game.production.runtime === null && game.production.waste !== 0) {
+    throw new Error("game state: Production waste requires a live runtime");
+  }
+  if (
+    game.production.runtime !== null &&
+    game.production.waste > game.production.runtime.producedTotal
+  ) {
+    throw new Error("game state: Production waste exceeds total production");
   }
 
   requireSafeInteger(game.nextInventoryId, "game state: next inventory id", 0);
@@ -1659,23 +1875,31 @@ export function validateGameState(game: GameState): GameState {
 export function hashGame(game: GameState): number {
   const comparable = {
     ...game,
-    factoryState: game.factoryState === null ? null : snapshotFactory(game.factoryState),
+    production: {
+      ...game.production,
+      runtime: game.production.runtime === null
+        ? null
+        : snapshotFactory(game.production.runtime),
+    },
   };
   return hashCanonicalValue(hashInit(), comparable, new Uint8Array(256)) >>> 0;
 }
 
 export function replayGame(initial: GameState, intents: readonly GameIntent[]): GameState {
   const level = levelFor(initial.genOptions);
-  let game: GameState = initial.factory === null || initial.factoryState === null
+  let game: GameState = initial.production.layout === null || initial.production.runtime === null
     ? initial
     : {
         ...initial,
-        factoryState: restoreFactory(
-          initial.factory,
-          level.mm,
-          level.start,
-          snapshotFactory(initial.factoryState),
-        ),
+        production: {
+          ...initial.production,
+          runtime: restoreFactory(
+            initial.production.layout,
+            level.mm,
+            level.start,
+            snapshotFactory(initial.production.runtime),
+          ),
+        },
       };
   for (const intent of intents) game = applyGameIntent(game, intent);
   return game;

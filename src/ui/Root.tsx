@@ -1,6 +1,6 @@
 /**
- * HexaPharma — top-level entry. The full game loop (Lab | Factory | Shop |
- * Patents + Cash/Save bar over ONE shared game state) lives in Game.tsx.
+ * HexaPharma — top-level entry. Research, Pilot Plant, and Production share one
+ * authoritative game state; Market, Technology, and Blueprints are HUD drawers.
  */
 import { Game } from "./Game";
 

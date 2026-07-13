@@ -3,7 +3,7 @@ import {
   BASE_GAME_FACTORY_HEIGHT,
   BASE_GAME_FACTORY_WIDTH,
   DEFAULT_CATALOG,
-  type GameIntent,
+  type FactoryLayout,
   type GameState,
   type GenOptions,
   type Template,
@@ -61,24 +61,35 @@ const options: GenOptions = {
   difficulty: { min: 4, max: 12 },
 };
 
-function saveIntent(recipe: Template): GameIntent {
-  return {
-    kind: "saveRecipe",
+function withProduction(
+  game: GameState,
+  recipe: Template,
+  layout: FactoryLayout = compileEntitledPrototype(
     recipe,
-    factory: compileEntitledPrototype(
-      recipe,
-      BASE_GAME_FACTORY_WIDTH,
-      BASE_GAME_FACTORY_HEIGHT,
-    ).layout,
-  };
+    BASE_GAME_FACTORY_WIDTH,
+    BASE_GAME_FACTORY_HEIGHT,
+  ).layout,
+): GameState {
+  let next = applyGameIntent(game, { kind: "setResearchLayout", layout });
+  next = applyGameIntent(next, { kind: "beginResearchShot" });
+  for (let step = 0; step < recipe.steps.length; step++) {
+    next = applyGameIntent(next, { kind: "advanceResearchShot" });
+  }
+  next = applyGameIntent(next, { kind: "sendResearchToPilot" });
+  return applyGameIntent(next, { kind: "sendPilotToProduction" });
 }
 
 describe("checkpoint storage budget", () => {
   it("retains rewind lineage across normalized tick, sale, and layout extensions", () => {
-    let ticksEarlier = createGameState(options, 200, 0);
-    ticksEarlier = applyGameIntent(ticksEarlier, saveIntent(generate(options).diseases[0]!.reference));
-    ticksEarlier = applyGameIntent(ticksEarlier, { kind: "factoryTicks", ticks: 100 });
-    const ticksLater = applyGameIntent(ticksEarlier, { kind: "factoryTicks", ticks: 5 });
+    const recipe = generate(options).diseases[0]!.reference;
+    const layout = compileEntitledPrototype(
+      recipe,
+      BASE_GAME_FACTORY_WIDTH,
+      BASE_GAME_FACTORY_HEIGHT,
+    ).layout;
+    let ticksEarlier = withProduction(createGameState(options, 200, 0), recipe, layout);
+    ticksEarlier = applyGameIntent(ticksEarlier, { kind: "productionTicks", ticks: 100 });
+    const ticksLater = applyGameIntent(ticksEarlier, { kind: "productionTicks", ticks: 5 });
 
     const tickWrite = saveSlot(new MemoryStorage(), 0, [ticksEarlier], ticksLater);
     expect(tickWrite.replacedTimeline).toBe(false);
@@ -101,23 +112,26 @@ describe("checkpoint storage budget", () => {
     expect(saleWrite.replacedTimeline).toBe(false);
     expect(saleWrite.history).toHaveLength(2);
 
-    const firstTiles = ticksEarlier.factory!.tiles.slice();
+    const firstTiles = layout.tiles.slice();
     const sourceCell = firstTiles.findIndex((tile) => tile.kind === "source");
     firstTiles[sourceCell] = { kind: "source", dir: 0, period: 2 };
-    const firstLayout = { ...ticksEarlier.factory!, tiles: firstTiles };
+    const firstLayout = { ...layout, tiles: firstTiles };
     const secondTiles = firstTiles.slice();
     secondTiles[sourceCell] = { kind: "source", dir: 0, period: 3 };
-    const layoutEarlier = applyGameIntent(ticksEarlier, {
-      kind: "setFactory",
-      factory: firstLayout,
-    });
-    const layoutLater = applyGameIntent(layoutEarlier, {
-      kind: "setFactory",
-      factory: { ...firstLayout, tiles: secondTiles },
-    });
-    const layoutWrite = saveSlot(new MemoryStorage(), 0, [layoutEarlier], layoutLater);
-    expect(layoutWrite.replacedTimeline).toBe(false);
-    expect(layoutWrite.history).toHaveLength(2);
+    const secondLayout = { ...firstLayout, tiles: secondTiles };
+    for (const kind of ["setResearchLayout", "setPilotLayout", "setProductionLayout"] as const) {
+      const origin = kind === "setProductionLayout"
+        ? withProduction(createGameState(options, 200, 0), recipe, layout)
+        : createGameState(options, 200, 0);
+      const layoutEarlier = applyGameIntent(origin, {
+        kind,
+        layout: firstLayout,
+      });
+      const layoutLater = applyGameIntent(layoutEarlier, { kind, layout: secondLayout });
+      const layoutWrite = saveSlot(new MemoryStorage(), 0, [layoutEarlier], layoutLater);
+      expect(layoutWrite.replacedTimeline).toBe(false);
+      expect(layoutWrite.history).toHaveLength(2);
+    }
   });
 
   it("replaces an occupied slot timeline instead of mixing a different run into rewind", () => {
@@ -180,9 +194,9 @@ describe("checkpoint storage budget", () => {
   });
 
   it("atomically persists long-run physical inventory as compact replay authority", () => {
-    let game = createGameState(options, 200, 0);
-    game = applyGameIntent(game, saveIntent(generate(options).diseases[0]!.reference));
-    game = applyGameIntent(game, { kind: "factoryTicks", ticks: 12_000 });
+    const recipe = generate(options).diseases[0]!.reference;
+    let game = withProduction(createGameState(options, 200, 0), recipe);
+    game = applyGameIntent(game, { kind: "productionTicks", ticks: 12_000 });
     expect(game.inventory.length).toBeGreaterThan(5_000);
     const storage = new MemoryStorage();
 
@@ -219,7 +233,7 @@ describe("checkpoint storage budget", () => {
     const authority = JSON.parse(serializeGameAuthority(createGameState(options, 200, 0))) as {
       authority: { intentTrace: unknown[]; replayTicks: number };
     };
-    authority.authority.intentTrace = new Array(4_096).fill({ kind: "resetFactory" });
+    authority.authority.intentTrace = new Array(4_096).fill({ kind: "resetProduction" });
     authority.authority.replayTicks = 0;
     const rawAuthority = JSON.stringify(authority);
     const storage = new MemoryStorage();
@@ -248,10 +262,16 @@ describe("checkpoint storage budget", () => {
       height: 32,
       diseaseCount: 4,
     };
-    authority.authority.intentTrace = new Array(4_096).fill({
-      kind: "runLab",
-      template: { steps: [] },
-    });
+    const recipe = generate(authority.authority.origin.genOptions).diseases[0]!.reference;
+    const layout = compileEntitledPrototype(
+      recipe,
+      BASE_GAME_FACTORY_WIDTH,
+      BASE_GAME_FACTORY_HEIGHT,
+    ).layout;
+    authority.authority.intentTrace = [
+      { kind: "setResearchLayout", layout },
+      ...new Array(2_000).fill({ kind: "advanceResearchShot" }),
+    ];
     const rawAuthority = JSON.stringify(authority);
     const storage = new MemoryStorage();
     storage.setItem(
@@ -266,9 +286,9 @@ describe("checkpoint storage budget", () => {
   });
 
   it("computes replay ticks from the raw trace instead of trusting declared metadata", () => {
-    let game = createGameState(options, 200, 0);
-    game = applyGameIntent(game, saveIntent(generate(options).diseases[0]!.reference));
-    game = applyGameIntent(game, { kind: "factoryTicks", ticks: 20 });
+    const recipe = generate(options).diseases[0]!.reference;
+    let game = withProduction(createGameState(options, 200, 0), recipe);
+    game = applyGameIntent(game, { kind: "productionTicks", ticks: 20 });
     const authority = JSON.parse(serializeGameAuthority(game)) as {
       authority: { replayTicks: number };
     };
@@ -346,16 +366,12 @@ describe("checkpoint storage budget", () => {
       BASE_GAME_FACTORY_HEIGHT,
       recipe.steps.map((_, index) => ({ anchor: { x: 1 + index * 2, y: row }, footRot: 0 })),
     );
-    game = applyGameIntent(game, {
-      kind: "saveRecipe",
-      recipe,
-      factory,
-    });
-    game = applyGameIntent(game, { kind: "factoryTicks", ticks: 49_022 });
+    game = withProduction(game, recipe, factory);
+    game = applyGameIntent(game, { kind: "productionTicks", ticks: 49_022 });
     expect(game.inventory).toHaveLength(24_500);
     const beforeRejectedBatch = game;
     const beforeRejectedHash = hashGame(game);
-    expect(() => applyGameIntent(game, { kind: "factoryTicks", ticks: 200 })).toThrow(
+    expect(() => applyGameIntent(game, { kind: "productionTicks", ticks: 200 })).toThrow(
       /inventory exceeds/i,
     );
     expect(game).toBe(beforeRejectedBatch);
@@ -375,8 +391,8 @@ describe("checkpoint storage budget", () => {
   }, 15_000);
 
   it("refuses invalid state before writing and cold-clones retained runtime ownership", () => {
-    let game = createGameState(options, 200, 0);
-    game = applyGameIntent(game, saveIntent(generate(options).diseases[0]!.reference));
+    const recipe = generate(options).diseases[0]!.reference;
+    const game = withProduction(createGameState(options, 200, 0), recipe);
     const invalid: GameState = {
       ...game,
       economy: { ...game.economy, cash: game.economy.cash + 1 },
@@ -388,10 +404,11 @@ describe("checkpoint storage budget", () => {
     const storage = new MemoryStorage();
     const saved = saveSlot(storage, 0, [], game);
     expect(saved.head).not.toBe(game);
-    expect(saved.head.factoryState).not.toBe(game.factoryState);
-    const slot = game.factoryState!.capacity - 1;
-    const retained = saved.head.factoryState!.unitX[slot];
-    game.factoryState!.unitX[slot] = retained === 0 ? 1 : 0;
-    expect(saved.head.factoryState!.unitX[slot]).toBe(retained);
+    expect(saved.head.production).not.toBe(game.production);
+    expect(saved.head.production.runtime).not.toBe(game.production.runtime);
+    const slot = game.production.runtime!.capacity - 1;
+    const retained = saved.head.production.runtime!.unitX[slot];
+    game.production.runtime!.unitX[slot] = retained === 0 ? 1 : 0;
+    expect(saved.head.production.runtime!.unitX[slot]).toBe(retained);
   });
 });

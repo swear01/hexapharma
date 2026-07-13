@@ -742,15 +742,48 @@ export interface GameOrigin {
   readonly research: number;
 }
 
+export interface ResearchShot {
+  /** Number of route machines whose effects have already completed. */
+  readonly step: number;
+  /** The physical drug state after `step` completed effects. */
+  readonly drug: DrugState;
+  /** Cash charged exactly once when this shot began. */
+  readonly cost: number;
+}
+
+export interface ResearchFacilityState {
+  readonly layout: FactoryLayout | null;
+  readonly shot: ResearchShot | null;
+  readonly lastOutcome: Outcome | null;
+}
+
+export interface PilotFacilityState {
+  readonly layout: FactoryLayout | null;
+  /** Effect contract proven by the Research route that seeded this Pilot layout. */
+  readonly contract: Template | null;
+}
+
+export interface ProductionFacilityState {
+  readonly layout: FactoryLayout | null;
+  readonly contract: Template | null;
+  readonly runtime: FactoryRuntime | null;
+  readonly waste: number;
+}
+
 /** Every authoritative whole-game state transition; consecutive factory ticks are normalized. */
 export type GameIntent =
-  | { readonly kind: "saveRecipe"; readonly recipe: Template; readonly factory: FactoryLayout }
-  | { readonly kind: "setFactory"; readonly factory: FactoryLayout }
-  | { readonly kind: "factoryTicks"; readonly ticks: number }
-  | { readonly kind: "resetFactory" }
+  | { readonly kind: "setResearchLayout"; readonly layout: FactoryLayout }
+  | { readonly kind: "beginResearchShot" }
+  | { readonly kind: "advanceResearchShot" }
+  | { readonly kind: "abortResearchShot" }
+  | { readonly kind: "sendResearchToPilot" }
+  | { readonly kind: "setPilotLayout"; readonly layout: FactoryLayout }
+  | { readonly kind: "sendPilotToProduction" }
+  | { readonly kind: "setProductionLayout"; readonly layout: FactoryLayout }
+  | { readonly kind: "productionTicks"; readonly ticks: number }
+  | { readonly kind: "resetProduction" }
   | { readonly kind: "sellProduct"; readonly productId: number; readonly disease: number }
   | { readonly kind: "sellProducts"; readonly productIds: readonly number[]; readonly disease: number }
-  | { readonly kind: "runLab"; readonly template: Template }
   | { readonly kind: "unlockPatent"; readonly id: string };
 
 export interface GameState {
@@ -761,10 +794,9 @@ export interface GameState {
   readonly genOptions: GenOptions; // regenerates the current MultiMap + diseases
   readonly economy: EconomyState;
   readonly patents: PatentState;
-  readonly recipe: Template | null;
-  readonly factory: FactoryLayout | null;
-  readonly factoryState: FactoryRuntime | null;
-  readonly factoryWaste: number;
+  readonly research: ResearchFacilityState;
+  readonly pilot: PilotFacilityState;
+  readonly production: ProductionFacilityState;
   readonly inventory: readonly InventoryProduct[];
   readonly nextInventoryId: number;
   /** Persistent exploration state, one typed array per effect map. */

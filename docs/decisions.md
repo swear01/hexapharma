@@ -1,26 +1,33 @@
 # Decisions（技術決策紀錄）
 
-> 記錄關鍵決策、理由、以及「什麼情況會推翻」。
-> **可逆性備註**：D5 的 sim core 與 D2/D3/D4/D9 解耦、是純邏輯；換語言/換渲染只需重寫薄層，core 不動。
+> 記錄不可從程式碼自然推導的關鍵選擇。數值可經玩測調整；authority、確定性與失敗語意不可偷偷改。
 
-| # | 決策 | 主要理由 | 什麼情況會推翻 |
-|---|---|---|---|
-| D1 | 純 code-as-truth（不靠引擎視覺編輯器/scene 檔） | 工廠內容是資料非場景；無 scene = 無「編譯/測試守不住的盲改面」；AI 編輯效率最高。 | 改做大量手工關卡/手感美術重的非工廠類遊戲。 |
-| D2 | TypeScript（而非 C#/Raylib、Godot、Unity） | Potion Craft 級效能出局；TS 對 AI 熟悉、純 CLI/headless 工具強，有 hook 的環境可使用 worktree 隔離。 | 規模升到百萬實體沙盒；或邏輯 bug 率高到需更硬編譯閘（→ 轉 C#，core 可移植）。 |
-| D3 | PixiJS v8 渲染（非 Phaser） | 純 renderer、顯式 loop、無框架隱藏狀態、附 agent skills。 | 需大量開箱即用 scene/physics/input、願換掌控度 → Phaser。 |
-| D4 | React/DOM 做 UI（疊 canvas） | 本作 UI/互動重；React 生態與 AI 熟練度最佳。 | UI 極簡到不值得引入 React（本作不太可能）。 |
-| D5 | 確定性 tick-based sim + 不變式 | replay 除錯、存讀檔正確、跨 agent 可重現 bug、隨機地圖可重現；把形式驗證優勢變自動閘。 | 無（地基）。 |
-| D6 | 模組邊界即編排單位；可用時以 worktree 隔離，不可用時只平行不相交檔案並由 integrator 序列化共享面；MCP 不上主路徑 | 衝突來自共享可變面；純 CLI 閘最穩，隔離能力不應被文件假設為永遠存在。 | 無，除非未來 MCP/編輯器整合成熟到不犧牲平行性。 |
-| D7 | 效果地圖=成分（PC 基底），N支援1–4；新局先單一A層，再解鎖B/C/D。機器=變換（translate/scale/Phase Exchange），位移由機器自身效果朝向決定、belt繞線不貢獻；療效／副作用／危險／牆壁生成為連通區域；療效只看各圖最終位置；逐格掃動 | 單層開場先教探索/變換，解鎖B後再引入跨圖拉扯；同時自洽防抄旋轉、Factory重排配平、Lab人類解謎。A正中央，後續layer用近中心phase offsets，故A↔B交換確實改變座標。 | 玩測發現逐步展開仍不好玩/太難 → 調整專利節奏、區域尺度或縮小變換分類；不動確定性架構。 |
-| D8 | 格子=正方形（工廠與效果圖統一）；Atlas與Pilot Bench／Factory在100%都以約40px為視覺尺度基準 | 兩格子方向需對齊→同格子；工廠主導→正方形；旋轉/flip最簡。40px能同時看見足夠座標與現行3–8格footprint，不讓單格像web card一樣過大；實際world authority仍是整數格，不依賴pixel。 | 視覺玩測可微調pixel scale與zoom範圍；不得分裂Lab/Factory幾何authority或改離散格語意。 |
-| D9 | 美術=平面俯視正交；Lab 採 HexaPharma 原創 microscopic biochemical atlas，Factory保留清楚工業glyph | 無等軸深度排序；生化substrate/fog/feature sprites讓63×63探索不像debug grid，又不複製Potion Craft羊皮紙或其他競品trade dress。資產來源/權利由`public/assets/lab/README.md`與manifest記錄。 | 若正式美術重做，可換資產與薄渲染層；不得改sim格子語意或遮霧不變式。 |
-| D10 | 固定 catalog cost/speed；機器效果距離以 small 3、medium 4–5、large 6–9+ 分級，footprint／ports／速度／成本形成空間與吞吐取捨；基礎價 = BigInt exact `roundHalfUp(10×(17/10)^difficulty)+3×refCost`，solver離線稽核 | 避免只有 `+1/+2` 的同質微步進；大型機器少步但大、慢、貴，小型機器快而易放但步驟與連線多。指數進程定價仍跨平台整數確定；d0–58 舊曲線輸出是歷史機械基線，不冒充新 catalog 的平衡完成。 | 玩測後可調距離、shape、speed/cost與價格曲線；仍須保留效果／空間／吞吐三軸辨識度，公式仍須 exact rational + explicit rounding。 |
-| D11 | 機器「物理→效果方向」異質分類（順/逆/垂直/偏移，含逆向機器）；一開始只放幾種 | 讓藍圖無法無腦旋轉/復用（異質混合下無單一剛性變換可搬目標）。 | 玩測太雜難推理 → 縮小分類（甚至只留順/逆）。 |
-| D12 | 程序化隨機地圖：建構式生成為主 + 難度評分；seed + 完整 GenOptions = 關卡身分；存檔保存目前生成設定 | 堵死抄藍圖/跨關卡復用；可解由建構保證；難度由評分保證合理且驅動定價；強化反退化。 | 無強誘因；可調「保存單一目前關卡」vs「每局重生」。 |
-| D13 | 無世界地圖：成分=基底=原料=地圖（PC 模型）；探索=從63×63中心以局部704×512 viewport揭霧；100% cell 約40px（約17×13格），每格 minor grid、每5格 major grid、origin軸另標；解鎖=拿新layer，A–D一次只看active layer | 探索與核心循環綁定；平常只見世界的一小部分，但連續可見格線能判斷3–9格位移與建立方位。grid可穿迷霧呈現座標結構，feature仍完全遮蔽；避免64px格造成視野過窄，也不回退全圖/多圖縮小並排。 | 若可玩性證明局部鏡頭造成不可解的認知負擔，可調cell size／grid contrast或加不洩漏特徵的導航輔助；不回退debug全景。 |
-| D14 | 求解器僅供 tests/tools 的 soundness、解耦與平衡稽核；production mapgen 以建構保證可解且不 import solver；不做遊戲內自動解 | runtime 搜尋既不必要；自動解更會殺樂趣、違反反退化精神。 | 無。 |
-| D15 | Full Save v4僅在wire ≤5,000,000 chars時round-trip；checkpoint用compact authority。所有單一Game authority/head都受 ≤4,096 entries/≤100,000 ticks/≤100,000,000 weighted work；rewind aggregate共用phase常數 ≤12,000 ticks/≤8,192 entries/≤100,000,000 work，compact另受≤20/≤1,250,000 chars。compact inspector與full `deserializeGame`都從raw origin+intentTrace算work後才semantic replay；`deserializeSlots`在任何`parseGameState`前驗整段aggregate，`serializeSlots`也同界。legacy read先preflight history，必要時才head-alone。timeline同origin且允許ticks/sale/`setFactory` normalization；跨run Save明示replace。 | 同時封住compact與5,000,000-character legacy full wire的replay-work繞路，不讓materialized大小誤判合法authority，也不因entry/tick少而低估大map/layout。正常`24×12` Pilot reference的100,000-tick trace約85,313,612、緊密佈局的24,500-inventory流程更低，100,000,000仍容納正常進程。head不因history pruning移除；stateHash不是外部trust。 | 若導入簽章/帳戶trust或正式migration framework再設計；仍保留declared-origin reachability、raw preflight與timeline lineage。 |
-| D16 | `unlockMap` 是進入下一個 deeper level：三個節點把nMaps 1→2→3→4、uint32 seed +1（wrap）、維持每圖63×63並重生整組地圖；清 recipe/factory/runtime/waste/inventory/fog 與 `economy.sold`，保留扣款後 cash/R&D、patents 與全域 inventory ID | 固定尺寸讓玩家建立一致空間尺度；現行存檔只保存一份目前 level，明確 reset 比拼接不同 seed 的 maps 更可重現，舊疾病銷量也不能污染新 level。UI 在解鎖前完整列出破壞範圍並要求二次確認。 | 若未來加入世界/關卡選擇與多 level inventory，再改成保存多份 level state；須連同 save schema/經濟一起設計。 |
-| D17 | Factory 用 mutable fixed-capacity SoA `FactoryRuntime` + 固定 product-event/scratch buffers；unit capacity 精確等於 carrier tiles + machines，不按空地面積膨脹；runtime 綁定建立它的 immutable layout 與 `MultiMap` identity，禁止拿同 shape/count 的另一份 map authority 混跑。splitter 持有 per-tile round-robin cursor、只收 `inDir`，merger 只收 `inDirs` 並依陳列順序仲裁；`stepFactory` 成功熱 tick 原地零配置；`FactoryState` 是 save/replay/debug **以及 whole-game `factoryTicks` ownership clone** 的 cold snapshot。diagnostics 同時受 ≤100,000 ticks 與 ≤100,000,000 layout-weighted work限制；在任何 init/tick 前以 `(area + machines + sources)² × observationTicks` deterministic fail-fast。`factoryOutcome`遇deadlock/首產品 exhaustion顯式throw；`analyzeThroughput`對真deadlock回`0/1`且bottleneck欄位皆null，只有observation window或work超budget才throw，UI顯示alert。 | 同時滿足熱迴圈禁`new`、確定性replay/save、正確routing與舊`GameState`/history不alias；map identity堵住authority混用，work preflight避免合法大layout在同步UI diagnostic鎖住主執行緒。cursor必須進runtime/snapshot/hash/save；永久inventory只在Game邊界物化。 | 物件量升到需通用ECS，或profiling證明固定容量策略不合適時；仍須保留zero-allocation successful tick、authority identity、deterministic analysis fail-fast與cold serialization boundary。 |
-| D18 | 正式 release candidate 前不承諾跨 build 存檔相容；save correctness、replay 與 corruption handling 只保證同 content build。breaking map/schema/sim change 可直接使舊 localStorage 失效，不維護 legacy generator 或 migration chain。 | 專案仍在早期開發；為開發存檔背永久相容成本會阻礙設計迭代，而且舊關卡語意轉成新關卡通常沒有唯一正確答案。 | 宣告 save format freeze／release candidate 時，另立版本、migration matrix、相容期與 deprecation policy。 |
-| D19 | Lab 分成同步的 Effect Atlas + Pilot Bench；權威是共用 Factory 幾何的 exact `ProductionBlueprint`。初期 Bench 只允許唯一、無循環、無 split/merge 的 source→sink 拓撲，由連線確定性推導 `Template.steps`；Recipe timeline 只讀 breadcrumb/scrubber/playhead。Save 後 Factory 逐欄位接收相同 layout，禁止 auto-pack/reorder；進 Factory 後才可在保持 effect order contract 下並聯與重排。 | 讓研究不再是 web 式步驟表單，機器的效果、footprint 與 throughput 在第一次放置時就同時成立；Factory 接手的是玩家親手做出的原型而不是 compiler 生成的陌生產線。單路徑限制消除 template 推導歧義，exact transfer 保留空間意圖並讓 Lab→Factory 成為連續玩法。 | 若 vertical-slice 玩測證明雙空間造成無法透過 focus swap／雙向高亮解決的認知負擔，可改呈現方式；不得回退兩份可漂移 authority。未來若 Lab 要支援 split/merge，必須先定義 canonical path/order 與歧義錯誤，不得猜測。 |
+| # | 決策 | 理由／推翻條件 |
+|---|---|---|
+| D1 | 純 code-as-truth，不使用 engine scene/視覺 editor。 | 工廠內容是資料，runtime 生成；只有改成大量手工關卡才重議。 |
+| D2 | TypeScript sim/core/tooling。 | CLI、headless、AI 協作與 Web 發布成本最低；規模到百萬實體才考慮移植 core。 |
+| D3 | PixiJS v8 做 dumb renderer。 | 保留顯式 loop 與薄層；需要完整 scene/physics engine 才重議。 |
+| D4 | React/DOM 疊 canvas 做 UI。 | 管理 UI 密集，但世界仍由 Pixi 呈現；UI 極簡化才可能移除。 |
+| D5 | 確定性 tick sim + invariant/replay。 | 是除錯、save、平行開發的地基，不推翻。 |
+| D6 | 模組邊界是 agent ownership 邊界。 | public interface 同時只有一位 owner；integrator 序列化共享面。 |
+| D7 | 一張效果圖是一種成分；1–4 層，一台機器同時變換各層位置。 | 單層先教探索，後續 Phase Exchange 增加跨圖張力。 |
+| D8 | Atlas 與三個 facility floor 都是正方格，100% 約 40px/cell。 | 共用方向、footprints、ports 與肌肉記憶；可調 pixel scale，不可分裂幾何 authority。 |
+| D9 | 平面俯視正交；Atlas 使用原創 microscopic biochemical art。 | 不用競品圖像/trade dress；正式美術可替換薄層資產。 |
+| D10 | catalog 的 transform/cost/speed 固定；機器以效果距離、footprint 與吞吐形成三軸取捨。 | 不提供任意 speed；數值屬未完成平衡，可在確定性測試下調整。 |
+| D11 | translate 關係含 forward/reverse/perpendicular/offset。 | 異質方向防止無腦旋轉抄解；玩測太雜可減種類。 |
+| D12 | Constructive procedural generation；seed + 完整 GenOptions 是關卡身分。 | production 不靠 solver rejection loop；求解器只供 tests/tools。 |
+| D13 | `63×63` 大 Atlas 以局部 `704×512` viewport 探索；每格 minor、每 5 格 origin-aligned major grid；開局中心 `(0,0)`，無玩家 XY 十字軸、無 auto-follow。 | 地圖必須大於平常視野；Focus 只做明示一次置中。可調 grid contrast，不回退縮小全景。 |
+| D14 | solver 絕不進遊戲內自動解。 | 人類試錯是核心樂趣，且 runtime 不需要搜尋。 |
+| D15 | Save v5；full wire≤5,000,000 chars，checkpoint 使用 raw-preflight compact authority；single/rewind work/tick/entry budgets 明示。 | 防 replay-work DoS、lineage 混合與靜默 corruption；正式 migration framework才重議格式。 |
+| D16 | map patent 代表 deeper level：1→2→3→4、seed+1、重生地圖並清三場域/庫存/fog/sales。 | 現階段一個存檔只保存目前 level；未來若做多關卡世界才重議。 |
+| D17 | Production 使用 fixed-capacity SoA runtime、固定 event/scratch buffers、layout+map identity、cold snapshot ownership；只有 `productionTicks` 推進。 | 守熱 tick 零配置、確定性 routing/hash/save；profiling證明需 ECS 才重議實作。 |
+| D18 | release candidate 前不維護跨 build save 相容或 legacy generator/migration chain。 | 早期迭代優先；宣告 format freeze 時才建立 migration matrix。 |
+| D19 | **歷史／已被 D20 取代**：Lab = 同頁 Atlas + Pilot Bench，之後直送 Factory。 | 實作後仍混淆研究探索與免費打樣，overlay 與雙空間同頁過於生硬；不得作 active truth。 |
+| D20 | 三個獨立建築：Research、Pilot Plant、Production。Research 付費 progressive shot 揭霧；Pilot 無時間零成本；Production 才連續 tick。兩段 transfer 都 exact，不 auto-pack。 | 分離探索試錯、免費空間試作與量產經濟，並讓三頁共用同一套直接操作語言。只有整體玩測證明角色分工無效才重議。 |
+| D21 | Blueprint Library v1 獨立於 save：Research/Pilot portable layout、strict JSON + SHA-256、可匯入匯出、跨存檔保留。 | 藍圖是玩家知識與分享格式，不應跟單一 run 的 seed/fog/economy 綁定。雲端分享另案設計。 |
+
+## Current authority summary
+
+- Active UI：F1 Research、F2 Pilot Plant、F3 Production；M/T/B drawers。
+- Active state：`research`、`pilot`、`production` 巢狀 GameState；Save v5。
+- Active transfer：physical layout + derived contract，逐欄位 own/copy；沒有 Recipe-list authority、Pilot Bench overlay 或 Lab→Factory compiler path。

@@ -5,24 +5,29 @@ import type {
   GameState,
   GenOptions,
   MachineCatalogEntry,
-  Template,
+  DrugState,
+  MultiMap,
+  Vec2,
 } from "../sim/phase0_interfaces";
 import {
   BASE_GAME_FACTORY_HEIGHT,
   BASE_GAME_FACTORY_WIDTH,
 } from "../sim/phase0_interfaces";
 import { generate } from "../sim/mapgen";
+import { previewStep } from "../sim/drug-graph";
+import { deriveLinearRoute } from "../sim/recipe";
 import {
   applyGameIntent,
   availableCatalog,
   createGameState,
   type GameIntent,
 } from "../sim/game";
-import { App } from "./App";
-import { Factory } from "./Factory";
-import { Shop } from "./Shop";
-import { Patents } from "./Patents";
 import { activeEffects, DEFAULT_PATENTS } from "../sim/patent";
+import { App } from "./App";
+import { BlueprintLibrary } from "./BlueprintLibrary";
+import { Factory } from "./Factory";
+import { Patents } from "./Patents";
+import { Shop } from "./Shop";
 import {
   finishMigration,
   readSlot,
@@ -35,8 +40,39 @@ import {
 
 const START_CASH = 200;
 const SAVE_SLOTS = 3;
-
 const LAB_WORLD_SIZE = 63;
+
+export function researchTrailsForLayout(
+  mm: MultiMap,
+  start: DrugState,
+  layout: FactoryLayout,
+  completedSteps: number,
+): readonly (readonly (Vec2 | null)[])[] {
+  const route = deriveLinearRoute(layout);
+  const trails: (Vec2 | null)[][] = mm.maps.map((_map, index) => {
+    const position = start.pos[index];
+    return position === undefined ? [] : [{ x: position.x, y: position.y }];
+  });
+  let drug = start;
+  const limit = Math.min(completedSteps, route.template.steps.length);
+  for (let step = 0; step < limit; step++) {
+    const machine = route.template.steps[step];
+    if (machine === undefined) break;
+    const preview = previewStep(mm, drug, machine);
+    for (let mapIndex = 0; mapIndex < trails.length; mapIndex++) {
+      const entered = preview.trails[mapIndex] ?? [];
+      if (entered.length === 0) {
+        const endpoint = preview.next.pos[mapIndex];
+        if (endpoint !== undefined) trails[mapIndex]!.push(null, endpoint);
+      } else {
+        trails[mapIndex]!.push(...entered);
+      }
+    }
+    drug = preview.next;
+    if (drug.failed) break;
+  }
+  return trails;
+}
 
 export function catalogForLayers(
   catalog: readonly MachineCatalogEntry[],
@@ -85,20 +121,25 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-type Tab = "lab" | "factory" | "shop" | "patents";
+type Building = "research" | "pilot" | "production";
+type Drawer = "market" | "technology" | "blueprints" | null;
+type ResearchSurface = "atlas" | "floor";
 
 export function Game() {
-  const [tab, setTab] = useState<Tab>("lab");
-  const [visited, setVisited] = useState<Record<Tab, boolean>>({
-    lab: true,
-    factory: false,
-    shop: false,
-    patents: false,
+  const [building, setBuilding] = useState<Building>("research");
+  const [drawer, setDrawer] = useState<Drawer>(null);
+  const [researchSurface, setResearchSurface] = useState<ResearchSurface>("atlas");
+  const [visited, setVisited] = useState<Record<Building, boolean>>({
+    research: true,
+    pilot: false,
+    production: false,
   });
-  const openTab = useCallback((next: Tab) => {
+  const openBuilding = useCallback((next: Building) => {
     setVisited((current) => current[next] ? current : { ...current, [next]: true });
-    setTab(next);
+    setBuilding(next);
+    setDrawer(null);
   }, []);
+
   const [game, setGame] = useState<GameState>(() =>
     createGameState(initialGenOptions(), queryInt("cash", START_CASH), queryInt("research", 0, 0)),
   );
@@ -117,11 +158,9 @@ export function Game() {
     setSlotRecovery(read.recovery);
     setCanRecover(read.error !== null && read.canRecover);
   }, []);
-
   const resolvedSlot = useCallback((slot: number): SlotRead => {
     return finishMigration(localStorage, slot, readSlot(localStorage, slot));
   }, []);
-
   useEffect(() => {
     if (initialSlot.migration !== null) showSlotRead(finishMigration(localStorage, 0, initialSlot));
   }, [initialSlot, showSlotRead]);
@@ -135,17 +174,17 @@ export function Game() {
     () => activeEffects(DEFAULT_PATENTS, game.patents),
     [game.patents],
   );
+  const entitledWidth = BASE_GAME_FACTORY_WIDTH + patentEffects.factoryDw;
+  const entitledHeight = BASE_GAME_FACTORY_HEIGHT + patentEffects.factoryDh;
 
   useEffect(() => {
     gameRef.current = game;
   }, [game]);
-
   const replaceGame = useCallback((next: GameState) => {
     gameRef.current = next;
     setGame(next);
     setIntentError("");
   }, []);
-
   const dispatch = useCallback((intent: GameIntent) => {
     try {
       const next = applyGameIntent(gameRef.current, intent);
@@ -159,32 +198,64 @@ export function Game() {
     }
   }, []);
 
-  const saveRecipe = useCallback((recipe: Template, factory: FactoryLayout) => {
-    if (dispatch({ kind: "saveRecipe", recipe, factory })) openTab("factory");
-  }, [dispatch, openTab]);
-
-  const explore = useCallback((template: Template) => {
-    dispatch({ kind: "runLab", template });
+  const changeResearch = useCallback((layout: FactoryLayout) => {
+    return dispatch({ kind: "setResearchLayout", layout });
   }, [dispatch]);
-  const changeFactory = useCallback((factory: FactoryLayout) => {
-    return dispatch({ kind: "setFactory", factory });
+  const changePilot = useCallback((layout: FactoryLayout) => {
+    return dispatch({ kind: "setPilotLayout", layout });
   }, [dispatch]);
-  const advanceFactory = useCallback((ticks: number) => {
-    if (gameRef.current.factory === null) {
-      setIntentError("Action rejected: no authoritative factory layout is active");
-      return false;
-    }
-    return dispatch({ kind: "factoryTicks", ticks });
+  const changeProduction = useCallback((layout: FactoryLayout) => {
+    return dispatch({ kind: "setProductionLayout", layout });
   }, [dispatch]);
-  const resetFactory = useCallback(() => {
-    return dispatch({ kind: "resetFactory" });
+  const advanceProduction = useCallback((ticks: number) => {
+    return dispatch({ kind: "productionTicks", ticks });
   }, [dispatch]);
+  const resetProduction = useCallback(() => dispatch({ kind: "resetProduction" }), [dispatch]);
   const sellProducts = useCallback((productIds: readonly number[], disease: DiseaseId) => {
     dispatch({ kind: "sellProducts", productIds, disease });
   }, [dispatch]);
-  const unlock = useCallback((id: string) => {
-    dispatch({ kind: "unlockPatent", id });
-  }, [dispatch]);
+  const unlock = useCallback((id: string) => dispatch({ kind: "unlockPatent", id }), [dispatch]);
+
+  const researchHasCure = game.research.lastOutcome !== null &&
+    !game.research.lastOutcome.failed && game.research.lastOutcome.cured.length > 0;
+  const researchTrails = useMemo(() => {
+    if (
+      game.research.layout === null ||
+      (game.research.shot === null && game.research.lastOutcome === null)
+    ) {
+      return level.mm.maps.map(() => []);
+    }
+    const completedSteps = game.research.shot?.step ??
+      (game.research.lastOutcome === null ? 0 : Number.MAX_SAFE_INTEGER);
+    return researchTrailsForLayout(
+      level.mm,
+      level.start,
+      game.research.layout,
+      completedSteps,
+    );
+  }, [game.research.lastOutcome, game.research.layout, game.research.shot, level]);
+  const researchActiveMachineId = useMemo(() => {
+    if (game.research.layout === null || game.research.shot === null) return null;
+    return deriveLinearRoute(game.research.layout).machineIds[game.research.shot.step] ?? null;
+  }, [game.research.layout, game.research.shot]);
+  const researchAction = useCallback(() => {
+    const current = gameRef.current;
+    const outcome = current.research.lastOutcome;
+    if (outcome !== null && !outcome.failed && outcome.cured.length > 0) {
+      if (dispatch({ kind: "sendResearchToPilot" })) openBuilding("pilot");
+      return;
+    }
+    if (dispatch({ kind: "beginResearchShot" })) setResearchSurface("atlas");
+  }, [dispatch, openBuilding]);
+  const commissionProduction = useCallback(() => {
+    if (dispatch({ kind: "sendPilotToProduction" })) openBuilding("production");
+  }, [dispatch, openBuilding]);
+
+  useEffect(() => {
+    if (game.research.shot === null) return;
+    const timer = window.setTimeout(() => dispatch({ kind: "advanceResearchShot" }), 320);
+    return () => window.clearTimeout(timer);
+  }, [dispatch, game.research.shot]);
 
   const save = useCallback(() => {
     const slot = selectedSlotRef.current;
@@ -199,18 +270,15 @@ export function Game() {
       setSlotRecovery(saved);
       setCanRecover(false);
       const pruning = saved.replacedTimeline
-        ? ` Replaced the slot's previous ${saved.pruned}-snapshot timeline because it belongs to a different run or branch.`
+        ? ` Replaced ${saved.pruned} checkpoint(s) from another run.`
         : saved.pruned > 0
-          ? ` Rewind history dropped ${saved.pruned} oldest snapshot(s) to stay within storage limits.`
+          ? ` Dropped ${saved.pruned} old checkpoint(s).`
           : "";
-      setSaveMsg(
-        `Saved slot ${slot + 1} (cash ${game.economy.cash}, seed ${game.genOptions.seed}).${pruning}`,
-      );
+      setSaveMsg(`Saved slot ${slot + 1}.${pruning}`);
     } catch (error) {
       setSaveMsg(`Could not save slot ${slot + 1}: ${errorMessage(error)}`);
     }
   }, [game, resolvedSlot, showSlotRead]);
-
   const load = useCallback(() => {
     const slot = selectedSlotRef.current;
     const existing = resolvedSlot(slot);
@@ -222,18 +290,12 @@ export function Game() {
       setSaveMsg(`No save found in slot ${slot + 1}.`);
       return;
     }
-    try {
-      const loaded = existing.head;
-      replaceGame(loaded);
-      setHistoryCount(existing.history?.length ?? 0);
-      setSlotRecovery(existing.recovery);
-      setCanRecover(false);
-      setSaveMsg(`Loaded slot ${slot + 1} (cash ${loaded.economy.cash}, seed ${loaded.genOptions.seed}).`);
-    } catch (error) {
-      setSaveMsg(`Could not load slot ${slot + 1}: ${errorMessage(error)}`);
-    }
+    replaceGame(existing.head);
+    setHistoryCount(existing.history?.length ?? 0);
+    setSlotRecovery(existing.recovery);
+    setCanRecover(false);
+    setSaveMsg(`Loaded slot ${slot + 1}.`);
   }, [replaceGame, resolvedSlot, showSlotRead]);
-
   const doRewind = useCallback(() => {
     const slot = selectedSlotRef.current;
     const existing = resolvedSlot(slot);
@@ -251,15 +313,11 @@ export function Game() {
       setHistoryCount(recalled.history.length);
       setSlotRecovery(recalled);
       setCanRecover(false);
-      const pruning = recalled.pruned > 0
-        ? ` Dropped ${recalled.pruned} oldest snapshot(s) to stay within storage limits.`
-        : "";
-      setSaveMsg(`Rewound slot ${slot + 1} (cash ${recalled.head.economy.cash}).${pruning}`);
+      setSaveMsg(`Rewound slot ${slot + 1}.`);
     } catch (error) {
       setSaveMsg(`Could not rewind slot ${slot + 1}: ${errorMessage(error)}`);
     }
   }, [replaceGame, resolvedSlot, showSlotRead]);
-
   const recoverStorage = useCallback(() => {
     const slot = selectedSlotRef.current;
     try {
@@ -267,10 +325,7 @@ export function Game() {
       setHistoryCount(recovered.history.length);
       setSlotRecovery(recovered);
       setCanRecover(false);
-      const pruning = recovered.pruned > 0
-        ? ` Dropped ${recovered.pruned} oldest snapshot(s) to stay within storage limits.`
-        : "";
-      setSaveMsg(`Recovered slot ${slot + 1} with a validated checkpoint.${pruning}`);
+      setSaveMsg(`Recovered slot ${slot + 1}.`);
     } catch (error) {
       setSaveMsg(`Could not recover slot ${slot + 1}: ${errorMessage(error)}`);
     }
@@ -284,37 +339,44 @@ export function Game() {
         target instanceof HTMLSelectElement ||
         target instanceof HTMLTextAreaElement ||
         (target instanceof HTMLElement && target.isContentEditable)
-      ) {
-        return;
-      }
-      const viewByKey: Partial<Record<string, Tab>> = {
-        F1: "lab",
-        F2: "factory",
-        F3: "shop",
-        F4: "patents",
+      ) return;
+      const viewByKey: Partial<Record<string, Building>> = {
+        F1: "research",
+        F2: "pilot",
+        F3: "production",
       };
       const view = viewByKey[event.key];
       if (view !== undefined) {
         event.preventDefault();
-        openTab(view);
-        return;
-      }
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+        openBuilding(view);
+      } else if (event.key.toLowerCase() === "m") {
+        event.preventDefault();
+        setDrawer((current) => current === "market" ? null : "market");
+      } else if (event.key.toLowerCase() === "t") {
+        event.preventDefault();
+        setDrawer((current) => current === "technology" ? null : "technology");
+      } else if (event.key.toLowerCase() === "b") {
+        event.preventDefault();
+        setDrawer((current) => current === "blueprints" ? null : "blueprints");
+      } else if (event.key === "Escape" && drawer !== null) {
+        event.preventDefault();
+        setDrawer(null);
+      } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
         event.preventDefault();
         save();
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [openTab, save]);
+  }, [drawer, openBuilding, save]);
 
-  const tabBtn = (id: Tab, label: string, glyph: string, hotkey: string) => (
+  const buildingButton = (id: Building, label: string, glyph: string, hotkey: string) => (
     <button
       type="button"
-      onClick={() => openTab(id)}
-      className={`nav-button${tab === id ? " is-active" : ""}`}
+      onClick={() => openBuilding(id)}
+      className={`nav-button${building === id ? " is-active" : ""}`}
       data-testid={`view-${id}`}
-      aria-current={tab === id ? "page" : undefined}
+      aria-current={building === id ? "page" : undefined}
       title={`${label} (${hotkey})`}
     >
       <span className="nav-glyph" aria-hidden="true">{glyph}</span>
@@ -327,114 +389,176 @@ export function Game() {
     <div className="game-shell" data-testid="game-shell">
       <header className="top-hud" data-testid="top-hud">
         <div className="brand-mark">HexaPharma</div>
-        <div className="resource-strip" aria-label="Factory resources">
+        <div className="resource-strip" aria-label="Company resources">
           <span className="resource-chip">Cash <strong data-testid="cash">{game.economy.cash}</strong></span>
-          <span className="resource-chip">R&amp;D <strong data-testid="research">{game.economy.research}</strong></span>
+          <span className="resource-chip">Knowledge <strong data-testid="research">{game.economy.research}</strong></span>
           <span className="resource-chip">Stock <strong>{game.inventory.length}</strong></span>
-          <span className="resource-chip">Seed <strong>{game.genOptions.seed}</strong></span>
+          <span className="resource-chip">Seed <strong data-testid="seed">{game.genOptions.seed}</strong></span>
         </div>
         <div className="system-strip" aria-label="Save controls">
           <label className="save-slot-control" title="Save slot">
             <span className="sr-only">Slot</span>
-          <select
-            data-testid="save-slot"
-            defaultValue={0}
-            onChange={(event) => {
-              const slot = Number(event.target.value);
-              selectedSlotRef.current = slot;
-              showSlotRead(resolvedSlot(slot));
-            }}
-          >
-            {Array.from({ length: SAVE_SLOTS }, (_, slot) => (
-              <option key={slot} value={slot}>{slot + 1}</option>
-            ))}
-          </select>
+            <select
+              data-testid="save-slot"
+              defaultValue={0}
+              onChange={(event) => {
+                const slot = Number(event.target.value);
+                selectedSlotRef.current = slot;
+                showSlotRead(resolvedSlot(slot));
+              }}
+            >
+              {Array.from({ length: SAVE_SLOTS }, (_, slot) => (
+                <option key={slot} value={slot}>{slot + 1}</option>
+              ))}
+            </select>
           </label>
           <button type="button" onClick={save} className="hud-button" data-testid="save" title="Save (Ctrl+S)" aria-label="Save game">▣</button>
           <button type="button" onClick={load} className="hud-button" data-testid="load" title="Load" aria-label="Load game">↥</button>
           <button type="button" onClick={doRewind} className="hud-button" data-testid="rewind" disabled={historyCount < 2} title="Rewind" aria-label="Rewind save history">↶</button>
-        {canRecover && (
-          <button
-            type="button"
-            onClick={recoverStorage}
-            className="hud-button is-warning"
-            data-testid="recover-storage"
-            title={slotRecovery === null ? "Replace invalid slot with current game" : "Recover validated timeline"}
-            aria-label={slotRecovery === null ? "Replace invalid slot with current game" : "Recover validated timeline"}
-          >
-            !
-          </button>
-        )}
+          {canRecover && (
+            <button type="button" onClick={recoverStorage} className="hud-button is-warning" data-testid="recover-storage" title="Recover slot" aria-label="Recover save slot">!</button>
+          )}
         </div>
       </header>
 
-      <nav className="nav-rail" data-testid="nav-rail" aria-label="Game views">
-        {tabBtn("lab", "Lab", "⌬", "F1")}
-        {tabBtn("factory", "Factory", "▦", "F2")}
-        {tabBtn("shop", "Market", "¤", "F3")}
-        {tabBtn("patents", "R&D", "⌁", "F4")}
+      <nav className="nav-rail" data-testid="nav-rail" aria-label="Facilities">
+        {buildingButton("research", "Research", "⌬", "F1")}
+        {buildingButton("pilot", "Pilot Plant", "◇", "F2")}
+        {buildingButton("production", "Production", "▦", "F3")}
+        <span className="nav-spacer" />
+        <button type="button" className={`nav-button${drawer === "market" ? " is-active" : ""}`} onClick={() => setDrawer((current) => current === "market" ? null : "market")} data-testid="view-market">
+          <span className="nav-glyph">¤</span><span className="nav-label">Market</span><span className="hotkey">M</span>
+        </button>
+        <button type="button" className={`nav-button${drawer === "technology" ? " is-active" : ""}`} onClick={() => setDrawer((current) => current === "technology" ? null : "technology")} data-testid="view-technology">
+          <span className="nav-glyph">⌁</span><span className="nav-label">Technology</span><span className="hotkey">T</span>
+        </button>
+        <button type="button" className={`nav-button${drawer === "blueprints" ? " is-active" : ""}`} onClick={() => setDrawer((current) => current === "blueprints" ? null : "blueprints")} data-testid="view-blueprints">
+          <span className="nav-glyph">▧</span><span className="nav-label">Blueprints</span><span className="hotkey">B</span>
+        </button>
       </nav>
 
       <main className="game-stage" data-testid="game-stage">
-        <section className="view-layer" hidden={tab !== "lab"}>
-        {visited.lab && (
-          <App
-            active={tab === "lab"}
-            level={level}
-            fog={game.fog}
-            catalog={catalog}
-            pilotWidth={BASE_GAME_FACTORY_WIDTH + patentEffects.factoryDw}
-            pilotHeight={BASE_GAME_FACTORY_HEIGHT + patentEffects.factoryDh}
-            onExplore={explore}
-            onSaveRecipe={saveRecipe}
-          />
-        )}
-        </section>
-        <section className="view-layer" hidden={tab !== "factory"}>
-        {visited.factory && (
-          <Factory
-            active={tab === "factory"}
-            level={level}
-            recipe={game.recipe}
-            factory={game.factory}
-            factoryState={game.factoryState}
-            factoryWaste={game.factoryWaste}
-            entitledWidth={game.factory?.width ?? BASE_GAME_FACTORY_WIDTH + patentEffects.factoryDw}
-            entitledHeight={game.factory?.height ?? BASE_GAME_FACTORY_HEIGHT + patentEffects.factoryDh}
-            catalog={catalog}
-            onFactoryChange={changeFactory}
-            onAdvance={advanceFactory}
-            onReset={resetFactory}
-          />
-        )}
-        </section>
-        <section className="view-layer" hidden={tab !== "shop"}>
-        {visited.shop && (
-          <Shop
-            level={level}
-            economy={game.economy}
-            inventory={game.inventory}
-            onSell={sellProducts}
-          />
-        )}
-        </section>
-        <section className="view-layer" hidden={tab !== "patents"}>
-        {visited.patents && (
-          <Patents
-            active={tab === "patents"}
-            economy={game.economy}
-            patents={game.patents}
-            onUnlock={unlock}
-          />
-        )}
-        </section>
-        <div className="message-layer" aria-live="polite">
-          {intentError !== "" && (
-            <div role="alert" data-testid="game-intent-error" className="game-alert">{intentError}</div>
+        <section className="view-layer" hidden={building !== "research"}>
+          {visited.research && (
+            <div className="research-workspace" data-testid="research-workspace">
+              <div className="research-modebar" role="toolbar" aria-label="Research workspace mode">
+                <button type="button" className={researchSurface === "atlas" ? "is-active" : ""} onClick={() => setResearchSurface("atlas")} data-testid="research-show-atlas">Effect Atlas</button>
+                <button type="button" className={researchSurface === "floor" ? "is-active" : ""} onClick={() => setResearchSurface("floor")} data-testid="research-show-floor">Route Floor</button>
+                <span className="research-modebar-spacer" />
+                {game.research.shot !== null && (
+                  <button type="button" className="is-warning" onClick={() => dispatch({ kind: "abortResearchShot" })} data-testid="research-abort">Abort · no refund</button>
+                )}
+                <button
+                  type="button"
+                  className="facility-command"
+                  disabled={game.research.layout === null || game.research.shot !== null}
+                  onClick={researchAction}
+                  data-testid="research-command"
+                >
+                  {researchHasCure ? "Send to Pilot Plant" : "Dispense"}
+                </button>
+              </div>
+              <div className="research-surface" hidden={researchSurface !== "atlas"}>
+                <App
+                  active={building === "research" && researchSurface === "atlas"}
+                  level={level}
+                  fog={game.fog}
+                  drug={game.research.shot?.drug ?? level.start}
+                  trails={researchTrails}
+                  shotStep={game.research.shot?.step ?? null}
+                  lastOutcome={game.research.lastOutcome}
+                />
+              </div>
+              <div className="research-surface" hidden={researchSurface !== "floor"}>
+                <Factory
+                  active={building === "research" && researchSurface === "floor"}
+                  mode="research"
+                  level={level}
+                  contract={null}
+                  layout={game.research.layout}
+                  runtime={null}
+                  waste={0}
+                  entitledWidth={entitledWidth}
+                  entitledHeight={entitledHeight}
+                  catalog={catalog}
+                  onLayoutChange={changeResearch}
+                  activeMachineId={researchActiveMachineId}
+                />
+              </div>
+            </div>
           )}
-          <span data-testid="save-msg" role="status" className={saveMsg === "" ? "sr-only" : "game-toast"}>
-            {saveMsg}
-          </span>
+        </section>
+        <section className="view-layer" hidden={building !== "pilot"}>
+          {visited.pilot && (
+            <Factory
+              active={building === "pilot"}
+              mode="pilot"
+              level={level}
+              contract={game.pilot.contract}
+              layout={game.pilot.layout}
+              runtime={null}
+              waste={0}
+              entitledWidth={entitledWidth}
+              entitledHeight={entitledHeight}
+              catalog={catalog}
+              onLayoutChange={changePilot}
+              commandLabel="Commission"
+              commandDisabled={game.pilot.layout === null || game.pilot.contract === null}
+              onCommand={commissionProduction}
+            />
+          )}
+        </section>
+        <section className="view-layer" hidden={building !== "production"}>
+          {visited.production && (
+            game.production.contract === null || game.production.layout === null ? (
+              <div className="facility-empty-state" data-testid="production-uncommissioned">
+                <span className="nav-glyph">▦</span>
+                <div className="panel-kicker">Production floor offline</div>
+                <h1>Production</h1>
+                <p>Validate a Research contract in Pilot Plant before this floor can run or be edited.</p>
+                <button type="button" onClick={() => openBuilding("pilot")}>Go to Pilot Plant</button>
+              </div>
+            ) : (
+              <Factory
+                active={building === "production"}
+                mode="production"
+                level={level}
+                contract={game.production.contract}
+                layout={game.production.layout}
+                runtime={game.production.runtime}
+                waste={game.production.waste}
+                entitledWidth={entitledWidth}
+                entitledHeight={entitledHeight}
+                catalog={catalog}
+                onLayoutChange={changeProduction}
+                onAdvance={advanceProduction}
+                onReset={resetProduction}
+              />
+            )
+          )}
+        </section>
+
+        {drawer !== null && (
+          <aside className="game-drawer" data-testid={`${drawer}-drawer`}>
+            <button type="button" className="drawer-close" onClick={() => setDrawer(null)} aria-label={`Close ${drawer}`}>×</button>
+            {drawer === "market" ? (
+              <Shop level={level} economy={game.economy} inventory={game.inventory} onSell={sellProducts} />
+            ) : drawer === "technology" ? (
+              <Patents active economy={game.economy} patents={game.patents} onUnlock={unlock} />
+            ) : (
+              <BlueprintLibrary
+                researchLayout={game.research.layout}
+                pilotLayout={game.pilot.layout}
+                onLoadResearch={changeResearch}
+                onLoadPilot={changePilot}
+              />
+            )}
+          </aside>
+        )}
+
+        <div className="message-layer" aria-live="polite">
+          {intentError !== "" && <div role="alert" data-testid="game-intent-error" className="game-alert">{intentError}</div>}
+          <span data-testid="save-msg" role="status" className={saveMsg === "" ? "sr-only" : "game-toast"}>{saveMsg}</span>
         </div>
       </main>
     </div>

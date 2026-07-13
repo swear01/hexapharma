@@ -90,10 +90,17 @@ function sale(intent: GameIntent): { readonly disease: number; readonly ids: rea
 }
 
 function normalizedIntentExtends(earlier: GameIntent, later: GameIntent): boolean {
-  if (earlier.kind === "factoryTicks" && later.kind === "factoryTicks") {
+  if (earlier.kind === "productionTicks" && later.kind === "productionTicks") {
     return later.ticks >= earlier.ticks;
   }
-  if (earlier.kind === "setFactory" && later.kind === "setFactory") return true;
+  if (
+    (earlier.kind === "setResearchLayout" ||
+      earlier.kind === "setPilotLayout" ||
+      earlier.kind === "setProductionLayout") &&
+    later.kind === earlier.kind
+  ) {
+    return true;
+  }
   const earlierSale = sale(earlier);
   const laterSale = sale(later);
   if (

@@ -17,6 +17,8 @@ interface FactoryWorkProfile {
   readonly machines: number;
   readonly sources: number;
   readonly carriers: number;
+  readonly geometryOverhead: number;
+  readonly processingTicks: number;
   readonly cold: number;
   readonly perTick: number;
 }
@@ -60,6 +62,7 @@ function profile(
   sources: number,
   carriers: number,
   geometry: number,
+  processingTicks: number,
 ): FactoryWorkProfile {
   const area = width * height;
   if (
@@ -86,6 +89,8 @@ function profile(
     machines,
     sources,
     carriers,
+    geometryOverhead: geometry - area,
+    processingTicks,
     cold: Math.min(MAX_GAME_REPLAY_WORK + 1, coldCapacity * 16 + geometry * 4),
     perTick: cappedAdd(
       area,
@@ -107,10 +112,19 @@ function layoutProfile(layout: FactoryLayout): FactoryWorkProfile {
     }
   }
   let geometry = layout.width * layout.height;
+  let processingTicks = 0;
   for (const machine of layout.machines) {
     geometry += machine.shape.cells.length;
     geometry += machine.shape.inPorts.length;
     geometry += machine.shape.outPorts.length;
+    const speed = machine.def.speed;
+    if (!Number.isSafeInteger(speed) || speed < 0) {
+      processingTicks = MAX_FACTORY_REPLAY_TICKS + 1;
+    } else if (processingTicks < MAX_FACTORY_REPLAY_TICKS) {
+      processingTicks = processingTicks >= MAX_FACTORY_REPLAY_TICKS - speed
+        ? MAX_FACTORY_REPLAY_TICKS
+        : processingTicks + speed;
+    }
   }
   return profile(
     layout.width,
@@ -119,6 +133,7 @@ function layoutProfile(layout: FactoryLayout): FactoryWorkProfile {
     sources,
     carriers,
     geometry,
+    processingTicks,
   );
 }
 
@@ -133,7 +148,8 @@ function expandProfile(
     factory.machines,
     factory.sources,
     factory.carriers,
-    (factory.width + widthDelta) * (factory.height + heightDelta) + factory.machines,
+    (factory.width + widthDelta) * (factory.height + heightDelta) + factory.geometryOverhead,
+    factory.processingTicks,
   );
 }
 
@@ -141,18 +157,15 @@ function mapTraversalWork(mapCells: number, steps: number): number {
   return cappedMultiply(mapCells, steps + 4);
 }
 
-function factoryOutcomeWork(layout: FactoryLayout, factory: FactoryWorkProfile): number {
+function factoryOutcomeWork(factory: FactoryWorkProfile): number {
+  if (factory.processingTicks > MAX_FACTORY_REPLAY_TICKS) {
+    return MAX_GAME_REPLAY_WORK + 1;
+  }
   const area = cappedMultiply(factory.width, factory.height);
   let ticks = Math.min(MAX_FACTORY_REPLAY_TICKS, cappedAdd(area, 16));
-  for (const machine of layout.machines) {
-    const speed = machine.def.speed;
-    if (!Number.isSafeInteger(speed) || speed < 0) return MAX_GAME_REPLAY_WORK + 1;
-    if (ticks >= MAX_FACTORY_REPLAY_TICKS - speed) {
-      ticks = MAX_FACTORY_REPLAY_TICKS;
-      break;
-    }
-    ticks += speed;
-  }
+  ticks = ticks >= MAX_FACTORY_REPLAY_TICKS - factory.processingTicks
+    ? MAX_FACTORY_REPLAY_TICKS
+    : ticks + factory.processingTicks;
   const activeWidth = cappedAdd(area, cappedAdd(factory.machines, factory.sources));
   return cappedMultiply(cappedMultiply(activeWidth, activeWidth), ticks);
 }
@@ -163,30 +176,83 @@ export function estimateGameReplayWork(
 ): number {
   let mapCells = requireMapCells(origin);
   let total = cappedMultiply(mapCells, 32);
-  let factory: FactoryWorkProfile | null = null;
+  let research: FactoryWorkProfile | null = null;
+  let pilot: FactoryWorkProfile | null = null;
+  let pilotContractSteps: number | null = null;
+  let production: FactoryWorkProfile | null = null;
+  let productionContractSteps: number | null = null;
   let nMaps = origin.nMaps;
   for (const intent of intents) {
     let intentWork = 0;
     switch (intent.kind) {
-      case "saveRecipe": {
-        factory = layoutProfile(intent.factory);
-        intentWork = cappedAdd(
-          mapTraversalWork(mapCells, intent.recipe.steps.length),
-          cappedAdd(factory.cold, factoryOutcomeWork(intent.factory, factory)),
-        );
+      case "setResearchLayout":
+        research = layoutProfile(intent.layout);
+        intentWork = research.cold;
         break;
-      }
-      case "setFactory":
-        factory = layoutProfile(intent.factory);
-        intentWork = factory.cold;
+      case "beginResearchShot":
+        intentWork = research === null
+          ? 1
+          : cappedAdd(research.cold, mapTraversalWork(mapCells, 0));
         break;
-      case "factoryTicks":
-        if (factory !== null) {
-          intentWork = cappedAdd(factory.cold, cappedMultiply(intent.ticks, factory.perTick));
+      case "advanceResearchShot":
+        intentWork = research === null
+          ? 1
+          : cappedAdd(research.cold, mapTraversalWork(mapCells, 1));
+        break;
+      case "abortResearchShot":
+        intentWork = 1;
+        break;
+      case "sendResearchToPilot":
+        if (research === null) {
+          intentWork = 1;
+        } else {
+          pilot = research;
+          pilotContractSteps = research.machines;
+          intentWork = cappedAdd(
+            research.cold,
+            mapTraversalWork(mapCells, research.machines),
+          );
         }
         break;
-      case "resetFactory":
-        intentWork = factory?.cold ?? 1;
+      case "setPilotLayout":
+        pilot = layoutProfile(intent.layout);
+        intentWork = pilot.cold;
+        break;
+      case "sendPilotToProduction":
+        if (pilot === null || pilotContractSteps === null) {
+          intentWork = 1;
+        } else {
+          production = pilot;
+          productionContractSteps = pilotContractSteps;
+          intentWork = cappedAdd(
+            pilot.cold,
+            cappedAdd(
+              mapTraversalWork(mapCells, pilotContractSteps),
+              factoryOutcomeWork(pilot),
+            ),
+          );
+        }
+        break;
+      case "setProductionLayout":
+        production = layoutProfile(intent.layout);
+        intentWork = production.cold;
+        break;
+      case "productionTicks":
+        if (production !== null) {
+          intentWork = cappedAdd(
+            production.cold,
+            cappedMultiply(intent.ticks, production.perTick),
+          );
+          if (productionContractSteps !== null) {
+            intentWork = cappedAdd(
+              intentWork,
+              mapTraversalWork(mapCells, productionContractSteps),
+            );
+          }
+        }
+        break;
+      case "resetProduction":
+        intentWork = production?.cold ?? 1;
         break;
       case "sellProduct":
         intentWork = MAX_GAME_INVENTORY_PRODUCTS + 1;
@@ -194,15 +260,20 @@ export function estimateGameReplayWork(
       case "sellProducts":
         intentWork = MAX_GAME_INVENTORY_PRODUCTS + intent.productIds.length;
         break;
-      case "runLab":
-        intentWork = mapTraversalWork(mapCells, intent.template.steps.length);
-        break;
       case "unlockPatent":
         intentWork = 262_144;
         if (intent.id === "bench-2") {
-          if (factory !== null) {
-            factory = expandProfile(factory, 2, 0);
-            intentWork = cappedAdd(intentWork, factory.cold);
+          if (research !== null) {
+            research = expandProfile(research, 2, 0);
+            intentWork = cappedAdd(intentWork, research.cold);
+          }
+          if (pilot !== null) {
+            pilot = expandProfile(pilot, 2, 0);
+            intentWork = cappedAdd(intentWork, pilot.cold);
+          }
+          if (production !== null) {
+            production = expandProfile(production, 2, 0);
+            intentWork = cappedAdd(intentWork, production.cold);
           }
         } else if (
           intent.id === "new-map" ||
@@ -213,7 +284,11 @@ export function estimateGameReplayWork(
           const dimension = 63;
           mapCells = nMaps * dimension * dimension;
           intentWork = cappedAdd(intentWork, cappedMultiply(mapCells, 32));
-          factory = null;
+          research = null;
+          pilot = null;
+          pilotContractSteps = null;
+          production = null;
+          productionContractSteps = null;
         }
         break;
     }

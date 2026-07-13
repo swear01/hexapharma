@@ -62,7 +62,7 @@ import { estimateGameReplayWork } from "../replay-work";
 // blob field-by-field and rebuilding a structurally-equal GameState — never
 // defaulting silently on missing/wrong fields.
 
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;
 export const MAX_SLOT_STATES = 20;
 export const MAX_SAVE_CHARACTERS = 5_000_000;
 
@@ -499,18 +499,19 @@ function parseGameIntent(v: unknown, index: number, tracePath = "intentTrace"): 
   const o = reqObject(v, path);
   const kind = reqString(o.kind, `${path}.kind`);
   switch (kind) {
-    case "saveRecipe":
-      return {
-        kind,
-        recipe: parseTemplate(o.recipe, `${path}.recipe`),
-        factory: parseFactory(o.factory, `${path}.factory`),
-      };
-    case "setFactory":
-      return { kind, factory: parseFactory(o.factory, `${path}.factory`) };
-    case "factoryTicks":
-      return { kind, ticks: reqInt(o.ticks, `${path}.ticks`) };
-    case "resetFactory":
+    case "setResearchLayout":
+    case "setPilotLayout":
+    case "setProductionLayout":
+      return { kind, layout: parseFactory(o.layout, `${path}.layout`) };
+    case "beginResearchShot":
+    case "advanceResearchShot":
+    case "abortResearchShot":
+    case "sendResearchToPilot":
+    case "sendPilotToProduction":
+    case "resetProduction":
       return { kind };
+    case "productionTicks":
+      return { kind, ticks: reqInt(o.ticks, `${path}.ticks`) };
     case "sellProduct":
       return {
         kind,
@@ -530,8 +531,6 @@ function parseGameIntent(v: unknown, index: number, tracePath = "intentTrace"): 
         disease: reqInt(o.disease, `${path}.disease`),
       };
     }
-    case "runLab":
-      return { kind, template: parseTemplate(o.template, `${path}.template`) };
     case "unlockPatent":
       return { kind, id: reqString(o.id, `${path}.id`) };
     default:
@@ -560,7 +559,7 @@ function parseProducedUnit(v: unknown, path: string, expectedMaps: number): Prod
   };
 }
 
-function parseFactoryState(
+function parseFactorySnapshot(
   v: unknown,
   path: string,
   factory: FactoryLayout,
@@ -606,42 +605,43 @@ function validateFactorySnapshot(
   snapshot: FactoryState,
   factory: FactoryLayout,
   nMaps: number,
+  path: string,
 ): void {
   const nonNegative = (value: number, path: string): void => {
     if (!Number.isSafeInteger(value) || value < 0) {
       throw new SaveError(`${path}: expected non-negative safe integer, got ${value}`);
     }
   };
-  nonNegative(snapshot.tick, "factoryState.tick");
-  nonNegative(snapshot.nextUnitId, "factoryState.nextUnitId");
-  nonNegative(snapshot.producedTotal, "factoryState.producedTotal");
+  nonNegative(snapshot.tick, `${path}.tick`);
+  nonNegative(snapshot.nextUnitId, `${path}.nextUnitId`);
+  nonNegative(snapshot.producedTotal, `${path}.producedTotal`);
   const splitters = factory.tiles.filter((tile) => tile.kind === "splitter");
   if (snapshot.splitterCursors.length !== splitters.length) {
-    throw new SaveError("factoryState.splitterCursors: count does not match layout");
+    throw new SaveError(`${path}.splitterCursors: count does not match layout`);
   }
   for (let slot = 0; slot < snapshot.splitterCursors.length; slot++) {
     const cursor = snapshot.splitterCursors[slot] ?? -1;
     const splitter = splitters[slot];
     if (splitter?.kind !== "splitter" || cursor < 0 || cursor >= splitter.outDirs.length) {
-      throw new SaveError(`factoryState.splitterCursors[${slot}]: outside output range`);
+      throw new SaveError(`${path}.splitterCursors[${slot}]: outside output range`);
     }
   }
   if (snapshot.producedEvents.length !== 0) {
-    throw new SaveError("factoryState.producedEvents: product events must be drained before save");
+    throw new SaveError(`${path}.producedEvents: product events must be drained before save`);
   }
   if (snapshot.nextUnitId !== snapshot.units.length + snapshot.producedTotal) {
-    throw new SaveError("factoryState: mass conservation does not match nextUnitId");
+    throw new SaveError(`${path}: mass conservation does not match nextUnitId`);
   }
   let previousId = -1;
   const machineIds = new Set(factory.machines.map((machine) => machine.id));
   for (let index = 0; index < snapshot.units.length; index++) {
     const unit = snapshot.units[index];
     if (unit === undefined) continue;
-    nonNegative(unit.id, `factoryState.units[${index}].id`);
-    nonNegative(unit.proc, `factoryState.units[${index}].proc`);
-    nonNegative(unit.productionCost, `factoryState.units[${index}].productionCost`);
+    nonNegative(unit.id, `${path}.units[${index}].id`);
+    nonNegative(unit.proc, `${path}.units[${index}].proc`);
+    nonNegative(unit.productionCost, `${path}.units[${index}].productionCost`);
     if (unit.id <= previousId) {
-      throw new SaveError(`factoryState.units[${index}].id: ids must be unique and sorted`);
+      throw new SaveError(`${path}.units[${index}].id: ids must be unique and sorted`);
     }
     previousId = unit.id;
     if (
@@ -652,13 +652,13 @@ function validateFactorySnapshot(
       unit.pos.x >= factory.width ||
       unit.pos.y >= factory.height
     ) {
-      throw new SaveError(`factoryState.units[${index}].pos: outside factory layout`);
+      throw new SaveError(`${path}.units[${index}].pos: outside factory layout`);
     }
     if (unit.machineId !== null && !machineIds.has(unit.machineId)) {
-      throw new SaveError(`factoryState.units[${index}].machineId: unknown machine`);
+      throw new SaveError(`${path}.units[${index}].machineId: unknown machine`);
     }
     if (unit.drug.pos.length !== nMaps) {
-      throw new SaveError(`factoryState.units[${index}].drug: map count mismatch`);
+      throw new SaveError(`${path}.units[${index}].drug: map count mismatch`);
     }
   }
 }
@@ -703,6 +703,62 @@ function parseFog(v: unknown, genOptions: GenOptions): Uint8Array[] {
 function parseRng(v: unknown): RngState {
   const o = reqObject(v, "rng");
   return { s: reqInt(o.s, "rng.s") };
+}
+
+function parseNullableTemplate(v: unknown, path: string): Template | null {
+  return v === null ? null : parseTemplate(v, path);
+}
+
+function parseResearchFacility(v: unknown, expectedMaps: number): GameState["research"] {
+  const path = "research";
+  const o = reqObject(v, path);
+  const shotObject = o.shot === null ? null : reqObject(o.shot, `${path}.shot`);
+  return {
+    layout: parseNullableFactory(o.layout, `${path}.layout`),
+    shot: shotObject === null
+      ? null
+      : {
+          step: reqInt(shotObject.step, `${path}.shot.step`),
+          drug: parseDrugState(shotObject.drug, `${path}.shot.drug`, expectedMaps),
+          cost: reqInt(shotObject.cost, `${path}.shot.cost`),
+        },
+    lastOutcome: o.lastOutcome === null
+      ? null
+      : parseOutcome(o.lastOutcome, `${path}.lastOutcome`, expectedMaps),
+  };
+}
+
+function parsePilotFacility(v: unknown): GameState["pilot"] {
+  const path = "pilot";
+  const o = reqObject(v, path);
+  return {
+    layout: parseNullableFactory(o.layout, `${path}.layout`),
+    contract: parseNullableTemplate(o.contract, `${path}.contract`),
+  };
+}
+
+interface ParsedProductionFacility {
+  readonly layout: FactoryLayout | null;
+  readonly contract: Template | null;
+  readonly snapshot: FactoryState | null;
+  readonly waste: number;
+}
+
+function parseProductionFacility(v: unknown, expectedMaps: number): ParsedProductionFacility {
+  const path = "production";
+  const o = reqObject(v, path);
+  const layout = parseNullableFactory(o.layout, `${path}.layout`);
+  if (o.runtime !== null && layout === null) {
+    throw new SaveError(`${path}.runtime: runtime requires a Production layout`);
+  }
+  return {
+    layout,
+    contract: parseNullableTemplate(o.contract, `${path}.contract`),
+    snapshot: o.runtime === null || layout === null
+      ? null
+      : parseFactorySnapshot(o.runtime, `${path}.runtime`, layout, expectedMaps),
+    waste: reqInt(o.waste, `${path}.waste`),
+  };
 }
 
 function parseAuthorityPayload(v: unknown, path = "authority"): AuthorityPayload {
@@ -795,13 +851,9 @@ function parseGameState(v: unknown): GameState {
       throw new SaveError(`fog[${i}]: length ${fog[i]?.length ?? 0} !== ${expectedCells}`);
     }
   }
-  const factory = parseNullableFactory(o.factory);
-  if (o.factoryState !== null && factory === null) {
-    throw new SaveError("factoryState: runtime requires a factory layout");
-  }
-  const factorySnapshot = o.factoryState === null || factory === null
-    ? null
-    : parseFactoryState(o.factoryState, "factoryState", factory, genOptions.nMaps);
+  const research = parseResearchFacility(o.research, genOptions.nMaps);
+  const pilot = parsePilotFacility(o.pilot);
+  const production = parseProductionFacility(o.production, genOptions.nMaps);
   const parsed: GameState = {
     origin,
     intentTrace,
@@ -809,26 +861,43 @@ function parseGameState(v: unknown): GameState {
     genOptions,
     economy: parseEconomy(o.economy, genOptions.diseaseCount),
     patents: parsePatents(o.patents),
-    recipe: o.recipe === null ? null : parseTemplate(o.recipe, "recipe"),
-    factory,
-    factoryState: null,
-    factoryWaste: reqInt(o.factoryWaste, "factoryWaste"),
+    research,
+    pilot,
+    production: {
+      layout: production.layout,
+      contract: production.contract,
+      runtime: null,
+      waste: production.waste,
+    },
     inventory: parseInventory(o.inventory, genOptions.nMaps),
     nextInventoryId: reqInt(o.nextInventoryId, "nextInventoryId"),
     fog,
     rng: parseRng(o.rng),
   };
   try {
-    if (factorySnapshot === null) {
+    if (production.snapshot === null) {
       return validateGameState(parsed);
     }
-    if (factory === null) throw new Error("factory runtime requires a factory layout");
-    validateFactoryLayout(parsed, factory);
-    validateFactorySnapshot(factorySnapshot, factory, genOptions.nMaps);
+    if (production.layout === null) throw new Error("Production runtime requires a layout");
+    validateFactoryLayout(parsed, production.layout);
+    validateFactorySnapshot(
+      production.snapshot,
+      production.layout,
+      genOptions.nMaps,
+      "production.runtime",
+    );
     const level = generate(genOptions);
     const game: GameState = {
       ...parsed,
-      factoryState: restoreFactory(factory, level.mm, level.start, factorySnapshot),
+      production: {
+        ...parsed.production,
+        runtime: restoreFactory(
+          production.layout,
+          level.mm,
+          level.start,
+          production.snapshot,
+        ),
+      },
     };
     return validateGameState(game);
   } catch (error) {
@@ -847,7 +916,10 @@ export const serializeGame: SerializeGameFn = (g) => {
   }
   const game = {
     ...g,
-    factoryState: g.factoryState === null ? null : snapshotFactory(g.factoryState),
+    production: {
+      ...g.production,
+      runtime: g.production.runtime === null ? null : snapshotFactory(g.production.runtime),
+    },
   };
   const envelope: SaveEnvelope = { version: SAVE_VERSION, game };
   const serialized = canonical(envelope);
@@ -918,7 +990,7 @@ function computeAuthorityWork(
   let computedReplayTicks = 0;
   for (let index = 0; index < intentTrace.length; index++) {
     const intent = intentTrace[index]!;
-    if (intent.kind !== "factoryTicks") continue;
+    if (intent.kind !== "productionTicks") continue;
     if (intent.ticks <= 0 || intent.ticks > MAX_REPLAY_TICKS - computedReplayTicks) {
       throw new SaveError(
         `${path}.intentTrace[${index}].ticks: cumulative replay work exceeds ` +
@@ -1047,7 +1119,10 @@ export const serializeSlots = (states: readonly GameState[]): string => {
     }
     return {
       ...state,
-      factoryState: state.factoryState === null ? null : snapshotFactory(state.factoryState),
+      production: {
+        ...state.production,
+        runtime: state.production.runtime === null ? null : snapshotFactory(state.production.runtime),
+      },
     };
   });
   const envelope = { version: SAVE_VERSION, slots };

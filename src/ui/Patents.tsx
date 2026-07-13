@@ -1,10 +1,10 @@
 /**
- * HexaPharma — the Patents tab (Phase 3 talent tree).
+ * HexaPharma — the Technology drawer (Phase 3 patent tree).
  *
  * Lists DEFAULT_PATENTS with cost / locked / affordable state. Unlocking calls the
  * patent sim (`unlockPatent`, which spends cash); the unlockMap patent additionally
  * asks the Game to regenerate a deeper level. Active effects are summarized via
- * `activeEffects`. No unlock logic is reimplemented — the Shop/Patents only CALL sim.
+ * `activeEffects`. No unlock logic is reimplemented — Market/Technology only call sim.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { EconomyState, PatentState } from "../sim/phase0_interfaces";
@@ -81,7 +81,7 @@ export function Patents({ active, economy, patents, onUnlock }: PatentsProps) {
         <h1>Patent Lattice</h1>
         <p>Invest cash and R&amp;D to unlock machines, factory capacity, exploration aids, and deeper maps.</p>
         <div data-testid="patents-effects" className="effects-strip">
-          <span>Factory +{eff.factoryDw}w +{eff.factoryDh}h</span>
+          <span>Facility floors +{eff.factoryDw}w +{eff.factoryDh}h</span>
           <span>Reveal +{eff.revealAid}</span>
           <span>Machines {eff.unlockedMachines.length}</span>
           <span>Deep map {eff.newMapUnlocked ? "online" : "locked"}</span>
@@ -95,8 +95,8 @@ export function Patents({ active, economy, patents, onUnlock }: PatentsProps) {
           <div role="alertdialog" aria-modal="true" aria-label="Confirm deeper level reset" data-testid="patent-confirmation" className="game-modal">
             <div className="warning-mark" aria-hidden="true">!</div>
             <h2>Start a deeper level?</h2>
-            <p>This permanently clears the saved recipe, factory layout and runtime, factory waste, inventory, explored fog, and disease sales history.</p>
-            <p>Cash and R&amp;D after the cost, patents, and the next inventory ID remain.</p>
+            <p>This permanently clears Research, Pilot Plant, Production runtime and waste, inventory, explored fog, and disease sales history.</p>
+            <p>Cash and Knowledge after the cost, technologies, and the next inventory ID remain.</p>
             <div className="modal-actions">
             <button
               ref={confirmRef}

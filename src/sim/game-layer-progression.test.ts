@@ -30,11 +30,9 @@ describe("ingredient-layer progression", () => {
         orientation: { rot: 0 as const, flip: false },
       }],
     };
-    expect(() => applyGameIntent(game, { kind: "runLab", template })).toThrow(/phase exchange.*layer/i);
     expect(() => applyGameIntent(game, {
-      kind: "saveRecipe",
-      recipe: template,
-      factory: compileEntitledPrototype(
+      kind: "setResearchLayout",
+      layout: compileEntitledPrototype(
         template,
         BASE_GAME_FACTORY_WIDTH,
         BASE_GAME_FACTORY_HEIGHT,

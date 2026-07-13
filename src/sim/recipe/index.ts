@@ -209,7 +209,7 @@ export interface CompiledPrototype {
 
 function emptyFactoryTiles(width: number, height: number): FactoryTile[] {
   if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 3 || height < 3) {
-    throw new Error("compilePrototype: bench dimensions must be safe integers >= 3");
+    throw new Error("compilePrototype: floor dimensions must be safe integers >= 3");
   }
   const tiles: FactoryTile[] = [];
   for (let cell = 0; cell < width * height; cell++) tiles.push({ kind: "empty" });
@@ -221,7 +221,7 @@ function inside(width: number, height: number, point: Vec2): boolean {
 }
 
 /**
- * Route a real pilot-bench prototype through player-owned machine anchors. The returned
+ * Route a physical prototype floor through player-owned machine anchors. The returned
  * layout is already a valid FactoryLayout and is transferred byte-for-byte to Factory;
  * no later packing pass is required.
  */
@@ -258,7 +258,7 @@ export function compilePrototype(
     const cells = worldCells(machine);
     for (const cell of cells) {
       if (!inside(width, height, cell)) {
-        throw new Error(`compilePrototype: machine ${index} extends outside the pilot bench`);
+        throw new Error(`compilePrototype: machine ${index} extends outside the prototype floor`);
       }
       const cellIndex = at(width, cell.x, cell.y);
       if (blocked[cellIndex]) {
@@ -280,7 +280,7 @@ export function compilePrototype(
       y: output.y + (DIR_DY[output.side] ?? 0),
     };
     if (!inside(width, height, inApproach) || !inside(width, height, outExit)) {
-      throw new Error(`compilePrototype: machine ${index} port faces outside the pilot bench`);
+      throw new Error(`compilePrototype: machine ${index} port faces outside the prototype floor`);
     }
     placed.push({
       machine,
@@ -300,7 +300,7 @@ export function compilePrototype(
   let routeFinalDir: Dir = E;
   function routeAndLay(from: Vec2, to: Vec2): void {
     if (!inside(width, height, from) || !inside(width, height, to)) {
-      throw new Error("compilePrototype: a route endpoint lies outside the pilot bench");
+      throw new Error("compilePrototype: a route endpoint lies outside the prototype floor");
     }
     const fromIndex = at(width, from.x, from.y);
     const toIndex = at(width, to.x, to.y);
@@ -378,27 +378,90 @@ function machineStep(placed: PlacedMachine): Machine {
   };
 }
 
+export interface LinearRoutePort {
+  readonly position: Vec2;
+  readonly side: Dir;
+}
+
+export interface LinearRouteSourceNode {
+  readonly kind: "source";
+  readonly position: Vec2;
+  readonly exitDir: Dir;
+}
+
+export interface LinearRouteMachineNode {
+  readonly kind: "machine";
+  readonly position: Vec2;
+  readonly machineId: number;
+  readonly input: LinearRoutePort;
+  readonly output: LinearRoutePort;
+}
+
+export interface LinearRouteSinkNode {
+  readonly kind: "sink";
+  readonly position: Vec2;
+  readonly enterDir: Dir;
+}
+
+export type LinearRouteNode =
+  | LinearRouteSourceNode
+  | LinearRouteMachineNode
+  | LinearRouteSinkNode;
+
 /**
- * Derive the effect recipe from one physical, acyclic source-to-sink prototype.
- * Pilot benches intentionally reject branches, mergers, loops, disconnected machines,
- * and ambiguous ports; those industrial concerns belong to Factory after transfer.
+ * One belt run between consecutive route nodes. `cells` includes the upstream
+ * source/output-port cell, every traversed belt cell, and the downstream
+ * input-port/sink cell. Machine interiors are deliberately not invented here.
  */
-export function derivePrototypeTemplate(layout: FactoryLayout): Template {
+export interface LinearRouteSegment {
+  readonly fromNodeIndex: number;
+  readonly toNodeIndex: number;
+  readonly cells: readonly Vec2[];
+}
+
+export interface LinearRoute {
+  readonly machineIds: readonly number[];
+  readonly template: Template;
+  readonly nodes: readonly LinearRouteNode[];
+  readonly segments: readonly LinearRouteSegment[];
+}
+
+function freezeLinearRoute<T>(value: T): T {
+  if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
+    for (const child of Object.values(value as Record<string, unknown>)) {
+      freezeLinearRoute(child);
+    }
+    Object.freeze(value);
+  }
+  return value;
+}
+
+/**
+ * Describe one physical, acyclic source-to-sink route. The returned machine ids,
+ * effect template, physical nodes, and belt segments are all ordered by actual
+ * connectivity rather than by `layout.machines`, and the complete result is frozen.
+ */
+export function deriveLinearRoute(layout: FactoryLayout): LinearRoute {
+  if (!Number.isSafeInteger(layout.width) || !Number.isSafeInteger(layout.height) ||
+      layout.width < 1 || layout.height < 1 ||
+      layout.tiles.length !== layout.width * layout.height) {
+    throw new Error("Research route: layout dimensions and tile count must agree");
+  }
   let source: { readonly x: number; readonly y: number; readonly dir: Dir } | null = null;
   let sinks = 0;
   for (let index = 0; index < layout.tiles.length; index++) {
     const tile = layout.tiles[index];
     if (tile?.kind === "splitter" || tile?.kind === "merger") {
-      throw new Error("pilot prototype: splitters and mergers are Factory-only");
+      throw new Error("Research route: splitters and mergers are not allowed");
     }
     if (tile?.kind === "source") {
-      if (source !== null) throw new Error("pilot prototype: exactly one source is required");
+      if (source !== null) throw new Error("Research route: exactly one source is required");
       source = { x: index % layout.width, y: Math.floor(index / layout.width), dir: tile.dir };
     }
     if (tile?.kind === "sink") sinks++;
   }
   if (source === null || sinks !== 1) {
-    throw new Error("pilot prototype: exactly one source and one analyzer sink are required");
+    throw new Error("Research route: exactly one source and one analyzer sink are required");
   }
 
   const area = layout.width * layout.height;
@@ -406,24 +469,37 @@ export function derivePrototypeTemplate(layout: FactoryLayout): Template {
   const outputX = new Int32Array(layout.machines.length);
   const outputY = new Int32Array(layout.machines.length);
   const outputSide = new Int8Array(layout.machines.length);
+  const machineIds = new Set<number>();
   for (let slot = 0; slot < layout.machines.length; slot++) {
     const machine = layout.machines[slot]!;
+    if (machineIds.has(machine.id)) {
+      throw new Error("Research route: every placed machine needs a unique machine id");
+    }
+    machineIds.add(machine.id);
     for (const port of worldInPorts(machine)) {
       if (port.x < 0 || port.y < 0 || port.x >= layout.width || port.y >= layout.height) {
-        throw new Error("pilot prototype: machine input lies outside the bench");
+        throw new Error("Research route: machine input lies outside the floor");
       }
       const moveDir = ((port.side + 2) & 3) as Dir;
       const key = (at(layout.width, port.x, port.y) * 4) + moveDir;
       inputOwner[key] = inputOwner[key] === 0 ? slot + 1 : -1;
     }
     const outputs = worldOutPorts(machine);
-    if (outputs.length !== 1) throw new Error("pilot prototype: each machine needs one output port");
+    if (outputs.length !== 1) throw new Error("Research route: each machine needs one output port");
     outputX[slot] = outputs[0]!.x;
     outputY[slot] = outputs[0]!.y;
     outputSide[slot] = outputs[0]!.side;
   }
 
   const steps: Machine[] = [];
+  const orderedMachineIds: number[] = [];
+  const nodes: LinearRouteNode[] = [{
+    kind: "source",
+    position: { x: source.x, y: source.y },
+    exitDir: source.dir,
+  }];
+  const segments: LinearRouteSegment[] = [];
+  let segmentCells: Vec2[] = [{ x: source.x, y: source.y }];
   const usedMachines = new Uint8Array(layout.machines.length);
   const visited = new Uint8Array(area * 4);
   const visitedBelts = new Uint8Array(area);
@@ -434,21 +510,41 @@ export function derivePrototypeTemplate(layout: FactoryLayout): Template {
   const maxHops = layout.width * layout.height + layout.machines.length + 1;
   for (let hop = 0; hop < maxHops; hop++) {
     if (x < 0 || y < 0 || x >= layout.width || y >= layout.height) {
-      throw new Error("pilot prototype: route leaves the bench before reaching the analyzer");
+      throw new Error("Research route: route leaves the floor before reaching the analyzer");
     }
     const stateKey = (at(layout.width, x, y) * 4) + moveDir;
-    if (visited[stateKey] === 1) throw new Error("pilot prototype: route contains a cycle");
+    if (visited[stateKey] === 1) throw new Error("Research route: route contains a cycle");
     visited[stateKey] = 1;
 
     const owner = inputOwner[stateKey] ?? 0;
-    if (owner < 0) throw new Error("pilot prototype: route has an ambiguous machine input");
+    if (owner < 0) throw new Error("Research route: route has an ambiguous machine input");
     if (owner > 0) {
       const slot = owner - 1;
       const machine = layout.machines[slot]!;
-      if (usedMachines[slot] === 1) throw new Error("pilot prototype: route revisits a machine");
+      if (usedMachines[slot] === 1) throw new Error("Research route: route revisits a machine");
       usedMachines[slot] = 1;
       usedMachineCount++;
       steps.push(machineStep(machine));
+      orderedMachineIds.push(machine.id);
+      segmentCells.push({ x, y });
+      const inputSide = ((moveDir + 2) & 3) as Dir;
+      const output = {
+        position: { x: outputX[slot] ?? 0, y: outputY[slot] ?? 0 },
+        side: (outputSide[slot] ?? 0) as Dir,
+      };
+      segments.push({
+        fromNodeIndex: nodes.length - 1,
+        toNodeIndex: nodes.length,
+        cells: segmentCells,
+      });
+      nodes.push({
+        kind: "machine",
+        position: { x, y },
+        machineId: machine.id,
+        input: { position: { x, y }, side: inputSide },
+        output,
+      });
+      segmentCells = [{ x: output.position.x, y: output.position.y }];
       moveDir = (outputSide[slot] ?? 0) as Dir;
       x = (outputX[slot] ?? 0) + (DIR_DX[moveDir] ?? 0);
       y = (outputY[slot] ?? 0) + (DIR_DY[moveDir] ?? 0);
@@ -458,25 +554,46 @@ export function derivePrototypeTemplate(layout: FactoryLayout): Template {
     const cellIndex = at(layout.width, x, y);
     const tile = layout.tiles[cellIndex];
     if (tile?.kind === "sink") {
+      segmentCells.push({ x, y });
+      segments.push({
+        fromNodeIndex: nodes.length - 1,
+        toNodeIndex: nodes.length,
+        cells: segmentCells,
+      });
+      nodes.push({ kind: "sink", position: { x, y }, enterDir: moveDir });
       if (usedMachineCount !== layout.machines.length) {
-        throw new Error("pilot prototype: every placed machine must belong to the source-to-sink route");
+        throw new Error("Research route: every placed machine must belong to the source-to-sink route");
       }
       for (let tileIndex = 0; tileIndex < layout.tiles.length; tileIndex++) {
         if (layout.tiles[tileIndex]?.kind === "belt" && visitedBelts[tileIndex] !== 1) {
-          throw new Error("pilot prototype: every belt must belong to the source-to-sink route");
+          throw new Error("Research route: every belt must belong to the source-to-sink route");
         }
       }
-      return { steps };
+      return freezeLinearRoute({
+        machineIds: orderedMachineIds,
+        template: { steps },
+        nodes,
+        segments,
+      });
     }
     if (tile?.kind !== "belt") {
-      throw new Error("pilot prototype: route is broken before reaching the analyzer");
+      throw new Error("Research route: route is broken before reaching the analyzer");
     }
     visitedBelts[cellIndex] = 1;
+    segmentCells.push({ x, y });
     moveDir = tile.dir;
     x += DIR_DX[moveDir] ?? 0;
     y += DIR_DY[moveDir] ?? 0;
   }
-  throw new Error("pilot prototype: route exceeds the acyclic traversal bound");
+  throw new Error("Research route: route exceeds the acyclic traversal bound");
+}
+
+/**
+ * Compatibility view for callers that only need effect semantics. Physical
+ * connectivity remains the sole authority through `deriveLinearRoute`.
+ */
+export function derivePrototypeTemplate(layout: FactoryLayout): Template {
+  return deriveLinearRoute(layout).template;
 }
 
 function straightPrototypePlacements(

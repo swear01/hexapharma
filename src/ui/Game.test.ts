@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { catalogForLayers, defaultGenOptions } from "./Game";
-import { DEFAULT_CATALOG } from "../sim/phase0_interfaces";
+import { catalogForLayers, defaultGenOptions, researchTrailsForLayout } from "./Game";
+import { BASE_GAME_FACTORY_HEIGHT, BASE_GAME_FACTORY_WIDTH, DEFAULT_CATALOG } from "../sim/phase0_interfaces";
 import { MAX_GAME_MAP_CELLS, MAX_GAME_MAP_DIMENSION } from "../sim/phase0_interfaces";
+import { generate } from "../sim/mapgen";
+import { compileEntitledPrototype } from "../sim/recipe";
 
 describe("default Lab world options", () => {
   it("starts a new run on one large odd-sized map", () => {
@@ -34,5 +36,20 @@ describe("default Lab world options", () => {
   it("keeps phase exchange locked until both addressed layers exist", () => {
     expect(catalogForLayers(DEFAULT_CATALOG, 1).map((entry) => entry.typeId)).not.toContain("swap01");
     expect(catalogForLayers(DEFAULT_CATALOG, 2).map((entry) => entry.typeId)).toContain("swap01");
+  });
+
+  it("derives the completed Research sweep trail from the physical route", () => {
+    const level = generate(defaultGenOptions(14));
+    const layout = compileEntitledPrototype(
+      level.diseases[0]!.reference,
+      BASE_GAME_FACTORY_WIDTH,
+      BASE_GAME_FACTORY_HEIGHT,
+    ).layout;
+
+    const trails = researchTrailsForLayout(level.mm, level.start, layout, 1);
+
+    expect(trails).toHaveLength(1);
+    expect(trails[0]!.length).toBeGreaterThan(1);
+    expect(trails[0]![0]).toEqual(level.start.pos[0]);
   });
 });

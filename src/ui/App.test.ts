@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { EffectMap, MultiMap } from "../sim/phase0_interfaces";
-import { recipeCandidateFailedAtInsertion, validateLabFogAuthority, withFog } from "./App";
+import { validateLabFogAuthority, withFog } from "./App";
 
 function map(size: number): EffectMap {
   return {
@@ -27,19 +27,11 @@ describe("Lab fog authority", () => {
     expect(validateLabFogAuthority(mm, [new Uint8Array(8)])).toMatch(/layer A/i);
   });
 
-  it("creates a fully revealed render copy without mutating persistent fog", () => {
+  it("overlays the authoritative persistent fog without a reveal-all bypass", () => {
     const fog = new Uint8Array(9);
-    const rendered = withFog(mm, [fog], true);
-    expect([...rendered.maps[0]!.fog]).toEqual(new Array(9).fill(1));
-    expect([...fog]).toEqual(new Array(9).fill(0));
-  });
-});
-
-describe("Recipe candidate failure marker", () => {
-  it("marks only a held machine that itself fails at its active insertion slot", () => {
-    expect(recipeCandidateFailedAtInsertion(1, 1, 1)).toBe(true);
-    expect(recipeCandidateFailedAtInsertion(0, 1, 0)).toBe(false);
-    expect(recipeCandidateFailedAtInsertion(2, 1, 2)).toBe(false);
-    expect(recipeCandidateFailedAtInsertion(1, 1, null)).toBe(false);
+    fog[4] = 1;
+    const rendered = withFog(mm, [fog]);
+    expect([...rendered.maps[0]!.fog]).toEqual([0, 0, 0, 0, 1, 0, 0, 0, 0]);
+    expect([...fog]).toEqual([0, 0, 0, 0, 1, 0, 0, 0, 0]);
   });
 });

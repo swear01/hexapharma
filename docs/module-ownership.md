@@ -13,14 +13,17 @@
 | solver | `src/sim/solver/` | integrator（agent 交付） | ✅ 完成（INV-13） |
 | mapgen | `src/sim/mapgen/` | integrator（agent 交付） | ✅ 完成（INV-9..12 + exact BigInt rational pricing + GenOptions/catalog authority） |
 | factory-sim | `src/sim/factory-sim/` | integrator（agent 交付） | ✅ 完成（strict SoA zero-allocation / layout+MultiMap identity / routing+cursors / cold snapshot / 100,000-tick + 100,000,000-work pre-init diagnostic bound / throughput deadlock語意） |
-| recipe | `src/sim/recipe/` | integrator（agent 交付） | ✅ 完成（模板→產線 + 重排不變 INV-7） |
+| recipe | `src/sim/recipe/` | integrator（agent 交付） | ✅ 完成（layout-derived linear route descriptor） |
 | state.ts | `src/sim/state.ts` | integrator（agent 交付） | ✅ 完成（hashFactory / replayFactory，INV-15） |
-| whole-game state | `src/sim/game.ts`, `src/sim/replay-work.ts`, `src/sim/phase0_interfaces.ts` | integrator（agent 交付） | ✅ 完成（owned/frozen authority inputs、Game map≤64/side/≤4,096、預設1×63中心fog、base factory entitlement、origin + normalized 100,000-tick/100,000,000-work trace/replay/hash、per-intent runtime ownership clone、24,500 physical inventory、declared-origin validator） |
-| economy | `src/sim/economy/` | integrator（agent 交付） | ✅ 完成（遞減定價 + 實際成本/副作用 + R&D + 帳務守恆） |
-| save | `src/sim/save/` | integrator（agent 交付） | ✅ 完成（同 build full/compact raw-work preflight；single 100,000,000；serialize/deserializeSlots共用12,000/8,192/100,000,000 aggregate；storage-layout legacy replay-before-work封堵；不負責跨 build migration） |
-| patent | `src/sim/patent/` | integrator（agent 交付） | ✅ 完成（frozen tree；invalid authority rejection；activeEffects checked aggregate overflow；cash+R&D、鎖機/擴廠/揭霧、1→2→3→4 reset含`deep-map-4`） |
-| render | `src/render/`、`public/assets/lab/` | integrator（agent 交付） | ✅ 完成（Lab固定704×512 active-layer viewport/culling、cyan route + orange dashed candidate/ghost、camera helpers、原創biochemical atlas + SoA Factory renderer、safe teardown） |
-| ui | `src/ui/` | integrator（agent 交付） | 🔧 Phase 4（Lab camera/layers、Pilot auto-layout/move/rotate、preview/fog mask/SVG icons、Factory direct editor、checkpoint lineage/recovery與真人 :53346 已完成；Bench直接增刪／belt/history/ghost、雙向高亮與唯讀derived timeline待完成） |
+| whole-game state | `src/sim/game.ts`, `src/sim/phase0_interfaces.ts` | integrator | ✅ 完成（Research／Pilot／Production 三場域） |
+| replay work | `src/sim/replay-work.ts` | integrator（agent 交付） | ✅ 完成（三場域 intents/work preflight） |
+| economy | `src/sim/economy/` | integrator（agent 交付） | ✅ 完成（遞減定價 + 實際成本/副作用 + Knowledge + 帳務守恆） |
+| save | `src/sim/save/` | integrator（agent 交付） | ✅ 完成（Save v5 三場域 breaking schema） |
+| patent | `src/sim/patent/` | integrator（agent 交付） | ✅ 完成（cash+Knowledge、機器/擴廠/揭霧、1→2→3→4 reset） |
+| render | `src/render/`、`public/assets/lab/` | integrator（agent 交付） | ✅ 完成（origin-centered grid、無XY軸、語意 machine glyph） |
+| ui shell/workspaces | `src/ui/`（不含 checkpoint storage） | integrator | ✅ 完成（三場域 world-first UI／Blueprint Library） |
+| checkpoint storage | `src/ui/checkpointStorage.ts`, `src/ui/checkpointStorage.test.ts` | integrator（agent 交付） | ✅ 完成（三場域 intent/state） |
+| blueprint portable format | `src/blueprint/` | integrator（agent 交付） | ✅ 完成（v1 strict codec/content fingerprint/storage/property tests） |
 
 ## 規則
 

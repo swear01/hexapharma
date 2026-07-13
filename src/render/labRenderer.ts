@@ -102,21 +102,22 @@ function featureTexture(textures: LabTextures, kind: number): Texture | null {
 
 function drawGridKind(
   grid: Graphics,
-  kind: Exclude<LabGridLineKind, "origin">,
+  kind: LabGridLineKind,
   camera: LabCamera,
   bounds: ReturnType<typeof visibleLabCells>,
+  origin: Vec2,
 ): void {
   const topLeft = cellScreen(camera, bounds.x0, bounds.y0);
   const bottomRight = cellScreen(camera, bounds.x1, bounds.y1);
   let drewLine = false;
   for (let x = bounds.x0; x <= bounds.x1; x++) {
-    if (labGridKindForBoundary(x) !== kind) continue;
+    if (labGridKindForBoundary(x, origin.x) !== kind) continue;
     const screen = cellScreen(camera, x, bounds.y0);
     grid.moveTo(screen.x, topLeft.y).lineTo(screen.x, bottomRight.y);
     drewLine = true;
   }
   for (let y = bounds.y0; y <= bounds.y1; y++) {
-    if (labGridKindForBoundary(y) !== kind) continue;
+    if (labGridKindForBoundary(y, origin.y) !== kind) continue;
     const screen = cellScreen(camera, bounds.x0, y);
     grid.moveTo(topLeft.x, screen.y).lineTo(bottomRight.x, screen.y);
     drewLine = true;
@@ -126,22 +127,8 @@ function drawGridKind(
 
 function drawLabGrid(map: EffectMap, camera: LabCamera, grid: Graphics): void {
   const bounds = visibleLabCells(camera, LAB_VIEWPORT, map);
-  drawGridKind(grid, "minor", camera, bounds);
-  drawGridKind(grid, "major", camera, bounds);
-
-  const cell = LAB_CELL_PIXELS * camera.zoom;
-  const topLeft = cellScreen(camera, bounds.x0, bounds.y0);
-  const bottomRight = cellScreen(camera, bounds.x1, bounds.y1);
-  const origin = cellScreen(camera, map.origin.x, map.origin.y);
-  const style = labGridLineStyle("origin", camera.zoom);
-  if (map.origin.x >= bounds.x0 && map.origin.x < bounds.x1) {
-    const x = origin.x + cell / 2;
-    grid.moveTo(x, topLeft.y).lineTo(x, bottomRight.y).stroke(style);
-  }
-  if (map.origin.y >= bounds.y0 && map.origin.y < bounds.y1) {
-    const y = origin.y + cell / 2;
-    grid.moveTo(topLeft.x, y).lineTo(bottomRight.x, y).stroke(style);
-  }
+  drawGridKind(grid, "minor", camera, bounds, map.origin);
+  drawGridKind(grid, "major", camera, bounds, map.origin);
 }
 
 function drawVisibleMap(

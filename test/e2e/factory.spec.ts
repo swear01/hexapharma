@@ -1,183 +1,278 @@
-import { test, expect, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { applyGameIntent, createGameState } from "../../src/sim/game";
 import { generate } from "../../src/sim/mapgen";
-import { serializeGame } from "../../src/sim/save";
-import { defaultGenOptions } from "../../src/ui/Game";
 import { compileEntitledPrototype } from "../../src/sim/recipe";
+import { serializeGame } from "../../src/sim/save";
+import { worldCells } from "../../src/sim/factory-geom";
+import { defaultGenOptions } from "../../src/ui/Game";
 import {
   BASE_GAME_FACTORY_HEIGHT,
   BASE_GAME_FACTORY_WIDTH,
+  DEFAULT_CATALOG,
+  DEFAULT_SHAPES,
+  IDENTITY,
+  type FactoryLayout,
+  type PlacedMachine,
 } from "../../src/sim/phase0_interfaces";
 
 test.setTimeout(60_000);
 
-const analysisOptions = defaultGenOptions(14);
-const analysisRecipe = generate(analysisOptions).diseases[0]!.reference;
-let analysisGame = createGameState(analysisOptions, 200, 0);
-analysisGame = applyGameIntent(analysisGame, {
-  kind: "saveRecipe",
-  recipe: analysisRecipe,
-  factory: compileEntitledPrototype(
-    analysisRecipe,
+function productionSave(): string {
+  const options = defaultGenOptions(14);
+  const template = generate(options).diseases[0]!.reference;
+  const layout = compileEntitledPrototype(
+    template,
     BASE_GAME_FACTORY_WIDTH,
     BASE_GAME_FACTORY_HEIGHT,
-  ).layout,
-});
-const analysisBelt = analysisGame.factory!.tiles.findIndex((tile) => tile.kind === "belt");
-if (analysisBelt < 0) throw new Error("analysis fixture has no belt to erase");
-const analysisSave = serializeGame(analysisGame);
-
-/** Parse the "num/den" throughput rate shown in the status bar into a number. */
-async function rate(page: Page): Promise<number> {
-  const txt = (await page.getByTestId("factory-rate").textContent())?.trim() ?? "0";
-  const m = /^(-?\d+)\s*\/\s*(\d+)$/.exec(txt);
-  if (!m) return Number(txt);
-  return Number(m[1]) / Number(m[2]);
+  ).layout;
+  let game = createGameState(options, 10_000, 100);
+  game = applyGameIntent(game, { kind: "setResearchLayout", layout });
+  game = applyGameIntent(game, { kind: "beginResearchShot" });
+  while (game.research.shot !== null) {
+    game = applyGameIntent(game, { kind: "advanceResearchShot" });
+  }
+  game = applyGameIntent(game, { kind: "sendResearchToPilot" });
+  game = applyGameIntent(game, { kind: "sendPilotToProduction" });
+  return serializeGame(game);
 }
 
-test("HexaPharma Factory runs the belt sim and produces units", async ({ page }) => {
+function plannedResearchSave(): string {
+  const options = defaultGenOptions(14);
+  const template = generate(options).diseases[0]!.reference;
+  const layout = compileEntitledPrototype(
+    template,
+    BASE_GAME_FACTORY_WIDTH,
+    BASE_GAME_FACTORY_HEIGHT,
+  ).layout;
+  let game = createGameState(options, 10_000, 100);
+  game = applyGameIntent(game, { kind: "setResearchLayout", layout });
+  return serializeGame(game);
+}
+
+function machineGallerySave(): string {
+  let game = createGameState(defaultGenOptions(14), 1_000_000, 100_000);
+  for (const id of ["bench-2", "skew-unlock", "dilute-unlock", "new-map"]) {
+    game = applyGameIntent(game, { kind: "unlockPatent", id });
+  }
+  const anchors = [
+    { x: 1, y: 1 },
+    { x: 5, y: 1 },
+    { x: 11, y: 1 },
+    { x: 15, y: 1 },
+    { x: 1, y: 6 },
+    { x: 7, y: 6 },
+    { x: 13, y: 6 },
+  ];
+  const machines: PlacedMachine[] = DEFAULT_CATALOG.map((entry, index) => ({
+    id: index,
+    def: {
+      typeId: entry.typeId,
+      transform: entry.transform,
+      orientation: IDENTITY,
+      cost: entry.cost,
+      speed: entry.speed,
+    },
+    anchor: anchors[index]!,
+    footRot: 0,
+    shape: DEFAULT_SHAPES[entry.typeId]!,
+  }));
+  const width = BASE_GAME_FACTORY_WIDTH + 2;
+  const height = BASE_GAME_FACTORY_HEIGHT;
+  const layout: FactoryLayout = {
+    width,
+    height,
+    tiles: Array.from({ length: width * height }, () => ({ kind: "empty" as const })),
+    machines,
+  };
+  game = applyGameIntent(game, { kind: "setPilotLayout", layout });
+  return serializeGame(game);
+}
+
+async function loadProduction(page: import("@playwright/test").Page): Promise<void> {
+  const blob = productionSave();
   await page.goto("/");
-
-  // Switch to the Factory view.
-  await page.getByTestId("view-factory").click();
-
-  // Heading + canvas + run controls present.
-  await expect(page.getByRole("heading", { name: /HexaPharma Factory/i })).toBeVisible();
-  const canvas = page.locator("[data-testid='factory-canvas'] canvas");
-  await expect(canvas).toBeVisible();
-  await expect(page.getByTestId("factory-play")).toBeVisible();
-  await expect(page.getByTestId("factory-step")).toBeVisible();
-  await expect(page.getByTestId("factory-reset")).toBeVisible();
-
-  // The default line reports a real machine bottleneck (id + type) and a rate.
-  await expect(page.getByTestId("factory-bottleneck")).toContainText(/#\d+\s*\(/);
-  await expect(page.getByTestId("factory-rate")).toHaveText(/^\d+\/\d+$/);
-
-  const tick = page.getByTestId("factory-tick");
-  await expect(tick).toHaveText("0");
-
-  // Step several times: the tick counter advances.
-  for (let i = 0; i < 6; i++) await page.getByTestId("factory-step").click();
-  await expect(tick).toHaveText("6");
-
-  // Play advances the sim on a timer; a unit reaches the sink and produced climbs.
-  await page.getByTestId("factory-play").click();
-  await expect(page.getByTestId("factory-produced")).not.toHaveText("0", { timeout: 10_000 });
-  await page.getByTestId("factory-pause").click();
-
-  // Reset returns the tick to 0.
-  await page.getByTestId("factory-reset").click();
-  await expect(tick).toHaveText("0");
-
-  await page.screenshot({ path: "test/e2e/__screenshots__/factory.png", fullPage: true });
-  await expect(page).toHaveScreenshot("factory-reset.png", {
-    fullPage: true,
-    animations: "disabled",
-  });
-});
-
-test("a divergent factory reports bounded-analysis errors without crashing React", async ({ page }) => {
-  const pageErrors: Error[] = [];
-  page.on("pageerror", (error) => pageErrors.push(error));
-  await page.goto("/");
-  await page.evaluate((blob) => localStorage.setItem("hexapharma.save.slot.0", blob), analysisSave);
+  await page.evaluate((save) => localStorage.setItem("hexapharma.save.slot.0", save), blob);
   await page.reload();
   await page.getByTestId("load").click();
-  await page.getByTestId("view-factory").click();
-  const canvas = page.locator("[data-testid='factory-canvas'] canvas");
-  await expect(canvas).toBeVisible();
-  const width = analysisGame.factory!.width;
-  const x = analysisBelt % width;
-  const y = Math.floor(analysisBelt / width);
-  await page.getByTestId("brush-erase").click();
-  await canvas.click({ position: { x: 12 + x * 42 + 21, y: 12 + y * 42 + 21 } });
+  await page.getByTestId("view-production").click();
+}
 
-  await expect(page.getByTestId("factory-analysis-error")).toBeVisible();
-  expect(pageErrors).toEqual([]);
+async function expectPilotMachineAboveToolbelt(page: import("@playwright/test").Page): Promise<void> {
+  const pilotCanvas = page.getByTestId("pilot-facility-workspace").getByTestId("factory-canvas");
+  const canvasBox = await pilotCanvas.locator("canvas").boundingBox();
+  const frameBox = await pilotCanvas.boundingBox();
+  const toolbeltBox = await page.locator(".facility-pilot .toolbelt").boundingBox();
+  const machine = compileEntitledPrototype(
+    generate(defaultGenOptions(14)).diseases[0]!.reference,
+    BASE_GAME_FACTORY_WIDTH,
+    BASE_GAME_FACTORY_HEIGHT,
+  ).layout.machines[0]!;
+  const cells = worldCells(machine);
+  const minY = Math.min(...cells.map((cell) => cell.y));
+  const maxY = Math.max(...cells.map((cell) => cell.y));
+  if (canvasBox === null || frameBox === null || toolbeltBox === null) {
+    throw new Error("compact Pilot canvas chrome has no bounds");
+  }
+  const canvasScale = canvasBox.height / (BASE_GAME_FACTORY_HEIGHT * 42 + 24);
+  const machineCenterY = canvasBox.y + (12 + ((minY + maxY + 1) * 42) / 2) * canvasScale;
+  expect(machineCenterY).toBeGreaterThan(frameBox.y);
+  expect(machineCenterY).toBeLessThan(toolbeltBox.y);
+}
+
+test("the shell exposes exactly three facility pages and drawer utilities", async ({ page }) => {
+  await page.goto("/");
+  await expect(page).toHaveTitle("HexaPharma — Research · Pilot · Production");
+  await expect(page.getByTestId("view-research")).toBeVisible();
+  await expect(page.getByTestId("view-pilot")).toBeVisible();
+  await expect(page.getByTestId("view-production")).toBeVisible();
+  await expect(page.getByTestId("view-market")).toBeVisible();
+  await expect(page.getByTestId("view-technology")).toBeVisible();
+  await expect(page.getByText("Pilot Bench", { exact: true })).toHaveCount(0);
+
+  await page.getByTestId("view-market").click();
+  await expect(page.getByTestId("market-drawer")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("market-drawer")).toHaveCount(0);
 });
 
-test("real parallelism: splitter→two machines→merger out-produces a single machine", async ({ page }) => {
+test("Research separates the large effect atlas from its physical route floor", async ({ page }) => {
   await page.goto("/");
-  await page.getByTestId("view-factory").click();
+  await page.evaluate((save) => localStorage.setItem("hexapharma.save.slot.0", save), plannedResearchSave());
+  await page.reload();
+  await page.getByTestId("load").click();
+  await expect(page.getByTestId("research-atlas")).toBeVisible();
+  await expect(page.getByTestId("lab-map-frame")).toBeVisible();
+  await page.getByTestId("research-show-floor").click();
+  await expect(page.getByTestId("research-workspace")).toBeVisible();
+  await expect(page.getByTestId("factory-canvas").locator("canvas")).toBeVisible();
+  await expect(page.getByText(/No clock · layout edits are free/)).toBeVisible();
+  await expect(page.getByTestId("research-sample-state")).toHaveText("Hidden until Dispense");
+  await expect(page.getByTestId("research-facility-workspace").getByTestId("facility-sample-outcome")).toHaveCount(0);
+  await expect(page.getByTestId("research-command")).toBeEnabled();
+  await page.getByTestId("research-command").click();
+  await expect(page.getByTestId("research-atlas")).toBeVisible();
+  await expect(page.getByTestId("research-command")).toBeDisabled();
+});
 
-  // Load the SINGLE-machine preset (one catalog-speed pull) and read its steady rate.
-  await page.getByTestId("preset-single").click();
-  await expect(page.getByTestId("factory-tick")).toHaveText("0");
-  const single = await rate(page);
-  expect(single).toBeGreaterThan(0);
-
-  // Single preset is machine-limited: one machine is the bottleneck.
-  await expect(page.getByTestId("factory-bottleneck")).toContainText(/#\d+\s*\(/);
-
-  // Load the PARALLEL preset (splitter → two machines → merger) and read its rate.
-  await page.getByTestId("preset-parallel").click();
-  await expect(page.getByTestId("factory-tick")).toHaveText("0");
-  const parallel = await rate(page);
-
-  // Real parallelism: two machines on the same feed beat one (~2×, MEASURED by the sim).
-  expect(parallel).toBeGreaterThan(single * 1.5);
-
-  // And the parallel layout actually produces units when run.
+test("Production runs continuous time, produces units, and resets", async ({ page }) => {
+  await loadProduction(page);
+  await expect(page.getByRole("heading", { name: "Production" })).toBeVisible();
+  await expect(page.getByTestId("production-facility-workspace").locator("canvas")).toBeVisible();
+  await page.locator(".message-layer").evaluate((element) => {
+    (element as HTMLElement).style.visibility = "hidden";
+  });
+  await expect(page).toHaveScreenshot("production-floor-current.png", {
+    animations: "disabled",
+    maxDiffPixelRatio: 0.01,
+    timeout: 15_000,
+  });
+  const tick = page.getByTestId("factory-tick");
+  await expect(tick).toHaveText("0");
+  await page.getByTestId("factory-step").click();
+  await expect(tick).toHaveText("1");
   await page.getByTestId("factory-play").click();
   await expect(page.getByTestId("factory-produced")).not.toHaveText("0", { timeout: 10_000 });
   await page.getByTestId("factory-pause").click();
+  await page.getByTestId("factory-reset").click();
+  await expect(tick).toHaveText("0");
 });
 
-test("Factory editing places a machine + a tile via the palette", async ({ page }) => {
+test("Pilot Plant has free spatial editing and an exact Production transfer command", async ({ page }) => {
+  const blob = productionSave();
   await page.goto("/");
-  await page.getByTestId("view-factory").click();
+  await page.evaluate((save) => localStorage.setItem("hexapharma.save.slot.0", save), blob);
+  await page.reload();
+  await page.getByTestId("load").click();
+  await page.getByTestId("view-pilot").click();
+  await expect(page.getByRole("heading", { name: "Pilot Plant" })).toBeVisible();
+  await expect(page.getByTestId("factory-play")).toHaveCount(0);
+  await expect(page.getByTestId("pilot-command")).toBeEnabled();
+  await page.getByTestId("pilot-command").click();
+  await expect(page.getByRole("heading", { name: "Production" })).toBeVisible();
+});
 
-  const canvas = page.locator("[data-testid='factory-canvas'] canvas");
-  await expect(canvas).toBeVisible();
-  // Cell center math mirrors the renderer: PAD=12, CELL=42 → center = 12 + c*42 + 21.
-  const center = (c: number) => 12 + c * 42 + 21;
+test("compact Pilot controls remain a single readable construction bar", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const blob = productionSave();
+  await page.goto("/");
+  await page.evaluate((save) => localStorage.setItem("hexapharma.save.slot.0", save), blob);
+  await page.reload();
+  await page.getByTestId("load").click();
+  await page.getByTestId("view-pilot").click();
 
-  // Select a machine type and rotate its drug effect independently from its footprint.
-  await page.getByTestId("brush-machine-pull").click();
-  await expect(page.getByTestId("brush-selected")).toContainText("pull");
-  await page.getByTestId("brush-effect-rotate").click();
-  await expect(page.getByTestId("brush-effect-rotate")).toContainText("effect 90°");
-  await page.getByTestId("brush-footrot").click();
-  await expect(page.getByTestId("brush-footrot")).toContainText("foot 90°");
-  // Click an empty cell on a lower row to place the machine (added to layout.machines).
-  await canvas.click({ position: { x: center(3), y: center(3) } });
-  // Editing re-inits the sim → tick resets to 0.
-  await expect(page.getByTestId("factory-tick")).toHaveText("0");
-
-  // Place a belt tile too (direction toggle works for tiles).
-  await page.getByTestId("brush-belt").click();
-  await page.getByTestId("brush-rotate").click(); // → S
-  await expect(page.getByTestId("brush-direction")).toContainText("S");
-  await canvas.click({ position: { x: center(4), y: center(3) } });
-  await expect(page.getByTestId("factory-tick")).toHaveText("0");
-
-  // The sim still steps after edits (no crash; counter advances).
-  await page.getByTestId("factory-step").click();
-  await expect(page.getByTestId("factory-tick")).toHaveText("1");
-
-  await page.getByTestId("save").click();
-  const savedMachines = await page.evaluate(() => {
-    const raw = localStorage.getItem("hexapharma.save.checkpoint.0");
-    if (raw === null) throw new Error("missing checkpoint");
-    const checkpoint = JSON.parse(raw) as { head: string };
-    const saved = JSON.parse(checkpoint.head) as {
-      authority: {
-        intentTrace: Array<{
-          kind: string;
-          factory?: { machines: Array<{ anchor: { x: number; y: number }; def: { orientation: unknown } }> };
-        }>;
-      };
-    };
-    let layoutIntent: (typeof saved.authority.intentTrace)[number] | undefined;
-    for (let index = saved.authority.intentTrace.length - 1; index >= 0; index--) {
-      const intent = saved.authority.intentTrace[index];
-      if (intent?.kind === "setFactory") {
-        layoutIntent = intent;
-        break;
-      }
-    }
-    if (layoutIntent?.factory === undefined) throw new Error("saved authority has no factory layout");
-    return layoutIntent.factory.machines;
+  const bar = await page.locator(".facility-pilot .transport-bar").boundingBox();
+  const stage = await page.getByTestId("game-stage").boundingBox();
+  if (bar === null || stage === null) throw new Error("compact Pilot construction bar has no bounds");
+  expect(bar.height).toBeLessThanOrEqual(56);
+  expect(bar.x).toBeGreaterThanOrEqual(stage.x);
+  expect(bar.x + bar.width).toBeLessThanOrEqual(stage.x + stage.width);
+  await expect(page.locator(".facility-pilot .facility-clock-state")).toBeHidden();
+  await expect(page.getByTestId("pilot-command")).toHaveText("Commission");
+  await expectPilotMachineAboveToolbelt(page);
+  await page.locator(".message-layer").evaluate((element) => {
+    (element as HTMLElement).style.visibility = "hidden";
   });
-  expect(savedMachines.find((machine) => machine.anchor.y > 0)?.def.orientation).toEqual({ rot: 1, flip: false });
+  await expect(page.getByTestId("game-stage")).toHaveScreenshot("compact-pilot-controls.png", {
+    animations: "disabled",
+    maxDiffPixelRatio: 0.01,
+    timeout: 15_000,
+  });
+});
+
+test("compact Pilot refocuses a same-size Research transfer after its empty floor was visited", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.evaluate((save) => localStorage.setItem("hexapharma.save.slot.0", save), plannedResearchSave());
+  await page.reload();
+  await page.getByTestId("load").click();
+  await page.getByTestId("view-pilot").click();
+  await expect(page.getByTestId("pilot-facility-workspace").locator("canvas")).toBeVisible();
+
+  await page.getByTestId("view-research").click();
+  await page.getByTestId("research-command").click();
+  await expect(page.getByTestId("research-command")).toHaveText("Send to Pilot Plant", { timeout: 20_000 });
+  await page.getByTestId("research-command").click();
+  await expect(page.getByTestId("pilot-facility-workspace")).toBeVisible();
+  await expectPilotMachineAboveToolbelt(page);
+});
+
+test("compact Pilot keeps the player's scroll position after a local edit acknowledgement", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.evaluate((save) => localStorage.setItem("hexapharma.save.slot.0", save), productionSave());
+  await page.reload();
+  await page.getByTestId("load").click();
+  await page.getByTestId("view-pilot").click();
+  const frame = page.getByTestId("pilot-facility-workspace").getByTestId("factory-canvas");
+  await expect(frame.locator("canvas")).toBeVisible({ timeout: 15_000 });
+  await frame.evaluate((element) => {
+    element.scrollTop = 0;
+    element.scrollLeft = 0;
+  });
+  const canvasBox = await frame.locator("canvas").boundingBox();
+  if (canvasBox === null) throw new Error("compact Pilot canvas has no bounds");
+
+  await page.mouse.click(canvasBox.x + 33, canvasBox.y + 33);
+  await expect(page.getByTestId("pilot-facility-workspace").getByTestId("factory-undo")).toBeEnabled();
+  await page.waitForTimeout(250);
+  expect(await frame.evaluate((element) => element.scrollTop)).toBe(0);
+});
+
+test("every machine family has a distinct readable factory silhouette", async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await page.goto("/");
+  await page.evaluate((save) => localStorage.setItem("hexapharma.save.slot.0", save), machineGallerySave());
+  await page.reload();
+  await page.getByTestId("load").click();
+  await page.getByTestId("view-pilot").click();
+  const canvas = page.getByTestId("pilot-facility-workspace").getByTestId("factory-canvas");
+  await expect(canvas.locator("canvas")).toBeVisible({ timeout: 15_000 });
+  await page.locator(".message-layer").evaluate((element) => {
+    (element as HTMLElement).style.visibility = "hidden";
+  });
+  await expect(canvas).toHaveScreenshot("machine-family-gallery.png", {
+    animations: "disabled",
+    maxDiffPixelRatio: 0.01,
+    timeout: 15_000,
+  });
 });

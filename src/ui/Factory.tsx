@@ -14,10 +14,9 @@
  *    round-robin, merger fans inputs into one output → REAL parallelism: a
  *    source→splitter→[two machines]→merger→sink out-produces a single machine.
  *
- * The default layout is a compiled recipe line (compileTemplate) with one slow
- * stage as the bottleneck, so something runs immediately and there is a bottleneck
- * to relieve. Preset buttons load a single vs a parallel layout to demonstrate the
- * throughput rise; full editing lets the player build it by hand.
+ * A facility with no authority opens as an empty entitled floor. Nothing is
+ * auto-packed or committed: the player builds geometry directly, and Production
+ * receives its commissioned Pilot layout through the game reducer.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MachineIcon } from "./MachineIcon";
@@ -27,7 +26,6 @@ import type {
   Rotation,
   Orientation,
   Template,
-  Machine,
   PlacedMachine,
   MachineShape,
   FactoryTile,
@@ -40,15 +38,9 @@ import type {
   ThroughputReport,
   Outcome,
 } from "../sim/phase0_interfaces";
-import {
-  BASE_GAME_FACTORY_HEIGHT,
-  BASE_GAME_FACTORY_WIDTH,
-  DEFAULT_CATALOG,
-  DEFAULT_SHAPES,
-  IDENTITY,
-} from "../sim/phase0_interfaces";
+import { DEFAULT_CATALOG, DEFAULT_SHAPES, IDENTITY } from "../sim/phase0_interfaces";
 import { initFactory, analyzeThroughput } from "../sim/factory-sim";
-import { compileTemplate, factoryOutcome } from "../sim/recipe";
+import { factoryOutcome } from "../sim/recipe";
 import { evaluate } from "../sim/drug-graph";
 import type { FactoryRenderer } from "../render/factoryRenderer";
 import {
@@ -71,13 +63,6 @@ import {
 // ───────────────────────────── directions ─────────────────────────────
 
 const E: Dir = 0;
-const S: Dir = 1;
-const W: Dir = 2;
-const N: Dir = 3;
-
-const GRID_W = BASE_GAME_FACTORY_WIDTH;
-const GRID_H = BASE_GAME_FACTORY_HEIGHT;
-
 function opposite(d: Dir): Dir {
   return ((d + 2) & 3) as Dir;
 }
@@ -124,17 +109,12 @@ function nextMachineId(layout: FactoryLayout): number {
   return max + 1;
 }
 
-// ───────────────────────────── default + preset layouts ─────────────────────────────
+// ───────────────────────────── facility layouts ─────────────────────────────
 
 function entryOf(typeId: MachineTypeId): MachineCatalogEntry {
   const entry = DEFAULT_CATALOG.find((candidate) => candidate.typeId === typeId);
   if (entry === undefined) throw new Error(`Factory: unknown machine type "${typeId}"`);
   return entry;
-}
-
-function fixtureStep(typeId: MachineTypeId): Machine {
-  const entry = entryOf(typeId);
-  return { typeId, transform: entry.transform, orientation: IDENTITY };
 }
 
 function machineDef(typeId: MachineTypeId, requestedOrientation: Orientation = IDENTITY): FactoryMachineDef {
@@ -151,82 +131,47 @@ function machineDef(typeId: MachineTypeId, requestedOrientation: Orientation = I
   };
 }
 
-/**
- * Default factory: compile a 3-stage template (push → pull → push2) with the
- * catalog's real multi-cell footprints, then pad it onto the base floor.
- */
-function defaultLayout(): FactoryLayout {
-  const fixture: Template = {
-    steps: [fixtureStep("push"), fixtureStep("pull"), fixtureStep("push2")],
+export function initialFacilityLayout(
+  layout: FactoryLayout | null,
+  entitledWidth: number,
+  entitledHeight: number,
+): FactoryLayout {
+  if (layout !== null) return layout;
+  return {
+    width: entitledWidth,
+    height: entitledHeight,
+    tiles: emptyTiles(entitledWidth, entitledHeight),
+    machines: [],
   };
-  return recipeLayout(fixture);
 }
 
-/**
- * Lay the WHOLE compiled recipe on a roomy grid (all speed 1). compileTemplate now
- * returns a real-shaped, multi-row layout (L / 2×2 machines routed on lower rows), so
- * we copy its full tiles + machines verbatim onto a canvas at least GRID_W×GRID_H —
- * leaving empty space below/right for the player to add parallels. The compiled
- * geometry (incl. lower-row belts + multi-cell machines) renders + runs intact.
- */
-function recipeLayout(recipe: Template): FactoryLayout {
-  const line = compileTemplate(recipe);
-  const w = Math.max(GRID_W, line.width);
-  const h = Math.max(GRID_H, line.height);
-  const tiles = emptyTiles(w, h);
-  for (let y = 0; y < line.height; y++) {
-    for (let x = 0; x < line.width; x++) {
-      tiles[y * w + x] = line.tiles[y * line.width + x]!;
+function factoryLayoutFocus(layout: FactoryLayout): Vec2 | null {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const machine of layout.machines) {
+    for (const cell of worldCells(machine)) {
+      minX = Math.min(minX, cell.x);
+      minY = Math.min(minY, cell.y);
+      maxX = Math.max(maxX, cell.x);
+      maxY = Math.max(maxY, cell.y);
     }
   }
-  return { width: w, height: h, tiles, machines: line.machines.slice() };
-}
-
-/** Preset: one catalog-speed pull on one row (the slow baseline). */
-function singlePreset(): FactoryLayout {
-  return recipeLayout({ steps: [fixtureStep("pull")] });
-}
-
-/**
- * Preset: source → splitter → two pull machines (rows 0 + 1) → merger → sink.
- * Mirrors the sim's verified parallel fixture at about 2× the single preset.
- */
-function parallelPreset(): FactoryLayout {
-  const tiles = emptyTiles(GRID_W, GRID_H);
-  const at = (x: number, y: number) => y * GRID_W + x;
-  tiles[at(0, 2)] = { kind: "source", dir: E, period: 1 };
-  tiles[at(1, 2)] = { kind: "splitter", inDir: W, outDirs: [N, S] };
-  tiles[at(1, 1)] = { kind: "belt", dir: E };
-  tiles[at(2, 1)] = { kind: "belt", dir: E };
-  tiles[at(1, 3)] = { kind: "belt", dir: S };
-  tiles[at(1, 4)] = { kind: "belt", dir: E };
-  tiles[at(2, 4)] = { kind: "belt", dir: E };
-  tiles[at(5, 2)] = { kind: "belt", dir: E };
-  tiles[at(6, 2)] = { kind: "belt", dir: E };
-  tiles[at(5, 5)] = { kind: "belt", dir: E };
-  tiles[at(6, 5)] = { kind: "belt", dir: E };
-  tiles[at(7, 5)] = { kind: "belt", dir: N };
-  tiles[at(7, 4)] = { kind: "belt", dir: N };
-  tiles[at(7, 3)] = { kind: "belt", dir: N };
-  tiles[at(7, 2)] = { kind: "merger", inDirs: [W, S], outDir: E };
-  tiles[at(8, 2)] = { kind: "belt", dir: E };
-  tiles[at(9, 2)] = { kind: "sink" };
-  const machines: PlacedMachine[] = [
-    { id: 0, def: machineDef("pull"), anchor: { x: 3, y: 1 }, footRot: 0, shape: DEFAULT_SHAPES.pull! },
-    { id: 1, def: machineDef("pull"), anchor: { x: 3, y: 4 }, footRot: 0, shape: DEFAULT_SHAPES.pull! },
-  ];
-  return { width: GRID_W, height: GRID_H, tiles, machines };
-}
-
-function fitPreset(preset: FactoryLayout, width: number, height: number): FactoryLayout {
-  if (width < 6 || height < 2) return preset;
-  const tiles = emptyTiles(width, height);
-  for (let y = 0; y < Math.min(preset.height, height); y++) {
-    for (let x = 0; x < Math.min(preset.width, width); x++) {
-      tiles[y * width + x] = preset.tiles[y * preset.width + x]!;
+  if (minX === Infinity) {
+    for (let index = 0; index < layout.tiles.length; index++) {
+      if (layout.tiles[index]?.kind === "empty") continue;
+      const x = index % layout.width;
+      const y = Math.floor(index / layout.width);
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
     }
   }
-  return { width, height, tiles, machines: preset.machines.slice() };
+  return minX === Infinity
+    ? null
+    : { x: (minX + maxX + 1) / 2, y: (minY + maxY + 1) / 2 };
 }
 
 // ───────────────────────────── palette / editing ─────────────────────────────
@@ -358,49 +303,63 @@ const PAD = 12;
 
 const TICK_MS = 80;
 
+type FacilityMode = "research" | "pilot" | "production";
+
+export function facilityMayAnalyzeOutcome(mode: FacilityMode): boolean {
+  return mode !== "research";
+}
+
+export function formatFacilityOutcome(outcome: Outcome): string {
+  const result = outcome.failed
+    ? "failed"
+    : outcome.cured.length === 0
+      ? "no cure"
+      : `cures ${outcome.cured.join(", ")}`;
+  const sideEffects = outcome.sideEffects.length === 0
+    ? "no side effects"
+    : `side effects ${outcome.sideEffects.join(", ")}`;
+  const final = outcome.final.map((position) => `(${position.x}, ${position.y})`).join(" / ");
+  return `${result} · ${sideEffects} · final ${final}`;
+}
+
 interface FactoryProps {
   readonly active: boolean;
+  readonly mode: FacilityMode;
   readonly level: GeneratedLevel;
-  /** The winning recipe from the Lab (drives the default layout), or null. */
-  readonly recipe: Template | null;
-  /** The shared/persisted factory layout, or null to use the recipe/fixture default. */
-  readonly factory: FactoryLayout | null;
-  readonly factoryState: FactoryRuntime | null;
-  readonly factoryWaste: number;
+  readonly contract: Template | null;
+  readonly layout: FactoryLayout | null;
+  readonly runtime: FactoryRuntime | null;
+  readonly waste: number;
   readonly entitledWidth: number;
   readonly entitledHeight: number;
   readonly catalog: readonly MachineCatalogEntry[];
-  /** Lift the current layout into the shared game state. */
-  readonly onFactoryChange: (layout: FactoryLayout) => boolean;
-  readonly onAdvance: (ticks: number) => boolean;
-  readonly onReset: () => boolean;
-}
-
-/** Pick the starting layout: the persisted one, else the recipe line, else the fixture. */
-function startingLayout(
-  factory: FactoryLayout | null,
-  recipe: Template | null,
-  entitledWidth: number,
-  entitledHeight: number,
-): FactoryLayout {
-  if (factory !== null) return factory;
-  if (recipe !== null && recipe.steps.length > 0) return recipeLayout(recipe);
-  return fitPreset(defaultLayout(), entitledWidth, entitledHeight);
+  readonly onLayoutChange: (layout: FactoryLayout) => boolean;
+  readonly onAdvance?: (ticks: number) => boolean;
+  readonly onReset?: () => boolean;
+  readonly commandLabel?: string;
+  readonly commandDisabled?: boolean;
+  readonly onCommand?: () => void;
+  readonly activeMachineId?: number | null;
 }
 
 export function Factory({
   active,
+  mode,
   level,
-  recipe,
-  factory,
-  factoryState,
-  factoryWaste,
+  contract,
+  layout: authoritativeLayout,
+  runtime,
+  waste,
   entitledWidth,
   entitledHeight,
   catalog,
-  onFactoryChange,
+  onLayoutChange,
   onAdvance,
   onReset,
+  commandLabel,
+  commandDisabled = false,
+  onCommand,
+  activeMachineId = null,
 }: FactoryProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const frameRef = useRef<HTMLDivElement | null>(null);
@@ -410,7 +369,7 @@ export function Factory({
   const { mm, start } = level;
 
   const [layout, setLayout] = useState<FactoryLayout>(() =>
-    startingLayout(factory, recipe, entitledWidth, entitledHeight)
+    initialFacilityLayout(authoritativeLayout, entitledWidth, entitledHeight)
   );
   const [playing, setPlaying] = useState<boolean>(false);
 
@@ -430,6 +389,9 @@ export function Factory({
   );
   const historyRef = useRef(history);
   historyRef.current = history;
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  const pendingViewportFocusRef = useRef(true);
   const pendingCommittedKeysRef = useRef<string[]>([]);
   const clipboardRef = useRef<ClipboardBrush | null>(null);
   const gestureRef = useRef<{
@@ -460,14 +422,17 @@ export function Factory({
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
   const state = useMemo(
-    () => factoryState ?? initFactory(layout, mm, start),
-    [factoryState, layout, mm, start],
+    () => runtime ?? initFactory(layout, mm, start),
+    [runtime, layout, mm, start],
   );
 
   const throughputAnalysis = useMemo<{
     readonly report: ThroughputReport | null;
     readonly error: string | null;
   }>(() => {
+    if (authoritativeLayout === null || !facilityMayAnalyzeOutcome(mode)) {
+      return { report: null, error: null };
+    }
     try {
       return { report: analyzeThroughput(layout, mm), error: null };
     } catch (error) {
@@ -476,26 +441,28 @@ export function Factory({
         error: `Throughput analysis unavailable: ${error instanceof Error ? error.message : String(error)}`,
       };
     }
-  }, [layout, mm]);
+  }, [authoritativeLayout, layout, mm, mode]);
   const throughput = throughputAnalysis.report;
   const expectedOutcome = useMemo(
-    () => recipe === null ? null : evaluate(mm, start, recipe),
-    [mm, recipe, start],
+    () => contract === null ? null : evaluate(mm, start, contract),
+    [contract, mm, start],
   );
   const sampleAnalysis = useMemo<{
     readonly outcome: Outcome | null;
     readonly error: string | null;
   }>(() => {
-    if (expectedOutcome === null) return { outcome: null, error: null };
+    if (authoritativeLayout === null || !facilityMayAnalyzeOutcome(mode)) {
+      return { outcome: null, error: null };
+    }
     try {
       return { outcome: factoryOutcome(layout, mm, start), error: null };
     } catch (error) {
       return {
         outcome: null,
-        error: `Recipe sample unavailable: ${error instanceof Error ? error.message : String(error)}`,
+        error: `Contract sample unavailable: ${error instanceof Error ? error.message : String(error)}`,
       };
     }
-  }, [expectedOutcome, layout, mm, start]);
+  }, [authoritativeLayout, layout, mm, mode, start]);
   const recipeValid = useMemo(() => {
     if (expectedOutcome === null || sampleAnalysis.outcome === null) return null;
     return JSON.stringify(sampleAnalysis.outcome) === JSON.stringify(expectedOutcome);
@@ -505,28 +472,27 @@ export function Factory({
     .join(" ");
 
   useEffect(() => {
-    const next = startingLayout(factory, recipe, entitledWidth, entitledHeight);
+    const next = initialFacilityLayout(authoritativeLayout, entitledWidth, entitledHeight);
     setPlaying(false);
-    if (factory !== null || onFactoryChange(next)) {
-      const key = JSON.stringify(next);
-      const reconciliation = reconcilePendingCommit(pendingCommittedKeysRef.current, key);
-      pendingCommittedKeysRef.current = [...reconciliation.pendingKeys];
-      if (!reconciliation.applyIncoming) return;
-      if (reconciliation.resetHistory) {
-        const resetHistory = createEditorHistory(next);
-        historyRef.current = resetHistory;
-        setHistory(resetHistory);
-      }
-      layoutRef.current = next;
-      setLayout(next);
+    const key = JSON.stringify(next);
+    const reconciliation = reconcilePendingCommit(pendingCommittedKeysRef.current, key);
+    pendingCommittedKeysRef.current = [...reconciliation.pendingKeys];
+    if (!reconciliation.applyIncoming) return;
+    if (reconciliation.resetHistory) {
+      pendingViewportFocusRef.current = true;
+      const resetHistory = createEditorHistory(next);
+      historyRef.current = resetHistory;
+      setHistory(resetHistory);
     }
-  }, [recipe, mm, start, factory, entitledWidth, entitledHeight, onFactoryChange]);
+    layoutRef.current = next;
+    setLayout(next);
+  }, [authoritativeLayout, entitledHeight, entitledWidth, mm, start]);
 
   const commitLayout = useCallback(
     (next: FactoryLayout) => {
       setPlaying(false);
       if (next === layoutRef.current) return false;
-      if (!onFactoryChange(next)) return false;
+      if (!onLayoutChange(next)) return false;
       pendingCommittedKeysRef.current.push(JSON.stringify(next));
       layoutRef.current = next;
       setLayout(next);
@@ -535,18 +501,18 @@ export function Factory({
       setHistory(nextHistory);
       return true;
     },
-    [onFactoryChange],
+    [onLayoutChange],
   );
 
   const restoreHistory = useCallback((next: EditorHistory<FactoryLayout>) => {
-    if (next === historyRef.current || !onFactoryChange(next.present)) return;
+    if (next === historyRef.current || !onLayoutChange(next.present)) return;
     pendingCommittedKeysRef.current.push(JSON.stringify(next.present));
     historyRef.current = next;
     setHistory(next);
     layoutRef.current = next.present;
     setLayout(next.present);
     setPlaying(false);
-  }, [onFactoryChange]);
+  }, [onLayoutChange]);
 
   const undoLayout = useCallback(() => {
     restoreHistory(undoEditorHistory(historyRef.current));
@@ -564,11 +530,39 @@ export function Factory({
   // ── mount / unmount the Pixi renderer ──
   const stateRef = useRef(state);
   stateRef.current = state;
-  const bottleneckRef = useRef(throughput?.bottleneck ?? null);
-  bottleneckRef.current = throughput?.bottleneck ?? null;
+  const highlightedMachineId = activeMachineId ?? throughput?.bottleneck ?? null;
+  const bottleneckRef = useRef(highlightedMachineId);
+  bottleneckRef.current = highlightedMachineId;
+  const focusLayoutInViewport = useCallback(() => {
+    const frame = frameRef.current;
+    const canvas = rendererRef.current?.canvas;
+    if (!activeRef.current || frame === null || canvas === undefined) return false;
+    const frameRect = frame.getBoundingClientRect();
+    const canvasRect = canvas.getBoundingClientRect();
+    if (frameRect.width === 0 || frameRect.height === 0 || canvasRect.width === 0 || canvasRect.height === 0) {
+      return false;
+    }
+    const focus = factoryLayoutFocus(layoutRef.current);
+    if (focus === null) {
+      pendingViewportFocusRef.current = false;
+      return true;
+    }
+    const toolbelt = frame.closest(".factory-workspace")?.querySelector<HTMLElement>(".toolbelt");
+    const toolbeltTop = toolbelt?.getBoundingClientRect().top ?? frameRect.bottom;
+    const visibleBottom = Math.min(frameRect.bottom, toolbeltTop);
+    const targetX = frameRect.left + frameRect.width / 2;
+    const targetY = frameRect.top + Math.max(0, visibleBottom - frameRect.top) / 2;
+    const focusX = canvasRect.left + (PAD + focus.x * CELL) * canvasRect.width / canvas.width;
+    const focusY = canvasRect.top + (PAD + focus.y * CELL) * canvasRect.height / canvas.height;
+    if (frame.scrollWidth > frame.clientWidth) frame.scrollLeft += focusX - targetX;
+    if (frame.scrollHeight > frame.clientHeight) frame.scrollTop += focusY - targetY;
+    pendingViewportFocusRef.current = false;
+    return true;
+  }, []);
   useEffect(() => {
     let disposed = false;
     let local: FactoryRenderer | null = null;
+    let focusRequest = 0;
     setRendererError(null);
     void (async () => {
       try {
@@ -582,6 +576,9 @@ export function Factory({
         rendererRef.current = r;
         if (mountRef.current) mountRef.current.appendChild(r.canvas);
         r.render(layoutRef.current, stateRef.current, bottleneckRef.current);
+        focusRequest = window.requestAnimationFrame(() => {
+          if (!disposed && pendingViewportFocusRef.current) focusLayoutInViewport();
+        });
       } catch (error) {
         if (local !== null) {
           local.destroy();
@@ -596,24 +593,31 @@ export function Factory({
     })();
     return () => {
       disposed = true;
+      if (focusRequest !== 0) window.cancelAnimationFrame(focusRequest);
       rendererRef.current = null;
       if (local) local.destroy();
     };
-  }, [layout.width, layout.height]);
+  }, [focusLayoutInViewport, layout.width, layout.height]);
 
   // ── repaint whenever layout / state / bottleneck changes ──
   useEffect(() => {
-    rendererRef.current?.render(layout, state, throughput?.bottleneck ?? null);
-  }, [layout, state, state.tick, throughput?.bottleneck]);
+    rendererRef.current?.render(layout, state, highlightedMachineId);
+  }, [highlightedMachineId, layout, state, state.tick]);
+
+  useEffect(() => {
+    if (!active || !pendingViewportFocusRef.current) return;
+    const request = window.requestAnimationFrame(() => focusLayoutInViewport());
+    return () => window.cancelAnimationFrame(request);
+  }, [active, focusLayoutInViewport, layout]);
 
   // ── play timer: advance the sim by one tick per interval ──
   useEffect(() => {
-    if (!playing) return;
+    if (!playing || mode !== "production" || onAdvance === undefined) return;
     const id = window.setInterval(() => {
       if (!onAdvance(8)) setPlaying(false);
     }, TICK_MS);
     return () => window.clearInterval(id);
-  }, [playing, onAdvance]);
+  }, [mode, onAdvance, playing]);
 
   // stop playing automatically on deadlock.
   useEffect(() => {
@@ -622,12 +626,12 @@ export function Factory({
 
   // ── controls ──
   const stepOnce = useCallback(() => {
-    onAdvance(1);
+    onAdvance?.(1);
   }, [onAdvance]);
 
   const reset = useCallback(() => {
     setPlaying(false);
-    onReset();
+    onReset?.();
   }, [onReset]);
 
   const updateCamera = useCallback((change: (current: Camera) => Camera) => {
@@ -898,7 +902,10 @@ export function Factory({
         pasteHovered();
       } else if (/^Digit[1-6]$/.test(event.code)) {
         event.preventDefault();
-        setBrush(tileBrushes[Number(event.code.slice(5)) - 1] ?? { kind: "belt" });
+        const next = tileBrushes[Number(event.code.slice(5)) - 1];
+        if (next !== undefined && !(mode === "research" && (next.kind === "splitter" || next.kind === "merger"))) {
+          setBrush(next);
+        }
       } else if (/^Digit[7-9]$/.test(event.code) || event.code === "Digit0") {
         event.preventDefault();
         const slot = event.code === "Digit0" ? 3 : Number(event.code.slice(5)) - 7;
@@ -921,16 +928,20 @@ export function Factory({
         event.preventDefault();
         pickHovered();
       } else if (event.code === "Space") {
-        event.preventDefault();
-        setPlaying((value) => !value && !state.deadlocked);
+        if (mode === "production") {
+          event.preventDefault();
+          setPlaying((value) => !value && !state.deadlocked);
+        }
       } else if (event.key === ".") {
-        event.preventDefault();
-        if (!playing) stepOnce();
+        if (mode === "production") {
+          event.preventDefault();
+          if (!playing) stepOnce();
+        }
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [active, catalog, copyHovered, pasteHovered, pickHovered, playing, redoLayout, rotateActiveBrush, state.deadlocked, stepOnce, undoLayout]);
+  }, [active, catalog, copyHovered, mode, pasteHovered, pickHovered, playing, redoLayout, rotateActiveBrush, state.deadlocked, stepOnce, undoLayout]);
 
   const brushIsMachine = brush.kind === "machine";
   const brushAcceptsEffectOrientation = brush.kind === "machine" &&
@@ -939,6 +950,9 @@ export function Factory({
   const rate = throughput === null
     ? "unavailable"
     : throughput.rateDen === 0 ? "0" : `${throughput.rateNum}/${throughput.rateDen}`;
+  const sampleSummary = sampleAnalysis.outcome === null
+    ? "not runnable"
+    : formatFacilityOutcome(sampleAnalysis.outcome);
   const hoveredMachine = hoverCell === null ? undefined : machineAt(layout, hoverCell.x, hoverCell.y);
   const hoveredTile = hoverCell === null
     ? undefined
@@ -981,17 +995,40 @@ export function Factory({
     </button>
   );
 
+  const facilityName = mode === "research"
+    ? "Research Route Floor"
+    : mode === "pilot"
+      ? "Pilot Plant"
+      : "Production";
+
   return (
-    <div className="game-view factory-workspace" data-testid="factory-workspace">
+    <div className={`game-view factory-workspace facility-${mode}`} data-testid={`${mode}-facility-workspace`}>
       <div className="world-layout">
-        <section className="world-viewport factory-world" aria-label="Factory construction workspace">
+        <section className="world-viewport factory-world" aria-label={`${facilityName} construction workspace`}>
           {rendererError !== null && <div role="alert" data-testid="factory-render-error" className="game-alert factory-render-alert">{rendererError}</div>}
-          <div className="transport-bar" aria-label="Factory transport controls">
-            <button type="button" onClick={() => setPlaying(true)} disabled={playing || state.deadlocked} className={playing ? "is-active" : ""} data-testid="factory-play">▶</button>
-            <button type="button" onClick={() => setPlaying(false)} disabled={!playing} data-testid="factory-pause">Ⅱ</button>
-            <button type="button" onClick={stepOnce} disabled={playing} data-testid="factory-step">▶|</button>
-            <button type="button" onClick={reset} data-testid="factory-reset">↺</button>
-            <button type="button" onClick={() => setCamera({ x: 0, y: 0, zoom: 1 })} data-testid="factory-camera-reset" aria-label="Reset factory camera">⌖</button>
+          <div className="transport-bar" aria-label={`${facilityName} controls`}>
+            {mode === "production" && (
+              <>
+                <button type="button" onClick={() => setPlaying(true)} disabled={playing || state.deadlocked} className={playing ? "is-active" : ""} data-testid="factory-play">▶</button>
+                <button type="button" onClick={() => setPlaying(false)} disabled={!playing} data-testid="factory-pause">Ⅱ</button>
+                <button type="button" onClick={stepOnce} disabled={playing} data-testid="factory-step">▶|</button>
+                <button type="button" onClick={reset} data-testid="factory-reset">↺</button>
+              </>
+            )}
+            {mode !== "production" && <strong className="facility-clock-state">◇ No clock · layout edits are free</strong>}
+            {onCommand !== undefined && commandLabel !== undefined && (
+              <button
+                type="button"
+                className="facility-command"
+                onClick={onCommand}
+                disabled={commandDisabled}
+                data-testid={`${mode}-command`}
+                aria-label={mode === "pilot" ? "Validate Pilot layout and commission Production" : commandLabel}
+              >
+                {commandLabel}
+              </button>
+            )}
+            <button type="button" onClick={() => setCamera({ x: 0, y: 0, zoom: 1 })} data-testid="factory-camera-reset" aria-label={`Reset ${facilityName} camera`}>⌖</button>
             <output className="zoom-readout" data-testid="factory-zoom">{Math.round(camera.zoom * 100)}%</output>
           </div>
 
@@ -1022,10 +1059,10 @@ export function Factory({
             </div>
           </div>
 
-          <div className="toolbelt" role="toolbar" aria-label="Factory build hotbar" data-testid="factory-toolbelt">
+          <div className="toolbelt" role="toolbar" aria-label={`${facilityName} build hotbar`} data-testid="factory-toolbelt">
             {tileBrushBtn("belt", "Belt", "➜", "1")}
-            {tileBrushBtn("splitter", "Split", "⑂", "2")}
-            {tileBrushBtn("merger", "Merge", "⑃", "3")}
+            {mode !== "research" && tileBrushBtn("splitter", "Split", "⑂", "2")}
+            {mode !== "research" && tileBrushBtn("merger", "Merge", "⑃", "3")}
             {tileBrushBtn("source", "Source", "S", "4")}
             {tileBrushBtn("sink", "Sink", "◎", "5")}
             {tileBrushBtn("erase", "Erase", "×", "6")}
@@ -1058,15 +1095,29 @@ export function Factory({
         </section>
 
         <aside className="inspector factory-inspector" data-testid="factory-inspector">
-          <div className="panel-kicker">Production floor</div>
-          <h1>HexaPharma Factory</h1>
-          <div className={`factory-metrics${state.deadlocked ? " is-error" : ""}`} data-testid="factory-status" role="status">
-            <div><span>Tick</span><strong data-testid="factory-tick">{state.tick}</strong></div>
-            <div><span>Total sink outcomes (includes waste)</span><strong data-testid="factory-produced">{state.producedTotal}</strong></div>
-            <div><span>Waste</span><strong data-testid="factory-waste">{factoryWaste}</strong></div>
-            <div><span>Throughput</span><strong><span data-testid="factory-rate">{rate}</span>/tick</strong></div>
-            <div><span>Bottleneck</span><strong data-testid="factory-bottleneck">{throughput === null ? "unavailable" : throughput.bottleneck === null ? "none" : `#${throughput.bottleneck} (${throughput.bottleneckType})`}</strong></div>
-          </div>
+          <div className="panel-kicker">{mode === "production" ? "Live facility" : "Zero-time workspace"}</div>
+          <h1>{facilityName}</h1>
+          {mode === "production" ? (
+            <div className={`factory-metrics${state.deadlocked ? " is-error" : ""}`} data-testid="factory-status" role="status">
+              <div><span>Tick</span><strong data-testid="factory-tick">{state.tick}</strong></div>
+              <div><span>Total sink outcomes</span><strong data-testid="factory-produced">{state.producedTotal}</strong></div>
+              <div><span>Waste</span><strong data-testid="factory-waste">{waste}</strong></div>
+              <div><span>Throughput</span><strong><span data-testid="factory-rate">{rate}</span>/tick</strong></div>
+              <div><span>Bottleneck</span><strong data-testid="factory-bottleneck">{throughput === null ? "unavailable" : throughput.bottleneck === null ? "none" : `#${throughput.bottleneck} (${throughput.bottleneckType})`}</strong></div>
+            </div>
+          ) : (
+            <div className="factory-metrics facility-mode-summary" role="status">
+              <div><span>Clock</span><strong>Stopped</strong></div>
+              <div><span>Build cost</span><strong>Free</strong></div>
+              <div><span>Machines</span><strong>{layout.machines.length}</strong></div>
+              {mode === "research"
+                ? <div><span>Experiment</span><strong data-testid="research-sample-state">Hidden until Dispense</strong></div>
+                : <div><span>Sample</span><strong data-testid="facility-sample-outcome">{sampleSummary}</strong></div>}
+              {mode === "pilot" && <div><span>Throughput</span><strong data-testid="pilot-rate">{rate}/tick</strong></div>}
+              {mode === "pilot" && <div><span>Bottleneck</span><strong data-testid="pilot-bottleneck">{throughput === null ? "unavailable" : throughput.bottleneck === null ? "none" : `#${throughput.bottleneck} (${throughput.bottleneckType})`}</strong></div>}
+              {contract !== null && <div><span>Contract</span><strong>{recipeValid === null ? "unproven" : recipeValid ? "matches" : "differs"}</strong></div>}
+            </div>
+          )}
 
           <div className="panel-section hover-inspector">
             <div className="panel-heading"><h2>Cursor</h2><span className="hotkey">Q pick</span></div>
@@ -1089,19 +1140,25 @@ export function Factory({
           </div>
 
           <div className="panel-section">
-            <h2>Recipe contract</h2>
+            <h2>{mode === "research" ? "Exploration route" : "Research contract"}</h2>
             <div data-testid="factory-recipe">
-              {recipe === null
-                ? "No saved recipe. Sink output is waste until a cure is sent from the Lab."
-                : `Saved recipe · ${recipe.steps.length} steps`}
+              {contract === null
+                ? mode === "research"
+                  ? "The physical source-to-sink route defines the experiment."
+                  : "No Research contract has been transferred yet."
+                : `Contract · ${contract.steps.length} machine effects`}
             </div>
             <div className={recipeValid === false ? "is-error-text" : "is-success-text"} data-testid="factory-validity">
-              {sampleAnalysis.error !== null
+              {mode === "research"
+                ? "Connect one physical source-to-sink route. Its effects stay hidden until Dispense."
+                : sampleAnalysis.error !== null
                 ? "Bounded sample unavailable; live validation remains authoritative."
                 : recipeValid === null
-                  ? "No recipe contract. Sink output is treated as waste."
+                  ? mode === "production"
+                    ? "No contract. Sink output is treated as waste."
+                    : "Build and connect a physical source-to-sink route."
                   : recipeValid
-                    ? "Bounded sample matches the saved recipe."
+                    ? "Bounded sample matches the commissioned contract."
                     : "Bounded sample diverges; live mismatches are waste."}
             </div>
           </div>
@@ -1117,8 +1174,6 @@ export function Factory({
               <button type="button" onClick={() => copyHovered(false)} disabled={hoverCell === null || brushAt(layout, hoverCell) === null} className="game-control" data-testid="factory-copy">Copy</button>
               <button type="button" onClick={() => copyHovered(true)} disabled={hoverCell === null || brushAt(layout, hoverCell) === null} className="game-control" data-testid="factory-cut">Cut</button>
               <button type="button" onClick={pasteHovered} disabled={clipboardLabel === "empty" || hoverCell === null} className="game-control" data-testid="factory-paste">Paste</button>
-              <button type="button" onClick={() => commitLayout(fitPreset(singlePreset(), layout.width, layout.height))} className="game-control" data-testid="preset-single">Single</button>
-              <button type="button" onClick={() => commitLayout(fitPreset(parallelPreset(), layout.width, layout.height))} className="game-control" data-testid="preset-parallel">Parallel</button>
             </div>
           </div>
           <div className="key-help"><span className="hotkey">LMB drag</span> build · <span className="hotkey">RMB drag</span> erase · <span className="hotkey">Shift drag</span> pan · <span className="hotkey">Wheel</span> zoom · <span className="hotkey">Ctrl C/X/V</span> clipboard · <span className="hotkey">Ctrl Z/Y</span> history</div>

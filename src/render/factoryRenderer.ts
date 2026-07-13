@@ -13,7 +13,7 @@
  * geometry the sim uses (src/sim/factory-sim). Belts/splitters/mergers route units
  * between machine ports, so parallel machines really raise throughput.
  */
-import { Application, Container, Graphics, Text } from "pixi.js";
+import { Application, Graphics } from "pixi.js";
 import type {
   Dir,
   PlacedMachine,
@@ -33,19 +33,15 @@ const PAD = 12; // outer padding
 const BG = 0xf4f7fa;
 const GRID_LINE = 0xc2ccd6;
 const EMPTY_COLOR = 0xe8edf2;
-const BELT_COLOR = 0xdfe7ee;
-const BELT_ARROW = 0x6b7785;
+const BELT_COLOR = 0x596675;
+const BELT_RAIL = 0x2f3945;
+const BELT_ARROW = 0xdce5ec;
 const SPLIT_COLOR = 0xe7e0fb;
 const SPLIT_MARK = 0x7a52d6;
 const MERGE_COLOR = 0xfde7cf;
 const MERGE_MARK = 0xd9892a;
-const MACHINE_COLOR = 0xcdd9ff;
-const MACHINE_BORDER = 0x4a6bd0;
-const BOTTLENECK_COLOR = 0xffd9d2;
-const BOTTLENECK_BORDER = 0xe23b3b;
 const SOURCE_COLOR = 0x2bb673;
 const SINK_COLOR = 0x9b5de5;
-const TILE_LABEL = 0x222a33;
 const PORT_IN = 0x18a558; // green notch — input port
 const PORT_OUT = 0xe23b3b; // red notch — output port
 const TOKEN_COLOR = 0x1d6fe0;
@@ -55,6 +51,33 @@ const TOKEN_PROC = 0xffb020;
 
 const DIR_DX: readonly number[] = [1, 0, -1, 0];
 const DIR_DY: readonly number[] = [0, 1, 0, -1];
+
+export interface MachineVisualStyle {
+  readonly body: number;
+  readonly face: number;
+  readonly accent: number;
+}
+
+export function machineVisualStyle(typeId: string): MachineVisualStyle {
+  switch (typeId) {
+    case "push":
+      return { body: 0x5576d2, face: 0xdce6ff, accent: 0x1d377f };
+    case "push2":
+      return { body: 0x3655ae, face: 0xcbd9ff, accent: 0x14295f };
+    case "pull":
+      return { body: 0x7b5ab4, face: 0xeadfff, accent: 0x3c226a };
+    case "shear":
+      return { body: 0xd47836, face: 0xffe3c5, accent: 0x713610 };
+    case "skew":
+      return { body: 0x258d9a, face: 0xcdf6f4, accent: 0x0d4d58 };
+    case "dilute":
+      return { body: 0x3a9b70, face: 0xd1f2df, accent: 0x15553a };
+    case "swap01":
+      return { body: 0xbb4f83, face: 0xffddeb, accent: 0x6e2148 };
+    default:
+      return { body: 0x607080, face: 0xe2e8ed, accent: 0x26323d };
+  }
+}
 
 /** Pixel size of the whole canvas for a layout. */
 function canvasSize(layout: FactoryLayout): { width: number; height: number } {
@@ -89,24 +112,14 @@ function drawPortNotch(g: Graphics, cx: number, cy: number, side: Dir, color: nu
   const half = CELL / 2;
   const ex = cx + dx * (half - 5); // mid-point of the edge, just inside
   const ey = cy + dy * (half - 5);
-  const w = dx !== 0 ? 6 : 16;
-  const h = dy !== 0 ? 6 : 16;
+  const w = dx !== 0 ? 8 : 18;
+  const h = dy !== 0 ? 8 : 18;
+  g.rect(ex - w / 2 - 2, ey - h / 2 - 2, w + 4, h + 4).fill({ color: 0x19242d });
   g.rect(ex - w / 2, ey - h / 2, w, h).fill({ color });
-}
-
-function addLabel(labels: Container, text: string, x: number, y: number, fill: number, size = 12): void {
-  const t = new Text({
-    text,
-    style: { fontFamily: "Arial", fontSize: size, fill, fontWeight: "bold" },
-  });
-  t.x = x;
-  t.y = y;
-  labels.addChild(t);
 }
 
 interface DrawCtx {
   readonly cells: Graphics;
-  readonly labels: Container;
 }
 
 /** Draw one belt-grid tile (machines are drawn separately from layout.machines). */
@@ -115,65 +128,165 @@ function drawTile(tile: FactoryTile, x: number, y: number, ctx: DrawCtx): void {
   const py = PAD + y * CELL;
   const cx = px + CELL / 2;
   const cy = py + CELL / 2;
-  const { cells, labels } = ctx;
+  const { cells } = ctx;
+
+  cells.rect(px, py, CELL, CELL).fill({ color: EMPTY_COLOR });
 
   switch (tile.kind) {
     case "empty": {
-      cells.rect(px, py, CELL, CELL).fill({ color: EMPTY_COLOR });
       break;
     }
     case "belt": {
-      cells.rect(px, py, CELL, CELL).fill({ color: BELT_COLOR });
-      drawArrow(cells, cx, cy, tile.dir, BELT_ARROW);
+      if ((tile.dir & 1) === 0) {
+        cells.rect(px, cy - 9, CELL, 18).fill({ color: BELT_COLOR });
+        cells.moveTo(px, cy - 10).lineTo(px + CELL, cy - 10)
+          .moveTo(px, cy + 10).lineTo(px + CELL, cy + 10)
+          .stroke({ color: BELT_RAIL, width: 2 });
+      } else {
+        cells.rect(cx - 9, py, 18, CELL).fill({ color: BELT_COLOR });
+        cells.moveTo(cx - 10, py).lineTo(cx - 10, py + CELL)
+          .moveTo(cx + 10, py).lineTo(cx + 10, py + CELL)
+          .stroke({ color: BELT_RAIL, width: 2 });
+      }
+      drawArrow(cells, cx, cy, tile.dir, BELT_ARROW, 0.15);
       break;
     }
     case "splitter": {
-      cells.rect(px, py, CELL, CELL).fill({ color: SPLIT_COLOR });
-      cells.circle(cx, cy, CELL * 0.12).fill({ color: SPLIT_MARK });
-      for (const d of tile.outDirs) drawArrow(cells, cx, cy, d, SPLIT_MARK, 0.3);
-      addLabel(labels, "S", px + 4, py + 3, SPLIT_MARK);
+      cells.rect(px + 4, py + 4, CELL - 8, CELL - 8).fill({ color: SPLIT_COLOR })
+        .stroke({ color: SPLIT_MARK, width: 2 });
+      cells.circle(cx, cy, CELL * 0.13).fill({ color: SPLIT_MARK });
+      for (const d of tile.outDirs) {
+        const dx = DIR_DX[d] ?? 0;
+        const dy = DIR_DY[d] ?? 0;
+        cells.moveTo(cx, cy).lineTo(cx + dx * CELL * 0.38, cy + dy * CELL * 0.38)
+          .stroke({ color: SPLIT_MARK, width: 4 });
+        drawArrow(cells, cx + dx * 7, cy + dy * 7, d, 0xffffff, 0.11);
+      }
       break;
     }
     case "merger": {
-      cells.rect(px, py, CELL, CELL).fill({ color: MERGE_COLOR });
-      for (const d of tile.inDirs) drawArrow(cells, cx, cy, ((d + 2) & 3) as Dir, MERGE_MARK, 0.22);
-      drawArrow(cells, cx, cy, tile.outDir, MERGE_MARK, 0.3);
-      addLabel(labels, "M", px + 4, py + 3, MERGE_MARK);
+      cells.rect(px + 4, py + 4, CELL - 8, CELL - 8).fill({ color: MERGE_COLOR })
+        .stroke({ color: MERGE_MARK, width: 2 });
+      for (const d of tile.inDirs) {
+        const dx = DIR_DX[d] ?? 0;
+        const dy = DIR_DY[d] ?? 0;
+        cells.moveTo(cx + dx * CELL * 0.38, cy + dy * CELL * 0.38).lineTo(cx, cy)
+          .stroke({ color: MERGE_MARK, width: 4 });
+      }
+      drawArrow(cells, cx, cy, tile.outDir, MERGE_MARK, 0.22);
       break;
     }
     case "source": {
-      cells.rect(px, py, CELL, CELL).fill({ color: SOURCE_COLOR });
-      drawArrow(cells, cx, cy, tile.dir, 0xffffff);
-      addLabel(labels, "SRC", px + 4, py + 3, 0xffffff);
-      addLabel(labels, `p${tile.period}`, px + 4, py + CELL - 18, 0xffffff);
+      cells.rect(px + 3, py + 3, CELL - 6, CELL - 6).fill({ color: SOURCE_COLOR })
+        .stroke({ color: 0x13633e, width: 3 });
+      cells.circle(cx - (DIR_DX[tile.dir] ?? 0) * 5, cy - (DIR_DY[tile.dir] ?? 0) * 5, CELL * 0.24)
+        .stroke({ color: 0xffffff, width: 3 });
+      drawArrow(cells, cx, cy, tile.dir, 0xffffff, 0.17);
       break;
     }
     case "sink": {
-      cells.rect(px, py, CELL, CELL).fill({ color: SINK_COLOR });
-      cells.circle(cx, cy, CELL * 0.22).stroke({ color: 0xffffff, width: 3 });
-      addLabel(labels, "SINK", px + 4, py + 3, 0xffffff);
+      cells.rect(px + 3, py + 3, CELL - 6, CELL - 6).fill({ color: SINK_COLOR })
+        .stroke({ color: 0x56318d, width: 3 });
+      cells.circle(cx, cy, CELL * 0.27).stroke({ color: 0xffffff, width: 3 });
+      cells.circle(cx, cy, CELL * 0.11).fill({ color: 0xffffff });
       break;
     }
   }
   cells.rect(px, py, CELL, CELL).stroke({ color: GRID_LINE, width: 1 });
 }
 
-/** Draw a placed multi-cell machine: its rotated footprint, label, and port notches. */
-function drawMachine(m: PlacedMachine, isBottleneck: boolean, ctx: DrawCtx): void {
-  const { cells, labels } = ctx;
-  const fill = isBottleneck ? BOTTLENECK_COLOR : MACHINE_COLOR;
-  const border = isBottleneck ? BOTTLENECK_BORDER : MACHINE_BORDER;
-  const borderW = isBottleneck ? 3 : 2;
+function drawMachineGlyph(
+  g: Graphics,
+  machine: PlacedMachine,
+  cx: number,
+  cy: number,
+  color: number,
+): void {
+  const typeId = machine.def.typeId;
+  if (typeId === "dilute") {
+    g.circle(cx, cy, 13).stroke({ color, width: 3 });
+    g.circle(cx, cy, 5).stroke({ color, width: 2 });
+    return;
+  }
+  if (typeId === "swap01") {
+    g.circle(cx - 9, cy - 6, 5).stroke({ color, width: 3 });
+    g.circle(cx + 9, cy + 6, 5).stroke({ color, width: 3 });
+    g.moveTo(cx - 13, cy + 7).bezierCurveTo(cx - 4, cy + 15, cx + 5, cy + 14, cx + 12, cy + 7)
+      .stroke({ color, width: 3 });
+    g.moveTo(cx + 13, cy - 7).bezierCurveTo(cx + 4, cy - 15, cx - 5, cy - 14, cx - 12, cy - 7)
+      .stroke({ color, width: 3 });
+    return;
+  }
+  if (typeId === "skew") {
+    g.moveTo(cx - 13, cy - 13).lineTo(cx + 12, cy + 12).stroke({ color, width: 4 });
+    drawArrow(g, cx + 5, cy + 5, 1, color, 0.22);
+    return;
+  }
+  if (typeId === "shear") {
+    g.moveTo(cx - 13, cy - 9).lineTo(cx, cy - 9).lineTo(cx, cy + 11).stroke({ color, width: 4 });
+    drawArrow(g, cx, cy + 7, 1, color, 0.22);
+    return;
+  }
+  const base = machine.def.orientation.rot as Dir;
+  const direction = typeId === "pull" ? ((base + 2) & 3) as Dir : base;
+  drawArrow(g, cx, cy, direction, color, typeId === "push2" ? 0.4 : 0.32);
+  if (typeId === "push2") {
+    const dx = DIR_DX[direction] ?? 0;
+    const dy = DIR_DY[direction] ?? 0;
+    drawArrow(g, cx - dx * 12, cy - dy * 12, direction, color, 0.28);
+  }
+}
 
-  // body: fill + outline every occupied cell (the footprint).
+/** Draw a placed multi-cell machine: shaped body, semantic glyph, and port notches. */
+function drawMachine(m: PlacedMachine, isBottleneck: boolean, ctx: DrawCtx): void {
+  const { cells } = ctx;
+  const baseStyle = machineVisualStyle(m.def.typeId);
+  const style = isBottleneck
+    ? { body: 0xe25d52, face: 0xffded9, accent: 0x801f1b }
+    : baseStyle;
+  const occupiedCells = worldCells(m);
+  const occupied = new Set(occupiedCells.map((cell) => `${cell.x},${cell.y}`));
+
   let minX = Infinity;
   let minY = Infinity;
-  for (const wc of worldCells(m)) {
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const wc of occupiedCells) {
     const px = PAD + wc.x * CELL;
     const py = PAD + wc.y * CELL;
-    cells.rect(px + 2, py + 2, CELL - 4, CELL - 4).fill({ color: fill }).stroke({ color: border, width: borderW });
+    const leftConnected = occupied.has(`${wc.x - 1},${wc.y}`);
+    const rightConnected = occupied.has(`${wc.x + 1},${wc.y}`);
+    const topConnected = occupied.has(`${wc.x},${wc.y - 1}`);
+    const bottomConnected = occupied.has(`${wc.x},${wc.y + 1}`);
+    const x0 = px + (leftConnected ? 0 : 3);
+    const y0 = py + (topConnected ? 0 : 3);
+    const x1 = px + CELL - (rightConnected ? 0 : 3);
+    const y1 = py + CELL - (bottomConnected ? 0 : 3);
+    cells.rect(x0 + 3, y0 + 4, x1 - x0, y1 - y0).fill({ color: 0x17212a, alpha: 0.28 });
+    cells.rect(x0, y0, x1 - x0, y1 - y0).fill({ color: style.body });
+    if (!topConnected) cells.moveTo(x0, y0).lineTo(x1, y0);
+    if (!rightConnected) cells.moveTo(x1, y0).lineTo(x1, y1);
+    if (!bottomConnected) cells.moveTo(x1, y1).lineTo(x0, y1);
+    if (!leftConnected) cells.moveTo(x0, y1).lineTo(x0, y0);
+    cells.stroke({ color: style.accent, width: isBottleneck ? 4 : 3 });
+    cells.circle(px + CELL / 2, py + CELL / 2, 2.5).fill({ color: style.face, alpha: 0.58 });
     if (wc.x < minX) minX = wc.x;
     if (wc.y < minY) minY = wc.y;
+    if (wc.x > maxX) maxX = wc.x;
+    if (wc.y > maxY) maxY = wc.y;
+  }
+
+  const input = worldInPorts(m)[0];
+  const output = worldOutPorts(m)[0];
+  if (minX !== Infinity && input !== undefined && output !== undefined) {
+    const cx = PAD + ((minX + maxX + 1) * CELL) / 2;
+    const cy = PAD + ((minY + maxY + 1) * CELL) / 2;
+    const inX = PAD + input.x * CELL + CELL / 2;
+    const inY = PAD + input.y * CELL + CELL / 2;
+    const outX = PAD + output.x * CELL + CELL / 2;
+    const outY = PAD + output.y * CELL + CELL / 2;
+    cells.moveTo(inX, inY).lineTo(cx, cy).lineTo(outX, outY)
+      .stroke({ color: style.face, width: 6, alpha: 0.46 });
   }
 
   // port notches: green = input, red = output.
@@ -184,12 +297,13 @@ function drawMachine(m: PlacedMachine, isBottleneck: boolean, ctx: DrawCtx): voi
     drawPortNotch(cells, PAD + wp.x * CELL + CELL / 2, PAD + wp.y * CELL + CELL / 2, wp.side, PORT_OUT);
   }
 
-  // label (typeId + speed) at the top-left cell of the footprint.
   if (minX !== Infinity) {
-    const lx = PAD + minX * CELL + 5;
-    const ly = PAD + minY * CELL + 4;
-    addLabel(labels, m.def.typeId, lx, ly, TILE_LABEL);
-    addLabel(labels, `⏱${m.def.speed}`, lx, ly + 15, TILE_LABEL);
+    const cx = PAD + ((minX + maxX + 1) * CELL) / 2;
+    const cy = PAD + ((minY + maxY + 1) * CELL) / 2;
+    cells.rect(cx - 19, cy - 19, 38, 38).fill({ color: style.face })
+      .stroke({ color: style.accent, width: 3 });
+    cells.rect(cx - 13, cy - 13, 26, 26).stroke({ color: style.body, width: 2, alpha: 0.6 });
+    drawMachineGlyph(cells, m, cx, cy, style.accent);
   }
 }
 
@@ -212,15 +326,10 @@ export async function createFactoryRenderer(layout: FactoryLayout): Promise<Fact
 
   const cells = new Graphics();
   const tokens = new Graphics();
-  const labels = new Container();
-  app.stage.addChild(cells, tokens, labels);
+  app.stage.addChild(cells, tokens);
   let destroyed = false;
   let renderedLayout: FactoryLayout | null = null;
   let renderedBottleneck: number | null = null;
-
-  function clearLabels(): void {
-    for (const child of labels.removeChildren()) child.destroy();
-  }
 
   function render(curr: FactoryLayout, runtime: FactoryRuntime, bottleneckId: number | null): void {
     const want = canvasSize(curr);
@@ -232,8 +341,7 @@ export async function createFactoryRenderer(layout: FactoryLayout): Promise<Fact
       renderedLayout = curr;
       renderedBottleneck = bottleneckId;
       cells.clear();
-      clearLabels();
-      const ctx: DrawCtx = { cells, labels };
+      const ctx: DrawCtx = { cells };
       for (let y = 0; y < curr.height; y++) {
         for (let x = 0; x < curr.width; x++) {
           const tile = curr.tiles[y * curr.width + x];
@@ -266,11 +374,9 @@ export async function createFactoryRenderer(layout: FactoryLayout): Promise<Fact
     destroy: () => {
       if (destroyed) return;
       destroyed = true;
-      clearLabels();
       app.stage.removeChildren();
       cells.destroy();
       tokens.destroy();
-      labels.destroy();
       app.destroy({ removeView: true });
     },
   };

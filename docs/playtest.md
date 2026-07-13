@@ -1,120 +1,88 @@
 # 真人試玩與手動驗證
 
-這份清單用來啟動 HexaPharma，並人工走完 Lab → Factory → Shop → Patents → Save/Load/Rewind 的 vertical slice。
+這份清單驗證目前 content build 的 Research → Pilot Plant → Production → Market/Technology，以及 Blueprint/Save。舊 build 存檔不在範圍內。
 
-## 1. 環境
-
-- Node.js 20 以上。
-- 目前不保證跨 build 存檔相容；切到新的 breaking build 後，先清除該站點的 localStorage／站點資料再開始本輪驗證。
-- 第一次執行或 `package-lock.json` 改變後，在專案根目錄安裝依賴：
+## 1. 安裝與啟動
 
 ```bash
 cd /home/ubuntu/hexapharma
 npm ci
-```
-
-## 2. 啟動真人試玩伺服器
-
-開發模式：
-
-```bash
-cd /home/ubuntu/hexapharma
 npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 ```
 
-看到 `Local`／`Network` URL 後保持該 terminal 開著。`--strictPort` 是必要條件：若 53346 已被使用，必須直接處理衝突，不能讓 Vite 靜默換 port。
+- 同機器：<http://127.0.0.1:53346/?seed=14&cash=10000&research=100>
+- 遠端：`http://<Oracle 公網 IP>:53346/?seed=14&cash=10000&research=100`
+- `53346` 是 Oracle Cloud 唯一白名單 port；`--strictPort` 必須保留。若被占用，先解決衝突，不可讓 Vite 換 port。
+- production build：先停 dev，執行 `npm run build && npm run preview -- --host 0.0.0.0 --port 53346 --strictPort`。
 
-開啟方式：
+第一次進本 breaking build 可清除該 origin 的 localStorage；本階段不維護跨 build save。
 
-- 同一台機器：<http://127.0.0.1:53346/>
-- Oracle Cloud 外部連線：`http://<Oracle 公網 IP>:53346/`
+## 2. 快速準備 seed 14 Research route
 
-若要驗 production build，先停止 dev server，再執行：
+從零建造時，以 Route Floor 的 Source／Belt／Sink／machine hotbar 直接擺唯一線性路線。要快速驗完整循環，可使用目前 build 受測的 fixture：
 
-```bash
-npm run build
-npm run preview -- --host 0.0.0.0 --port 53346 --strictPort
-```
+`docs/examples/seed14-research.hexapharma.json`
 
-停止伺服器：回到啟動它的 terminal 按 `Ctrl+C`。
+1. 按 `B` 開 Blueprint Library。
+2. 把上列檔案內容貼入 Portable JSON，按 **Import pasted JSON**；或用 **Upload JSON** 選該檔。
+3. 在 `Seed 14 manual smoke route` 按 **Load**。Library 應將它套到 Research；未知欄位、錯誤 checksum/content fingerprint 或非線性 Research topology 必須拒絕。
+4. 按 `Escape` 關 drawer，切 Research → Route Floor。應看到 source→8 個 Push→sink 的實體 multi-cell 路線；不是 Recipe 卡片或 auto-packed overlay。
 
-## 3. 五分鐘完整循環
+此 fixture 只用於手動 smoke，不是遊戲內自動解。一般玩測應自行探索。
 
-同機器使用 <http://127.0.0.1:53346/?seed=14>；遠端則把 host 換成 Oracle 公網 IP：`http://<Oracle 公網 IP>:53346/?seed=14`。預期初始狀態是 Cash 200、R&D 0、1 map；Layer A 為 `63×63`，藥物在正中央，初始只揭露 radius 3 的 `49/3969` 格。
+## 3. Atlas / Research
 
-### Lab
+1. 回 **Effect Atlas**。初始 A 層為 `63×63`，藥在 authority `(31,31)`、UI 相對 `(0,0)`，並精確位於一個 origin-aligned 5×5 major block 的中心。
+2. 確認只看到大地圖局部（約 `17×13` 格），每格 minor／每 5 格 major grid；不得有穿過玩家的 X/Y 十字軸。
+   - desktop/compact 的格子都必須保持正方形；390px status 不得溢出或被底部 navigation 遮住。
+3. 未知 terrain 必須完全被原創 fog 遮住。初始 `revealed 49/3969`；不存在 reveal-all。
+4. drag pan、wheel cursor-anchor zoom。先把鏡頭拖離藥物，按 **Focus/F** 應只置中一次；之後 shot 移動不得 auto-follow 搶回鏡頭。
+5. Route Floor 的規劃與切頁不得改 fog 或 cash。
+6. 按 **Dispense**：cash 只在開始扣一次，按鈕執行中 disabled，Atlas 每約 320ms 完成一台機器。只允許已完成 step 的 cyan trail/radius-1 fog reveal；未來 route 不得先揭露。
+7. 可在中途按 **Abort · no refund**；shot 停止、cash 不回復、已揭 fog 保留。重新 Dispense 會再付一顆成本。
+8. 正常走完 fixture 後顯示 validated cure，命令改成 **Send to Pilot Plant**。
 
-1. 確認畫面只是一張大地圖的局部，不是全 `63×63` 或多圖並排；未知區應是原創 defocused biochemical fog，不應看到「?」debug 格。
-2. 在圖上 drag 平移、wheel 以游標錨定縮放；按 `F` 或 `Focus` 回到藥物並進入 follow。100% 約可見 `17×13` 格，canvas intrinsic size 應為 `704×512`；每格 minor grid、每5格 major grid與穿過 origin 的 axes 在 fog 中仍可見，但不得透露 feature。
-3. 點 `Push` pictogram 或按 `1`；確認它先進入 held 狀態，Recipe step 數仍為 0，尾端插入槽與地圖橙色虛線／capsule 先顯示結果。點插入槽 commit，重複到 `push × 8`。每台 Push 應移動3格，總共從 `(31,31)` 到 seed 14 的 D0 cure 區 `(55,31)`。預設朝東；held 或選取卡片後以 `R/H` 旋轉／鏡射，Escape 取消 held。
-4. 把任一卡拖到另一插入位置，放下前應先看到完整重排 route；放下後用 `Ctrl+Z/Y` 復原／重做。點卡片後 Delete 只刪所選步，`Q` 可 pipette。Phase Exchange A↔B 在目前單層必須顯示 locked／不可選，未知 fog 內不能顯示精確 route 或 endpoint。
-5. 按 `Run` 或 Space；指令軌 playhead 應逐步前進，動畫中再次按 Space／`Stop` 應可取消。
-6. 找到 D0 後應看到5–9格連通的綠色療效區與連續外框，不再只是單格 cure icon；目前沒有 potency 資料，因此 renderer 不得自行猜一個核心。預期結果治療 disease 0，且右側 `Run a valid recipe to ship` 變為可按的送廠動作。
-7. 在 Pilot Bench 點一台機器，再點空格移動 anchor；確認完整多格 footprint 移動、belts 即時重路由。選取後按 `Rotate footprint`，碰撞、越界或斷路必須顯式報錯。記下至少一台機器 anchor。
-8. 送往 Factory 後，F2 Factory rail 應 active；確認 Factory 的 layout 尺寸、tiles、所有 anchor、footRot、effect orientation與routing逐欄位沿用 Pilot Bench，沒有重新 auto-pack。
+## 4. Pilot Plant
 
-### Factory
+1. 送出後自動進 F2。layout 尺寸、tiles、machine IDs/anchors、effect orientation/flip、footRot 必須和 Research 逐欄位相同，不能重新排列。
+2. 上方顯示 **No clock · layout edits are free**；沒有 Play/Pause/Step、inventory、waste 或 cash 扣款。
+   - 390px 首次開啟，或先看過空 Pilot 後再收到 same-size Research transfer 時，既有機器必須自動捲入 hotbar 上方可見區，不能只剩被遮住的彩色邊緣。
+3. inspector 應即時顯示完整 sample outcome（cures、side effects、final endpoints）、throughput、bottleneck 與 contract match。Research Route Floor 不得提前顯示 sample outcome。
+4. 驗證直接操作：LMB drag build、RMB erase、Shift/MMB pan、wheel zoom、`R` rotate、`Q` pipette、`Ctrl+C/X/V`、`Ctrl+Z/Y`。先做一個變更再 undo，確認 contract 回到 matches。
+5. 按 **Commission**（accessible label 為 Validate Pilot layout and commission Production）；若 layout 不實現 Research contract，必須可見拒絕，不能 silent repair。
+6. Pilot 可另存 `pilot-plant` Blueprint；它允許量產幾何。Research Blueprint 則只允許唯一線性 route。
 
-1. 以底部 1–0 hotbar 選工具；LMB drag 連續建造，RMB drag 拆除，`R` 旋轉，hover 後 `Q` pipette。每次 drag 應只新增一筆 undo。
-2. Shift+LMB／MMB drag 平移，wheel 以游標下方為錨縮放，`⌖` 重置鏡頭；觸控以 tap 放置、drag 平移。鏡頭操作不得修改權威 layout。
-3. hover 物件後驗 `Ctrl+C/X/V` copy／cut／paste，以及 `Ctrl+Z/Y` undo／redo；新 edit 應切斷 redo branch，history 最多 50 筆。
-4. 按 `Step` 六次或使用 `.`，確認 tick 從 0 增加；按 `Play`／Space，等 `total sink outcomes` 不再是 0，再 Pause／Space。
-5. 確認 inventory 產生、waste 沒有被誤算成可售藥；可比較 inspector 底部 `Single` 與 `Parallel`，後者吞吐應較高。
+## 5. Production / Market / Technology
 
-### Market
+1. 未 commission 前直接開 F3，應看到 Production offline 指引，不能從零繞過 Pilot 編輯。
+2. commission 後 F3 顯示 exact Pilot layout。按 Step，tick 恰 +1；Play 後只有 Production 時間流動。
+3. 等 `Total sink outcomes` 增加後 Pause；有效 contract products 進 Stock，不符/failed outcome 增加 Waste。
+4. 按 `M` 開 Market，對有庫存疾病按 **Ship one**：Stock 減一、Cash 增加、Knowledge 恰 +1。同一實體藥不能賣兩次。
+5. 按 `T` 開 Technology。一般節點顯示 prerequisite/cash/Knowledge；deeper-map 節點必須先列出清三場域、inventory、fog、sales 的警告並要求確認。
+6. `M/T/B` drawers 都能用 `X` 或 Escape 關閉，且不冒充第四個建築頁。
 
-1. 按 F3 或 rail 切到 `Market`；確認介面是 disease cards，不是資料表。
-2. disease 0 的 Inventory 應大於 0。
-3. 按 `Sell 1`：inventory 減少，Cash 增加，R&D 增加 1。
-4. 多生產幾顆後可驗 `Sell all`；它應一次完成，且不能重複出售同一顆實體藥。
+## 6. Blueprint 跨 save 與嚴格匯入
 
-### Patents
+1. 在 `B` 將目前 Pilot 存為 Blueprint，下載 JSON，並在 textarea 看到 version/checksum/content fingerprint。
+2. Save slot 1，切 slot 2 或 Load/Rewind slot 1；Blueprint Library 內容不得改變。
+3. 匯入剛下載的 JSON，checksum 相同應去重。
+4. 手動修改 name/layout 但不重算 checksum，必須拒絕；檔案 >1 MiB 必須在讀全文前拒絕。
+5. Blueprint 內容不得含 seed、fog、cash、Knowledge、patents、contract、outcome、runtime、inventory 或 waste。
 
-1. 按 F4 或 rail 切到 `R&D`，確認 research lattice 的 available／locked／unlocked 狀態合理。
-2. 有至少 80 Cash + 1 R&D 時解鎖 `reveal-aid`。
-3. 回 Lab，起點附近的 revealed 格數應增加。
+## 7. Save / Load / Rewind
 
-## 4. 驗 1 → 2 → 3 → 4 layers 與 Phase Exchange
+1. 選 slot，按 Save；做一個有效動作再 Save，建立同 origin history。
+2. Load 應恢復 Research/Pilot/Production、runtime、inventory、fog、economy、patents。
+3. Rewind 回上一 snapshot，reload 後 history 仍存在。
+4. corrupt/partial blob 必須顯示錯誤；按 Recover 前不得自動刪除或覆寫。
+5. v4/舊 intent schema 必須明確拒絕；這是早期 save policy，不是 migration bug。
 
-用試玩起始值開新頁：
-
-<http://127.0.0.1:53346/?seed=14&cash=9999&research=9999>
-
-1. 在 Patents 解鎖 `bench-2`。
-2. 解鎖 `new-map`；先取消一次，確認狀態與資源沒有被誤改。
-3. 再解鎖並確認警告；警告必須列出 recipe、factory layout/runtime、waste、inventory、fog、sales history 會被清除。
-4. 回 Lab，預期顯示 2 maps、seed 15，尺寸仍為 `63×63`；A/B tabs 可切換且各自保留鏡頭。A 的 start 在 `(31,31)`，B 在近中心的 `(38,31)`。
-5. 確認 Phase Exchange A↔B 已可用。其用途是交換兩層的**座標**：before 的 A/B 各保留自己位置，after 為 A 收到 B 原座標、B 收到 A 原座標；因 B 有 phase offset，剛解鎖時也不是 no-op。
-6. 解鎖並確認 `new-map-4`，預期顯示 3 maps、seed 16、出現 C tab，尺寸仍為`63×63`。
-7. 解鎖並確認 `deep-map-4`，預期顯示 4 maps、seed 17、出現 D tab，尺寸仍為`63×63`。
-
-## 5. Save / Load / Rewind
-
-本節只驗證目前 build 內的存檔，不測任何舊 build migration。
-
-1. 選擇一個 slot，按 `Save`，確認出現成功訊息。
-2. 再做一個有效動作後再次 `Save`，建立同一 run 的 history。
-3. 按 `Load`，確認 cash、recipe、factory、inventory、fog、patents 都回到該 slot head。
-4. 按 `Rewind`，確認回到上一個 snapshot，重新整理頁面後 history 仍存在。
-5. 若畫面報 corrupt/partial checkpoint，不要期待它被靜默清除；必須看到錯誤與明確 `Recover` 流程。
-
-## 6. 自動閘
-
-手動試玩前後都可以跑唯一自動驗收閘：
+## 8. 自動閘與回報
 
 ```bash
 npm run check
 ```
 
-它會執行 TypeScript、ESLint、Vitest、Chromium e2e，以及 production build/preview smoke。自動測試使用 53347／53348；真人試玩固定使用 53346。
+它依序執行 typecheck、ESLint、完整 Vitest suite、Chromium/production-preview Playwright，以及 Atlas、Production、machine-family gallery、390px Research/Pilot screenshot baselines。自動 server 使用 53347/53348；真人固定 53346。
 
-## 7. 回報問題
-
-每個 sim／關卡問題請附：
-
-- seed 與生成設定／網址 query
-- tick 區間
-- 完整操作順序（input trace）
-- 預期結果與實際結果
-- 違反的不變式或第一個壞掉的 tick（若已知）
-- 畫面截圖與瀏覽器 console error（若是 UI 問題）
+Bug 回報附：URL/seed/GenOptions、tick 區間、完整操作/input trace、預期/實際、第一個違反的不變式，以及 UI 截圖/console error。

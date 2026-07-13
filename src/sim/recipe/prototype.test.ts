@@ -12,6 +12,7 @@ import { generate } from "../mapgen";
 import {
   compileEntitledPrototype,
   compilePrototype,
+  deriveLinearRoute,
   derivePrototypeTemplate,
   factoryOutcome,
 } from ".";
@@ -40,6 +41,125 @@ function step(typeId: string): Machine {
 }
 
 describe("compilePrototype", () => {
+  it("describes the immutable physical route in connectivity order", () => {
+    const template: Template = { steps: [step("push"), step("pull")] };
+    const layout = compilePrototype(template, 22, 10, [
+      { anchor: { x: 5, y: 4 }, footRot: 0 },
+      { anchor: { x: 12, y: 3 }, footRot: 0 },
+    ]);
+    const route = deriveLinearRoute({ ...layout, machines: [...layout.machines].reverse() });
+
+    expect(route.machineIds).toEqual([0, 1]);
+    expect(route.template).toEqual(template);
+    expect(route.nodes.map((node) => node.kind)).toEqual([
+      "source",
+      "machine",
+      "machine",
+      "sink",
+    ]);
+    expect(route.nodes.filter((node) => node.kind === "machine").map((node) => node.machineId))
+      .toEqual([0, 1]);
+    expect(route.segments).toHaveLength(3);
+    for (let index = 0; index < route.segments.length; index++) {
+      const segment = route.segments[index]!;
+      expect(segment.fromNodeIndex).toBe(index);
+      expect(segment.toNodeIndex).toBe(index + 1);
+      expect(segment.cells.length).toBeGreaterThanOrEqual(2);
+      const from = route.nodes[segment.fromNodeIndex]!;
+      const to = route.nodes[segment.toNodeIndex]!;
+      const expectedStart = from.kind === "machine" ? from.output.position : from.position;
+      const expectedEnd = to.kind === "machine" ? to.input.position : to.position;
+      expect(segment.cells[0]).toEqual(expectedStart);
+      expect(segment.cells.at(-1)).toEqual(expectedEnd);
+      for (let cellIndex = 1; cellIndex < segment.cells.length; cellIndex++) {
+        const previous = segment.cells[cellIndex - 1]!;
+        const current = segment.cells[cellIndex]!;
+        expect(Math.abs(current.x - previous.x) + Math.abs(current.y - previous.y)).toBe(1);
+      }
+    }
+
+    expect(Object.isFrozen(route)).toBe(true);
+    expect(Object.isFrozen(route.machineIds)).toBe(true);
+    expect(Object.isFrozen(route.template)).toBe(true);
+    expect(Object.isFrozen(route.template.steps)).toBe(true);
+    expect(Object.isFrozen(route.nodes)).toBe(true);
+    expect(Object.isFrozen(route.nodes[0])).toBe(true);
+    expect(Object.isFrozen(route.nodes[0]?.position)).toBe(true);
+    expect(Object.isFrozen(route.segments)).toBe(true);
+    expect(Object.isFrozen(route.segments[0])).toBe(true);
+    expect(Object.isFrozen(route.segments[0]?.cells)).toBe(true);
+    expect(Object.isFrozen(route.segments[0]?.cells[0])).toBe(true);
+    expect(() => (route.machineIds as number[]).push(99)).toThrow(TypeError);
+    expect(() => {
+      (route.nodes[0]!.position as { x: number; y: number }).x = 99;
+    }).toThrow(TypeError);
+  });
+
+  it("rejects every non-linear or ambiguous physical topology", () => {
+    const template: Template = { steps: [step("push")] };
+    const layout = compilePrototype(template, 18, 9, [
+      { anchor: { x: 7, y: 3 }, footRot: 0 },
+    ]);
+    const withoutSource = layout.tiles.map((tile): FactoryTile =>
+      tile.kind === "source" ? { kind: "empty" } : tile);
+    expect(() => deriveLinearRoute({ ...layout, tiles: withoutSource })).toThrow(
+      /exactly one source/,
+    );
+
+    const disconnectedTiles = [...layout.tiles];
+    const empty = disconnectedTiles.findIndex((tile, index) =>
+      tile.kind === "empty" && index > layout.width);
+    disconnectedTiles[empty] = { kind: "belt", dir: 0 };
+    expect(() => deriveLinearRoute({ ...layout, tiles: disconnectedTiles })).toThrow(
+      /every belt/,
+    );
+
+    for (const branch of [
+      { kind: "splitter", inDir: 2, outDirs: [0, 1] } as const,
+      { kind: "merger", inDirs: [2, 3], outDir: 0 } as const,
+    ]) {
+      const branchedTiles = [...layout.tiles];
+      branchedTiles[empty] = branch;
+      expect(() => deriveLinearRoute({ ...layout, tiles: branchedTiles })).toThrow(
+        /splitters and mergers/,
+      );
+    }
+
+    const firstMachine = layout.machines[0]!;
+    expect(() => deriveLinearRoute({
+      ...layout,
+      machines: [firstMachine, { ...firstMachine, id: 99 }],
+    })).toThrow(/ambiguous machine input/);
+
+    const cycleTiles: FactoryTile[] = Array.from(
+      { length: 5 * 3 },
+      (): FactoryTile => ({ kind: "empty" }),
+    );
+    cycleTiles[5] = { kind: "source", dir: 0, period: 1 };
+    cycleTiles[6] = { kind: "belt", dir: 0 };
+    cycleTiles[7] = { kind: "belt", dir: 1 };
+    cycleTiles[12] = { kind: "belt", dir: 2 };
+    cycleTiles[11] = { kind: "belt", dir: 3 };
+    cycleTiles[9] = { kind: "sink" };
+    expect(() => deriveLinearRoute({
+      width: 5,
+      height: 3,
+      tiles: cycleTiles,
+      machines: [],
+    })).toThrow(/cycle/);
+  });
+
+  it("rejects duplicate machine ids even when connectivity is unambiguous", () => {
+    const template: Template = { steps: [step("push"), step("pull")] };
+    const layout = compilePrototype(template, 22, 10, [
+      { anchor: { x: 5, y: 4 }, footRot: 0 },
+      { anchor: { x: 12, y: 3 }, footRot: 0 },
+    ]);
+    const machines = layout.machines.map((machine) => ({ ...machine, id: 0 }));
+
+    expect(() => deriveLinearRoute({ ...layout, machines })).toThrow(/unique machine id/);
+  });
+
   it("keeps player-owned anchors and produces the same effect as the recipe", () => {
     const map = openMap();
     const cureIndex = 10 * map.width + 13;
