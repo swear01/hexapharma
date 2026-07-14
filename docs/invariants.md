@@ -1,82 +1,85 @@
 # Invariants（不變式總表）
 
-> 自動閘的脊椎。違反時附 `seed + tick 區間 + input trace` 與第一個壞掉的不變式。
+> 這是目前 build 的 invariant 集。違反時附 `seed + tick/path segment 區間 + input trace/ResearchProgram` 與第一個壞掉的不變式。
 
-## Drug graph
+## Research path core
 
-- translate 逐格 sweep；牆停前一格，hazard sticky-fails。scale 使用 exact rational；swap 純交換兩層位置。
-- 旋轉四次回原狀，flip 兩次回原狀。
-- outcome 只由 final positions 決定；相同 effect steps/orientations/order 與 belt geometry 無關。
-- preview、apply、Research reveal 使用同一套 sweep authority，不得各自近似。
+- `PathStamp`幾何由catalog固定；program接續不得用Factory `footRot`、effect flip或renderer transform改寫path cells。
+- pure core actual-step preview在同stamp、prefix endpoint、calibration、terrain下與execution逐cell相同；idle planning先中性化hidden cells，已揭露terrain必須影響ghost，未知terrain不得改形或洩漏。
+- `ResearchProgram`的ordered stamps與每個prefix calibration是唯一authority；stamp anchor隱含為前一prefix endpoint，不得另存任意placement、Recipe或Route Floor layout。
+- calibration 只能把下一 stamp 接到當前 prefix endpoint；不能改 stamp、跳過 prefix、auto-solve 或 silent repair。
+- program／calibration 進 state、trace、save、Blueprint 前必須 canonical validate + own/freeze。
+
+## Terrain / portal
+
+- Active Research 只有單層座標；跨層位置、swap／Phase Exchange 與 A–D layer progression 不得出現在 active program、palette、mapgen、Blueprint 或 save v6 authority。
+- Wall／OOB取消單次delta後繼續；Abyss進入後sticky fail並停止；Swamp消耗2 energy、其他可進入格消耗1，energy耗盡停止。renderer不得自行猜另一套結果。
+- portal 是同層、成對、定向 A→B；進A後立即到B並從B繼續剩餘path。A只能到配對B，未配對、重複或反向偷用都拒絕。
+- portal transition 在 trail 中是 discontinuity；不得 reveal 或繪製 A/B 中間未走過的直線格。
+- A與B都是同一pair的可讀glyph，但只有A可啟動；任一端hidden時不得由另一端洩漏pair marker／方向。
+- 未知 fog 內的 terrain、portal B、outcome 不得由 hover/preview/calibration 洩漏。
 
 ## Map generation / fog
 
-- 同 content build、同完整合法 `GenOptions` → map、origin/start、difficulty、price 逐欄位相等。
-- seed 只收 canonical uint32；mapgen 不使用 `Math.random()`、wall-clock 或 production solver。
-- Game map 每邊 ≤64、每圖 ≤4,096；public mapgen 單圖 area ≤65,536。
-- A 層 start/origin 是 `floor(width/2),floor(height/2)`；預設 `63×63` 為 `(31,31)`，UI 相對座標為 `(0,0)`。
-- 新局 fog 只揭 start Chebyshev radius 3；unknown features 必須被 opaque fog 完全遮蔽。
-- Atlas 只畫 active layer/visible cells；每格 minor、每 5 格 origin-aligned major grid。不得畫跟玩家重疊的 XY 十字軸，也不得因 shot 移動 auto-follow。
+- 同 content build、同 canonical seed + 完整 generation options → Atlas、terrain、portal pairing、motifs、difficulty/quality metrics 與 reference ResearchProgram 逐欄位相同。
+- mapgen 使用唯一 seeded RNG，不使用 `Math.random()`、wall-clock、Production sim 或 production solver rejection loop。
+- generator 以 radial progression + motifs constructive 產生合法 program；reference program 的每個 prefix calibration 都能由同一 path core 執行。
+- start 位於 generator 宣告的中心 authority；Atlas 必須大於正常 viewport，未知 feature 由 opaque fog 完全遮蔽。
+- planning、ghost、hover、Blueprint load 不改 fog。只有實際完成的 Research path segment 可以更新 fog；尚未執行的 suffix 不得提前揭露。
+- Technology探索輔助只可調整已完成segment的sensor radius；unlock intent本身不得改fog。
+- map size、radial bands、motif weights 與 reveal radius 可調，但 bounds 必須顯式且 fail-fast。
 
 ## Research
 
-- layout 必須符合 Game entitlement，且 route descriptor 只接受唯一 source、唯一 sink、完整連通、無 cycle/split/merge、至少一台機器的線性路徑。
-- `Template.steps` 只能由實體 connectivity 推導；不得有第二份 editable Recipe authority。
-- planning/editing 不改 fog、不扣 cash。
-- `beginResearchShot` 只扣一次 `max(1, Σ route catalog cost)`；cash 不足原子拒絕。
-- shot 執行中不可改 layout。每個 `advanceResearchShot` 只完成一個 machine effect，並只揭該步真實 trail 的 radius 1。
-- 未完成的路徑不預先揭霧。Abort、failed、無療效不退款。
-- 成功 transfer 必須有完成、非 failed、至少 cure 一病的 `lastOutcome`，且重新 evaluate 的 route 與 outcome 相同。
+- Research 只持有單一 Atlas、fog、ResearchProgram 與 execution/progress state；不持有 FactoryLayout、source/belt/sink route、Pilot contract 或 Production token。
+- F1 不得存在 Route Floor mode、linear route validator、Factory sample outcome 或常駐教學面板。
+- program planning 不產生免費真實 outcome。執行只能依已提交 program 推進，不可在 renderer/UI 直接 mutate fog/progress。
+- Research 成功／失敗／發現任何 terrain 都不建立 Pilot contract，也不自動建立／改寫 Pilot layout。
+- planning不收費；Dispense原子扣`max(1, Σ catalog machine cost)`且abort/failure不退。金額用safe integer；扣款失敗時program/fog/progress原子不變。
 
-## Pilot Plant / exact transfer
+## Pilot Plant / exact commission
 
-- Pilot 沒有 tick、耗材、cash、inventory 或 waste authority；編輯 layout 是免費冷路徑。
-- Research→Pilot 必須逐欄位 own 相同 layout，並攜帶 derived contract。
-- Pilot→Production 必須由 `factoryOutcome(layout)` 證明與 Research contract 相同；不符/deadlock/budget exhaustion 顯式拒絕。
-- transfer 禁止 auto-pack、reorder、silent rotate、silent repair。
+- Pilot 沒有 tick、建造成本、耗材、inventory 或 waste authority；編輯 layout 是免費冷路徑。
+- Pilot 可獨立於 Research 從空地建立任意符合 entitlement/catalog/geometry bounds 的 FactoryLayout，包括 split/merge/parallel。
+- diagnostics 可同步分析 actual outcome、side effects、endpoint、throughput、bottleneck/deadlock，但不能推動 Production time或建立產品。
+- commission 不要求 ResearchProgram、contract、cure、特定 outcome 或「diagnostics matches」。no-cure/failure/deadlock 是可帶入 Production 的玩家選擇。
+- Pilot→Production 的 initial layout 必須逐欄位 own/copy；禁 auto-pack、reorder、silent rotate、silent repair 或依 Research 編譯。
 
 ## Production / factory-sim
 
-- 只有 `productionTicks` 推進 runtime；正 ticks 沒有 Production layout 時拒絕，0 ticks 是 no-op。
-- 質量守恆；`nextUnitId === unitCount + producedTotal`；每顆 active/event ID 唯一有序。
-- sink event 保留實際 DrugState、failure 與累計 machine cost。只有符合 contract 的有效 cure 進 inventory；其他增加 waste。
-- splitter 只收 `inDir` 並以 per-tile round-robin cursor 出貨；merger 只收 `inDirs`，同 tick 按宣告順序仲裁。
-- cursor 進 runtime/cold state/hash/save。runtime 綁 layout + `MultiMap` identity。
-- 成功 hot `stepFactory` 使用預配置 SoA/event/scratch buffers，不建立新 object/Array/Map。
-- public factory area ≤65,536；Game layout 每邊 ≤256、area ≤4,096。diagnostics ≤100,000 ticks 且 ≤100,000,000 work，超界在 init/tick 前 fail-fast。
-- true throughput deadlock 回 `0/1` + null bottleneck；不能偽裝成藥物 failure。其他 exhaustion 顯式 throw 並由 UI 顯示。
+- 未有 Pilot commission 時不得建立／編輯 live Production layout；只有 commissioned Production 顯示 transport controls。
+- 只有 `productionTicks` 推進 runtime；Pilot/Research diagnostics 永不增加 tick、inventory 或 waste。
+- 質量守恆；active units、sink events 與 inventory IDs 唯一且不重收。
+- sink event 保留實際 DrugState、failure、side effects、cures 與 processing cost。有效 cure 依實際 outcome 進 inventory；failed/no-cure 增加 waste。不存在 contract mismatch 判斷。
+- splitter/merger cursor 進 runtime/cold state/hash/save。runtime 綁 Production layout + content/map identity。
+- 成功 hot tick 使用預配置 SoA/event/scratch buffers，不在熱迴圈配置新 object/Array/Map。
+- area、unit、tick、diagnostic work 都有顯式 bounds；deadlock 是實際可保存／顯示的結果，不是 commission error。
 
 ## Whole-game authority
 
-- GameState 必須同時包含 owned `research`、`pilot`、`production`；不能用舊 recipe/factory 平行欄位形成雙 authority。
-- 同 origin + canonical intent trace 重播逐欄位/hash 相同。trace ≤4,096、production ticks ≤100,000、weighted work ≤100,000,000。
-- reducer 不 alias：有效 production tick 先 cold snapshot→restore；新 state 不修改舊 state/history。
-- 每 tick 立即 drain/clear product event；不得 batch 只看最後 tick、漏貨或 load 後重收。
-- inventory ≤24,500；一顆 physical product 只能賣一次。bulk sale 必須原子驗證 product IDs、disease 與 cure。
-- 進 state/trace 的 options/catalog/template/layout/nested geometry 都 canonical clone + deep-freeze。
-- map patent 清 Research/Pilot/Production layout、shot/outcome/contract/runtime/waste、inventory、fog、sales；保留扣款後資源、patents、next inventory ID。
+- target GameState 同時包含 owned `research`、`pilot`、`production`，但三者不以 contract 或 shared layout alias 耦合。
+- 只有 Pilot commission 會建立 Production initial layout；Research intent 不能直接寫 Pilot/Production。
+- 同origin + canonical intent trace重播逐欄位/hash相同；Save v6 core固定單head上限4,096 intents／100,000 ticks／100,000,000 work。
+- reducer 不修改舊 state/history；Production 每 tick 即時 drain/clear product events。
+- inventory/cash/Knowledge/costs/IDs/sold counters 都是合法 safe integers；一顆 physical product 只能賣一次。
+- Atlas reset 必須明確列出會清除的 Research/Pilot/Production/fog/inventory/sales authority，確認前原子不變。
+- Factory expansion若會重建commissioned Production runtime／waste，UI必須先顯示destructive confirmation；unlock不得中止active Research shot。
 
-## Economy / patents
+## Blueprint breaking schema
 
-- cash 變動 = 收入 − 支出；inventory、cash、Knowledge、costs、IDs 與 sold counters 都是合法 safe integers。
-- 收益使用實體產品的 production cost/outcome；每顆合法 sale 恰增加 1 Knowledge。
-- 同疾病收益隨 sold counter 遞減。現行沒有 order/demand scheduler。
-- patent tree/state/effects 必須完整驗證；cost/reveal/layout aggregates 使用 checked safe-integer arithmetic。
+- Library 與 save slots 使用分離的 namespace/lifecycle；Save/Load/Rewind 不得改 Blueprint Library。
+- wire/ruleset 固定 v2；Research kind 必須是 `research-program`，payload 只能是 ordered `{typeId,stroke}` steps。fixed path 由 fingerprint-compatible `DEFAULT_CATALOG` 還原，不可重複保存 path/placement/FactoryLayout。
+- Pilot kind 必須是 `pilot-plant`，payload 是 sparse routing + machines `{id,typeId,stroke,anchor,footRot}`。不得保存 chemical orientation/path/cost/speed/shape、ResearchProgram、diagnostic result、Production runtime、inventory、economy 或 fog。
+- kind-specific decoder 必須拒絕 unknown/missing fields、wrong kind/version/content fingerprint/checksum、duplicate IDs、invalid calibration、unknown stamp/machine、collision、越界與超過 cap。
+- checksum 驗證必須先於昂貴 materialization/path execution；失敗不能 partial-write Library。
+- 舊 layout-based `research-route` v1 必須顯式拒絕，不得被 v2 `research-program` silent reinterpret。
 
-## Blueprint v1
+## Save v6 / checkpoints
 
-- document 只能有 `format/version/checksum/blueprint`；payload/nested objects 也拒絕 unknown/missing fields。
-- version/ruleset/content fingerprint/kind/name/geometry/tile/machine/orientation 全部嚴格驗證；未知 machine、重複 tile/id、collision、越界或 >1 MiB 拒絕。
-- `research-route` import/capture 必須立即通過唯一線性 route validator；不能把錯誤延後到 Dispense。`pilot-plant` 可保存 split/merge/parallel 幾何。
-- checksum 是 canonical blueprint payload 的 SHA-256；decode 必須先驗 checksum 再 materialize。
-- blueprint 不得包含 seed/fog/economy/patents/contract/outcome/runtime/inventory。
-- Library 使用獨立 key，最多 64 entries/4 MiB；Save/Load/Rewind 不得改變它。
-
-## Save v5 / checkpoints
-
-- v5 full save round-trip 巢狀三場域；v4/unknown version 顯式拒絕，沒有 silent migration。
-- full wire >5,000,000 chars 顯式拒絕；這不代表合法 GameState 失效。
-- compact authority 由 origin + normalized trace + replayTicks + stateHash 組成；reader 從 raw trace 重算 ticks/work 後才 replay。
-- single head ≤4,096 intents/100,000 ticks/100,000,000 work；rewind aggregate ≤8,192/12,000/100,000,000，compact ≤20 snapshots/1,250,000 chars。
-- timeline 同 origin、normalization-aware prefix lineage；跨 run save 取代舊 timeline，不得混合。
-- corrupt/partial/disagreeing blob 必須可見，Recover 前不得刪改；Load/Save/Rewind 不得踩壞原 blob。
+- core wire固定v6。full保存`game`；compact保存`origin + normalized intentTrace + replayTicks + stateHash`；slots保存bounded full states。不得混入Research layout、contract或transform/orientation authority。
+- full/compact/slots必須逐欄位重建ResearchProgram/shot、contract-free Pilot/Production、path/stroke catalog/layout及cold runtime；typed/runtime資料不得alias原物件。
+- reader從raw origin + trace重算budgets後才semantic replay；不能信declared counters。full與slots也必須做raw work preflight及完整trace replay equivalence。
+- v5顯式拒絕；unknown/missing fields、unsafe integers、invalid path/stroke、geometry/runtime forgery與unknown schema都顯式失敗，不建立legacy migration。
+- 單blob≤5,000,000 characters；slots≤20；single head≤4,096 intents／100,000 ticks／100,000,000 work；rewind aggregate≤8,192 intents／12,000 ticks／100,000,000 work。
+- corrupt/partial/disagreeing blob必須可見，Recover前不得刪改；Save/Load/Rewind不得踩壞原blob。Checkpoint UI lineage/recovery已整合；完整gate仍必須同時覆蓋core與browser workflow。
+- checkpoint storage外層lineage envelope是獨立version 2，內層`head/history`仍使用Save v6 authority；不得因外層版本號而reinterpret內層schema。

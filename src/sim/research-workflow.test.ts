@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { FactoryLayout, GameIntent, GenOptions, Template } from "./phase0_interfaces";
+import type { FactoryLayout, GameIntent, GenOptions, Machine, Template } from "./phase0_interfaces";
 import {
   BASE_GAME_FACTORY_HEIGHT,
   BASE_GAME_FACTORY_WIDTH,
@@ -8,7 +8,7 @@ import {
 import { applyGameIntent, createGameState } from "./game";
 import { previewStep } from "./drug-graph";
 import { generate } from "./mapgen";
-import { compileEntitledPrototype, deriveLinearRoute } from "./recipe";
+import { compileEntitledPrototype } from "./recipe";
 
 const options: GenOptions = {
   seed: 14,
@@ -20,12 +20,12 @@ const options: GenOptions = {
   difficulty: { min: 4, max: 12 },
 };
 
-function reference(): { readonly template: Template; readonly layout: FactoryLayout } {
-  const template = generate(options).diseases[0]!.reference;
+function reference(): { readonly program: Template; readonly layout: FactoryLayout } {
+  const program = generate(options).diseases[0]!.reference;
   return {
-    template,
+    program,
     layout: compileEntitledPrototype(
-      template,
+      program,
       BASE_GAME_FACTORY_WIDTH,
       BASE_GAME_FACTORY_HEIGHT,
     ).layout,
@@ -40,52 +40,64 @@ function fogSnapshot(game: ReturnType<typeof createGameState>): readonly number[
   return game.fog.map((layer) => [...layer]);
 }
 
-describe("Research shot workflow", () => {
-  it("keeps planning free of fog and cash mutations, then charges exactly once on Dispense", () => {
-    const { layout, template } = reference();
-    const initial = createGameState(options, 200, 0);
+function shotCost(program: Template): number {
+  return Math.max(1, program.steps.reduce((total, machine) => (
+    total + DEFAULT_CATALOG.find((entry) => entry.typeId === machine.typeId)!.cost
+  ), 0));
+}
+
+function emptyPilotLayout(): FactoryLayout {
+  const tiles: FactoryLayout["tiles"][number][] = Array.from(
+    { length: BASE_GAME_FACTORY_WIDTH * BASE_GAME_FACTORY_HEIGHT },
+    () => ({ kind: "empty" }),
+  );
+  tiles[0] = { kind: "source", dir: 0, period: 1 };
+  tiles[1] = { kind: "sink" };
+  return {
+    width: BASE_GAME_FACTORY_WIDTH,
+    height: BASE_GAME_FACTORY_HEIGHT,
+    tiles,
+    machines: [],
+  };
+}
+
+describe("ResearchProgram workflow", () => {
+  it("stores a program rather than a physical factory floor", () => {
+    const { program } = reference();
+    const initial = createGameState(options, 500, 0);
+    const planned = dispatch(initial, { kind: "setResearchProgram", program });
+
+    expect("layout" in planned.research).toBe(false);
+    expect(planned.research.program).toEqual(program);
+    expect(planned.economy.cash).toBe(500);
+  });
+
+  it("keeps planning free and charges exactly once on dispense", () => {
+    const { program } = reference();
+    const initial = createGameState(options, 500, 0);
     const beforeFog = fogSnapshot(initial);
+    const planned = dispatch(initial, { kind: "setResearchProgram", program });
 
-    const planned = dispatch(initial, { kind: "setResearchLayout", layout });
-    expect(planned.fog.map((layer) => [...layer])).toEqual(beforeFog);
-    expect(planned.economy.cash).toBe(200);
-    expect(planned.research.layout).toEqual(layout);
-    expect(planned.research.shot).toBeNull();
+    expect(fogSnapshot(planned)).toEqual(beforeFog);
+    expect(planned.economy.cash).toBe(500);
 
-    const expectedCost = Math.max(1, template.steps.reduce((total, machine) => {
-      return total + DEFAULT_CATALOG.find((entry) => entry.typeId === machine.typeId)!.cost;
-    }, 0));
     const fired = dispatch(planned, { kind: "beginResearchShot" });
-    expect(fired.economy.cash).toBe(200 - expectedCost);
-    expect(fired.fog.map((layer) => [...layer])).toEqual(beforeFog);
-    expect(fired.research.shot).toMatchObject({ step: 0, cost: expectedCost });
+    expect(fired.economy.cash).toBe(500 - shotCost(program));
+    expect(fogSnapshot(fired)).toEqual(beforeFog);
+    expect(fired.research.shot).toMatchObject({ step: 0, cost: shotCost(program) });
     expect(() => dispatch(fired, { kind: "beginResearchShot" })).toThrow(/already|running/i);
   });
 
-  it("reveals only after advancing the frozen shot and never advances Production time", () => {
-    const { layout } = reference();
-    let game = createGameState(options, 200, 0);
-    game = dispatch(game, { kind: "setResearchLayout", layout });
-    game = dispatch(game, { kind: "beginResearchShot" });
-    const beforeAdvance = fogSnapshot(game);
-    const productionTick = game.production.runtime?.tick ?? 0;
-
-    game = dispatch(game, { kind: "advanceResearchShot" });
-
-    expect(game.fog.map((layer) => [...layer])).not.toEqual(beforeAdvance);
-    expect(game.production.runtime?.tick ?? 0).toBe(productionTick);
-  });
-
-  it("reveals exactly radius one around the completed step and no future route segment", () => {
-    const { layout } = reference();
-    let game = createGameState(options, 200, 0);
-    game = dispatch(game, { kind: "setResearchLayout", layout });
+  it("reveals radius one around only the completed path trail", () => {
+    const { program } = reference();
+    let game = createGameState(options, 500, 0);
+    game = dispatch(game, { kind: "setResearchProgram", program });
     game = dispatch(game, { kind: "beginResearchShot" });
     const before = game.fog.map((layer) => Uint8Array.from(layer));
     const level = generate(options);
-    const machine = deriveLinearRoute(layout).template.steps[0]!;
-    const preview = previewStep(level.mm, level.start, machine);
+    const preview = previewStep(level.mm, level.start, program.steps[0]!);
     const expected = before.map((layer) => Uint8Array.from(layer));
+
     for (let mapIndex = 0; mapIndex < expected.length; mapIndex++) {
       const map = level.mm.maps[mapIndex]!;
       const points = [...(preview.trails[mapIndex] ?? []), preview.next.pos[mapIndex]!];
@@ -103,111 +115,121 @@ describe("Research shot workflow", () => {
     }
 
     game = dispatch(game, { kind: "advanceResearchShot" });
-
-    expect(game.fog.map((layer) => [...layer])).toEqual(expected.map((layer) => [...layer]));
+    expect(fogSnapshot(game)).toEqual(expected.map((layer) => [...layer]));
+    expect(game.production.runtime).toBeNull();
   });
 
-  it("freezes editing during a shot and aborts without refunding or revealing", () => {
-    const { layout } = reference();
-    let game = createGameState(options, 200, 0);
-    game = dispatch(game, { kind: "setResearchLayout", layout });
+  it("completes one fixed machine at a time without advancing Production", () => {
+    const { program } = reference();
+    let game = createGameState(options, 500, 0);
+    game = dispatch(game, { kind: "setResearchProgram", program });
     game = dispatch(game, { kind: "beginResearchShot" });
-    const chargedCash = game.economy.cash;
+    for (let guard = 0; game.research.shot !== null && guard <= program.steps.length; guard++) {
+      game = dispatch(game, { kind: "advanceResearchShot" });
+    }
+    expect(game.research.shot).toBeNull();
+    expect(game.research.lastOutcome).not.toBeNull();
+    expect(game.production.runtime).toBeNull();
+  });
+
+  it("freezes editing during a shot and aborts without refund or reveal", () => {
+    const { program } = reference();
+    let game = createGameState(options, 500, 0);
+    game = dispatch(game, { kind: "setResearchProgram", program });
+    game = dispatch(game, { kind: "beginResearchShot" });
+    const cash = game.economy.cash;
     const fog = fogSnapshot(game);
 
-    expect(() => dispatch(game, { kind: "setResearchLayout", layout: { ...layout } })).toThrow(
-      /cannot edit|running/i,
-    );
+    expect(() => dispatch(game, { kind: "setResearchProgram", program: { steps: [] } }))
+      .toThrow(/cannot edit|running/i);
     game = dispatch(game, { kind: "abortResearchShot" });
 
     expect(game.research.shot).toBeNull();
     expect(game.research.lastOutcome).toBeNull();
-    expect(game.economy.cash).toBe(chargedCash);
+    expect(game.economy.cash).toBe(cash);
     expect(fogSnapshot(game)).toEqual(fog);
   });
 
-  it("rejects an invalid route atomically without charging or revealing", () => {
-    const { layout } = reference();
-    const invalid: FactoryLayout = {
-      ...layout,
-      tiles: layout.tiles.map((tile) => tile.kind === "sink" ? { kind: "empty" as const } : tile),
+  it("owns planned paths and rejects empty, foreign, or invalid calibration programs", () => {
+    const catalog = structuredClone(DEFAULT_CATALOG[0]!);
+    const mutable: Machine = {
+      typeId: catalog.typeId,
+      path: catalog.path,
+      stroke: catalog.path.length,
     };
-    const initial = createGameState(options, 200, 0);
-    const planned = dispatch(initial, { kind: "setResearchLayout", layout: invalid });
-    const fog = fogSnapshot(planned);
+    let game = createGameState(options, 500, 0);
+    game = dispatch(game, { kind: "setResearchProgram", program: { steps: [mutable] } });
+    (catalog.path[0] as { x: number }).x = -1;
+    expect(game.research.program.steps[0]?.path[0]).toEqual({ x: 1, y: 0 });
 
-    expect(() => dispatch(planned, { kind: "beginResearchShot" })).toThrow(/sink|route|topology/i);
-    expect(planned.economy.cash).toBe(200);
-    expect(planned.fog.map((layer) => [...layer])).toEqual(fog);
+    expect(() => dispatch(createGameState(options, 500, 0), { kind: "beginResearchShot" }))
+      .toThrow(/at least one/i);
+    expect(() => dispatch(createGameState(options, 500, 0), {
+      kind: "setResearchProgram",
+      program: { steps: [{ ...mutable, path: catalog.path }] },
+    })).toThrow(/path does not match/i);
+    expect(() => dispatch(createGameState(options, 500, 0), {
+      kind: "setResearchProgram",
+      program: { steps: [{ ...mutable, path: DEFAULT_CATALOG[0]!.path, stroke: 0 }] },
+    })).toThrow(/stroke/i);
   });
 
-  it("copies a successful Research line into Pilot, then Pilot into Production exactly", () => {
-    const { layout } = reference();
-    let game = createGameState(options, 200, 0);
-    game = dispatch(game, { kind: "setResearchLayout", layout });
-    game = dispatch(game, { kind: "beginResearchShot" });
-    for (let guard = 0; game.research.shot !== null && guard < 300; guard++) {
-      game = dispatch(game, { kind: "advanceResearchShot" });
+  it("contains no phase-exchange machine or cross-layer calibration", () => {
+    expect(DEFAULT_CATALOG.some((entry) => entry.typeId === "swap01")).toBe(false);
+    for (const entry of DEFAULT_CATALOG) {
+      expect(entry.path.every((delta) => Math.abs(delta.x) + Math.abs(delta.y) === 1)).toBe(true);
     }
-    expect(game.research.lastOutcome?.failed).toBe(false);
+  });
 
-    game = dispatch(game, { kind: "sendResearchToPilot" });
-    expect(game.pilot.layout).toEqual(layout);
-    expect(game.pilot.contract).not.toBeNull();
-    expect(game.production.layout).toBeNull();
+  it("applies exploration-aid patents only to an actually dispensed trail", () => {
+    const machine = DEFAULT_CATALOG[0]!;
+    const program = {
+      steps: [{ typeId: machine.typeId, path: machine.path, stroke: machine.path.length }],
+    };
+    const initial = createGameState(options, 500, 10);
+    const before = fogSnapshot(initial);
+    const aided = dispatch(initial, { kind: "unlockPatent", id: "reveal-aid" });
+    expect(fogSnapshot(aided)).toEqual(before);
 
+    const run = (game: ReturnType<typeof createGameState>) => {
+      let next = dispatch(game, { kind: "setResearchProgram", program });
+      next = dispatch(next, { kind: "beginResearchShot" });
+      return dispatch(next, { kind: "advanceResearchShot" });
+    };
+    const revealed = (game: ReturnType<typeof createGameState>) => game.fog[0]!
+      .reduce((sum, value) => sum + value, 0);
+    expect(revealed(run(aided))).toBeGreaterThan(revealed(run(initial)));
+  });
+});
+
+describe("contract-free Pilot commissioning", () => {
+  it("commissions an independent no-cure Pilot layout exactly into Production", () => {
+    const layout = emptyPilotLayout();
+    let game = createGameState(options, 500, 0);
+
+    game = dispatch(game, { kind: "setPilotLayout", layout });
     game = dispatch(game, { kind: "sendPilotToProduction" });
+
     expect(game.production.layout).toEqual(layout);
-    expect(game.production.contract).toEqual(game.pilot.contract);
     expect(game.production.runtime?.tick).toBe(0);
+    expect("contract" in game.pilot).toBe(false);
+    expect("contract" in game.production).toBe(false);
   });
 
-  it("rejects a direct Production layout before Pilot has commissioned a contract", () => {
+  it("does not require or infer a Research route before commissioning", () => {
     const { layout } = reference();
-    const initial = createGameState(options, 200, 0);
+    let game = createGameState(options, 500, 0);
+    expect(game.research.program.steps).toEqual([]);
 
-    expect(() => dispatch(initial, { kind: "setProductionLayout", layout })).toThrow(
-      /commission|contract|Pilot/i,
-    );
-    expect(initial.production.layout).toBeNull();
+    game = dispatch(game, { kind: "setPilotLayout", layout });
+    game = dispatch(game, { kind: "sendPilotToProduction" });
+    expect(game.production.layout).toEqual(game.pilot.layout);
   });
 
-  it("does not transfer a completed route that found no cure", () => {
-    const push = DEFAULT_CATALOG.find((entry) => entry.typeId === "push")!;
-    const layout = compileEntitledPrototype(
-      {
-        steps: [{ typeId: push.typeId, transform: push.transform, orientation: { rot: 0, flip: false } }],
-      },
-      BASE_GAME_FACTORY_WIDTH,
-      BASE_GAME_FACTORY_HEIGHT,
-    ).layout;
-    let game = createGameState(options, 200, 0);
-    game = dispatch(game, { kind: "setResearchLayout", layout });
-    game = dispatch(game, { kind: "beginResearchShot" });
-    game = dispatch(game, { kind: "advanceResearchShot" });
-
-    expect(game.research.lastOutcome?.cured).toEqual([]);
-    expect(() => dispatch(game, { kind: "sendResearchToPilot" })).toThrow(/cure|Research/i);
-    expect(game.pilot.layout).toBeNull();
-  });
-
-  it("reveals the arrival cells of a Phase Exchange step even though it has no sweep trail", () => {
-    const layeredOptions: GenOptions = { ...options, nMaps: 2, diseaseCount: 2 };
-    const swap = DEFAULT_CATALOG.find((entry) => entry.typeId === "swap01")!;
-    const layout = compileEntitledPrototype(
-      {
-        steps: [{ typeId: swap.typeId, transform: swap.transform, orientation: { rot: 0, flip: false } }],
-      },
-      BASE_GAME_FACTORY_WIDTH,
-      BASE_GAME_FACTORY_HEIGHT,
-    ).layout;
-    let game = createGameState(layeredOptions, 200, 0);
-    const level = generate(layeredOptions);
-    game = dispatch(game, { kind: "setResearchLayout", layout });
-    game = dispatch(game, { kind: "beginResearchShot" });
-    game = dispatch(game, { kind: "advanceResearchShot" });
-
-    expect(game.fog[0]![level.start.pos[1]!.y * level.mm.maps[0]!.width + level.start.pos[1]!.x]).toBe(1);
-    expect(game.fog[1]![level.start.pos[0]!.y * level.mm.maps[1]!.width + level.start.pos[0]!.x]).toBe(1);
+  it("rejects direct Production edits until a Pilot layout has been commissioned", () => {
+    const layout = emptyPilotLayout();
+    const game = createGameState(options, 500, 0);
+    expect(() => dispatch(game, { kind: "setProductionLayout", layout })).toThrow(/commission|Pilot/i);
+    expect(game.production.layout).toBeNull();
   });
 });

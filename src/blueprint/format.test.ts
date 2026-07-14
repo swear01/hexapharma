@@ -1,185 +1,179 @@
-import { describe, expect, it } from "vitest";
-import fc from "fast-check";
-import { DEFAULT_CATALOG, DEFAULT_SHAPES } from "../sim/phase0_interfaces";
+import { webcrypto } from "node:crypto";
+import { beforeAll, describe, expect, it } from "vitest";
 import {
-  BLUEPRINT_FORMAT,
+  DEFAULT_CATALOG,
+  DEFAULT_SHAPES,
+  MAX_TEMPLATE_STEPS,
+  type FactoryLayout,
+  type FactoryTile,
+  type MachineCatalogEntry,
+  type Template,
+} from "../sim/phase0_interfaces";
+import {
   BLUEPRINT_CONTENT_FINGERPRINT,
+  BLUEPRINT_FORMAT,
+  BLUEPRINT_RULESET,
   BLUEPRINT_VERSION,
-  blueprintFromLayout,
+  blueprintFromPilotLayout,
+  blueprintFromProgram,
   decodeBlueprint,
   encodeBlueprint,
-  materializeBlueprint,
+  materializePilotLayout,
+  materializeResearchProgram,
   type PortableBlueprint,
+  type PortablePilotBlueprint,
+  type PortableResearchBlueprint,
 } from "./format";
 
-const blueprint: PortableBlueprint = {
-  kind: "pilot-plant",
-  name: "Push line",
-  ruleset: 1,
-  content: BLUEPRINT_CONTENT_FINGERPRINT,
-  layout: {
-    width: 8,
-    height: 4,
-    tiles: [
-      { x: 0, y: 1, kind: "source", dir: 0, period: 2 },
-      { x: 3, y: 1, kind: "belt", dir: 0 },
-      { x: 4, y: 1, kind: "sink" },
-    ],
-    machines: [
-      {
-        id: 7,
-        typeId: "push",
-        orientation: { rot: 1, flip: true },
-        anchor: { x: 1, y: 1 },
-        footRot: 0,
-      },
-    ],
-  },
+beforeAll(() => {
+  if (globalThis.crypto === undefined) {
+    Object.defineProperty(globalThis, "crypto", { value: webcrypto });
+  }
+});
+
+function catalog(typeId: string): MachineCatalogEntry {
+  const entry = DEFAULT_CATALOG.find((candidate) => candidate.typeId === typeId);
+  if (entry === undefined) throw new Error(`missing test catalog entry ${typeId}`);
+  return entry;
+}
+
+function machine(typeId: string, stroke: number) {
+  const entry = catalog(typeId);
+  return { typeId, path: entry.path.map((delta) => ({ ...delta })), stroke };
+}
+
+const program: Template = {
+  steps: [machine("push", 2), machine("pull", 1)],
 };
 
-function rawDocument(value: unknown): string {
+function emptyTiles(width: number, height: number): FactoryTile[] {
+  return Array.from({ length: width * height }, () => ({ kind: "empty" }));
+}
+
+function pilotLayout(): FactoryLayout {
+  const width = 8;
+  const height = 4;
+  const tiles = emptyTiles(width, height);
+  tiles[8] = { kind: "source", dir: 0, period: 2 };
+  tiles[11] = { kind: "belt", dir: 0 };
+  tiles[12] = { kind: "sink" };
+  const entry = catalog("push");
+  return {
+    width,
+    height,
+    tiles,
+    machines: [{
+      id: 7,
+      def: {
+        typeId: entry.typeId,
+        path: entry.path,
+        stroke: 2,
+        cost: entry.cost,
+        speed: entry.speed,
+      },
+      anchor: { x: 1, y: 1 },
+      footRot: 0,
+      shape: DEFAULT_SHAPES.push!,
+    }],
+  };
+}
+
+function researchBlueprint(): PortableResearchBlueprint {
+  return blueprintFromProgram("Atlas route", program);
+}
+
+function pilotBlueprint(): PortablePilotBlueprint {
+  return blueprintFromPilotLayout("Pilot line", pilotLayout());
+}
+
+function unsignedDocument(blueprint: unknown, version: unknown = BLUEPRINT_VERSION): string {
   return JSON.stringify({
     format: BLUEPRINT_FORMAT,
-    version: BLUEPRINT_VERSION,
+    version,
     checksum: `sha256:${"0".repeat(64)}`,
-    blueprint: value,
+    blueprint,
   });
 }
 
-describe("blueprint format v1", () => {
-  it("encodes a human-readable canonical document with a SHA-256 checksum", async () => {
-    const encoded = await encodeBlueprint(blueprint);
-
-    expect(encoded).toBe(`{
-  "format": "hexapharma-blueprint",
-  "version": 1,
-  "checksum": "sha256:daa93e85b0931b34aca1edb3de58028db823101275d4f650209642578d8bc0d9",
-  "blueprint": {
-    "kind": "pilot-plant",
-    "name": "Push line",
-    "ruleset": 1,
-    "content": "fnv1a32:ffbd4184",
-    "layout": {
-      "width": 8,
-      "height": 4,
-      "tiles": [
-        {
-          "x": 0,
-          "y": 1,
-          "kind": "source",
-          "dir": 0,
-          "period": 2
-        },
-        {
-          "x": 3,
-          "y": 1,
-          "kind": "belt",
-          "dir": 0
-        },
-        {
-          "x": 4,
-          "y": 1,
-          "kind": "sink"
-        }
-      ],
-      "machines": [
-        {
-          "id": 7,
-          "typeId": "push",
-          "orientation": {
-            "rot": 1,
-            "flip": true
-          },
-          "anchor": {
-            "x": 1,
-            "y": 1
-          },
-          "footRot": 0
-        }
-      ]
-    }
-  }
-}
-`);
-    expect(encoded).not.toMatch(/"(?:seed|fog|cash|research|economy|cost|speed|shape|transform)"\s*:/);
+describe("blueprint format v2", () => {
+  it("freezes the breaking wire and ruleset at v2", () => {
+    expect(BLUEPRINT_VERSION).toBe(2);
+    expect(BLUEPRINT_RULESET).toBe(2);
   });
 
-  it("is stable across encode/decode/encode and rejects checksum tampering", async () => {
-    const encoded = await encodeBlueprint(blueprint);
-    const decoded = await decodeBlueprint(encoded);
+  it("encodes a strict human-readable ResearchProgram without paths or private world state", async () => {
+    const encoded = await encodeBlueprint(researchBlueprint());
+    const document = JSON.parse(encoded) as Record<string, unknown>;
 
-    expect(await encodeBlueprint(decoded)).toBe(encoded);
-    await expect(decodeBlueprint(encoded.replace("Push line", "Pull line"))).rejects.toThrow(/checksum/i);
-  });
-
-  it("rejects a bad checksum before materializing or validating route topology", async () => {
-    const invalidResearch = {
-      ...blueprint,
-      kind: "research-route",
-      layout: {
-        ...blueprint.layout,
-        tiles: [],
-        machines: [],
+    expect(document).toMatchObject({
+      format: "hexapharma-blueprint",
+      version: 2,
+      checksum: expect.stringMatching(/^sha256:[0-9a-f]{64}$/u),
+      blueprint: {
+        kind: "research-program",
+        name: "Atlas route",
+        ruleset: 2,
+        content: BLUEPRINT_CONTENT_FINGERPRINT,
+        program: {
+          steps: [
+            { typeId: "push", stroke: 2 },
+            { typeId: "pull", stroke: 1 },
+          ],
+        },
       },
-    };
-
-    await expect(decodeBlueprint(rawDocument(invalidResearch))).rejects.toThrow(/checksum mismatch/i);
+    });
+    expect(encoded.endsWith("\n")).toBe(true);
+    expect(encoded).not.toMatch(/"(?:path|layout|seed|fog|outcome|cash|economy|cost|speed|shape)"\s*:/u);
   });
 
-  it("round-trips canonical portable layouts property-wise", async () => {
-    await fc.assert(
-      fc.asyncProperty(
-        fc.constant("pilot-plant" as const),
-        fc.array(
-          fc.record({ rot: fc.integer({ min: 0, max: 3 }), flip: fc.boolean() }),
-          { maxLength: 6 },
-        ),
-        async (kind, orientations) => {
-          const candidate: PortableBlueprint = {
-            kind,
-            name: `Line ${orientations.length}`,
-            ruleset: 1,
-            content: BLUEPRINT_CONTENT_FINGERPRINT,
-            layout: {
-              width: 24,
-              height: 12,
-              tiles: [],
-              machines: orientations.map((orientation, index) => ({
-                id: index,
-                typeId: "push",
-                orientation: {
-                  rot: orientation.rot as 0 | 1 | 2 | 3,
-                  flip: orientation.flip,
-                },
-                anchor: { x: 1 + index * 3, y: 2 },
-                footRot: 0,
-              })),
-            },
-          };
+  it("encodes a strict Pilot layout with routing and no chemical orientation or path duplication", async () => {
+    const portable = pilotBlueprint();
+    const encoded = await encodeBlueprint(portable);
 
-          expect(await decodeBlueprint(await encodeBlueprint(candidate))).toEqual(candidate);
-        },
-      ),
-      { numRuns: 40 },
-    );
+    expect(portable.layout.machines).toEqual([{
+      id: 7,
+      typeId: "push",
+      stroke: 2,
+      anchor: { x: 1, y: 1 },
+      footRot: 0,
+    }]);
+    expect(encoded).not.toMatch(/"(?:orientation|path|seed|fog|outcome|cost|speed|shape)"\s*:/u);
+    expect(encoded).toContain('"kind": "pilot-plant"');
+    expect(encoded).toContain('"kind": "source"');
   });
 
-  it("materializes only local catalog definitions and expands sparse tiles", () => {
-    const layout = materializeBlueprint(blueprint);
-    const catalog = DEFAULT_CATALOG.find((entry) => entry.typeId === "push")!;
+  it("round-trips both kinds canonically and detects checksum tampering", async () => {
+    for (const blueprint of [researchBlueprint(), pilotBlueprint()]) {
+      const encoded = await encodeBlueprint(blueprint);
+      const decoded = await decodeBlueprint(encoded);
+      expect(await encodeBlueprint(decoded)).toBe(encoded);
+      await expect(decodeBlueprint(encoded.replace(blueprint.name, `${blueprint.name}!`)))
+        .rejects.toThrow(/checksum mismatch/i);
+    }
+  });
+
+  it("materializes a Research Template by resolving fixed paths from the local catalog", () => {
+    const materialized = materializeResearchProgram(researchBlueprint());
+
+    expect(materialized).toEqual(program);
+    expect(materialized.steps[0]!.path).not.toBe(catalog("push").path);
+  });
+
+  it("materializes a Pilot FactoryLayout from local catalog and shape authority", () => {
+    const layout = materializePilotLayout(pilotBlueprint());
+    const entry = catalog("push");
 
     expect(layout.tiles).toHaveLength(32);
     expect(layout.tiles[0]).toEqual({ kind: "empty" });
     expect(layout.tiles[8]).toEqual({ kind: "source", dir: 0, period: 2 });
-    expect(layout.tiles[11]).toEqual({ kind: "belt", dir: 0 });
     expect(layout.machines[0]).toEqual({
       id: 7,
       def: {
-        typeId: catalog.typeId,
-        transform: catalog.transform,
-        orientation: { rot: 1, flip: true },
-        cost: catalog.cost,
-        speed: catalog.speed,
+        typeId: "push",
+        path: entry.path.map((delta) => ({ ...delta })),
+        stroke: 2,
+        cost: entry.cost,
+        speed: entry.speed,
       },
       anchor: { x: 1, y: 1 },
       footRot: 0,
@@ -187,209 +181,193 @@ describe("blueprint format v1", () => {
     });
   });
 
-  it("extracts a private-data-free portable blueprint from a FactoryLayout", async () => {
-    const layout = materializeBlueprint(blueprint);
-    const portable = blueprintFromLayout("research-route", "Reusable route", layout);
-    const encoded = await encodeBlueprint(portable);
+  it("rejects legacy v1 explicitly before interpreting its payload", async () => {
+    await expect(decodeBlueprint(unsignedDocument({ kind: "research-route" }, 1)))
+      .rejects.toThrow(/legacy blueprint version 1|unsupported version 1/i);
+  });
 
-    expect(portable.layout.tiles).toHaveLength(3);
-    expect(portable.layout.machines[0]).toEqual({
-      id: 7,
-      typeId: "push",
-      orientation: { rot: 1, flip: true },
-      anchor: { x: 1, y: 1 },
-      footRot: 0,
-    });
-    expect(encoded).not.toMatch(/"(?:seed|fog|cash|research|economy|cost|speed|shape|transform)"\s*:/);
+  it("rejects unknown versions, malformed checksums, and wrong rulesets", async () => {
+    await expect(decodeBlueprint(unsignedDocument(researchBlueprint(), 3)))
+      .rejects.toThrow(/unsupported version 3/i);
+    await expect(decodeBlueprint(JSON.stringify({
+      format: BLUEPRINT_FORMAT,
+      version: BLUEPRINT_VERSION,
+      checksum: "fnv:1234",
+      blueprint: researchBlueprint(),
+    }))).rejects.toThrow(/checksum/i);
+    await expect(encodeBlueprint({
+      ...researchBlueprint(),
+      ruleset: 1,
+    } as unknown as PortableBlueprint)).rejects.toThrow(/ruleset 1/i);
   });
 
   it.each([
-    ["root", { extra: true }],
-    ["blueprint", { ...blueprint, seed: 14 }],
-    ["layout", { ...blueprint, layout: { ...blueprint.layout, fog: [] } }],
-    [
-      "tile",
-      {
-        ...blueprint,
-        layout: {
-          ...blueprint.layout,
-          tiles: [{ x: 0, y: 0, kind: "sink", cash: 10 }],
-        },
-      },
-    ],
-    [
-      "machine",
-      {
-        ...blueprint,
-        layout: {
-          ...blueprint.layout,
-          machines: [{ ...blueprint.layout.machines[0], speed: 1 }],
-        },
-      },
-    ],
-    [
-      "orientation",
-      {
-        ...blueprint,
-        layout: {
-          ...blueprint.layout,
-          machines: [
-            {
-              ...blueprint.layout.machines[0],
-              orientation: { rot: 1, flip: true, economy: 1 },
-            },
-          ],
-        },
-      },
-    ],
-  ])("strictly rejects unknown %s fields", async (scope, value) => {
-    const source = scope === "root"
-      ? JSON.stringify({
-          format: BLUEPRINT_FORMAT,
-          version: BLUEPRINT_VERSION,
-          checksum: `sha256:${"0".repeat(64)}`,
-          blueprint,
-          ...(value as object),
-        })
-      : rawDocument(value);
-    await expect(decodeBlueprint(source)).rejects.toThrow(/unknown field/i);
-  });
-
-  it.each([
-    ["unsupported format", { format: "other" }],
-    ["unsupported version", { version: 2 }],
-    ["invalid checksum", { checksum: "fnv:1234" }],
-  ])("rejects %s", async (_label, replacement) => {
-    const source = JSON.stringify({
+    ["root field", () => decodeBlueprint(JSON.stringify({
       format: BLUEPRINT_FORMAT,
       version: BLUEPRINT_VERSION,
       checksum: `sha256:${"0".repeat(64)}`,
-      blueprint,
-      ...replacement,
-    });
-    await expect(decodeBlueprint(source)).rejects.toThrow(/format|version|checksum/i);
+      blueprint: researchBlueprint(),
+      extra: true,
+    }))],
+    ["Research field", () => encodeBlueprint({ ...researchBlueprint(), seed: 14 } as unknown as PortableBlueprint)],
+    ["Research cross-kind layout", () => encodeBlueprint({
+      ...researchBlueprint(),
+      layout: pilotBlueprint().layout,
+    } as unknown as PortableBlueprint)],
+    ["Research path duplication", () => encodeBlueprint({
+      ...researchBlueprint(),
+      program: { steps: [{ typeId: "push", stroke: 2, path: [{ x: 1, y: 0 }] }] },
+    } as unknown as PortableBlueprint)],
+    ["Pilot cross-kind program", () => encodeBlueprint({
+      ...pilotBlueprint(),
+      program: researchBlueprint().program,
+    } as unknown as PortableBlueprint)],
+    ["Pilot chemical orientation", () => encodeBlueprint({
+      ...pilotBlueprint(),
+      layout: {
+        ...pilotBlueprint().layout,
+        machines: [{ ...pilotBlueprint().layout.machines[0]!, orientation: { rot: 1, flip: true } }],
+      },
+    } as unknown as PortableBlueprint)],
+    ["missing Research payload", () => {
+      const { program: _program, ...missing } = researchBlueprint();
+      return encodeBlueprint(missing as unknown as PortableBlueprint);
+    }],
+    ["missing Pilot stroke", () => {
+      const { stroke: _stroke, ...machineWithoutStroke } = pilotBlueprint().layout.machines[0]!;
+      return encodeBlueprint({
+        ...pilotBlueprint(),
+        layout: { ...pilotBlueprint().layout, machines: [machineWithoutStroke] },
+      } as unknown as PortableBlueprint);
+    }],
+  ])("strictly rejects unknown, missing, and cross-kind %s", async (_label, operation) => {
+    await expect(operation()).rejects.toThrow(/unknown field|missing field|fields/i);
   });
 
-  it.each([
-    ["kind", { ...blueprint, kind: "production" }],
-    ["ruleset", { ...blueprint, ruleset: 2 }],
-    ["dimension", { ...blueprint, layout: { ...blueprint.layout, width: 257 } }],
-    [
-      "duplicate tile",
-      {
-        ...blueprint,
-        layout: {
-          ...blueprint.layout,
-          tiles: [blueprint.layout.tiles[0], blueprint.layout.tiles[0]],
-        },
+  it("rejects bad content fingerprints and invalid prefix calibration", async () => {
+    await expect(encodeBlueprint({
+      ...researchBlueprint(),
+      content: "fnv1a32:00000000",
+    })).rejects.toThrow(/content|fingerprint/i);
+
+    for (const stroke of [0, catalog("push").path.length + 1, 1.5]) {
+      await expect(encodeBlueprint({
+        ...researchBlueprint(),
+        program: { steps: [{ typeId: "push", stroke }] },
+      } as PortableResearchBlueprint)).rejects.toThrow(/stroke|calibration/i);
+    }
+
+    await expect(encodeBlueprint({
+      ...pilotBlueprint(),
+      layout: {
+        ...pilotBlueprint().layout,
+        machines: [{ ...pilotBlueprint().layout.machines[0]!, stroke: 0 }],
       },
-    ],
-    [
-      "duplicate machine id",
-      {
-        ...blueprint,
-        layout: {
-          ...blueprint.layout,
-          machines: [blueprint.layout.machines[0], blueprint.layout.machines[0]],
-        },
-      },
-    ],
-    [
-      "unknown machine type",
-      {
-        ...blueprint,
-        layout: {
-          ...blueprint.layout,
-          machines: [{ ...blueprint.layout.machines[0], typeId: "hacked" }],
-        },
-      },
-    ],
-    [
-      "out-of-bounds tile",
-      {
-        ...blueprint,
-        layout: {
-          ...blueprint.layout,
-          tiles: [{ x: 8, y: 0, kind: "sink" }],
-        },
-      },
-    ],
-  ])("rejects invalid %s", async (_label, value) => {
-    await expect(decodeBlueprint(rawDocument(value))).rejects.toThrow();
+    })).rejects.toThrow(/stroke|calibration/i);
   });
 
-  it("rejects non-canonical machine semantics and invalid physical layouts", async () => {
-    await expect(decodeBlueprint(rawDocument({
-      ...blueprint,
+  it("rejects unknown local machine types in both payload kinds", async () => {
+    await expect(encodeBlueprint({
+      ...researchBlueprint(),
+      program: { steps: [{ typeId: "hacked", stroke: 1 }] },
+    })).rejects.toThrow(/unknown machine type/i);
+    await expect(encodeBlueprint({
+      ...pilotBlueprint(),
       layout: {
-        ...blueprint.layout,
-        machines: [{
-          ...blueprint.layout.machines[0],
-          typeId: "dilute",
-          orientation: { rot: 1, flip: false },
-        }],
+        ...pilotBlueprint().layout,
+        machines: [{ ...pilotBlueprint().layout.machines[0]!, typeId: "hacked" }],
       },
-    }))).rejects.toThrow(/orientation/i);
+    })).rejects.toThrow(/unknown machine type/i);
+  });
 
-    expect(() => materializeBlueprint({
-      ...blueprint,
+  it("rejects unknown machine types and source authorities that disagree with the catalog", () => {
+    expect(() => blueprintFromProgram("Forged", {
+      steps: [{ typeId: "push", path: [{ x: -1, y: 0 }], stroke: 1 }],
+    })).toThrow(/path|catalog/i);
+
+    const layout = pilotLayout();
+    expect(() => blueprintFromPilotLayout("Forged", {
+      ...layout,
+      machines: [{
+        ...layout.machines[0]!,
+        def: { ...layout.machines[0]!.def, cost: layout.machines[0]!.def.cost + 1 },
+      }],
+    })).toThrow(/catalog|cost/i);
+
+    expect(() => blueprintFromPilotLayout("Forged", {
+      ...layout,
+      machines: [{ ...layout.machines[0]!, shape: DEFAULT_SHAPES.pull! }],
+    })).toThrow(/catalog|shape/i);
+  });
+
+  it("rejects duplicates, collisions, out-of-bounds geometry, and caps", async () => {
+    const pilot = pilotBlueprint();
+    await expect(encodeBlueprint({
+      ...pilot,
+      layout: { ...pilot.layout, tiles: [pilot.layout.tiles[0]!, pilot.layout.tiles[0]!] },
+    })).rejects.toThrow(/duplicate tile/i);
+    await expect(encodeBlueprint({
+      ...pilot,
+      layout: { ...pilot.layout, machines: [pilot.layout.machines[0]!, pilot.layout.machines[0]!] },
+    })).rejects.toThrow(/duplicate machine id/i);
+    await expect(encodeBlueprint({
+      ...pilot,
       layout: {
-        ...blueprint.layout,
-        machines: [
-          blueprint.layout.machines[0]!,
-          { ...blueprint.layout.machines[0]!, id: 8 },
-        ],
+        ...pilot.layout,
+        machines: [pilot.layout.machines[0]!, { ...pilot.layout.machines[0]!, id: 8 }],
       },
-    })).toThrow(/overlap/i);
+    })).rejects.toThrow(/overlap/i);
+    await expect(encodeBlueprint({
+      ...pilot,
+      layout: { ...pilot.layout, tiles: [{ x: 1, y: 1, kind: "belt", dir: 0 }] },
+    })).rejects.toThrow(/overlap/i);
+    await expect(encodeBlueprint({
+      ...pilot,
+      layout: {
+        ...pilot.layout,
+        machines: [{ ...pilot.layout.machines[0]!, anchor: { x: 7, y: 3 } }],
+      },
+    })).rejects.toThrow(/out of bounds/i);
+    await expect(encodeBlueprint({
+      ...pilot,
+      layout: { ...pilot.layout, width: 257 },
+    })).rejects.toThrow(/dimension|integer|cells/i);
+    await expect(encodeBlueprint({
+      ...researchBlueprint(),
+      program: {
+        steps: Array.from({ length: MAX_TEMPLATE_STEPS + 1 }, () => ({ typeId: "push", stroke: 1 })),
+      },
+    })).rejects.toThrow(/steps|at most|bounded/i);
+  });
+
+  it("canonicalizes only unordered sparse layout collections and preserves program order", async () => {
+    const original = pilotBlueprint();
+    const withSecondTile: PortablePilotBlueprint = {
+      ...original,
+      layout: {
+        ...original.layout,
+        tiles: [...original.layout.tiles, { x: 7, y: 0, kind: "sink" }],
+      },
+    };
+    const reordered: PortablePilotBlueprint = {
+      ...withSecondTile,
+      layout: { ...withSecondTile.layout, tiles: [...withSecondTile.layout.tiles].reverse() },
+    };
+    expect(await encodeBlueprint(reordered)).toBe(await encodeBlueprint(withSecondTile));
+
+    const reversedProgram: PortableResearchBlueprint = {
+      ...researchBlueprint(),
+      program: { steps: [...researchBlueprint().program.steps].reverse() },
+    };
+    expect(await encodeBlueprint(reversedProgram)).not.toBe(await encodeBlueprint(researchBlueprint()));
+  });
+
+  it("rejects cross-kind materialization", () => {
+    expect(() => materializeResearchProgram(pilotBlueprint())).toThrow(/Pilot.*ResearchProgram/i);
+    expect(() => materializePilotLayout(researchBlueprint())).toThrow(/Research.*Pilot/i);
   });
 
   it("refuses oversized source text before parsing", async () => {
     await expect(decodeBlueprint(" ".repeat(1_048_577))).rejects.toThrow(/size|bytes/i);
-  });
-
-  it("rejects layouts whose machine footprint covers a sparse tile", () => {
-    expect(() => materializeBlueprint({
-      ...blueprint,
-      layout: {
-        ...blueprint.layout,
-        tiles: [{ x: 1, y: 1, kind: "belt", dir: 0 }],
-      },
-    })).toThrow(/machine.*tile|tile.*machine/i);
-  });
-
-  it("rejects a Research blueprint unless it is a unique connected linear route", async () => {
-    const invalid: PortableBlueprint = {
-      kind: "research-route",
-      name: "Disconnected research",
-      ruleset: 1,
-      content: BLUEPRINT_CONTENT_FINGERPRINT,
-      layout: {
-        width: 8,
-        height: 4,
-        tiles: [],
-        machines: [],
-      },
-    };
-
-    await expect(encodeBlueprint(invalid)).rejects.toThrow(/Research route|source|sink|linear/i);
-  });
-
-  it("rejects a blueprint whose machine-content fingerprint is from another build", async () => {
-    await expect(encodeBlueprint({
-      ...blueprint,
-      content: "fnv1a32:00000000",
-    })).rejects.toThrow(/content|fingerprint/i);
-  });
-
-  it("canonicalizes array order without altering semantic content", async () => {
-    const reordered: PortableBlueprint = {
-      ...blueprint,
-      layout: {
-        ...blueprint.layout,
-        tiles: [...blueprint.layout.tiles].reverse(),
-      },
-    };
-
-    expect(await encodeBlueprint(reordered)).toBe(await encodeBlueprint(blueprint));
   });
 });

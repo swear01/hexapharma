@@ -22,7 +22,7 @@ const customChild: PatentNode = {
   cost: 2,
   researchCost: 1,
   requires: ["root"],
-  effect: { kind: "unlockMap" },
+  effect: { kind: "expandFactory", dw: 0, dh: 1 },
 };
 
 const validCustomTree: readonly PatentNode[] = [customRoot, customChild];
@@ -54,13 +54,14 @@ describe("DEFAULT_PATENTS tree", () => {
     }
   });
 
-  it("contains one of each effect kind and a prereq chain", () => {
+  it("contains only single-Atlas effects and a prerequisite chain", () => {
     const kinds = new Set(DEFAULT_PATENTS.map((n) => n.effect.kind));
     expect(kinds).toEqual(
-      new Set(["expandFactory", "revealAid", "unlockMachine", "unlockMap"]),
+      new Set(["expandFactory", "revealAid", "unlockMachine"]),
     );
-    const newMap = DEFAULT_PATENTS.find((n) => n.id === "new-map");
-    expect(newMap?.requires).toContain("bench-2");
+    expect(DEFAULT_PATENTS).not.toHaveProperty("unlockMap");
+    const floorDepth = DEFAULT_PATENTS.find((n) => n.id === "floor-depth");
+    expect(floorDepth?.requires).toContain("bench-2");
   });
 });
 
@@ -74,7 +75,7 @@ describe("canUnlock", () => {
   });
 
   it("false when a prerequisite is missing", () => {
-    expect(canUnlock(DEFAULT_PATENTS, empty, 99999, 99999, "new-map")).toBe(false);
+    expect(canUnlock(DEFAULT_PATENTS, empty, 99999, 99999, "floor-depth")).toBe(false);
   });
 
   it("false when already unlocked", () => {
@@ -209,7 +210,7 @@ describe("unlockPatent", () => {
   });
 
   it("throws when prereq missing", () => {
-    expect(() => unlockPatent(DEFAULT_PATENTS, empty, 99999, 99999, "new-map")).toThrow(/requires/);
+    expect(() => unlockPatent(DEFAULT_PATENTS, empty, 99999, 99999, "floor-depth")).toThrow(/requires/);
   });
 
   it("throws when already unlocked", () => {
@@ -218,17 +219,17 @@ describe("unlockPatent", () => {
   });
 });
 
-describe("prereq chain (new-map requires bench-2)", () => {
-  it("cannot unlock new-map before bench-2", () => {
-    expect(canUnlock(DEFAULT_PATENTS, empty, 99999, 99999, "new-map")).toBe(false);
-    expect(() => unlockPatent(DEFAULT_PATENTS, empty, 99999, 99999, "new-map")).toThrow();
+describe("prereq chain (floor-depth requires bench-2)", () => {
+  it("cannot unlock floor-depth before bench-2", () => {
+    expect(canUnlock(DEFAULT_PATENTS, empty, 99999, 99999, "floor-depth")).toBe(false);
+    expect(() => unlockPatent(DEFAULT_PATENTS, empty, 99999, 99999, "floor-depth")).toThrow();
   });
 
-  it("can unlock new-map after bench-2", () => {
+  it("can unlock floor-depth after bench-2", () => {
     const afterBench = unlockPatent(DEFAULT_PATENTS, empty, 99999, 99999, "bench-2");
-    expect(canUnlock(DEFAULT_PATENTS, afterBench.patents, afterBench.cash, afterBench.research, "new-map")).toBe(true);
-    const res = unlockPatent(DEFAULT_PATENTS, afterBench.patents, afterBench.cash, afterBench.research, "new-map");
-    expect(res.patents.unlocked).toEqual(["bench-2", "new-map"]);
+    expect(canUnlock(DEFAULT_PATENTS, afterBench.patents, afterBench.cash, afterBench.research, "floor-depth")).toBe(true);
+    const res = unlockPatent(DEFAULT_PATENTS, afterBench.patents, afterBench.cash, afterBench.research, "floor-depth");
+    expect(res.patents.unlocked).toEqual(["bench-2", "floor-depth"]);
   });
 });
 
@@ -250,20 +251,18 @@ describe("activeEffects", () => {
       factoryDh: 0,
       revealAid: 0,
       unlockedMachines: [],
-      newMapUnlocked: false,
     });
   });
 
   it("aggregates all unlocked effects", () => {
     const state: PatentState = {
-      unlocked: ["bench-2", "reveal-aid", "skew-unlock", "dilute-unlock", "new-map"],
+      unlocked: ["bench-2", "reveal-aid", "skew-unlock", "dilute-unlock", "floor-depth", "field-survey"],
     };
     const eff = activeEffects(DEFAULT_PATENTS, state);
     expect(eff.factoryDw).toBe(2);
-    expect(eff.factoryDh).toBe(0);
-    expect(eff.revealAid).toBe(3);
+    expect(eff.factoryDh).toBe(2);
+    expect(eff.revealAid).toBe(7);
     expect(eff.unlockedMachines).toEqual(["skew", "dilute"]);
-    expect(eff.newMapUnlocked).toBe(true);
   });
 
   it("unlockedMachines follow unlock order", () => {

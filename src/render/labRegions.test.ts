@@ -12,6 +12,7 @@ function map(): EffectMap {
     cell: new Uint8Array(12),
     cureId: new Int16Array(12).fill(-1),
     sideEffectId: new Int32Array(12).fill(-1),
+    portalTo: new Int32Array(12).fill(-1),
     fog: new Uint8Array(12),
   };
 }
@@ -46,8 +47,8 @@ describe("Lab connected region visuals", () => {
     );
   });
 
-  it("joins revealed wall, hazard, and side-effect biome cells by terrain kind", () => {
-    for (const kind of [CellKind.Wall, CellKind.Hazard, CellKind.SideEffect]) {
+  it("joins revealed wall, abyss, swamp, and side-effect biome cells by terrain kind", () => {
+    for (const kind of [CellKind.Wall, CellKind.Abyss, CellKind.Swamp, CellKind.SideEffect]) {
       const level = map();
       level.cell[5] = kind;
       level.cell[6] = kind;
@@ -55,5 +56,16 @@ describe("Lab connected region visuals", () => {
       level.fog[6] = 1;
       expect(revealedRegionEdges(level, 1, 1).right).toBe(false);
     }
+  });
+
+  it("keeps adjacent directed portal entries visually discrete", () => {
+    const level = map();
+    level.cell[5] = CellKind.Portal;
+    level.cell[6] = CellKind.Portal;
+    level.portalTo[5] = 2;
+    level.portalTo[6] = 3;
+    level.fog[5] = 1;
+    level.fog[6] = 1;
+    expect(revealedRegionEdges(level, 1, 1).right).toBe(true);
   });
 });

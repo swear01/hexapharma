@@ -27,6 +27,7 @@ function openMap(width = 32, height = 20): EffectMap {
     cell: new Uint8Array(size),
     cureId: new Int16Array(size).fill(-1),
     sideEffectId: new Int32Array(size).fill(-1),
+    portalTo: new Int32Array(size).fill(-1),
     fog: new Uint8Array(size).fill(1),
   };
 }
@@ -35,8 +36,8 @@ function step(typeId: string): Machine {
   const entry = DEFAULT_CATALOG.find((candidate) => candidate.typeId === typeId)!;
   return {
     typeId: entry.typeId,
-    transform: entry.transform,
-    orientation: { rot: 0, flip: false },
+    path: entry.path,
+    stroke: entry.path.length,
   };
 }
 
@@ -162,11 +163,13 @@ describe("compilePrototype", () => {
 
   it("keeps player-owned anchors and produces the same effect as the recipe", () => {
     const map = openMap();
-    const cureIndex = 10 * map.width + 13;
+    const template: Template = { steps: [step("push")] };
+    const open: MultiMap = { maps: [map] };
+    const landing = evaluate(open, initialState(open), template).final[0]!;
+    const cureIndex = landing.y * map.width + landing.x;
     map.cell[cureIndex] = CellKind.Cure;
     map.cureId[cureIndex] = 4;
     const mm: MultiMap = { maps: [map] };
-    const template: Template = { steps: [step("push")] };
     const layout = compilePrototype(template, 18, 9, [
       { anchor: { x: 7, y: 3 }, footRot: 0 },
     ]);
@@ -221,7 +224,7 @@ describe("compilePrototype", () => {
 
   it("auto-arranges onto the exact shared Lab and Factory entitlement", () => {
     const template: Template = {
-      steps: ["push", "skew", "push", "push2", "swap01", "push2", "push2", "push"]
+      steps: ["push", "skew", "push", "push2", "settle", "push2", "push2", "push"]
         .map(step),
     };
     const prototype = compileEntitledPrototype(

@@ -15,17 +15,16 @@ import type {
 } from "../phase0_interfaces";
 
 /**
- * Default Phase 3 patent tree. A small talent tree with one of each effect kind
- * and a prerequisite chain (`new-map` requires `bench-2`).
+ * Default patent tree for the single-Atlas game.
  */
 const PATENT_DEFINITIONS = [
   { id: "bench-2", cost: 120, researchCost: 2, requires: [], effect: { kind: "expandFactory", dw: 2, dh: 0 } },
   { id: "reveal-aid", cost: 80, researchCost: 1, requires: [], effect: { kind: "revealAid", amount: 3 } },
   { id: "skew-unlock", cost: 100, researchCost: 1, requires: [], effect: { kind: "unlockMachine", typeId: "skew" } },
   { id: "dilute-unlock", cost: 180, researchCost: 3, requires: ["bench-2"], effect: { kind: "unlockMachine", typeId: "dilute" } },
-  { id: "new-map", cost: 300, researchCost: 5, requires: ["bench-2"], effect: { kind: "unlockMap" } },
-  { id: "new-map-4", cost: 500, researchCost: 8, requires: ["new-map"], effect: { kind: "unlockMap" } },
-  { id: "deep-map-4", cost: 700, researchCost: 12, requires: ["new-map-4"], effect: { kind: "unlockMap" } },
+  { id: "floor-depth", cost: 300, researchCost: 5, requires: ["bench-2"], effect: { kind: "expandFactory", dw: 0, dh: 2 } },
+  { id: "field-survey", cost: 500, researchCost: 8, requires: ["reveal-aid"], effect: { kind: "revealAid", amount: 4 } },
+  { id: "settle-unlock", cost: 700, researchCost: 12, requires: ["dilute-unlock"], effect: { kind: "unlockMachine", typeId: "settle" } },
 ] as const satisfies readonly PatentNode[];
 
 export const DEFAULT_PATENTS: readonly PatentNode[] = Object.freeze(PATENT_DEFINITIONS.map(
@@ -74,8 +73,6 @@ function validateEffect(node: PatentNode): void {
       return;
     case "revealAid":
       requireNonNegativeSafeInteger(effect.amount, `patent "${node.id}" reveal amount`);
-      return;
-    case "unlockMap":
       return;
     default:
       throw new Error(`patent "${node.id}" has an unknown effect kind`);
@@ -229,12 +226,10 @@ export interface ActiveEffects {
   readonly factoryDw: number;
   /** Total factory height expansion from all unlocked expandFactory nodes. */
   readonly factoryDh: number;
-  /** Total reveal-aid amount from all unlocked revealAid nodes. */
+  /** Extra sensor radius applied only while an actual Research trail runs. */
   readonly revealAid: number;
   /** Machine typeIds unlocked, in unlock order. */
   readonly unlockedMachines: readonly MachineTypeId[];
-  /** True if any unlockMap node is unlocked. */
-  readonly newMapUnlocked: boolean;
 }
 
 /** Summarize the effects of the unlocked patents (cold path, UI helper). */
@@ -245,7 +240,6 @@ export function activeEffects(tree: readonly PatentNode[], state: PatentState): 
   let factoryDh = 0;
   let revealAid = 0;
   const unlockedMachines: MachineTypeId[] = [];
-  let newMapUnlocked = false;
 
   for (const id of state.unlocked) {
     const node = findNode(tree, id) as PatentNode;
@@ -261,11 +255,8 @@ export function activeEffects(tree: readonly PatentNode[], state: PatentState): 
       case "unlockMachine":
         unlockedMachines.push(e.typeId);
         break;
-      case "unlockMap":
-        newMapUnlocked = true;
-        break;
     }
   }
 
-  return { factoryDw, factoryDh, revealAid, unlockedMachines, newMapUnlocked };
+  return { factoryDw, factoryDh, revealAid, unlockedMachines };
 }

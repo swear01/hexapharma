@@ -2,7 +2,6 @@ export const LAB_ASSET_KEYS = [
   "substrate",
   "fog",
   "wall",
-  "hazard",
   "sideEffect",
   "cure",
   "drug",

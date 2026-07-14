@@ -1,15 +1,11 @@
 import { webcrypto } from "node:crypto";
 import { beforeAll, describe, expect, it } from "vitest";
-import { compileEntitledPrototype } from "../sim/recipe";
-import { generate } from "../sim/mapgen";
-import {
-  BASE_GAME_FACTORY_HEIGHT,
-  BASE_GAME_FACTORY_WIDTH,
-  DEFAULT_CATALOG,
-} from "../sim/phase0_interfaces";
-import { blueprintFromLayout } from "./format";
+import { DEFAULT_CATALOG, type Template } from "../sim/phase0_interfaces";
+import { blueprintFromProgram } from "./format";
 import {
   BLUEPRINT_LIBRARY_KEY,
+  BLUEPRINT_LIBRARY_VERSION,
+  MAX_LIBRARY_BLUEPRINTS,
   deleteLibraryBlueprint,
   exportLibraryBlueprint,
   importLibraryBlueprint,
@@ -34,26 +30,17 @@ beforeAll(() => {
 });
 
 function fixture() {
-  const options = {
-    seed: 14,
-    nMaps: 1,
-    width: 32,
-    height: 32,
-    catalog: DEFAULT_CATALOG,
-    diseaseCount: 1,
-    difficulty: { min: 4, max: 12 },
-  } as const;
-  const template = generate(options).diseases[0]!.reference;
-  const layout = compileEntitledPrototype(
-    template,
-    BASE_GAME_FACTORY_WIDTH,
-    BASE_GAME_FACTORY_HEIGHT,
-  ).layout;
-  return blueprintFromLayout("research-route", "Seed 14 route", layout);
+  const entry = DEFAULT_CATALOG[0]!;
+  const program: Template = {
+    steps: [{ typeId: entry.typeId, path: entry.path, stroke: 2 }],
+  };
+  return blueprintFromProgram("Reusable Research program", program);
 }
 
-describe("cross-save Blueprint Library", () => {
-  it("persists an independently checksummed blueprint outside save slots", async () => {
+describe("cross-save Blueprint Library v2", () => {
+  it("uses a breaking v2 namespace and persists checksummed documents outside save slots", async () => {
+    expect(BLUEPRINT_LIBRARY_VERSION).toBe(2);
+    expect(BLUEPRINT_LIBRARY_KEY).toBe("hexapharma.blueprint-library.v2");
     const storage = new MemoryStorage();
     const saved = await saveLibraryBlueprint(storage, fixture());
     expect(storage.getItem(BLUEPRINT_LIBRARY_KEY)).toContain("hexapharma-blueprint");
@@ -74,13 +61,38 @@ describe("cross-save Blueprint Library", () => {
     expect(await exportLibraryBlueprint(target, imported.id)).toBe(document);
   });
 
-  it("deletes by stable id and rejects a corrupt library atomically", async () => {
+  it("deletes by stable id and rejects corrupt or legacy libraries atomically", async () => {
     const storage = new MemoryStorage();
     const saved = await saveLibraryBlueprint(storage, fixture());
     await deleteLibraryBlueprint(storage, saved.id);
     expect(await listLibraryBlueprints(storage)).toEqual([]);
 
-    storage.setItem(BLUEPRINT_LIBRARY_KEY, JSON.stringify({ version: 1, entries: [{ bad: true }] }));
+    storage.setItem(BLUEPRINT_LIBRARY_KEY, JSON.stringify({ version: 2, entries: [{ bad: true }] }));
     await expect(listLibraryBlueprints(storage)).rejects.toThrow(/library|entry|field/i);
+
+    storage.setItem(BLUEPRINT_LIBRARY_KEY, JSON.stringify({ version: 1, entries: [] }));
+    await expect(listLibraryBlueprints(storage)).rejects.toThrow(/version 1/i);
+  });
+
+  it("rejects imported v1 Blueprint documents without changing storage", async () => {
+    const storage = new MemoryStorage();
+    const legacy = JSON.stringify({
+      format: "hexapharma-blueprint",
+      version: 1,
+      checksum: `sha256:${"0".repeat(64)}`,
+      blueprint: { kind: "research-route" },
+    });
+
+    await expect(importLibraryBlueprint(storage, legacy)).rejects.toThrow(/version 1/i);
+    expect(storage.getItem(BLUEPRINT_LIBRARY_KEY)).toBeNull();
+  });
+
+  it("rejects a stored library above its entry cap before decoding documents", async () => {
+    const storage = new MemoryStorage();
+    storage.setItem(BLUEPRINT_LIBRARY_KEY, JSON.stringify({
+      version: BLUEPRINT_LIBRARY_VERSION,
+      entries: Array.from({ length: MAX_LIBRARY_BLUEPRINTS + 1 }, () => ({ bad: true })),
+    }));
+    await expect(listLibraryBlueprints(storage)).rejects.toThrow(/at most 64/i);
   });
 });

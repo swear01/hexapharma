@@ -4,7 +4,7 @@ import { labAssetUrls } from "./labAssets";
 const manifest = {
   baseUrl: "/assets/lab/",
   assets: Object.fromEntries(
-    ["substrate", "fog", "wall", "hazard", "sideEffect", "cure", "drug", "halo"]
+    ["substrate", "fog", "wall", "sideEffect", "cure", "drug", "halo"]
       .map((key) => [key, { file: `${key}.png` }]),
   ),
 };
@@ -15,7 +15,6 @@ describe("Lab asset manifest", () => {
       substrate: "/assets/lab/substrate.png",
       fog: "/assets/lab/fog.png",
       wall: "/assets/lab/wall.png",
-      hazard: "/assets/lab/hazard.png",
       sideEffect: "/assets/lab/sideEffect.png",
       cure: "/assets/lab/cure.png",
       drug: "/assets/lab/drug.png",

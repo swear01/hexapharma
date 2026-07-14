@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   LAB_CELL_PIXELS,
+  LAB_VIEWPORT,
   LAB_MIN_ZOOM,
   clampLabCamera,
   focusLabCamera,
@@ -15,16 +16,17 @@ import {
   type LabCamera,
 } from "./labCamera";
 
-const viewport = { width: 704, height: 512 };
+const viewport = LAB_VIEWPORT;
 const map = { width: 63, height: 63 };
 
 describe("Lab camera", () => {
   it("uses a compact 40 px atlas grid and still shows only a local map window", () => {
     expect(LAB_CELL_PIXELS).toBe(40);
+    expect(LAB_VIEWPORT.width / LAB_VIEWPORT.height).toBeGreaterThan(1.6);
     const camera = focusLabCamera({ x: 31, y: 31 });
     const bounds = visibleLabCells(camera, viewport, map);
-    expect(bounds.x1 - bounds.x0).toBeGreaterThanOrEqual(18);
-    expect(bounds.x1 - bounds.x0).toBeLessThanOrEqual(21);
+    expect(bounds.x1 - bounds.x0).toBeGreaterThanOrEqual(21);
+    expect(bounds.x1 - bounds.x0).toBeLessThanOrEqual(24);
     expect(bounds.y1 - bounds.y0).toBeGreaterThanOrEqual(14);
     expect(bounds.y1 - bounds.y0).toBeLessThanOrEqual(16);
     expect(bounds.x0).toBeGreaterThan(0);
@@ -85,7 +87,7 @@ describe("Lab camera", () => {
     expect(moved.x).toBeCloseTo(29.5);
     expect(moved.y).toBeCloseTo(30.5);
     expect(clampLabCamera({ x: -99, y: 99, zoom: 1 }, viewport, map)).toEqual({
-      x: 8.8,
+      x: 10.4,
       y: 56.6,
       zoom: 1,
     });

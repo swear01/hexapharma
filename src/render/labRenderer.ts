@@ -22,14 +22,7 @@ import {
 } from "./labCamera";
 import { labAssetUrls } from "./labAssets";
 import { revealedRegionEdges } from "./labRegions";
-
-const CELL_COLOR: Record<number, number> = {
-  [CellKind.Empty]: 0xdce4dc,
-  [CellKind.Wall]: 0x344340,
-  [CellKind.Hazard]: 0xb83d35,
-  [CellKind.SideEffect]: 0x80519a,
-  [CellKind.Cure]: 0x2b9d72,
-};
+import { labTerrainVisual, type PortalTerrainVisual, type RevealedTerrainVisual } from "./labTerrain";
 
 const BG = 0x111a1b;
 const TOKEN_COLOR = 0x28a9d6;
@@ -41,7 +34,6 @@ interface LabTextures {
   readonly substrate: Texture;
   readonly fog: Texture;
   readonly wall: Texture;
-  readonly hazard: Texture;
   readonly sideEffect: Texture;
   readonly cure: Texture;
   readonly drug: Texture;
@@ -52,17 +44,16 @@ async function loadLabTextures(): Promise<LabTextures> {
   const response = await fetch("/assets/lab/manifest.json");
   if (!response.ok) throw new Error(`Lab asset manifest request failed with ${response.status}`);
   const urls = labAssetUrls(await response.json());
-  const [substrate, fog, wall, hazard, sideEffect, cure, drug, halo] = await Promise.all([
+  const [substrate, fog, wall, sideEffect, cure, drug, halo] = await Promise.all([
     Assets.load<Texture>(urls.substrate),
     Assets.load<Texture>(urls.fog),
     Assets.load<Texture>(urls.wall),
-    Assets.load<Texture>(urls.hazard),
     Assets.load<Texture>(urls.sideEffect),
     Assets.load<Texture>(urls.cure),
     Assets.load<Texture>(urls.drug),
     Assets.load<Texture>(urls.halo),
   ]);
-  return { substrate, fog, wall, hazard, sideEffect, cure, drug, halo };
+  return { substrate, fog, wall, sideEffect, cure, drug, halo };
 }
 
 export interface LabRenderView {
@@ -94,9 +85,8 @@ function isRevealed(map: EffectMap, x: number, y: number): boolean {
 
 function featureTexture(textures: LabTextures, kind: number): Texture | null {
   if (kind === CellKind.Wall) return textures.wall;
-  if (kind === CellKind.Hazard) return textures.hazard;
   if (kind === CellKind.SideEffect) return textures.sideEffect;
-  if (kind === CellKind.Cure) return null;
+  if (kind === CellKind.Cure) return textures.cure;
   return null;
 }
 
@@ -131,6 +121,138 @@ function drawLabGrid(map: EffectMap, camera: LabCamera, grid: Graphics): void {
   drawGridKind(grid, "major", camera, bounds, map.origin);
 }
 
+function portalMarkerColor(marker: string): number {
+  let hash = 0;
+  for (let index = 0; index < marker.length; index++) {
+    hash = ((hash * 31) + marker.charCodeAt(index)) >>> 0;
+  }
+  const palette = [0x67e8f9, 0xf472b6, 0xfacc15, 0xa3e635, 0xc084fc] as const;
+  return palette[hash % palette.length] ?? 0x67e8f9;
+}
+
+function drawPortalMotif(
+  terrain: Graphics,
+  visual: PortalTerrainVisual,
+  x: number,
+  y: number,
+  cell: number,
+): void {
+  const cx = x + cell / 2;
+  const cy = y + cell / 2;
+  const markerColor = visual.pairMarker === null
+    ? 0x718096
+    : portalMarkerColor(visual.pairMarker);
+  terrain.rect(x, y, cell, cell).fill({ color: visual.baseColor, alpha: 1 });
+  terrain.circle(cx, cy, cell * 0.34).fill({ color: 0x050817, alpha: 1 });
+  terrain.circle(cx, cy, cell * 0.34).stroke({ color: markerColor, width: Math.max(3, cell * 0.08) });
+  terrain.circle(cx, cy, cell * 0.2).stroke({ color: visual.rimColor, width: Math.max(2, cell * 0.045), alpha: 0.9 });
+
+  let hash = visual.role === "entry" ? 0x1357 : 0x2468;
+  if (visual.pairMarker !== null) {
+    for (let index = 0; index < visual.pairMarker.length; index++) {
+      hash = ((hash * 33) + visual.pairMarker.charCodeAt(index)) >>> 0;
+    }
+  }
+  const notchCount = 2 + (hash % 4);
+  for (let index = 0; index < notchCount; index++) {
+    const angle = ((index + (hash % 7) / 7) / notchCount) * Math.PI * 2;
+    const dx = Math.cos(angle);
+    const dy = Math.sin(angle);
+    terrain.moveTo(cx + dx * cell * 0.27, cy + dy * cell * 0.27)
+      .lineTo(cx + dx * cell * 0.39, cy + dy * cell * 0.39)
+      .stroke({ color: markerColor, width: Math.max(2, cell * 0.055) });
+  }
+
+  if (visual.direction === null) {
+    if (visual.role === "entry") {
+      terrain.moveTo(cx, cy - cell * 0.1)
+        .lineTo(cx + cell * 0.1, cy)
+        .lineTo(cx, cy + cell * 0.1)
+        .lineTo(cx - cell * 0.1, cy)
+        .lineTo(cx, cy - cell * 0.1)
+        .fill({ color: markerColor });
+    } else {
+      terrain.rect(cx - cell * 0.09, cy - cell * 0.09, cell * 0.18, cell * 0.18)
+        .stroke({ color: markerColor, width: Math.max(2, cell * 0.05) });
+    }
+    return;
+  }
+  const length = Math.hypot(visual.direction.x, visual.direction.y);
+  const dx = visual.direction.x / length;
+  const dy = visual.direction.y / length;
+  const px = -dy;
+  const py = dx;
+  const tipX = cx + dx * cell * 0.19;
+  const tipY = cy + dy * cell * 0.19;
+  terrain.moveTo(cx - dx * cell * 0.1, cy - dy * cell * 0.1)
+    .lineTo(tipX, tipY)
+    .stroke({ color: 0xffffff, width: Math.max(2, cell * 0.06) });
+  terrain.moveTo(tipX, tipY)
+    .lineTo(tipX - dx * cell * 0.13 + px * cell * 0.09, tipY - dy * cell * 0.13 + py * cell * 0.09)
+    .lineTo(tipX - dx * cell * 0.13 - px * cell * 0.09, tipY - dy * cell * 0.13 - py * cell * 0.09)
+    .lineTo(tipX, tipY)
+    .fill({ color: 0xffffff });
+  if (visual.role === "exit") {
+    terrain.rect(cx - cell * 0.07, cy - cell * 0.07, cell * 0.14, cell * 0.14)
+      .stroke({ color: markerColor, width: Math.max(2, cell * 0.04) });
+  }
+}
+
+function drawTerrainMotif(
+  terrain: Graphics,
+  visual: RevealedTerrainVisual | PortalTerrainVisual,
+  x: number,
+  y: number,
+  cell: number,
+): void {
+  if (visual.kind === "empty") return;
+  if (visual.kind === "portal") {
+    drawPortalMotif(terrain, visual, x, y, cell);
+    return;
+  }
+  if (visual.kind === "wall") {
+    terrain.rect(x, y, cell, cell).fill({ color: visual.baseColor, alpha: 1 });
+    terrain.rect(x + 1, y + 1, cell - 2, cell - 2)
+      .stroke({ color: visual.rimColor, width: Math.max(2, cell * 0.055), alpha: 0.95 });
+    for (let row = 1; row <= 2; row++) {
+      const lineY = y + (cell * row) / 3;
+      terrain.moveTo(x, lineY).lineTo(x + cell, lineY)
+        .stroke({ color: 0x596366, width: Math.max(1, cell * 0.035), alpha: 0.9 });
+    }
+    terrain.moveTo(x + cell * 0.5, y).lineTo(x + cell * 0.5, y + cell / 3)
+      .moveTo(x + cell * 0.25, y + cell / 3).lineTo(x + cell * 0.25, y + (cell * 2) / 3)
+      .moveTo(x + cell * 0.7, y + (cell * 2) / 3).lineTo(x + cell * 0.7, y + cell)
+      .stroke({ color: 0x596366, width: Math.max(1, cell * 0.035), alpha: 0.9 });
+    return;
+  }
+  if (visual.kind === "abyss") {
+    terrain.rect(x, y, cell, cell).fill({ color: visual.baseColor, alpha: 1 });
+    terrain.circle(x + cell / 2, y + cell / 2, cell * 0.37).fill({ color: 0x000000, alpha: 1 });
+    terrain.circle(x + cell / 2, y + cell / 2, cell * 0.4)
+      .stroke({ color: visual.rimColor, width: Math.max(3, cell * 0.075), alpha: 0.95 });
+    terrain.circle(x + cell / 2, y + cell / 2, cell * 0.27)
+      .stroke({ color: 0x24343d, width: Math.max(2, cell * 0.04), alpha: 0.8 });
+    return;
+  }
+  terrain.rect(x, y, cell, cell).fill({ color: visual.baseColor, alpha: 0.82 });
+  if (visual.kind === "swamp") {
+    for (let line = 0; line < 3; line++) {
+      const lineY = y + cell * (0.25 + line * 0.25);
+      const offset = line % 2 === 0 ? 0 : cell * 0.12;
+      terrain.moveTo(x + cell * 0.08 + offset, lineY)
+        .bezierCurveTo(
+          x + cell * 0.3 + offset,
+          lineY - cell * 0.1,
+          x + cell * 0.55 + offset,
+          lineY + cell * 0.1,
+          x + cell * 0.88,
+          lineY,
+        )
+        .stroke({ color: visual.rimColor, width: Math.max(2, cell * 0.055), alpha: 0.78 });
+    }
+  }
+}
+
 function drawVisibleMap(
   map: EffectMap,
   camera: LabCamera,
@@ -151,12 +273,9 @@ function drawVisibleMap(
       revealMask.rect(screen.x - 2, screen.y - 2, cell + 4, cell + 4).fill(0xffffff);
 
       const kind = map.cell[y * map.width + x] ?? CellKind.Empty;
-      if (kind !== CellKind.Empty) {
-        terrain.rect(screen.x, screen.y, cell, cell).fill({
-          color: CELL_COLOR[kind] ?? CELL_COLOR[CellKind.Empty],
-          alpha: kind === CellKind.Cure ? 0.3 : 0.2,
-        });
-      }
+      const visual = labTerrainVisual(map, x, y);
+      if (visual.kind === "fog") throw new Error("Lab renderer received fog for a revealed cell");
+      drawTerrainMotif(terrain, visual, screen.x, screen.y, cell);
       const texture = featureTexture(textures, kind);
       const sprite = texture === null ? undefined : featureSprites[featureIndex++];
       if (sprite !== undefined && texture !== null) {
@@ -167,12 +286,15 @@ function drawVisibleMap(
         sprite.y = screen.y + cell / 2;
         sprite.width = cell * (kind === CellKind.Wall ? 1.08 : 0.88);
         sprite.height = cell * (kind === CellKind.Wall ? 1.08 : 0.88);
-        sprite.rotation = ((x * 7 + y * 11) & 3) * Math.PI / 2;
+        sprite.alpha = kind === CellKind.Wall ? 0.48 : 0.88;
+        sprite.rotation = kind === CellKind.Wall
+          ? ((x * 7 + y * 11) & 3) * Math.PI / 2
+          : 0;
       }
       if (kind !== CellKind.Empty) {
         const edges = revealedRegionEdges(map, x, y);
         const edgeStyle = {
-          color: kind === CellKind.Cure ? 0x75f0b8 : (CELL_COLOR[kind] ?? 0xffffff),
+          color: visual.rimColor,
           width: Math.max(2, cell * (kind === CellKind.Cure ? 0.07 : 0.045)),
           alpha: kind === CellKind.Cure ? 0.9 : 0.7,
         };
@@ -338,11 +460,11 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
     fogBackdrop,
     substrate,
     revealMask,
-    grid,
     terrain,
+    featureLayer,
+    grid,
     route,
     previewRoute,
-    featureLayer,
     haloArt,
     token,
     tokenArt,

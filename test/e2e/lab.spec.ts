@@ -1,10 +1,7 @@
 import { expect, test } from "@playwright/test";
-import { applyGameIntent, createGameState } from "../../src/sim/game";
 import { generate } from "../../src/sim/mapgen";
-import { compileEntitledPrototype } from "../../src/sim/recipe";
-import { serializeGame } from "../../src/sim/save";
+import { DEFAULT_CATALOG } from "../../src/sim/phase0_interfaces";
 import { defaultGenOptions } from "../../src/ui/Game";
-import { BASE_GAME_FACTORY_HEIGHT, BASE_GAME_FACTORY_WIDTH } from "../../src/sim/phase0_interfaces";
 
 test.setTimeout(60_000);
 
@@ -14,44 +11,117 @@ function known(text: string | null): number {
   return Number(match[1]);
 }
 
-function plannedResearchSave(): string {
-  const options = defaultGenOptions(14);
-  const layout = compileEntitledPrototype(
-    generate(options).diseases[0]!.reference,
-    BASE_GAME_FACTORY_WIDTH,
-    BASE_GAME_FACTORY_HEIGHT,
-  ).layout;
-  const game = applyGameIntent(createGameState(options, 10_000, 0), {
-    kind: "setResearchLayout",
-    layout,
-  });
-  return serializeGame(game);
-}
-
-async function loadPlannedResearch(page: import("@playwright/test").Page): Promise<void> {
+test("Research is one large centered Atlas with no Route Floor or layer-transfer controls", async ({
+  page,
+}) => {
   await page.goto("/");
-  await page.evaluate((save) => localStorage.setItem("hexapharma.save.slot.0", save), plannedResearchSave());
-  await page.reload();
-  await page.getByTestId("load").click();
-}
+  const frame = page.getByTestId("lab-map-frame");
+  await expect(frame).toBeVisible();
+  const level = generate(defaultGenOptions(14));
+  const start = level.start.pos[0]!;
+  expect(start).toEqual(level.mm.maps[0]!.origin);
+  await expect(frame).toHaveAttribute("data-camera-x", String(start.x + 0.5));
+  await expect(frame).toHaveAttribute("data-camera-y", String(start.y + 0.5));
 
-test("Research opens on a large centered atlas and supports manual pan, zoom, and focus", async ({ page }) => {
+  const frameBox = await frame.boundingBox();
+  const stageBox = await page.getByTestId("game-stage").boundingBox();
+  if (frameBox === null || stageBox === null) throw new Error("Research Atlas has no bounds");
+  expect(frameBox.width).toBeGreaterThan(stageBox.width * 0.84);
+  expect(frameBox.height).toBeGreaterThan(stageBox.height * 0.8);
+  await expect(page.getByTestId("research-atlas")).toBeVisible();
+  await expect(page.getByTestId("research-workspace")).toBeVisible();
+  await expect(page.getByTestId("research-path-hotbar")).toBeVisible();
+  await expect(page.locator("[data-testid^='lab-layer-']")).toHaveCount(0);
+  await expect(page.getByTestId("map-count")).toHaveCount(0);
+  await expect(page.getByTestId("research-workspace").locator("[data-testid='factory-canvas']"))
+    .toHaveCount(0);
+  for (const obsolete of [
+    "Route Floor",
+    "Effect Atlas",
+    "Planning is safe",
+    "No clock · layout edits are free",
+    "swap01",
+    "phase transfer",
+  ]) {
+    await expect(page.getByText(obsolete, { exact: false })).toHaveCount(0);
+  }
+  await expect(page.getByRole("button", { name: /swap|phase|transfer/i })).toHaveCount(0);
+});
+
+test("fixed paths support calibration, position preview, world-click commit, and paid Dispense", async ({
+  page,
+}) => {
+  await page.goto("/?cash=200");
+  const frame = page.getByTestId("lab-map-frame");
+  const canvas = frame.locator("canvas");
+  await expect(canvas).toBeVisible({ timeout: 15_000 });
+  const push = page.getByTestId("research-machine-push");
+  await expect(push).toHaveAttribute("aria-pressed", "true");
+  const fullPath = await push.locator("[data-icon-shape='full-path']").getAttribute("points");
+  const activePath = push.locator("[data-icon-shape='active-path']");
+  await expect(activePath).toHaveAttribute("points", fullPath ?? "");
+  await expect(page.getByTestId("research-calibration")).toContainText("3/3");
+
+  const fullPreview = await canvas.screenshot({ animations: "disabled" });
+  await page.getByRole("button", { name: "Shorter path" }).click();
+  await expect(page.getByTestId("research-calibration")).toContainText("2/3");
+  await page.waitForTimeout(50);
+  const shorterPreview = await canvas.screenshot({ animations: "disabled" });
+  expect(shorterPreview.equals(fullPreview)).toBe(false);
+
+  const cash = page.getByTestId("cash");
+  const revealed = page.getByTestId("revealed-count");
+  const cashBefore = Number(await cash.textContent());
+  const revealedBefore = known(await revealed.textContent());
+  const box = await frame.boundingBox();
+  if (box === null) throw new Error("Research Atlas has no bounds");
+  const clickWorld = () => page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await clickWorld();
+  await expect(page.getByTestId("research-program-count")).toHaveText("1 placed");
+  await clickWorld();
+  await expect(page.getByTestId("research-program-count")).toHaveText("2 placed");
+  await expect(cash).toHaveText(String(cashBefore));
+  expect(known(await revealed.textContent())).toBe(revealedBefore);
+
+  await page.getByTestId("research-command").click();
+  await expect(cash).toHaveText(String(cashBefore - 4));
+  await expect(page.getByTestId("research-command")).toBeEnabled({ timeout: 5_000 });
+  await expect.poll(async () => known(await revealed.textContent())).toBeGreaterThan(revealedBefore);
+});
+
+test("machine hotkeys select paths while Enter dispenses the committed program", async ({ page }) => {
+  await page.goto("/");
+  const hotbar = page.getByTestId("research-path-hotbar");
+  const available = DEFAULT_CATALOG.slice(0, 4);
+  const fullPaths = await hotbar.locator("[data-icon-shape='full-path']")
+    .evaluateAll((paths) => paths.map((path) => path.getAttribute("points")));
+  expect(new Set(fullPaths).size).toBe(available.length);
+  await page.keyboard.press("Digit2");
+  await expect(page.getByTestId(`research-machine-${available[1]!.typeId}`))
+    .toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("[");
+  await expect(page.getByTestId("research-calibration")).toContainText(
+    `${available[1]!.path.length - 1}/${available[1]!.path.length}`,
+  );
+  const frame = page.getByTestId("lab-map-frame");
+  const box = await frame.boundingBox();
+  if (box === null) throw new Error("Research Atlas has no bounds");
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await expect(page.getByTestId("research-program-count")).toHaveText("1 placed");
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("cash")).toHaveText(String(200 - available[1]!.cost));
+  await expect(page.getByTestId("research-command")).toBeEnabled({ timeout: 5_000 });
+  await page.keyboard.press("Backspace");
+  await expect(page.getByTestId("research-program-count")).toHaveText("0 placed");
+});
+
+test("Research pan, zoom, and focus preserve the manually controlled camera", async ({ page }) => {
   await page.goto("/");
   const frame = page.getByTestId("lab-map-frame");
   await expect(frame.locator("canvas")).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId("lab-zoom")).toContainText("100%");
-  await expect(frame).toHaveAttribute("data-camera-x", "31.5");
-  await expect(frame).toHaveAttribute("data-camera-y", "31.5");
-  const statusBox = await page.locator(".research-atlas-status").boundingBox();
-  if (statusBox === null) throw new Error("Research status bar has no bounds");
-  expect(statusBox.height).toBeLessThan(70);
-  await expect(page.getByTestId("research-atlas")).toHaveScreenshot("research-atlas-current.png", {
-    animations: "disabled",
-    maxDiffPixelRatio: 0.01,
-  });
   const box = await frame.boundingBox();
-  if (box === null) throw new Error("Research atlas has no bounds");
-  expect(box.width / box.height).toBeCloseTo(704 / 512, 2);
+  if (box === null) throw new Error("Research Atlas has no bounds");
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
   await page.mouse.move(box.x + box.width / 2 - 120, box.y + box.height / 2 + 40, { steps: 8 });
@@ -63,63 +133,29 @@ test("Research opens on a large centered atlas and supports manual pan, zoom, an
   await expect(page.getByTestId("lab-zoom")).toContainText("100%");
 });
 
-test("compact Research keeps atlas status above the facility navigation", async ({ page }) => {
+test("compact Research keeps every command and path control reachable", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
   await expect(page.getByTestId("lab-map-frame").locator("canvas")).toBeVisible({ timeout: 15_000 });
-
-  const status = await page.locator(".research-atlas-status").boundingBox();
+  const stage = await page.getByTestId("game-stage").boundingBox();
   const nav = await page.getByTestId("nav-rail").boundingBox();
-  if (status === null || nav === null) throw new Error("compact Research chrome has no bounds");
-  expect(status.y + status.height).toBeLessThanOrEqual(nav.y);
-  expect(status.height).toBeLessThanOrEqual(56);
-  const overflow = await page.locator(".research-atlas-status").evaluate((element) => ({
-    clientWidth: element.clientWidth,
-    scrollWidth: element.scrollWidth,
-  }));
-  expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth);
-  const focusOverflow = await page.getByTestId("lab-focus").evaluate((element) => ({
-    clientWidth: element.clientWidth,
-    scrollWidth: element.scrollWidth,
-  }));
-  expect(focusOverflow.scrollWidth).toBeLessThanOrEqual(focusOverflow.clientWidth);
-  await expect(page.getByTestId("game-stage")).toHaveScreenshot("compact-research-atlas.png", {
-    animations: "disabled",
-    maxDiffPixelRatio: 0.01,
-  });
+  if (stage === null || nav === null) throw new Error("compact Research chrome has no bounds");
+  for (const testId of ["research-command", "research-path-hotbar", "research-calibration"]) {
+    const control = await page.getByTestId(testId).boundingBox();
+    if (control === null) throw new Error(`${testId} has no compact bounds`);
+    expect(control.x).toBeGreaterThanOrEqual(stage.x);
+    expect(control.x + control.width).toBeLessThanOrEqual(stage.x + stage.width + 1);
+    expect(control.y).toBeGreaterThanOrEqual(stage.y);
+    expect(control.y + control.height).toBeLessThanOrEqual(stage.y + stage.height + 1);
+    expect(control.y + control.height).toBeLessThanOrEqual(nav.y + 1);
+  }
 });
 
-test("planning on the physical Research floor does not reveal fog; Dispense does", async ({ page }) => {
-  await loadPlannedResearch(page);
-  const status = page.getByTestId("revealed-count");
-  const before = known(await status.textContent());
-  await page.getByTestId("research-show-floor").click();
-  await expect(page.getByTestId("factory-canvas").locator("canvas")).toBeVisible();
-  await page.getByTestId("research-show-atlas").click();
-  expect(known(await status.textContent())).toBe(before);
-  const frame = page.getByTestId("lab-map-frame");
-  const box = await frame.boundingBox();
-  if (box === null) throw new Error("Research atlas has no bounds");
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(box.x + box.width / 2 - 100, box.y + box.height / 2, { steps: 5 });
-  await page.mouse.up();
-  const cameraBeforeShot = {
-    x: await frame.getAttribute("data-camera-x"),
-    y: await frame.getAttribute("data-camera-y"),
-  };
-  await page.getByTestId("research-command").click();
-  await expect(page.getByTestId("research-command")).toBeEnabled({ timeout: 10_000 });
-  expect(known(await status.textContent())).toBeGreaterThan(before);
-  await expect(frame).toHaveAttribute("data-camera-x", cameraBeforeShot.x!);
-  await expect(frame).toHaveAttribute("data-camera-y", cameraBeforeShot.y!);
-});
-
-test("the Research atlas has no recipe timeline or unclosable Pilot Bench", async ({ page }) => {
+test("the Research Atlas has no recipe timeline or unclosable Pilot Bench", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByTestId("recipe-track")).toHaveCount(0);
   await expect(page.getByTestId("pilot-bench")).toHaveCount(0);
-  await expect(page.getByTestId("research-show-floor")).toBeVisible();
+  await expect(page.getByTestId("research-atlas")).toBeVisible();
 });
 
 test("a Research renderer initialization failure is visible and handled", async ({ page }) => {

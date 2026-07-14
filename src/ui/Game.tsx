@@ -4,18 +4,20 @@ import type {
   FactoryLayout,
   GameState,
   GenOptions,
-  MachineCatalogEntry,
   DrugState,
+  Machine,
   MultiMap,
+  Outcome,
+  Template,
   Vec2,
 } from "../sim/phase0_interfaces";
 import {
   BASE_GAME_FACTORY_HEIGHT,
   BASE_GAME_FACTORY_WIDTH,
+  CellKind,
 } from "../sim/phase0_interfaces";
 import { generate } from "../sim/mapgen";
-import { previewStep } from "../sim/drug-graph";
-import { deriveLinearRoute } from "../sim/recipe";
+import { applyTemplate, previewStep } from "../sim/drug-graph";
 import {
   applyGameIntent,
   availableCatalog,
@@ -28,6 +30,7 @@ import { BlueprintLibrary } from "./BlueprintLibrary";
 import { Factory } from "./Factory";
 import { Patents } from "./Patents";
 import { Shop } from "./Shop";
+import { MachineIcon } from "./MachineIcon";
 import {
   finishMigration,
   readSlot,
@@ -42,30 +45,119 @@ const START_CASH = 200;
 const SAVE_SLOTS = 3;
 const LAB_WORLD_SIZE = 63;
 
-export function researchTrailsForLayout(
+function researchPlanningMap(
+  mm: MultiMap,
+  fog: readonly Uint8Array[],
+): MultiMap {
+  return {
+    maps: mm.maps.map((map, mapIndex) => {
+      const known = fog[mapIndex];
+      if (known === undefined || known.length !== map.cell.length) {
+        throw new Error("research planning: fog does not match the Atlas");
+      }
+      const cell = Uint8Array.from(map.cell);
+      const portalTo = Int32Array.from(map.portalTo);
+      for (let index = 0; index < cell.length; index++) {
+        if (known[index] !== 1) {
+          cell[index] = CellKind.Empty;
+          portalTo[index] = -1;
+          continue;
+        }
+        if (cell[index] === CellKind.Portal) {
+          const destination = portalTo[index] ?? -1;
+          if (destination < 0 || known[destination] !== 1) {
+            cell[index] = CellKind.Empty;
+            portalTo[index] = -1;
+          }
+        }
+      }
+      return { ...map, cell, portalTo, fog: known };
+    }),
+  };
+}
+
+interface ResearchPlanningPreview {
+  readonly trails: readonly (readonly (Vec2 | null)[])[];
+  readonly drug: DrugState;
+}
+
+function researchPlanningPreview(
+  mm: MultiMap,
+  fog: readonly Uint8Array[],
+  start: DrugState,
+  program: Template,
+): ResearchPlanningPreview {
+  const planningMap = researchPlanningMap(mm, fog);
+  return {
+    trails: researchTrailsForProgram(planningMap, start, program, program.steps.length),
+    drug: applyTemplate(planningMap, start, program),
+  };
+}
+
+export function researchPlanningTrails(
+  mm: MultiMap,
+  fog: readonly Uint8Array[],
+  start: DrugState,
+  program: Template,
+): readonly (readonly (Vec2 | null)[])[] {
+  return researchPlanningPreview(mm, fog, start, program).trails;
+}
+
+export function researchCandidateTrails(
+  committed: readonly (readonly (Vec2 | null)[])[],
+  combined: readonly (readonly (Vec2 | null)[])[],
+): readonly (readonly (Vec2 | null)[])[] {
+  return combined.map((trail, mapIndex) => {
+    const prefix = committed[mapIndex] ?? [];
+    let endpoint: Vec2 | null = null;
+    for (let index = prefix.length - 1; index >= 0; index--) {
+      const point = prefix[index];
+      if (point !== null && point !== undefined) {
+        endpoint = point;
+        break;
+      }
+    }
+    const suffix = trail.slice(Math.min(prefix.length, trail.length));
+    return endpoint === null ? suffix : [endpoint, ...suffix];
+  });
+}
+
+export function researchKeyboardAction(key: string): "dispense" | "erase" | null {
+  if (key === "Enter") return "dispense";
+  if (key === "Backspace") return "erase";
+  return null;
+}
+
+export function researchTrailsForProgram(
   mm: MultiMap,
   start: DrugState,
-  layout: FactoryLayout,
+  program: Template,
   completedSteps: number,
 ): readonly (readonly (Vec2 | null)[])[] {
-  const route = deriveLinearRoute(layout);
   const trails: (Vec2 | null)[][] = mm.maps.map((_map, index) => {
     const position = start.pos[index];
     return position === undefined ? [] : [{ x: position.x, y: position.y }];
   });
   let drug = start;
-  const limit = Math.min(completedSteps, route.template.steps.length);
+  const limit = Math.min(completedSteps, program.steps.length);
   for (let step = 0; step < limit; step++) {
-    const machine = route.template.steps[step];
+    const machine = program.steps[step];
     if (machine === undefined) break;
     const preview = previewStep(mm, drug, machine);
     for (let mapIndex = 0; mapIndex < trails.length; mapIndex++) {
+      const map = mm.maps[mapIndex];
       const entered = preview.trails[mapIndex] ?? [];
-      if (entered.length === 0) {
-        const endpoint = preview.next.pos[mapIndex];
-        if (endpoint !== undefined) trails[mapIndex]!.push(null, endpoint);
-      } else {
-        trails[mapIndex]!.push(...entered);
+      if (entered.length > 0) {
+        let previous = drug.pos[mapIndex];
+        for (const position of entered) {
+          if (previous !== undefined && map !== undefined) {
+            const previousKind = map.cell[previous.y * map.width + previous.x];
+            const jumped = Math.abs(position.x - previous.x) + Math.abs(position.y - previous.y) !== 1;
+            if (previousKind === CellKind.Portal || jumped) trails[mapIndex]!.push(null);
+          }
+          trails[mapIndex]!.push(position);
+          previous = position;
+        }
       }
     }
     drug = preview.next;
@@ -74,24 +166,24 @@ export function researchTrailsForLayout(
   return trails;
 }
 
-export function catalogForLayers(
-  catalog: readonly MachineCatalogEntry[],
-  nMaps: number,
-): readonly MachineCatalogEntry[] {
-  return catalog.filter((entry) => {
-    const transform = entry.transform;
-    return transform.kind !== "swap" || (transform.a < nMaps && transform.b < nMaps);
-  });
+export function researchDisplayDrug(
+  start: DrugState,
+  shotDrug: DrugState | null,
+  lastOutcome: Outcome | null,
+): DrugState {
+  if (shotDrug !== null) return shotDrug;
+  if (lastOutcome !== null) return { pos: lastOutcome.final, failed: lastOutcome.failed };
+  return start;
 }
 
-export function defaultGenOptions(seed: number, nMaps = 1): GenOptions {
+export function defaultGenOptions(seed: number): GenOptions {
   return {
     seed,
-    nMaps,
+    nMaps: 1,
     width: LAB_WORLD_SIZE,
     height: LAB_WORLD_SIZE,
     catalog: availableCatalog({ unlocked: [] }),
-    diseaseCount: nMaps,
+    diseaseCount: 1,
     difficulty: { min: 4, max: 12 },
   };
 }
@@ -112,23 +204,22 @@ function queryInt(
 function initialGenOptions(): GenOptions {
   const requestedSeed = queryInt("seed", 14);
   const seed = requestedSeed >= 0 && requestedSeed <= 0xffff_ffff ? requestedSeed : 14;
-  const requestedMaps = queryInt("nmaps", 1);
-  const nMaps = requestedMaps >= 1 && requestedMaps <= 4 ? requestedMaps : 1;
-  return defaultGenOptions(seed, nMaps);
+  return defaultGenOptions(seed);
 }
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+export function transientSaveMessage(message: string): boolean {
+  return /^(?:Saved|Loaded|Rewound|Recovered|No save found|Nothing to rewind)\b/u.test(message);
+}
+
 type Building = "research" | "pilot" | "production";
 type Drawer = "market" | "technology" | "blueprints" | null;
-type ResearchSurface = "atlas" | "floor";
-
 export function Game() {
   const [building, setBuilding] = useState<Building>("research");
   const [drawer, setDrawer] = useState<Drawer>(null);
-  const [researchSurface, setResearchSurface] = useState<ResearchSurface>("atlas");
   const [visited, setVisited] = useState<Record<Building, boolean>>({
     research: true,
     pilot: false,
@@ -151,6 +242,13 @@ export function Game() {
   const [saveMsg, setSaveMsg] = useState(() => initialSlot.error ?? initialSlot.notice ?? "");
   const [slotRecovery, setSlotRecovery] = useState<SlotRecovery | null>(() => initialSlot.recovery);
   const [canRecover, setCanRecover] = useState(() => initialSlot.error !== null && initialSlot.canRecover);
+  useEffect(() => {
+    if (!transientSaveMessage(saveMsg)) return;
+    const timer = window.setTimeout(() => {
+      setSaveMsg((current) => current === saveMsg ? "" : current);
+    }, 2_600);
+    return () => window.clearTimeout(timer);
+  }, [saveMsg]);
 
   const showSlotRead = useCallback((read: SlotRead) => {
     setHistoryCount(read.history?.length ?? 0);
@@ -166,10 +264,15 @@ export function Game() {
   }, [initialSlot, showSlotRead]);
 
   const level = useMemo(() => generate(game.genOptions), [game.genOptions]);
-  const catalog = useMemo(
-    () => catalogForLayers(availableCatalog(game.patents), game.genOptions.nMaps),
-    [game.genOptions.nMaps, game.patents],
-  );
+  const catalog = useMemo(() => availableCatalog(game.patents), [game.patents]);
+  const [researchMachineType, setResearchMachineType] = useState(() => catalog[0]?.typeId ?? "");
+  const selectedResearchEntry = catalog.find((entry) => entry.typeId === researchMachineType) ?? catalog[0];
+  const [researchStroke, setResearchStroke] = useState(() => selectedResearchEntry?.path.length ?? 1);
+  useEffect(() => {
+    if (selectedResearchEntry === undefined) return;
+    setResearchMachineType(selectedResearchEntry.typeId);
+    setResearchStroke((value) => Math.max(1, Math.min(selectedResearchEntry.path.length, value)));
+  }, [selectedResearchEntry]);
   const patentEffects = useMemo(
     () => activeEffects(DEFAULT_PATENTS, game.patents),
     [game.patents],
@@ -198,9 +301,6 @@ export function Game() {
     }
   }, []);
 
-  const changeResearch = useCallback((layout: FactoryLayout) => {
-    return dispatch({ kind: "setResearchLayout", layout });
-  }, [dispatch]);
   const changePilot = useCallback((layout: FactoryLayout) => {
     return dispatch({ kind: "setPilotLayout", layout });
   }, [dispatch]);
@@ -216,38 +316,87 @@ export function Game() {
   }, [dispatch]);
   const unlock = useCallback((id: string) => dispatch({ kind: "unlockPatent", id }), [dispatch]);
 
-  const researchHasCure = game.research.lastOutcome !== null &&
-    !game.research.lastOutcome.failed && game.research.lastOutcome.cured.length > 0;
+  const selectedResearchMachine = useMemo<Machine | null>(() => selectedResearchEntry === undefined
+    ? null
+    : {
+        typeId: selectedResearchEntry.typeId,
+        path: selectedResearchEntry.path,
+        stroke: researchStroke,
+      }, [researchStroke, selectedResearchEntry]);
+  const previewProgram = useMemo<Template>(() => ({
+    steps: game.research.shot === null && selectedResearchMachine !== null
+      ? [...game.research.program.steps, selectedResearchMachine]
+      : game.research.program.steps,
+  }), [game.research.program.steps, game.research.shot, selectedResearchMachine]);
+  const planningPreview = useMemo(() => {
+    if (game.research.shot !== null) return null;
+    const committed = researchPlanningPreview(
+      level.mm,
+      game.fog,
+      level.start,
+      game.research.program,
+    );
+    const combined = selectedResearchMachine === null
+      ? committed
+      : researchPlanningPreview(level.mm, game.fog, level.start, previewProgram);
+    return {
+      committed,
+      candidateTrails: selectedResearchMachine === null
+        ? undefined
+        : researchCandidateTrails(committed.trails, combined.trails),
+      candidateDrug: selectedResearchMachine === null ? undefined : combined.drug,
+    };
+  }, [
+    game.fog,
+    game.research.lastOutcome,
+    game.research.program,
+    game.research.shot,
+    level,
+    previewProgram,
+    selectedResearchMachine,
+  ]);
   const researchTrails = useMemo(() => {
-    if (
-      game.research.layout === null ||
-      (game.research.shot === null && game.research.lastOutcome === null)
-    ) {
-      return level.mm.maps.map(() => []);
+    if (planningPreview !== null && game.research.lastOutcome === null) {
+      return planningPreview.committed.trails;
     }
-    const completedSteps = game.research.shot?.step ??
-      (game.research.lastOutcome === null ? 0 : Number.MAX_SAFE_INTEGER);
-    return researchTrailsForLayout(
+    const completedSteps = game.research.shot?.step ?? game.research.program.steps.length;
+    return researchTrailsForProgram(
       level.mm,
       level.start,
-      game.research.layout,
+      game.research.program,
       completedSteps,
     );
-  }, [game.research.lastOutcome, game.research.layout, game.research.shot, level]);
-  const researchActiveMachineId = useMemo(() => {
-    if (game.research.layout === null || game.research.shot === null) return null;
-    return deriveLinearRoute(game.research.layout).machineIds[game.research.shot.step] ?? null;
-  }, [game.research.layout, game.research.shot]);
+  }, [game.research.lastOutcome, game.research.program, game.research.shot, level, planningPreview]);
+  const previewDrug = useMemo(() => {
+    return researchDisplayDrug(
+      level.start,
+      game.research.shot?.drug ?? null,
+      game.research.lastOutcome,
+    );
+  }, [game.research.lastOutcome, game.research.shot, level.start]);
+  const placeResearchMachine = useCallback(() => {
+    const current = gameRef.current;
+    if (current.research.shot !== null || selectedResearchMachine === null) return;
+    dispatch({
+      kind: "setResearchProgram",
+      program: { steps: [...current.research.program.steps, selectedResearchMachine] },
+    });
+  }, [dispatch, selectedResearchMachine]);
+  const undoResearchMachine = useCallback(() => {
+    const current = gameRef.current;
+    if (current.research.shot !== null || current.research.program.steps.length === 0) return;
+    dispatch({
+      kind: "setResearchProgram",
+      program: { steps: current.research.program.steps.slice(0, -1) },
+    });
+  }, [dispatch]);
   const researchAction = useCallback(() => {
     const current = gameRef.current;
-    const outcome = current.research.lastOutcome;
-    if (outcome !== null && !outcome.failed && outcome.cured.length > 0) {
-      if (dispatch({ kind: "sendResearchToPilot" })) openBuilding("pilot");
-      return;
-    }
-    if (dispatch({ kind: "beginResearchShot" })) setResearchSurface("atlas");
-  }, [dispatch, openBuilding]);
-  const commissionProduction = useCallback(() => {
+    if (current.research.shot !== null || current.research.program.steps.length === 0) return;
+    dispatch({ kind: "beginResearchShot" });
+  }, [dispatch]);
+  const commissionProduction = useCallback((layout: FactoryLayout) => {
+    if (gameRef.current.pilot.layout !== layout && !dispatch({ kind: "setPilotLayout", layout })) return;
     if (dispatch({ kind: "sendPilotToProduction" })) openBuilding("production");
   }, [dispatch, openBuilding]);
 
@@ -349,6 +498,25 @@ export function Game() {
       if (view !== undefined) {
         event.preventDefault();
         openBuilding(view);
+      } else if (building === "research" && drawer === null && /^Digit[1-9]$/.test(event.code)) {
+        const entry = catalog[Number(event.code.slice(5)) - 1];
+        if (entry !== undefined) {
+          event.preventDefault();
+          setResearchMachineType(entry.typeId);
+          setResearchStroke(entry.path.length);
+        }
+      } else if (building === "research" && drawer === null && researchKeyboardAction(event.key) !== null) {
+        event.preventDefault();
+        if (researchKeyboardAction(event.key) === "dispense") researchAction();
+        else undoResearchMachine();
+      } else if (building === "research" && drawer === null && (event.key === "[" || event.key === "]")) {
+        if (selectedResearchEntry !== undefined) {
+          event.preventDefault();
+          setResearchStroke((value) => Math.max(
+            1,
+            Math.min(selectedResearchEntry.path.length, value + (event.key === "]" ? 1 : -1)),
+          ));
+        }
       } else if (event.key.toLowerCase() === "m") {
         event.preventDefault();
         setDrawer((current) => current === "market" ? null : "market");
@@ -368,7 +536,7 @@ export function Game() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [drawer, openBuilding, save]);
+  }, [building, catalog, drawer, openBuilding, researchAction, save, selectedResearchEntry, undoResearchMachine]);
 
   const buildingButton = (id: Building, label: string, glyph: string, hotkey: string) => (
     <button
@@ -441,49 +609,69 @@ export function Game() {
         <section className="view-layer" hidden={building !== "research"}>
           {visited.research && (
             <div className="research-workspace" data-testid="research-workspace">
-              <div className="research-modebar" role="toolbar" aria-label="Research workspace mode">
-                <button type="button" className={researchSurface === "atlas" ? "is-active" : ""} onClick={() => setResearchSurface("atlas")} data-testid="research-show-atlas">Effect Atlas</button>
-                <button type="button" className={researchSurface === "floor" ? "is-active" : ""} onClick={() => setResearchSurface("floor")} data-testid="research-show-floor">Route Floor</button>
-                <span className="research-modebar-spacer" />
+              <div className="research-commandbar" role="toolbar" aria-label="Research program controls">
+                <strong data-testid="research-program-count">{game.research.program.steps.length} placed</strong>
+                <button type="button" onClick={undoResearchMachine} disabled={game.research.shot !== null || game.research.program.steps.length === 0} data-testid="research-undo" title="Undo last path (Backspace)">↶</button>
                 {game.research.shot !== null && (
                   <button type="button" className="is-warning" onClick={() => dispatch({ kind: "abortResearchShot" })} data-testid="research-abort">Abort · no refund</button>
                 )}
                 <button
                   type="button"
                   className="facility-command"
-                  disabled={game.research.layout === null || game.research.shot !== null}
+                  disabled={game.research.program.steps.length === 0 || game.research.shot !== null}
                   onClick={researchAction}
                   data-testid="research-command"
+                  title="Dispense (Enter)"
                 >
-                  {researchHasCure ? "Send to Pilot Plant" : "Dispense"}
+                  Dispense
                 </button>
               </div>
-              <div className="research-surface" hidden={researchSurface !== "atlas"}>
-                <App
-                  active={building === "research" && researchSurface === "atlas"}
-                  level={level}
-                  fog={game.fog}
-                  drug={game.research.shot?.drug ?? level.start}
-                  trails={researchTrails}
-                  shotStep={game.research.shot?.step ?? null}
-                  lastOutcome={game.research.lastOutcome}
-                />
-              </div>
-              <div className="research-surface" hidden={researchSurface !== "floor"}>
-                <Factory
-                  active={building === "research" && researchSurface === "floor"}
-                  mode="research"
-                  level={level}
-                  contract={null}
-                  layout={game.research.layout}
-                  runtime={null}
-                  waste={0}
-                  entitledWidth={entitledWidth}
-                  entitledHeight={entitledHeight}
-                  catalog={catalog}
-                  onLayoutChange={changeResearch}
-                  activeMachineId={researchActiveMachineId}
-                />
+              <App
+                active={building === "research"}
+                level={level}
+                fog={game.fog}
+                drug={previewDrug}
+                trails={researchTrails}
+                previewTrails={planningPreview?.candidateTrails}
+                previewDrug={planningPreview?.candidateDrug}
+                shotStep={game.research.shot?.step ?? null}
+                lastOutcome={game.research.lastOutcome}
+                onWorldActivate={placeResearchMachine}
+                onWorldErase={undoResearchMachine}
+                onCalibrationWheel={(direction) => {
+                  if (selectedResearchEntry === undefined || game.research.shot !== null) return;
+                  setResearchStroke((value) => Math.max(
+                    1,
+                    Math.min(selectedResearchEntry.path.length, value + direction),
+                  ));
+                }}
+              />
+              <div className="research-path-hotbar" role="toolbar" aria-label="Fixed machine paths" data-testid="research-path-hotbar">
+                {catalog.map((entry, index) => (
+                  <button
+                    key={entry.typeId}
+                    type="button"
+                    className={selectedResearchEntry?.typeId === entry.typeId ? "is-selected" : ""}
+                    aria-pressed={selectedResearchEntry?.typeId === entry.typeId}
+                    onClick={() => {
+                      setResearchMachineType(entry.typeId);
+                      setResearchStroke(entry.path.length);
+                    }}
+                    data-testid={`research-machine-${entry.typeId}`}
+                    title={`${entry.typeId} (${index + 1})`}
+                  >
+                    <MachineIcon typeId={entry.typeId} path={entry.path} stroke={selectedResearchEntry?.typeId === entry.typeId ? researchStroke : entry.path.length} size={34} />
+                    <span>{entry.typeId}</span>
+                    <kbd>{index + 1}</kbd>
+                  </button>
+                ))}
+                {selectedResearchEntry !== undefined && (
+                  <div className="research-calibration" data-testid="research-calibration">
+                    <button type="button" onClick={() => setResearchStroke((value) => Math.max(1, value - 1))} disabled={researchStroke <= 1} aria-label="Shorter path">[−]</button>
+                    <strong>{researchStroke}/{selectedResearchEntry.path.length}</strong>
+                    <button type="button" onClick={() => setResearchStroke((value) => Math.min(selectedResearchEntry.path.length, value + 1))} disabled={researchStroke >= selectedResearchEntry.path.length} aria-label="Longer path">[+]</button>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -494,7 +682,6 @@ export function Game() {
               active={building === "pilot"}
               mode="pilot"
               level={level}
-              contract={game.pilot.contract}
               layout={game.pilot.layout}
               runtime={null}
               waste={0}
@@ -503,19 +690,18 @@ export function Game() {
               catalog={catalog}
               onLayoutChange={changePilot}
               commandLabel="Commission"
-              commandDisabled={game.pilot.layout === null || game.pilot.contract === null}
               onCommand={commissionProduction}
             />
           )}
         </section>
         <section className="view-layer" hidden={building !== "production"}>
           {visited.production && (
-            game.production.contract === null || game.production.layout === null ? (
+            game.production.layout === null ? (
               <div className="facility-empty-state" data-testid="production-uncommissioned">
                 <span className="nav-glyph">▦</span>
                 <div className="panel-kicker">Production floor offline</div>
                 <h1>Production</h1>
-                <p>Validate a Research contract in Pilot Plant before this floor can run or be edited.</p>
+                <p>Commission a Pilot layout first.</p>
                 <button type="button" onClick={() => openBuilding("pilot")}>Go to Pilot Plant</button>
               </div>
             ) : (
@@ -523,7 +709,6 @@ export function Game() {
                 active={building === "production"}
                 mode="production"
                 level={level}
-                contract={game.production.contract}
                 layout={game.production.layout}
                 runtime={game.production.runtime}
                 waste={game.production.waste}
@@ -544,12 +729,17 @@ export function Game() {
             {drawer === "market" ? (
               <Shop level={level} economy={game.economy} inventory={game.inventory} onSell={sellProducts} />
             ) : drawer === "technology" ? (
-              <Patents active economy={game.economy} patents={game.patents} onUnlock={unlock} />
+              <Patents
+                economy={game.economy}
+                patents={game.patents}
+                expansionResetsProduction={game.production.layout !== null}
+                onUnlock={unlock}
+              />
             ) : (
               <BlueprintLibrary
-                researchLayout={game.research.layout}
+                researchProgram={game.research.program}
                 pilotLayout={game.pilot.layout}
-                onLoadResearch={changeResearch}
+                onLoadResearch={(program) => dispatch({ kind: "setResearchProgram", program })}
                 onLoadPilot={changePilot}
               />
             )}

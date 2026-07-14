@@ -13,6 +13,7 @@ import type {
   Unit,
   AnalyzeThroughputFn,
   CopyFactoryProductEventFn,
+  FactoryMachineDef,
 } from "../phase0_interfaces";
 import {
   MAX_FACTORY_CELLS,
@@ -23,8 +24,12 @@ import {
   MAX_MACHINE_PORTS,
   MAX_MACHINE_SHAPE_CELLS,
 } from "../phase0_interfaces";
-import { initialState, effectiveDelta } from "../drug-graph";
-import { sweepInto } from "../drug-graph/sweep";
+import {
+  initialState,
+  validateEffectMap,
+  validateMachinePath,
+  walkValidatedPathInto,
+} from "../drug-graph";
 import { worldCells, worldInPorts, worldOutPorts } from "../factory-geom";
 
 const DIR_DX: readonly number[] = [1, 0, -1, 0];
@@ -32,9 +37,6 @@ const DIR_DY: readonly number[] = [0, 1, 0, -1];
 const ACCEPT_NONE = -3;
 const ACCEPT_TILE = -2;
 const ACCEPT_SINK = -1;
-const TRANSFORM_TRANSLATE = 0;
-const TRANSFORM_SCALE = 1;
-const TRANSFORM_SWAP = 2;
 
 type Acceptance = number;
 
@@ -45,13 +47,7 @@ interface CompiledLayout {
   readonly machineIds: Int32Array;
   readonly machineSpeeds: Int32Array;
   readonly machineCosts: Int32Array;
-  readonly transformKinds: Uint8Array;
-  readonly deltaX: Int32Array;
-  readonly deltaY: Int32Array;
-  readonly scaleNum: Int32Array;
-  readonly scaleDen: Int32Array;
-  readonly swapA: Int32Array;
-  readonly swapB: Int32Array;
+  readonly machineDefs: readonly FactoryMachineDef[];
   readonly outPortStart: Int32Array;
   readonly outPortCount: Int32Array;
   readonly outPortX: Int32Array;
@@ -118,7 +114,7 @@ interface RuntimeInternals {
   readonly sourceDrugX: Int32Array;
   readonly sourceDrugY: Int32Array;
   readonly sourceFailed: number;
-  readonly sweepOut: Int32Array;
+  readonly pathOut: Int32Array;
 }
 
 const compiledLayouts = new WeakMap<FactoryLayout, CompiledLayout>();
@@ -187,9 +183,8 @@ function freezeLayoutAuthority(layout: FactoryLayout): void {
     Object.freeze(tile);
   }
   for (const machine of layout.machines) {
-    if (machine.def.transform.kind === "translate") Object.freeze(machine.def.transform.delta);
-    Object.freeze(machine.def.transform);
-    Object.freeze(machine.def.orientation);
+    for (const delta of machine.def.path) Object.freeze(delta);
+    Object.freeze(machine.def.path);
     Object.freeze(machine.def);
     for (const cell of machine.shape.cells) Object.freeze(cell);
     for (const port of machine.shape.inPorts) {
@@ -262,13 +257,7 @@ function compileLayout(layout: FactoryLayout): CompiledLayout {
   const machineIds = new Int32Array(machineCount);
   const machineSpeeds = new Int32Array(machineCount);
   const machineCosts = new Int32Array(machineCount);
-  const transformKinds = new Uint8Array(machineCount);
-  const deltaX = new Int32Array(machineCount);
-  const deltaY = new Int32Array(machineCount);
-  const scaleNum = new Int32Array(machineCount);
-  const scaleDen = new Int32Array(machineCount);
-  const swapA = new Int32Array(machineCount);
-  const swapB = new Int32Array(machineCount);
+  const machineDefs = new Array<FactoryMachineDef>(machineCount);
   const outPortStart = new Int32Array(machineCount);
   const outPortCount = new Int32Array(machineCount);
   const inPortHead = new Int32Array(cellCount).fill(-1);
@@ -376,14 +365,11 @@ function compileLayout(layout: FactoryLayout): CompiledLayout {
     }
     if (
       typeof machine.def.typeId !== "string" ||
-      machine.def.typeId.length === 0 ||
-      !Number.isInteger(machine.def.orientation.rot) ||
-      machine.def.orientation.rot < 0 ||
-      machine.def.orientation.rot > 3 ||
-      typeof machine.def.orientation.flip !== "boolean"
+      machine.def.typeId.length === 0
     ) {
       throw new Error(`factory layout: invalid definition for machine ${machine.id}`);
     }
+    validateMachinePath(machine.def);
     if (machine.shape.cells.length === 0) {
       throw new Error(`factory layout: machine ${machine.id} has no footprint cells`);
     }
@@ -429,6 +415,7 @@ function compileLayout(layout: FactoryLayout): CompiledLayout {
     machineIds[slot] = machine.id;
     machineSpeeds[slot] = machine.def.speed;
     machineCosts[slot] = machine.def.cost;
+    machineDefs[slot] = machine.def;
     if (
       !Number.isSafeInteger(machine.def.speed) ||
       machine.def.speed < 1 ||
@@ -442,60 +429,6 @@ function compileLayout(layout: FactoryLayout): CompiledLayout {
       machine.def.cost > 0x7fffffff
     ) {
       throw new Error(`factory layout: invalid cost for machine ${machine.id}`);
-    }
-
-    const transform = machine.def.transform;
-    if (transform.kind === "translate") {
-      if (
-        !Number.isSafeInteger(transform.delta.x) ||
-        !Number.isSafeInteger(transform.delta.y) ||
-        (transform.relation !== "forward" &&
-          transform.relation !== "reverse" &&
-          transform.relation !== "perpendicular" &&
-          transform.relation !== "offset")
-      ) {
-        throw new Error(`factory layout: invalid translate for machine ${machine.id}`);
-      }
-      transformKinds[slot] = TRANSFORM_TRANSLATE;
-      const delta = effectiveDelta(transform.delta, transform.relation, machine.def.orientation);
-      if (
-        delta.x < -0x80000000 ||
-        delta.x > 0x7fffffff ||
-        delta.y < -0x80000000 ||
-        delta.y > 0x7fffffff
-      ) {
-        throw new Error(`factory layout: translate exceeds int32 for machine ${machine.id}`);
-      }
-      deltaX[slot] = delta.x;
-      deltaY[slot] = delta.y;
-    } else if (transform.kind === "scale") {
-      if (
-        !Number.isSafeInteger(transform.num) ||
-        !Number.isSafeInteger(transform.den) ||
-        transform.num <= 0 ||
-        transform.num >= transform.den ||
-        transform.den > 0x7fffffff
-      ) {
-        throw new Error(`factory layout: invalid scale for machine ${machine.id}`);
-      }
-      transformKinds[slot] = TRANSFORM_SCALE;
-      scaleNum[slot] = transform.num;
-      scaleDen[slot] = transform.den;
-    } else {
-      if (
-        !Number.isSafeInteger(transform.a) ||
-        !Number.isSafeInteger(transform.b) ||
-        transform.a < 0 ||
-        transform.b < 0 ||
-        transform.a === transform.b ||
-        transform.a > 0x7fffffff ||
-        transform.b > 0x7fffffff
-      ) {
-        throw new Error(`factory layout: invalid swap for machine ${machine.id}`);
-      }
-      transformKinds[slot] = TRANSFORM_SWAP;
-      swapA[slot] = transform.a;
-      swapB[slot] = transform.b;
     }
 
     const cells = worldCells(machine);
@@ -570,13 +503,7 @@ function compileLayout(layout: FactoryLayout): CompiledLayout {
     machineIds,
     machineSpeeds,
     machineCosts,
-    transformKinds,
-    deltaX,
-    deltaY,
-    scaleNum,
-    scaleDen,
-    swapA,
-    swapB,
+    machineDefs,
     outPortStart,
     outPortCount,
     outPortX,
@@ -958,43 +885,20 @@ function applyMachineInPlace(
 ): void {
   if (runtime.unitFailed[unitIndex] !== 0) return;
   const compiled = data.compiled;
-  const kind = compiled.transformKinds[machineSlot] ?? TRANSFORM_TRANSLATE;
+  const machine = compiled.machineDefs[machineSlot];
+  if (machine === undefined) throw new Error("factory invariant: missing compiled machine path");
   const base = unitIndex * runtime.mapCount;
-  if (kind === TRANSFORM_SWAP) {
-    const a = compiled.swapA[machineSlot] ?? -1;
-    const b = compiled.swapB[machineSlot] ?? -1;
-    if (a === b || a < 0 || b < 0 || a >= runtime.mapCount || b >= runtime.mapCount) return;
-    const ax = runtime.unitDrugX[base + a] ?? 0;
-    const ay = runtime.unitDrugY[base + a] ?? 0;
-    runtime.unitDrugX[base + a] = runtime.unitDrugX[base + b] ?? 0;
-    runtime.unitDrugY[base + a] = runtime.unitDrugY[base + b] ?? 0;
-    runtime.unitDrugX[base + b] = ax;
-    runtime.unitDrugY[base + b] = ay;
-    return;
-  }
-
   let failed = 0;
   for (let mapIndex = 0; mapIndex < runtime.mapCount; mapIndex++) {
     const map = mm.maps[mapIndex];
-    if (map === undefined) continue;
+    if (map === undefined) throw new Error("factory invariant: missing validated effect map");
     const index = base + mapIndex;
     const fromX = runtime.unitDrugX[index] ?? 0;
     const fromY = runtime.unitDrugY[index] ?? 0;
-    let targetX = fromX;
-    let targetY = fromY;
-    if (kind === TRANSFORM_TRANSLATE) {
-      targetX += compiled.deltaX[machineSlot] ?? 0;
-      targetY += compiled.deltaY[machineSlot] ?? 0;
-    } else {
-      const num = compiled.scaleNum[machineSlot] ?? 0;
-      const den = compiled.scaleDen[machineSlot] ?? 1;
-      targetX = fromX + Math.trunc(((map.origin.x - fromX) * num) / den) + 0;
-      targetY = fromY + Math.trunc(((map.origin.y - fromY) * num) / den) + 0;
-    }
-    sweepInto(map, fromX, fromY, targetX, targetY, data.sweepOut, 0);
-    runtime.unitDrugX[index] = data.sweepOut[0] ?? fromX;
-    runtime.unitDrugY[index] = data.sweepOut[1] ?? fromY;
-    if (data.sweepOut[2] !== 0) failed = 1;
+    walkValidatedPathInto(map, fromX, fromY, machine, data.pathOut, 0);
+    runtime.unitDrugX[index] = data.pathOut[0] ?? fromX;
+    runtime.unitDrugY[index] = data.pathOut[1] ?? fromY;
+    if (data.pathOut[2] !== 0) failed = 1;
   }
   runtime.unitFailed[unitIndex] = failed;
 }
@@ -1189,14 +1093,6 @@ export const initFactory: InitFactoryFn = (layout, mm, start) => {
   if (typeof start.failed !== "boolean") {
     throw new Error("factory init: invalid start failure flag");
   }
-  for (let slot = 0; slot < compiled.transformKinds.length; slot++) {
-    if (
-      compiled.transformKinds[slot] === TRANSFORM_SWAP &&
-      ((compiled.swapA[slot] ?? mapCount) >= mapCount || (compiled.swapB[slot] ?? mapCount) >= mapCount)
-    ) {
-      throw new Error(`factory init: swap indices exceed map count for machine ${compiled.machineIds[slot]}`);
-    }
-  }
   let carrierCount = 0;
   for (const tile of layout.tiles) {
     if (tile.kind === "belt" || tile.kind === "splitter" || tile.kind === "merger") {
@@ -1240,14 +1136,10 @@ export const initFactory: InitFactoryFn = (layout, mm, start) => {
   for (let mapIndex = 0; mapIndex < mapCount; mapIndex++) {
     const map = mm.maps[mapIndex];
     const pos = start.pos[mapIndex];
+    if (map === undefined) throw new Error("factory init: missing effect map");
+    validateEffectMap(map);
     if (
-      map === undefined ||
       pos === undefined ||
-      !Number.isSafeInteger(map.width) ||
-      !Number.isSafeInteger(map.height) ||
-      map.width < 1 ||
-      map.height < 1 ||
-      map.cell.length !== map.width * map.height ||
       map.cureId.length !== map.cell.length ||
       map.sideEffectId.length !== map.cell.length ||
       map.fog.length !== map.cell.length ||
@@ -1281,7 +1173,7 @@ export const initFactory: InitFactoryFn = (layout, mm, start) => {
     sourceDrugX,
     sourceDrugY,
     sourceFailed: start.failed ? 1 : 0,
-    sweepOut: new Int32Array(3),
+    pathOut: new Int32Array(3),
   };
   const publicRuntime: FactoryRuntime = runtime;
   runtimeInternals.set(publicRuntime, data);

@@ -3,8 +3,6 @@ import type {
   MultiMap,
   DrugState,
   Machine,
-  Orientation,
-  Rotation,
   MachineCatalogEntry,
   Template,
   DiseaseId,
@@ -13,7 +11,7 @@ import type {
   SolveFn,
 } from "../phase0_interfaces";
 import { CellKind } from "../phase0_interfaces";
-import { applyStep, effectiveDelta, evaluate } from "../drug-graph";
+import { applyStep, evaluate } from "../drug-graph";
 import { hashInts } from "../hash";
 
 // Dev/test-only search. NEVER wire into an in-game auto-solver (D14). INV-13.
@@ -30,8 +28,6 @@ interface ConcreteMachine {
   readonly machine: Machine;
   readonly cost: number;
 }
-
-const ALL_ROTATIONS: readonly Rotation[] = [0, 1, 2, 3];
 
 /**
  * Locate every target's cure node by scanning all maps for the Cure cell whose
@@ -77,48 +73,17 @@ function findCureNodes(mm: MultiMap, targets: readonly DiseaseId[]): CureNode[] 
 }
 
 /**
- * Expand the catalog into concrete machines in a FIXED, deterministic order.
- *  - translate + orientable: all rot∈{0,1,2,3} × flip∈{false,true}, but DEDUPE by
- *    the resulting effectiveDelta (axis-aligned deltas collapse many orientations).
- *  - everything else: one machine with the identity orientation.
- * Determinism: catalog order is preserved; within an entry, orientations are
- * emitted in (rot ascending, flip false-before-true) order; first occurrence of
- * each distinct effectiveDelta wins.
+ * Expand every immutable machine stamp into its legal calibration prefixes in a
+ * fixed order. Chemical paths cannot rotate or mirror; calibration only chooses
+ * how much of the authored stamp is executed.
  */
-function expandCatalog(catalog: readonly MachineCatalogEntry[], mapCount: number): ConcreteMachine[] {
+function expandCatalog(catalog: readonly MachineCatalogEntry[]): ConcreteMachine[] {
   const out: ConcreteMachine[] = [];
   for (const entry of catalog) {
-    const t = entry.transform;
-    if (t.kind === "translate" && entry.orientable) {
-      const seen = new Set<string>();
-      for (const rot of ALL_ROTATIONS) {
-        for (const flip of [false, true]) {
-          const orientation: Orientation = { rot, flip };
-          const eff = effectiveDelta(t.delta, t.relation, orientation);
-          const key = `${eff.x},${eff.y}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          out.push({
-            machine: { typeId: entry.typeId, transform: t, orientation },
-            cost: entry.cost,
-          });
-        }
-      }
-    } else {
-      if (
-        t.kind === "swap" &&
-        (!Number.isSafeInteger(t.a) ||
-          !Number.isSafeInteger(t.b) ||
-          t.a === t.b ||
-          t.a < 0 ||
-          t.b < 0 ||
-          t.a >= mapCount ||
-          t.b >= mapCount)
-      ) {
-        continue;
-      }
+    if (!Array.isArray(entry.path) || entry.path.length < 1) continue;
+    for (let stroke = 1; stroke <= entry.path.length; stroke++) {
       out.push({
-        machine: { typeId: entry.typeId, transform: t, orientation: { rot: 0, flip: false } },
+        machine: { typeId: entry.typeId, path: entry.path, stroke },
         cost: entry.cost,
       });
     }
@@ -163,7 +128,7 @@ export const solve: SolveFn = (mm, start, opts) => {
   const nodes = findCureNodes(mm, opts.targets);
   if (nodes === null) return null;
 
-  const machines = expandCatalog(opts.catalog, mm.maps.length);
+  const machines = expandCatalog(opts.catalog);
 
   // The start may already be the goal (zero-step solution).
   if (isGoal(start, nodes)) {
@@ -204,14 +169,16 @@ export const solve: SolveFn = (mm, start, opts) => {
   return null;
 };
 
-/** True for the "non-naive" moves that create cross-map tension (decouplingBonus). */
-function isDecouplingStep(machine: Machine): boolean {
-  const t = machine.transform;
-  if (t.kind === "swap" || t.kind === "scale") return true;
-  return (
-    t.kind === "translate" &&
-    (t.relation === "reverse" || t.relation === "perpendicular" || t.relation === "offset")
-  );
+/** True when the active prefix bends rather than behaving as a straight shove. */
+function isShapedStep(machine: Machine): boolean {
+  if (machine.stroke < 2) return false;
+  const first = machine.path[0];
+  if (first === undefined) return false;
+  for (let index = 1; index < machine.stroke; index++) {
+    const delta = machine.path[index];
+    if (delta !== undefined && (delta.x !== first.x || delta.y !== first.y)) return true;
+  }
+  return false;
 }
 
 /**
@@ -220,12 +187,11 @@ function isDecouplingStep(machine: Machine): boolean {
  * summed catalog cost of the chosen machines.
  *
  * difficulty is a deterministic composite of the single chosen (first-BFS) path:
- *   difficulty = steps + diversityBonus + decouplingBonus
+ *   difficulty = steps + diversityBonus + shapedPathBonus
  *     steps           = minimal BFS depth (dominant term).
  *     diversityBonus  = (distinct typeIds used) − 1.
- *     decouplingBonus = 2 if any step is a swap, a scale, or a translate whose
- *                       relation ∈ {reverse, perpendicular, offset}; else 0.
- * A forward-only single-machine-type solution stays at difficulty == steps;
+ *     shapedPathBonus = 2 if any active machine prefix bends; else 0.
+ * A straight-prefix single-machine-type solution stays at difficulty == steps;
  * a zero-step solution stays at 0.
  */
 function finalize(
@@ -240,8 +206,8 @@ function finalize(
   const steps = path.length;
   const distinctTypes = new Set(path.map((cm) => cm.machine.typeId));
   const diversityBonus = steps === 0 ? 0 : distinctTypes.size - 1;
-  const decouplingBonus = path.some((cm) => isDecouplingStep(cm.machine)) ? 2 : 0;
-  const difficulty = steps + diversityBonus + decouplingBonus;
+  const shapedPathBonus = path.some((cm) => isShapedStep(cm.machine)) ? 2 : 0;
+  const difficulty = steps + diversityBonus + shapedPathBonus;
 
   // INV-13 soundness assertion: the result must actually cure the targets safely.
   const out = evaluate(mm, start, template);

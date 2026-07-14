@@ -17,6 +17,7 @@ function sameRegion(map: EffectMap, x: number, y: number, nx: number, ny: number
   }
   if (map.cell[index] === CellKind.Cure) return map.cureId[index] === map.cureId[neighbor];
   if (map.cell[index] === CellKind.SideEffect) return true;
+  if (map.cell[index] === CellKind.Portal) return false;
   return true;
 }
 

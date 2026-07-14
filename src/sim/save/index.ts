@@ -62,7 +62,7 @@ import { estimateGameReplayWork } from "../replay-work";
 // blob field-by-field and rebuilding a structurally-equal GameState — never
 // defaulting silently on missing/wrong fields.
 
-export const SAVE_VERSION = 5;
+export const SAVE_VERSION = 6;
 export const MAX_SLOT_STATES = 20;
 export const MAX_SAVE_CHARACTERS = 5_000_000;
 
@@ -129,14 +129,40 @@ function reqObject(v: unknown, path: string): Record<string, unknown> {
   return v;
 }
 
+function requireExactKeys(
+  value: Record<string, unknown>,
+  keys: readonly string[],
+  path: string,
+): void {
+  const expected = new Set(keys);
+  for (const key of Object.keys(value)) {
+    if (!expected.has(key)) throw new SaveError(`unknown field ${path}.${key}`);
+  }
+  for (const key of keys) {
+    if (!Object.prototype.hasOwnProperty.call(value, key)) {
+      throw new SaveError(`missing field ${path}.${key}`);
+    }
+  }
+}
+
+function reqExactObject(
+  v: unknown,
+  path: string,
+  keys: readonly string[],
+): Record<string, unknown> {
+  const value = reqObject(v, path);
+  requireExactKeys(value, keys, path);
+  return value;
+}
+
 function reqArray(v: unknown, path: string): unknown[] {
   if (!Array.isArray(v)) throw new SaveError(`${path}: expected array, got ${describe(v)}`);
   return v;
 }
 
 function reqInt(v: unknown, path: string): number {
-  if (typeof v !== "number" || !Number.isInteger(v)) {
-    throw new SaveError(`${path}: expected integer, got ${describe(v)}`);
+  if (typeof v !== "number" || !Number.isSafeInteger(v)) {
+    throw new SaveError(`${path}: expected safe integer, got ${describe(v)}`);
   }
   return v;
 }
@@ -167,13 +193,21 @@ function describe(v: unknown): string {
 // ── shape parsers (rebuild structurally-equal values) ──
 
 function parseVec2(v: unknown, path: string): { x: number; y: number } {
-  const o = reqObject(v, path);
+  const o = reqExactObject(v, path, ["x", "y"]);
   return { x: reqInt(o.x, `${path}.x`), y: reqInt(o.y, `${path}.y`) };
 }
 
 function parseGenOptions(v: unknown, path = "genOptions"): GenOptions {
-  const o = reqObject(v, path);
-  const diff = reqObject(o.difficulty, `${path}.difficulty`);
+  const o = reqExactObject(v, path, [
+    "seed",
+    "nMaps",
+    "width",
+    "height",
+    "catalog",
+    "diseaseCount",
+    "difficulty",
+  ]);
+  const diff = reqExactObject(o.difficulty, `${path}.difficulty`, ["min", "max"]);
   return {
     seed: reqInt(o.seed, `${path}.seed`),
     nMaps: reqInt(o.nMaps, `${path}.nMaps`),
@@ -188,24 +222,18 @@ function parseGenOptions(v: unknown, path = "genOptions"): GenOptions {
   };
 }
 
-function parseTransform(v: unknown, path: string): GenOptions["catalog"][number]["transform"] {
-  const o = reqObject(v, path);
-  const kind = reqString(o.kind, `${path}.kind`);
-  switch (kind) {
-    case "translate": {
-      const rel = reqString(o.relation, `${path}.relation`);
-      if (rel !== "forward" && rel !== "reverse" && rel !== "perpendicular" && rel !== "offset") {
-        throw new SaveError(`${path}.relation: unknown TranslateRelation "${rel}"`);
-      }
-      return { kind: "translate", delta: parseVec2(o.delta, `${path}.delta`), relation: rel };
-    }
-    case "scale":
-      return { kind: "scale", num: reqInt(o.num, `${path}.num`), den: reqInt(o.den, `${path}.den`) };
-    case "swap":
-      return { kind: "swap", a: reqInt(o.a, `${path}.a`), b: reqInt(o.b, `${path}.b`) };
-    default:
-      throw new SaveError(`${path}.kind: unknown Transform kind "${kind}"`);
+function parsePathStamp(v: unknown, path: string): Machine["path"] {
+  const deltas = reqArray(v, path);
+  if (deltas.length < 1 || deltas.length > MAX_TEMPLATE_STEPS) {
+    throw new SaveError(`${path}: path length must be 1..${MAX_TEMPLATE_STEPS}`);
   }
+  return deltas.map((value, index) => {
+    const delta = parseVec2(value, `${path}[${index}]`);
+    if (Math.abs(delta.x) + Math.abs(delta.y) !== 1) {
+      throw new SaveError(`${path}[${index}]: expected a cardinal unit delta`);
+    }
+    return delta as Machine["path"][number];
+  });
 }
 
 function parseCatalog(v: unknown, catalogPath: string): GenOptions["catalog"] {
@@ -215,19 +243,18 @@ function parseCatalog(v: unknown, catalogPath: string): GenOptions["catalog"] {
   }
   return arr.map((e, i) => {
     const path = `${catalogPath}[${i}]`;
-    const o = reqObject(e, path);
+    const o = reqExactObject(e, path, ["typeId", "path", "cost", "speed"]);
     return {
       typeId: reqString(o.typeId, `${path}.typeId`),
-      transform: parseTransform(o.transform, `${path}.transform`),
+      path: parsePathStamp(o.path, `${path}.path`),
       cost: reqNumber(o.cost, `${path}.cost`),
       speed: reqInt(o.speed, `${path}.speed`),
-      orientable: reqBool(o.orientable, `${path}.orientable`),
     };
   });
 }
 
 function parseEconomy(v: unknown, diseaseCount: number): EconomyState {
-  const o = reqObject(v, "economy");
+  const o = reqExactObject(v, "economy", ["cash", "research", "sold"]);
   const sold = reqArray(o.sold, "economy.sold");
   if (sold.length > diseaseCount) {
     throw new SaveError("economy.sold: count exceeds generated diseases");
@@ -237,7 +264,7 @@ function parseEconomy(v: unknown, diseaseCount: number): EconomyState {
     research: reqInt(o.research, "economy.research"),
     sold: sold.map((s, i) => {
       const path = `economy.sold[${i}]`;
-      const so = reqObject(s, path);
+      const so = reqExactObject(s, path, ["disease", "count"]);
       return {
         disease: reqInt(so.disease, `${path}.disease`),
         count: reqInt(so.count, `${path}.count`),
@@ -247,7 +274,7 @@ function parseEconomy(v: unknown, diseaseCount: number): EconomyState {
 }
 
 function parsePatents(v: unknown): PatentState {
-  const o = reqObject(v, "patents");
+  const o = reqExactObject(v, "patents", ["unlocked"]);
   const unlocked = reqArray(o.unlocked, "patents.unlocked");
   if (unlocked.length > DEFAULT_PATENTS.length) {
     throw new SaveError("patents.unlocked: count exceeds patent tree");
@@ -257,26 +284,17 @@ function parsePatents(v: unknown): PatentState {
   };
 }
 
-function parseOrientation(v: unknown, path: string): { rot: 0 | 1 | 2 | 3; flip: boolean } {
-  const o = reqObject(v, path);
-  const rot = reqInt(o.rot, `${path}.rot`);
-  if (rot !== 0 && rot !== 1 && rot !== 2 && rot !== 3) {
-    throw new SaveError(`${path}.rot: expected 0..3, got ${rot}`);
-  }
-  return { rot, flip: reqBool(o.flip, `${path}.flip`) };
-}
-
 function parseMachine(v: unknown, path: string): Machine {
-  const o = reqObject(v, path);
+  const o = reqExactObject(v, path, ["typeId", "path", "stroke"]);
   return {
     typeId: reqString(o.typeId, `${path}.typeId`),
-    transform: parseTransform(o.transform, `${path}.transform`),
-    orientation: parseOrientation(o.orientation, `${path}.orientation`),
+    path: parsePathStamp(o.path, `${path}.path`),
+    stroke: reqInt(o.stroke, `${path}.stroke`),
   };
 }
 
 function parseTemplate(v: unknown, path: string): Template {
-  const o = reqObject(v, path);
+  const o = reqExactObject(v, path, ["steps"]);
   const steps = reqArray(o.steps, `${path}.steps`);
   if (steps.length > MAX_TEMPLATE_STEPS) {
     throw new SaveError(`${path}.steps: exceeds ${MAX_TEMPLATE_STEPS}`);
@@ -289,7 +307,7 @@ function parseTemplate(v: unknown, path: string): Template {
 }
 
 function parseDrugState(v: unknown, path: string, expectedMaps?: number): DrugState {
-  const o = reqObject(v, path);
+  const o = reqExactObject(v, path, ["pos", "failed"]);
   const pos = reqArray(o.pos, `${path}.pos`);
   if (expectedMaps !== undefined && pos.length !== expectedMaps) {
     throw new SaveError(`${path}.pos: map count mismatch`);
@@ -301,7 +319,7 @@ function parseDrugState(v: unknown, path: string, expectedMaps?: number): DrugSt
 }
 
 function parseOutcome(v: unknown, path: string, expectedMaps: number): Outcome {
-  const o = reqObject(v, path);
+  const o = reqExactObject(v, path, ["failed", "final", "cured", "sideEffects"]);
   const final = reqArray(o.final, `${path}.final`);
   const cured = reqArray(o.cured, `${path}.cured`);
   const sideEffects = reqArray(o.sideEffects, `${path}.sideEffects`);
@@ -327,18 +345,23 @@ function parseTile(v: unknown, path: string): FactoryTile {
   const kind = reqString(o.kind, `${path}.kind`);
   switch (kind) {
     case "empty":
+      requireExactKeys(o, ["kind"], path);
       return { kind: "empty" };
     case "belt":
+      requireExactKeys(o, ["kind", "dir"], path);
       return { kind: "belt", dir: parseDir(o.dir, `${path}.dir`) };
     case "source":
+      requireExactKeys(o, ["kind", "dir", "period"], path);
       return {
         kind: "source",
         dir: parseDir(o.dir, `${path}.dir`),
         period: reqInt(o.period, `${path}.period`),
       };
     case "sink":
+      requireExactKeys(o, ["kind"], path);
       return { kind: "sink" };
     case "splitter":
+      requireExactKeys(o, ["kind", "inDir", "outDirs"], path);
       if (reqArray(o.outDirs, `${path}.outDirs`).length > 4) {
         throw new SaveError(`${path}.outDirs: exceeds four directions`);
       }
@@ -350,6 +373,7 @@ function parseTile(v: unknown, path: string): FactoryTile {
         ),
       };
     case "merger":
+      requireExactKeys(o, ["kind", "inDirs", "outDir"], path);
       if (reqArray(o.inDirs, `${path}.inDirs`).length > 4) {
         throw new SaveError(`${path}.inDirs: exceeds four directions`);
       }
@@ -374,23 +398,23 @@ function parseDir(v: unknown, path: string): 0 | 1 | 2 | 3 {
 }
 
 function parseMachineDef(v: unknown, path: string): FactoryMachineDef {
-  const o = reqObject(v, path);
+  const o = reqExactObject(v, path, ["typeId", "path", "stroke", "cost", "speed"]);
   return {
     typeId: reqString(o.typeId, `${path}.typeId`),
-    transform: parseTransform(o.transform, `${path}.transform`),
-    orientation: parseOrientation(o.orientation, `${path}.orientation`),
+    path: parsePathStamp(o.path, `${path}.path`),
+    stroke: reqInt(o.stroke, `${path}.stroke`),
     cost: reqNumber(o.cost, `${path}.cost`),
     speed: reqInt(o.speed, `${path}.speed`),
   };
 }
 
 function parsePort(v: unknown, path: string): Port {
-  const o = reqObject(v, path);
+  const o = reqExactObject(v, path, ["cell", "side"]);
   return { cell: parseVec2(o.cell, `${path}.cell`), side: parseDir(o.side, `${path}.side`) };
 }
 
 function parseShape(v: unknown, path: string): MachineShape {
-  const o = reqObject(v, path);
+  const o = reqExactObject(v, path, ["cells", "inPorts", "outPorts"]);
   const cells = reqArray(o.cells, `${path}.cells`);
   const inPorts = reqArray(o.inPorts, `${path}.inPorts`);
   const outPorts = reqArray(o.outPorts, `${path}.outPorts`);
@@ -412,7 +436,7 @@ function parseShape(v: unknown, path: string): MachineShape {
 }
 
 function parsePlacedMachine(v: unknown, path: string): PlacedMachine {
-  const o = reqObject(v, path);
+  const o = reqExactObject(v, path, ["id", "def", "anchor", "footRot", "shape"]);
   const footRot = reqInt(o.footRot, `${path}.footRot`);
   if (footRot !== 0 && footRot !== 1 && footRot !== 2 && footRot !== 3) {
     throw new SaveError(`${path}.footRot: expected 0..3, got ${footRot}`);
@@ -427,7 +451,7 @@ function parsePlacedMachine(v: unknown, path: string): PlacedMachine {
 }
 
 function parseFactory(v: unknown, path = "factory"): FactoryLayout {
-  const o = reqObject(v, path);
+  const o = reqExactObject(v, path, ["width", "height", "tiles", "machines"]);
   const width = reqInt(o.width, `${path}.width`);
   const height = reqInt(o.height, `${path}.height`);
   const cellCount = width * height;
@@ -499,26 +523,32 @@ function parseGameIntent(v: unknown, index: number, tracePath = "intentTrace"): 
   const o = reqObject(v, path);
   const kind = reqString(o.kind, `${path}.kind`);
   switch (kind) {
-    case "setResearchLayout":
     case "setPilotLayout":
     case "setProductionLayout":
+      requireExactKeys(o, ["kind", "layout"], path);
       return { kind, layout: parseFactory(o.layout, `${path}.layout`) };
+    case "setResearchProgram":
+      requireExactKeys(o, ["kind", "program"], path);
+      return { kind, program: parseTemplate(o.program, `${path}.program`) };
     case "beginResearchShot":
     case "advanceResearchShot":
     case "abortResearchShot":
-    case "sendResearchToPilot":
     case "sendPilotToProduction":
     case "resetProduction":
+      requireExactKeys(o, ["kind"], path);
       return { kind };
     case "productionTicks":
+      requireExactKeys(o, ["kind", "ticks"], path);
       return { kind, ticks: reqInt(o.ticks, `${path}.ticks`) };
     case "sellProduct":
+      requireExactKeys(o, ["kind", "productId", "disease"], path);
       return {
         kind,
         productId: reqInt(o.productId, `${path}.productId`),
         disease: reqInt(o.disease, `${path}.disease`),
       };
     case "sellProducts": {
+      requireExactKeys(o, ["kind", "productIds", "disease"], path);
       const productIds = reqArray(o.productIds, `${path}.productIds`);
       if (productIds.length < 1 || productIds.length > MAX_BULK_SALE_PRODUCTS) {
         throw new SaveError(`${path}.productIds: exceeds bulk sale bounds`);
@@ -532,6 +562,7 @@ function parseGameIntent(v: unknown, index: number, tracePath = "intentTrace"): 
       };
     }
     case "unlockPatent":
+      requireExactKeys(o, ["kind", "id"], path);
       return { kind, id: reqString(o.id, `${path}.id`) };
     default:
       throw new SaveError(`${path}.kind: unknown GameIntent kind "${kind}"`);
@@ -539,7 +570,14 @@ function parseGameIntent(v: unknown, index: number, tracePath = "intentTrace"): 
 }
 
 function parseUnit(v: unknown, path: string, expectedMaps: number): Unit {
-  const o = reqObject(v, path);
+  const o = reqExactObject(v, path, [
+    "id",
+    "pos",
+    "drug",
+    "proc",
+    "machineId",
+    "productionCost",
+  ]);
   return {
     id: reqInt(o.id, `${path}.id`),
     pos: parseVec2(o.pos, `${path}.pos`),
@@ -551,7 +589,7 @@ function parseUnit(v: unknown, path: string, expectedMaps: number): Unit {
 }
 
 function parseProducedUnit(v: unknown, path: string, expectedMaps: number): ProducedUnit {
-  const o = reqObject(v, path);
+  const o = reqExactObject(v, path, ["id", "drug", "productionCost"]);
   return {
     id: reqInt(o.id, `${path}.id`),
     drug: parseDrugState(o.drug, `${path}.drug`, expectedMaps),
@@ -565,7 +603,15 @@ function parseFactorySnapshot(
   factory: FactoryLayout,
   expectedMaps: number,
 ): FactoryState {
-  const o = reqObject(v, path);
+  const o = reqExactObject(v, path, [
+    "tick",
+    "units",
+    "nextUnitId",
+    "producedTotal",
+    "splitterCursors",
+    "producedEvents",
+    "deadlocked",
+  ]);
   const units = reqArray(o.units, `${path}.units`);
   const splitterCursors = reqArray(o.splitterCursors, `${path}.splitterCursors`);
   const producedEvents = reqArray(o.producedEvents, `${path}.producedEvents`);
@@ -670,9 +716,17 @@ function parseInventory(v: unknown, expectedMaps: number): InventoryProduct[] {
   }
   return inventory.map((value, i) => {
     const path = `inventory[${i}]`;
-    const o = reqObject(value, path);
+    const o = reqExactObject(value, path, [
+      "id",
+      "drug",
+      "productionCost",
+      "inventoryId",
+      "outcome",
+    ]);
     return {
-      ...parseProducedUnit(value, path, expectedMaps),
+      id: reqInt(o.id, `${path}.id`),
+      drug: parseDrugState(o.drug, `${path}.drug`, expectedMaps),
+      productionCost: reqInt(o.productionCost, `${path}.productionCost`),
       inventoryId: reqInt(o.inventoryId, `${path}.inventoryId`),
       outcome: parseOutcome(o.outcome, `${path}.outcome`, expectedMaps),
     };
@@ -701,20 +755,18 @@ function parseFog(v: unknown, genOptions: GenOptions): Uint8Array[] {
 }
 
 function parseRng(v: unknown): RngState {
-  const o = reqObject(v, "rng");
+  const o = reqExactObject(v, "rng", ["s"]);
   return { s: reqInt(o.s, "rng.s") };
-}
-
-function parseNullableTemplate(v: unknown, path: string): Template | null {
-  return v === null ? null : parseTemplate(v, path);
 }
 
 function parseResearchFacility(v: unknown, expectedMaps: number): GameState["research"] {
   const path = "research";
-  const o = reqObject(v, path);
-  const shotObject = o.shot === null ? null : reqObject(o.shot, `${path}.shot`);
+  const o = reqExactObject(v, path, ["program", "shot", "lastOutcome"]);
+  const shotObject = o.shot === null
+    ? null
+    : reqExactObject(o.shot, `${path}.shot`, ["step", "drug", "cost"]);
   return {
-    layout: parseNullableFactory(o.layout, `${path}.layout`),
+    program: parseTemplate(o.program, `${path}.program`),
     shot: shotObject === null
       ? null
       : {
@@ -730,30 +782,27 @@ function parseResearchFacility(v: unknown, expectedMaps: number): GameState["res
 
 function parsePilotFacility(v: unknown): GameState["pilot"] {
   const path = "pilot";
-  const o = reqObject(v, path);
+  const o = reqExactObject(v, path, ["layout"]);
   return {
     layout: parseNullableFactory(o.layout, `${path}.layout`),
-    contract: parseNullableTemplate(o.contract, `${path}.contract`),
   };
 }
 
 interface ParsedProductionFacility {
   readonly layout: FactoryLayout | null;
-  readonly contract: Template | null;
   readonly snapshot: FactoryState | null;
   readonly waste: number;
 }
 
 function parseProductionFacility(v: unknown, expectedMaps: number): ParsedProductionFacility {
   const path = "production";
-  const o = reqObject(v, path);
+  const o = reqExactObject(v, path, ["layout", "runtime", "waste"]);
   const layout = parseNullableFactory(o.layout, `${path}.layout`);
   if (o.runtime !== null && layout === null) {
     throw new SaveError(`${path}.runtime: runtime requires a Production layout`);
   }
   return {
     layout,
-    contract: parseNullableTemplate(o.contract, `${path}.contract`),
     snapshot: o.runtime === null || layout === null
       ? null
       : parseFactorySnapshot(o.runtime, `${path}.runtime`, layout, expectedMaps),
@@ -762,8 +811,12 @@ function parseProductionFacility(v: unknown, expectedMaps: number): ParsedProduc
 }
 
 function parseAuthorityPayload(v: unknown, path = "authority"): AuthorityPayload {
-  const o = reqObject(v, path);
-  const originObject = reqObject(o.origin, `${path}.origin`);
+  const o = reqExactObject(v, path, ["origin", "intentTrace", "replayTicks", "stateHash"]);
+  const originObject = reqExactObject(
+    o.origin,
+    `${path}.origin`,
+    ["genOptions", "cash", "research"],
+  );
   const origin = {
     genOptions: parseGenOptions(originObject.genOptions, `${path}.origin.genOptions`),
     cash: reqInt(originObject.cash, `${path}.origin.cash`),
@@ -819,18 +872,36 @@ function parseAuthorityEnvelope(serialized: string): unknown {
   }
   const envelope = reqObject(parsed, "authority save");
   const version = reqInt(envelope.version, "authority save.version");
+  if (version === 5) {
+    throw new SaveError("authority save: legacy version 5 is not supported by Save v6");
+  }
   if (version !== SAVE_VERSION) {
     throw new SaveError(
       `authority save: incompatible version ${version} (expected ${SAVE_VERSION})`,
     );
   }
+  requireExactKeys(envelope, ["version", "authority"], "authority save");
   return envelope.authority;
 }
 
 function parseGameState(v: unknown): GameState {
-  const o = reqObject(v, "game");
+  const o = reqExactObject(v, "game", [
+    "origin",
+    "intentTrace",
+    "replayTicks",
+    "genOptions",
+    "economy",
+    "patents",
+    "research",
+    "pilot",
+    "production",
+    "inventory",
+    "nextInventoryId",
+    "fog",
+    "rng",
+  ]);
   const genOptions = parseGenOptions(o.genOptions);
-  const originObject = reqObject(o.origin, "origin");
+  const originObject = reqExactObject(o.origin, "origin", ["genOptions", "cash", "research"]);
   const origin = {
     genOptions: parseGenOptions(originObject.genOptions, "origin.genOptions"),
     cash: reqInt(originObject.cash, "origin.cash"),
@@ -865,7 +936,6 @@ function parseGameState(v: unknown): GameState {
     pilot,
     production: {
       layout: production.layout,
-      contract: production.contract,
       runtime: null,
       waste: production.waste,
     },
@@ -942,10 +1012,14 @@ export const deserializeGame: DeserializeGameFn = (s) => {
   const env = reqObject(parsed, "save");
   if (!("version" in env)) throw new SaveError("save: missing version tag");
   const version = reqInt(env.version, "save.version");
+  if (version === 5) {
+    throw new SaveError("save: legacy version 5 is not supported by Save v6");
+  }
   if (version !== SAVE_VERSION) {
     throw new SaveError(`save: incompatible version ${version} (expected ${SAVE_VERSION})`);
   }
   if (!("game" in env)) throw new SaveError("save: missing game payload");
+  requireExactKeys(env, ["version", "game"], "save");
   inspectFullGameValue(env.game, "game");
   return parseGameState(env.game);
 };
@@ -1023,7 +1097,11 @@ function computeAuthorityWork(
 
 function inspectFullGameValue(value: unknown, path: string): GameAuthorityWork {
   const game = reqObject(value, path);
-  const origin = reqObject(game.origin, `${path}.origin`);
+  const origin = reqExactObject(
+    game.origin,
+    `${path}.origin`,
+    ["genOptions", "cash", "research"],
+  );
   const genOptions = parseGenOptions(origin.genOptions, `${path}.origin.genOptions`);
   const rawIntentTrace = reqArray(game.intentTrace, `${path}.intentTrace`);
   if (rawIntentTrace.length > MAX_INTENT_TRACE) {
@@ -1146,9 +1224,13 @@ export const deserializeSlots = (s: string): GameState[] => {
   const env = reqObject(parsed, "slots");
   if (!("version" in env)) throw new SaveError("slots: missing version tag");
   const version = reqInt(env.version, "slots.version");
+  if (version === 5) {
+    throw new SaveError("slots: legacy version 5 is not supported by Save v6");
+  }
   if (version !== SAVE_VERSION) {
     throw new SaveError(`slots: incompatible version ${version} (expected ${SAVE_VERSION})`);
   }
+  requireExactKeys(env, ["version", "slots"], "slots");
   const arr = reqArray(env.slots, "slots.slots");
   if (arr.length > MAX_SLOT_STATES) {
     throw new SaveError(`slots: state count exceeds ${MAX_SLOT_STATES}`);

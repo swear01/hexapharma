@@ -1,110 +1,116 @@
 # HexaPharma UI 與直接操作契約
 
+> 狀態：現行 single-Atlas interaction contract。舊 Research Route Floor、Atlas/Route modebar、A–D tabs、contract match workflow 與舊 screenshots 都不是 acceptance truth。
+
 ## 1. 方向
 
-介面必須像工廠遊戲，而不是以表單、資料表、Recipe cards 與 submit buttons 串成的網站。中央世界負責連續空間操作；DOM chrome 只處理工具選擇、狀態、離散管理與危險確認。
+介面必須像工廠／空間解謎遊戲，不是以表單、Recipe cards、常駐說明文與 submit buttons 串成網站。中央 world 負責連續空間操作；DOM chrome 只處理工具、短狀態、離散管理與危險確認。
 
 借鏡而不複製：
 
 - **Big Pharma**：產線、機器 footprint、輸入輸出與瓶頸同屏可讀。[官方 Steam 頁](https://store.steampowered.com/app/344850/Big_Pharma/)
-- **shapez 1**：世界優先、低摩擦 pick/place/erase、清楚方向 glyph、快速鏡頭與 toolbar。[官方 Steam 頁](https://store.steampowered.com/app/1318690/shapez/)
-- **Factorio**：一致 hotkeys、cursor tool、pipette、旋轉、copy/paste 與 undo 心智模型。[官方網站](https://www.factorio.com/)
-- **Potion Craft**：大探索圖遠大於 viewport、開局中心、迷霧限制資訊。[官方 Steam 頁](https://store.steampowered.com/app/1210320/Potion_Craft_Alchemist_Simulator/)
+- **shapez 1**：world-first、低摩擦 pick/place/erase、方向 glyph、camera/toolbar。[官方 Steam 頁](https://store.steampowered.com/app/1318690/shapez/)
+- **Factorio**：一致 hotkeys、cursor tool、pipette、rotate、copy/paste、undo。[官方網站](https://www.factorio.com/)
+- **Potion Craft**：大探索圖遠大於 viewport、中心起步、fog限制資訊。[官方 Steam 頁](https://store.steampowered.com/app/1210320/Potion_Craft_Alchemist_Simulator/)
 
-競品只用於互動原則研究；runtime assets、icons、colors、layout 與 screenshot baselines 均為 HexaPharma 原創。
+競品只用於互動原則研究；assets、icons、colors、layout與screenshots必須原創。`docs/assets/ui-study/before-*`只作舊版歷史比較；`current-*`由本build的Playwright真人尺寸流程重建。
 
-## 2. Before / current
+目前視覺證據：
 
-舊版問題：
+- [Desktop Research Atlas](assets/ui-study/current-research-atlas.png)｜[Compact Research](assets/ui-study/current-research-mobile.png)
+- [Machine families / Pilot](assets/ui-study/current-machine-families.png)｜[Live Production](assets/ui-study/current-production.png)
+- 歷史比較：[old Lab](assets/ui-study/before-lab.png)｜[old Factory](assets/ui-study/before-factory.png)
 
-![舊 Lab：palette、tabs 與表單式操作壓縮世界。](assets/ui-study/before-lab.png)
+## 2. Shell / navigation
 
-![舊 Factory：工廠只佔頁面一部分，操作依賴畫布外按鈕。](assets/ui-study/before-factory.png)
-
-目前基線：
-
-![Current Research Atlas：局部大圖、中心起點、5×5 major grid、底部狀態列。](assets/ui-study/current-research-atlas.png)
-
-![Current Production：世界優先、語意機器 glyph、hotbar 與窄 inspector。](assets/ui-study/current-production.png)
-
-![Current machine families：七種機器以連續 chassis、不同 palette／silhouette、flow spine、faceplate glyph 與 ports 區分。](assets/ui-study/current-machine-families.png)
-
-固定 baseline 不是要求像競品 pixel-perfect，而是防止 giant overlay、debug raw labels、機器退回同色格、畫布縮小、遮擋或 layout overflow 回歸。
-
-## 3. Shell / navigation
-
-- HUD 高 58–62px，只放跨建築資源與 Save controls：Cash、Knowledge、Stock、Seed、slot、Save/Load/Rewind。
-- 左 rail 只有三個建築：F1 Research、F2 Pilot Plant、F3 Production。
-- Market/Technology/Blueprints 是 M/T/B drawers；X/Escape 關閉。它們不是 F4+ 建築 tab。
-- 已造訪建築保持 mounted 以保存 camera/tool/history；hidden page 不接 gameplay keys。
+- HUD 只放跨建築資源與 Save controls；不放長篇玩法教學。
+- 左 rail：F1 Research、F2 Pilot Plant、F3 Production。
+- Market/Technology/Blueprints 是 M/T/B drawers；X/Escape 關閉，不是第四個建築 tab。
+- 已造訪建築可 mounted 保存 camera/tool/history；hidden page 不接 gameplay keys/pointers。
 - message layer 不攔 pointer；error 有 `role=alert`，status 進 live region。
 
-## 4. Shared facility editor
+## 3. Shared interaction language, separate authority
 
-Research Route Floor、Pilot Plant、Production 使用同一個 `FactoryLayout` editor：
+Research PathStamp 與 Factory editor共用肌肉記憶，但不是同一資料模型：
 
-- LMB click/drag place；RMB drag erase；一個 gesture 是一筆 history。
-- Shift+LMB 或 MMB pan；wheel 以游標為 anchor zoom；camera 不改 authority。
-- `1` Belt、`4` Source、`5` Sink、`6` Erase；Pilot/Production 的 `2/3` 才是 Split/Merge。Research 不顯示也不接受 split/merge hotkeys。
-- `7–0` machine tools；world machine body 使用連續 footprint chassis、machine-family palette、flow spine、transform pictogram 與實體 ports，不畫 raw typeId/`⏱speed` debug label。belt 是連續 rail/chevron，不是滿格按鈕。
-- `R` footprint/direction、`V` effect rotation、`H` effect flip、`Q` pipette；`Ctrl+C/X/V`、`Ctrl+Z/Y`。
-- placement 前顯示完整 footprint ghost 與 valid/invalid；ports 固定以 input/output notches辨識。
-- bottom hotbar 是持續的 cursor tool belt，不是多個 submit forms。inspector 顯示 hover、tool orientation、sample/contract、metrics 與少量明確 operations。
-- compact commissioned floor 首次開啟，或收到 same-size transfer／Blueprint load 時，把外部 layout bounds 捲入 hotbar 上方可見區；自己的逐格編輯不搶鏡頭。
+- LMB click/drag place；RMB erase；一個 gesture 一筆 history。
+- Shift+LMB 或 MMB pan；wheel cursor-anchor zoom；camera 不改 authority。
+- `R` 只在該 tool 明示支援時 rotate。fixed Research PathStamp 不因通用 Factory rotate hotkey改幾何。
+- `Q` pipette、`Ctrl+C/X/V`、`Ctrl+Z/Y` 只能處理同 domain payload；不能把 Factory machine clipboard 貼成 PathStamp，反之亦然。
+- Factory placement顯示authority valid/invalid ghost；Research idle ghost對revealed terrain使用pure path規則，hidden cells中性化，不依未知terrain／未揭露portal B改形，也不顯outcome。
+- bottom hotbar 是持續 cursor tool belt，不是 submit form。tooltips/hotkey hints 可以出現；常駐 tutorial prose 不得佔 world 空間。
 
-## 5. Research
+## 4. Research — one Atlas only
 
-Research 是同一建築內的兩個工作面：**Effect Atlas** 與 **Route Floor**。desktop/compact 都用 modebar 明確切換，避免把兩套座標疊成一張難讀畫面；camera/tool state 切換後保留。
+F1 只有單一 Research Atlas：
 
-### Atlas
+- 沒有 Effect Atlas／Route Floor modebar、Factory canvas、source/belt/sink palette、split/merge 或 linear-route inspector。
+- 沒有 A–D layer tabs、swap／Phase Exchange tool、跨層 endpoint/camera state。
+- Atlas 大於 viewport，開局 camera 對準 generator start；drag/wheel pan/zoom，Focus/F只做一次置中，不因 execution auto-follow。
+- unknown terrain 由 opaque fog 遮蔽；grid/scale cues 可見但不能洩漏 wall/abyss/swamp/portal/motif。
+- 不顯示常駐「教學卡／大段說明」。首次提示必須短、可消失，且不遮 path placement。
 
-- authority `63×63`，viewport intrinsic `704×512`，100% 約 40px/cell；平常只見小部分。
-- frame 永遠維持 `704:512` intrinsic aspect；CSS 可等比縮放，不能把正方格拉成長方格。
-- A 層新局 start/origin 顯示為相對 `(0,0)`，位於一個 origin-aligned 5×5 major block 正中間。
-- minor every cell、major every 5 cells；沒有玩家 X/Y 十字軸或 coordinate crosshair。
-- drag/wheel；Focus/F 只做一次置中，shot/drug update 不 auto-follow。
-- opaque fog 先遮 terrain/features；grid 可穿 fog 提供尺度，但不能透露 cure/wall/hazard。
-- shot 已完成的 physical steps 畫 cyan trail；swap 用斷線表示非 sweep。token 移動與文字 step 同步。
-- 底部 status 是固定高度 bar，不得因 CSS `top+bottom` 拉成覆蓋全圖的 pill。
+### PathStamp placement
 
-### Route Floor / Dispense
+- palette 每個 machine 顯示固定奇形 `PathStamp` silhouette、entry/exit 與 semantic glyph；不能用 generic rectangle/Factory footprint冒充。
+- held stamp在Atlas顯示fog-sanitized preview：known terrain使用terrain-aware authority，unknown部分維持nominal path。固定geometry不隨Factory `footRot`、effect rotate/flip或camera transform改寫。
+- program prefix、current endpoint與candidate calibration同屏可讀；UI只允許`1..path.length`，越界控制clamp／disable且不寫authority。
+- calibration commit 後成為 `ResearchProgram` authority；前綴變更會重新驗證後綴，不能 silent shift/repair。
+- ordered program 的編輯以直接選取/erase/undo為主，不回復 Recipe cards或拖曳 DOM timeline。
+- Atlas LMB commit目前held stamp；RMB或Backspace移除最後一個ordered stamp，保持prefix authority可讀。
+- committed prefix使用solid trail；held candidate使用不同的dashed trail與preview token。Enter執行Dispense，不重複commit held stamp。
 
-- authority 是唯一 source→machines→sink connectivity，沒有 editable Recipe timeline。
-- Research palette 不提供 splitter/merger；invalid topology 在 Dispense/Blueprint capture 顯式拒絕。
-- planning/ghost/hover 不揭霧、不扣 cash。
-- Route Floor 不執行或顯示免費 sample outcome；唯一揭示藥效的操作是付費 Dispense。
-- Dispense 扣一顆成本後逐 machine advance；執行中 highlight current physical machine，完成 step 才畫 trail/揭霧。
-- Abort 明示 no refund。只有 completed non-failed cure 顯示 Send to Pilot Plant。
+### Execution and terrain feedback
 
-## 6. Pilot Plant
+- planning/hover/calibration 不改 fog，不顯示真實 outcome。
+- 執行只畫已完成 program segment；future suffix 不能提前 reveal。
+- wall、abyss、swamp 使用不同 world silhouette/feedback，確切 interaction 由 pure sim 決定。
+- 同層 portal A→B 以明確成對 glyph辨識；trail 在 jump 處斷線，不能畫穿未知中間區。
+- progress、stop/failure與探索結果使用短 HUD/status feedback；不產生「Send to Pilot」或 contract UI。
 
-- 獨立 F2 page，不是 overlay 或 Pilot Bench。
-- No clock、free edits；沒有 Production transport controls。
-- inspector 即時顯示完整 actual sample outcome（cures、side effects、final endpoints）、throughput、bottleneck 與 Research contract matches/differs。
-- 可在 contract 前自由做 `pilot-plant` Blueprint；沒有 Research contract 時 commission disabled。
-- commission 只接受實體 layout 的 `factoryOutcome` 等於 contract；成功 exact copy，失敗不 repair。
+## 5. Pilot Plant
 
-## 7. Production
+- 獨立 F2 page；完整 FactoryLayout editor，從空地開始也合法。
+- No clock、no build cost；沒有 Production Play/Pause/Step、inventory 或 waste authority。
+- source/belt/machine/splitter/merger/sink、footprint/ports/collision/routing、pipette/copy/undo全部直接操作。
+- inspector 即時顯示 actual outcome（cures、side effects、final endpoints）、throughput、bottleneck、deadlock/analysis error；沒有 Research contract/matches-differs。
+- diagnostics 是資訊，不是 commission gate。`Commission` 對 no-cure、side-effect、failure、deadlock/0 throughput仍可用，只在 layout 不符合 entitlement/catalog/geometry或無法建立 Production authority時拒絕。
+- commission 成功不進行 auto-pack、repair、rotate或重接 routing。
 
-- 未 commission 顯示 world-grid offline state與 Go to Pilot，不給可繞過流程的空白 editor。
-- commissioned 後唯一出現 Play/Pause/Step/Reset、tick、sink outcomes、waste、throughput、bottleneck。
-- edit Production 可以做 routing/parallel optimization，但所有 sink outputs 仍由 live contract validation 決定 inventory/waste。
+## 6. Production
 
-## 8. Drawers
+- 未 commission 顯示 offline world state + Go to Pilot；不提供空白 editor繞過流程。
+- commission 後顯示 Pilot layout exact copy；初次 camera 將外部 layout bounds 放進 hotbar以上可見區。
+- 只有 Production 顯示 Play/Pause/Step/Reset、tick、sink outcomes、inventory/waste、throughput、bottleneck。
+- world可繼續直接編輯，但每次 edit 都由 live runtime承擔產品結果；沒有 contract match badge。
+- failed/no-cure產品顯示為 waste，side effects跟實體產品進市場計價；不能在 UI 先過濾成「合法配方」才允許生產。
 
-- Market/Technology cards 可用按鈕，因它們是離散管理決策。
-- Blueprint drawer：capture Research/Pilot、strict paste/upload、download、apply/delete。Library lifecycle 與 save slot 完全分離。
-- destructive deeper-map Technology 使用 modal，完整列出三場域/inventory/fog/sales reset 並二次確認；一般操作不用 modal。
+## 7. Blueprint drawer
 
-## 9. Visual acceptance
+- Library lifecycle 與 save slots分離。
+- capture Research 產生v2 `research-program` payload（ordered `{typeId,stroke}`）；capture Pilot 產生v2 `pilot-plant` payload（routing + `{id,typeId,stroke,anchor,footRot}`）。按鈕、card與apply target需清楚標 kind。
+- paste/upload/download/delete使用 strict version/checksum/content/bounds validator；錯誤可見且 import atomic。
+- 舊 layout-based `research-route` v1 文件不得顯示為可載入的新 ResearchProgram；明示unsupported legacy version。
+- Blueprint 不保存 fog/seed/terrain discoveries/economy/runtime/results。
 
-- desktop world+canvas 至少是 facility stage 的主要寬度；inspector 不覆蓋 canvas。1440/1280 目標 ≥80%，1024 仍明顯大於 inspector；窄屏改上下配置但 canvas/hotbar 都可達。
-- 機器以不同 silhouette、footprint、semantic glyph、ports 與 bottleneck highlight辨識；source/sink/split/merge 不使用 SRC/SINK/S/M raw debug text。
-- chrome 使用低裝飾、清楚邊界與短動畫；禁止 giant blur/pill 遮世界。
-- Playwright 固定 Research Atlas、commissioned Production、七 machine-family gallery 與 390px Research/Pilot baselines；另驗 compact controls 不被 nav 遮住、drawer/modal focus 與零 page errors。
+## 8. Other drawers / destructive actions
+
+- Market/Technology cards可用按鈕，因它們是離散管理決策。
+- Technology不顯示 layer/swap progression。PathStamp、motif、factory machine、land或探索輔助 unlock 必須區分 Research/Factory domain。
+- 探索輔助只能放大實際dispense segment的trail scan；按下Unlock不能直接揭霧。
+- 擴廠若會重建commissioned Production runtime／waste，Unlock前必須有可取消的destructive confirmation；擴廠不能中止active Research shot。
+- 會重生 Atlas或清場域的 action 使用 modal，完整列出 affected authority並二次確認；一般操作不用 modal。
+
+## 9. Responsive and visual acceptance
+
+- desktop world/canvas是 stage主要寬度；inspector不覆蓋 world。窄屏改上下配置，但 Atlas/Factory canvas、hotbar與command都可達。
+- Research stamp以不規則 silhouette/entry/exit/prefix connection辨識；terrain/portal不能使用 raw debug text冒充美術。
+- Factory machine以 silhouette、footprint、semantic glyph、ports與 bottleneck highlight辨識；belt是連續 transport，不是滿格按鈕。
+- chrome低裝飾、短動畫、清楚邊界；禁止 giant blur/pill與常駐 tutorial遮 world。
+- Playwright需重建 single Research Atlas、PathStamp families/portal、Pilot sandbox、commissioned Production與 compact baselines。舊 Route Floor/contract screenshots不得沿用。
 
 ## 10. Copyright boundary
 
-- 不抓取或打包競品 screenshots、sprites、icons、fonts、sounds、CSS、UI layouts。
+- 不抓取或打包競品 screenshots、sprites、icons、fonts、sounds、CSS或UI layouts。
 - `public/assets/lab/README.md` 記錄原創生成/處理與 runtime manifest。
-- 文件只使用本專案 own screenshots；外部研究以官方連結引用。
+- 文件只使用本專案 own screenshots；外部研究只連官方頁面。

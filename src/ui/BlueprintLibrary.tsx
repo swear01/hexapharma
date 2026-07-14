@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { FactoryLayout } from "../sim/phase0_interfaces";
+import type { FactoryLayout, Template } from "../sim/phase0_interfaces";
 import {
   MAX_BLUEPRINT_BYTES,
-  blueprintFromLayout,
-  materializeBlueprint,
-  type BlueprintKind,
+  blueprintFromPilotLayout,
+  blueprintFromProgram,
+  materializePilotLayout,
+  materializeResearchProgram,
 } from "../blueprint/format";
 import {
   deleteLibraryBlueprint,
@@ -16,9 +17,9 @@ import {
 } from "../blueprint/storage";
 
 interface BlueprintLibraryProps {
-  readonly researchLayout: FactoryLayout | null;
+  readonly researchProgram: Template;
   readonly pilotLayout: FactoryLayout | null;
-  readonly onLoadResearch: (layout: FactoryLayout) => boolean;
+  readonly onLoadResearch: (program: Template) => boolean;
   readonly onLoadPilot: (layout: FactoryLayout) => boolean;
 }
 
@@ -36,7 +37,7 @@ export async function readBlueprintUpload(
 }
 
 export function BlueprintLibrary({
-  researchLayout,
+  researchProgram,
   pilotLayout,
   onLoadResearch,
   onLoadPilot,
@@ -60,16 +61,26 @@ export function BlueprintLibrary({
     void refresh();
   }, [refresh]);
 
-  const capture = useCallback(async (kind: BlueprintKind, layout: FactoryLayout | null) => {
-    if (layout === null) return;
+  const captureResearch = useCallback(async () => {
+    if (researchProgram.steps.length === 0) return;
     try {
-      const saved = await saveLibraryBlueprint(localStorage, blueprintFromLayout(kind, name, layout));
+      const saved = await saveLibraryBlueprint(localStorage, blueprintFromProgram(name, researchProgram));
       setStatus(`Saved “${saved.blueprint.name}” to the cross-save library.`);
       await refresh();
     } catch (error) {
       setStatus(`Could not save blueprint: ${message(error)}`);
     }
-  }, [name, refresh]);
+  }, [name, refresh, researchProgram]);
+  const capturePilot = useCallback(async () => {
+    if (pilotLayout === null) return;
+    try {
+      const saved = await saveLibraryBlueprint(localStorage, blueprintFromPilotLayout(name, pilotLayout));
+      setStatus(`Saved “${saved.blueprint.name}” to the cross-save library.`);
+      await refresh();
+    } catch (error) {
+      setStatus(`Could not save blueprint: ${message(error)}`);
+    }
+  }, [name, pilotLayout, refresh]);
 
   const importJson = useCallback(async (source: string) => {
     try {
@@ -84,12 +95,11 @@ export function BlueprintLibrary({
 
   const apply = useCallback((entry: LibraryBlueprint) => {
     try {
-      const layout = materializeBlueprint(entry.blueprint);
-      const accepted = entry.blueprint.kind === "research-route"
-        ? onLoadResearch(layout)
-        : onLoadPilot(layout);
+      const accepted = entry.blueprint.kind === "research-program"
+        ? onLoadResearch(materializeResearchProgram(entry.blueprint))
+        : onLoadPilot(materializePilotLayout(entry.blueprint));
       setStatus(accepted
-        ? `Loaded “${entry.blueprint.name}” into ${entry.blueprint.kind === "research-route" ? "Research" : "Pilot Plant"}.`
+        ? `Loaded “${entry.blueprint.name}” into ${entry.blueprint.kind === "research-program" ? "Research" : "Pilot Plant"}.`
         : `Could not load “${entry.blueprint.name}”.`);
     } catch (error) {
       setStatus(`Could not materialize blueprint: ${message(error)}`);
@@ -124,9 +134,9 @@ export function BlueprintLibrary({
 
   return (
     <div className="blueprint-library" data-testid="blueprint-library">
-      <div className="panel-kicker">Cross-save · portable v1</div>
+      <div className="panel-kicker">Cross-save · portable v2</div>
       <h1>Blueprint Library</h1>
-      <p>Blueprints are separate from save slots. JSON files contain layout data only—no seed, fog, cash, inventory, or patents.</p>
+      <p>Programs and layouts persist across save slots.</p>
 
       <section className="panel-section blueprint-capture">
         <h2>Capture current floor</h2>
@@ -135,8 +145,8 @@ export function BlueprintLibrary({
           <input value={name} maxLength={80} onChange={(event) => setName(event.target.value)} data-testid="blueprint-name" />
         </label>
         <div className="panel-actions">
-          <button type="button" disabled={researchLayout === null} onClick={() => void capture("research-route", researchLayout)} data-testid="blueprint-save-research">Save Research route</button>
-          <button type="button" disabled={pilotLayout === null} onClick={() => void capture("pilot-plant", pilotLayout)} data-testid="blueprint-save-pilot">Save Pilot Plant</button>
+          <button type="button" disabled={researchProgram.steps.length === 0} onClick={() => void captureResearch()} data-testid="blueprint-save-research">Save Research program</button>
+          <button type="button" disabled={pilotLayout === null} onClick={() => void capturePilot()} data-testid="blueprint-save-pilot">Save Pilot Plant</button>
         </div>
       </section>
 
@@ -168,8 +178,10 @@ export function BlueprintLibrary({
           <article key={entry.id} className="blueprint-card">
             <div>
               <strong>{entry.blueprint.name}</strong>
-              <span>{entry.blueprint.kind === "research-route" ? "Research route" : "Pilot Plant"}</span>
-              <small>{entry.blueprint.layout.width}×{entry.blueprint.layout.height} · {entry.blueprint.layout.machines.length} machines</small>
+              <span>{entry.blueprint.kind === "research-program" ? "Research program" : "Pilot Plant"}</span>
+              <small>{entry.blueprint.kind === "research-program"
+                ? `${entry.blueprint.program.steps.length} paths`
+                : `${entry.blueprint.layout.width}×${entry.blueprint.layout.height} · ${entry.blueprint.layout.machines.length} machines`}</small>
             </div>
             <div className="panel-actions">
               <button type="button" onClick={() => apply(entry)}>Load</button>

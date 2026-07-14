@@ -9,7 +9,7 @@
  * NEW model recap:
  *  - Machines are NOT tiles. A PlacedMachine = { id, def, anchor, footRot, shape }.
  *    Its WORLD footprint = local shape rotated by `footRot` quarter-turns CW about
- *    the anchor; `def.orientation` (the recipe-locked drug effect) is independent.
+ *    the anchor; `def.path` remains fixed while `def.stroke` selects its prefix.
  *  - Belts/splitters/mergers/source/sink are tiles; splitter fans one input out
  *    round-robin, merger fans inputs into one output → REAL parallelism: a
  *    source→splitter→[two machines]→merger→sink out-produces a single machine.
@@ -24,8 +24,6 @@ import type {
   Dir,
   Vec2,
   Rotation,
-  Orientation,
-  Template,
   PlacedMachine,
   MachineShape,
   FactoryTile,
@@ -38,10 +36,9 @@ import type {
   ThroughputReport,
   Outcome,
 } from "../sim/phase0_interfaces";
-import { DEFAULT_CATALOG, DEFAULT_SHAPES, IDENTITY } from "../sim/phase0_interfaces";
+import { DEFAULT_CATALOG, DEFAULT_SHAPES } from "../sim/phase0_interfaces";
 import { initFactory, analyzeThroughput } from "../sim/factory-sim";
 import { factoryOutcome } from "../sim/recipe";
-import { evaluate } from "../sim/drug-graph";
 import type { FactoryRenderer } from "../render/factoryRenderer";
 import {
   appendUniqueCells,
@@ -117,15 +114,13 @@ function entryOf(typeId: MachineTypeId): MachineCatalogEntry {
   return entry;
 }
 
-function machineDef(typeId: MachineTypeId, requestedOrientation: Orientation = IDENTITY): FactoryMachineDef {
+function machineDef(typeId: MachineTypeId, requestedStroke?: number): FactoryMachineDef {
   const entry = entryOf(typeId);
-  const orientation = entry.orientable && entry.transform.kind === "translate"
-    ? requestedOrientation
-    : IDENTITY;
+  const stroke = requestedStroke ?? entry.path.length;
   return {
     typeId,
-    transform: entry.transform,
-    orientation,
+    path: entry.path,
+    stroke: Math.max(1, Math.min(entry.path.length, stroke)),
     cost: entry.cost,
     speed: entry.speed,
   };
@@ -189,13 +184,22 @@ interface ClipboardBrush {
   readonly brush: Brush;
   readonly dir: Dir;
   readonly footRot: Rotation;
-  readonly effectOrientation: Orientation;
+  readonly stroke: number;
 }
 
 const DIR_LABEL: Record<Dir, string> = { 0: "→ E", 1: "↓ S", 2: "← W", 3: "↑ N" };
 
 function machineUiName(typeId: MachineTypeId): string {
-  return typeId === "swap01" ? "phase exchange A↔B" : typeId;
+  const names: Record<string, string> = {
+    push: "hook pump",
+    push2: "wave reactor",
+    pull: "return coil",
+    shear: "elbow press",
+    skew: "zigzag still",
+    dilute: "loop vat",
+    settle: "settling spiral",
+  };
+  return names[typeId] ?? typeId;
 }
 
 /** A belt-grid tile for the current brush + direction (machines handled separately). */
@@ -227,7 +231,7 @@ function brushAt(layout: FactoryLayout, cell: GridCell): ClipboardBrush | null {
       brush: { kind: "machine", typeId: machine.def.typeId },
       dir: E,
       footRot: machine.footRot,
-      effectOrientation: machine.def.orientation,
+      stroke: machine.def.stroke,
     };
   }
   const tile = layout.tiles[cell.y * layout.width + cell.x];
@@ -241,7 +245,7 @@ function brushAt(layout: FactoryLayout, cell: GridCell): ClipboardBrush | null {
     brush: { kind: tile.kind },
     dir,
     footRot: 0,
-    effectOrientation: IDENTITY,
+    stroke: 1,
   };
 }
 
@@ -253,14 +257,14 @@ function paint(
   brush: Brush,
   dir: Dir,
   footRot: Rotation,
-  effectOrientation: Orientation,
+  stroke: number,
 ): FactoryLayout {
   if (brush.kind === "machine") {
     const shape: MachineShape | undefined = DEFAULT_SHAPES[brush.typeId];
     if (shape === undefined) throw new Error(`Factory: unknown machine shape "${brush.typeId}"`);
     const m: PlacedMachine = {
       id: nextMachineId(layout),
-      def: machineDef(brush.typeId, effectOrientation),
+      def: machineDef(brush.typeId, stroke),
       anchor: { x, y },
       footRot,
       shape,
@@ -303,10 +307,10 @@ const PAD = 12;
 
 const TICK_MS = 80;
 
-type FacilityMode = "research" | "pilot" | "production";
+type FacilityMode = "pilot" | "production";
 
-export function facilityMayAnalyzeOutcome(mode: FacilityMode): boolean {
-  return mode !== "research";
+export function facilityMayAnalyzeOutcome(_mode: FacilityMode): boolean {
+  return true;
 }
 
 export function formatFacilityOutcome(outcome: Outcome): string {
@@ -326,7 +330,6 @@ interface FactoryProps {
   readonly active: boolean;
   readonly mode: FacilityMode;
   readonly level: GeneratedLevel;
-  readonly contract: Template | null;
   readonly layout: FactoryLayout | null;
   readonly runtime: FactoryRuntime | null;
   readonly waste: number;
@@ -338,15 +341,13 @@ interface FactoryProps {
   readonly onReset?: () => boolean;
   readonly commandLabel?: string;
   readonly commandDisabled?: boolean;
-  readonly onCommand?: () => void;
-  readonly activeMachineId?: number | null;
+  readonly onCommand?: (layout: FactoryLayout) => void;
 }
 
 export function Factory({
   active,
   mode,
   level,
-  contract,
   layout: authoritativeLayout,
   runtime,
   waste,
@@ -359,7 +360,6 @@ export function Factory({
   commandLabel,
   commandDisabled = false,
   onCommand,
-  activeMachineId = null,
 }: FactoryProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const frameRef = useRef<HTMLDivElement | null>(null);
@@ -377,8 +377,7 @@ export function Factory({
   const [brush, setBrush] = useState<Brush>({ kind: "belt" });
   const [brushDir, setBrushDir] = useState<Dir>(E);
   const [footRot, setFootRot] = useState<Rotation>(0);
-  const [effectRot, setEffectRot] = useState<Rotation>(0);
-  const [effectFlip, setEffectFlip] = useState(false);
+  const [machineStroke, setMachineStroke] = useState(1);
   const [clipboardLabel, setClipboardLabel] = useState("empty");
   const [hoverCell, setHoverCell] = useState<GridCell | null>(null);
   const [camera, setCamera] = useState<Camera>({ x: 0, y: 0, zoom: 1 });
@@ -430,7 +429,7 @@ export function Factory({
     readonly report: ThroughputReport | null;
     readonly error: string | null;
   }>(() => {
-    if (authoritativeLayout === null || !facilityMayAnalyzeOutcome(mode)) {
+    if (authoritativeLayout === null) {
       return { report: null, error: null };
     }
     try {
@@ -441,17 +440,13 @@ export function Factory({
         error: `Throughput analysis unavailable: ${error instanceof Error ? error.message : String(error)}`,
       };
     }
-  }, [authoritativeLayout, layout, mm, mode]);
+  }, [authoritativeLayout, layout, mm]);
   const throughput = throughputAnalysis.report;
-  const expectedOutcome = useMemo(
-    () => contract === null ? null : evaluate(mm, start, contract),
-    [contract, mm, start],
-  );
   const sampleAnalysis = useMemo<{
     readonly outcome: Outcome | null;
     readonly error: string | null;
   }>(() => {
-    if (authoritativeLayout === null || !facilityMayAnalyzeOutcome(mode)) {
+    if (authoritativeLayout === null) {
       return { outcome: null, error: null };
     }
     try {
@@ -459,14 +454,10 @@ export function Factory({
     } catch (error) {
       return {
         outcome: null,
-        error: `Contract sample unavailable: ${error instanceof Error ? error.message : String(error)}`,
+        error: `Sample unavailable: ${error instanceof Error ? error.message : String(error)}`,
       };
     }
-  }, [authoritativeLayout, layout, mm, mode, start]);
-  const recipeValid = useMemo(() => {
-    if (expectedOutcome === null || sampleAnalysis.outcome === null) return null;
-    return JSON.stringify(sampleAnalysis.outcome) === JSON.stringify(expectedOutcome);
-  }, [expectedOutcome, sampleAnalysis.outcome]);
+  }, [authoritativeLayout, layout, mm, start]);
   const analysisError = [throughputAnalysis.error, sampleAnalysis.error]
     .filter((entry): entry is string => entry !== null)
     .join(" ");
@@ -530,7 +521,7 @@ export function Factory({
   // ── mount / unmount the Pixi renderer ──
   const stateRef = useRef(state);
   stateRef.current = state;
-  const highlightedMachineId = activeMachineId ?? throughput?.bottleneck ?? null;
+  const highlightedMachineId = throughput?.bottleneck ?? null;
   const bottleneckRef = useRef(highlightedMachineId);
   bottleneckRef.current = highlightedMachineId;
   const focusLayoutInViewport = useCallback(() => {
@@ -787,7 +778,7 @@ export function Factory({
           brush,
           brushDir,
           footRot,
-          { rot: effectRot, flip: effectFlip },
+          machineStroke,
         ));
       }
       return;
@@ -803,13 +794,10 @@ export function Factory({
     const activeBrush: Brush = gesture.mode === "erase" ? { kind: "erase" } : brush;
     let next = gesture.base;
     for (const cell of gesture.cells) {
-      next = paint(next, cell.x, cell.y, activeBrush, brushDir, footRot, {
-        rot: effectRot,
-        flip: effectFlip,
-      });
+      next = paint(next, cell.x, cell.y, activeBrush, brushDir, footRot, machineStroke);
     }
     commitLayout(next);
-  }, [brush, brushDir, commitLayout, effectFlip, effectRot, footRot]);
+  }, [brush, brushDir, commitLayout, footRot, machineStroke]);
 
   const onCanvasWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -834,8 +822,7 @@ export function Factory({
     setBrush(picked.brush);
     setBrushDir(picked.dir);
     setFootRot(picked.footRot);
-    setEffectRot(picked.effectOrientation.rot);
-    setEffectFlip(picked.effectOrientation.flip);
+    setMachineStroke(picked.stroke);
   }, [hoverCell, layout]);
 
   const copyHovered = useCallback((cut: boolean) => {
@@ -845,7 +832,7 @@ export function Factory({
     clipboardRef.current = copied;
     setClipboardLabel(copied.brush.kind === "machine" ? copied.brush.typeId : copied.brush.kind);
     if (cut) {
-      commitLayout(paint(layoutRef.current, hoverCell.x, hoverCell.y, { kind: "erase" }, E, 0, IDENTITY));
+      commitLayout(paint(layoutRef.current, hoverCell.x, hoverCell.y, { kind: "erase" }, E, 0, 1));
     }
   }, [commitLayout, hoverCell]);
 
@@ -859,7 +846,7 @@ export function Factory({
       copied.brush,
       copied.dir,
       copied.footRot,
-      copied.effectOrientation,
+      copied.stroke,
     ));
   }, [commitLayout, hoverCell]);
 
@@ -903,26 +890,23 @@ export function Factory({
       } else if (/^Digit[1-6]$/.test(event.code)) {
         event.preventDefault();
         const next = tileBrushes[Number(event.code.slice(5)) - 1];
-        if (next !== undefined && !(mode === "research" && (next.kind === "splitter" || next.kind === "merger"))) {
-          setBrush(next);
-        }
+        if (next !== undefined) setBrush(next);
       } else if (/^Digit[7-9]$/.test(event.code) || event.code === "Digit0") {
         event.preventDefault();
         const slot = event.code === "Digit0" ? 3 : Number(event.code.slice(5)) - 7;
         const entry = catalog[slot];
-        if (entry !== undefined) setBrush({ kind: "machine", typeId: entry.typeId });
+        if (entry !== undefined) {
+          setBrush({ kind: "machine", typeId: entry.typeId });
+          setMachineStroke(entry.path.length);
+        }
       } else if (lower === "r") {
         event.preventDefault();
         rotateActiveBrush();
-      } else if (lower === "h") {
+      } else if (event.key === "[" || event.key === "]") {
         event.preventDefault();
-        if (brush.kind === "machine" && entryOf(brush.typeId).orientable) {
-          setEffectFlip((value) => !value);
-        }
-      } else if (lower === "v") {
-        event.preventDefault();
-        if (brush.kind === "machine" && entryOf(brush.typeId).orientable) {
-          setEffectRot((value) => ((value + 1) & 3) as Rotation);
+        if (brush.kind === "machine") {
+          const limit = entryOf(brush.typeId).path.length;
+          setMachineStroke((value) => Math.max(1, Math.min(limit, value + (event.key === "]" ? 1 : -1))));
         }
       } else if (lower === "q") {
         event.preventDefault();
@@ -944,8 +928,6 @@ export function Factory({
   }, [active, catalog, copyHovered, mode, pasteHovered, pickHovered, playing, redoLayout, rotateActiveBrush, state.deadlocked, stepOnce, undoLayout]);
 
   const brushIsMachine = brush.kind === "machine";
-  const brushAcceptsEffectOrientation = brush.kind === "machine" &&
-    entryOf(brush.typeId).orientable && entryOf(brush.typeId).transform.kind === "translate";
   const brushLabel = brush.kind === "machine" ? `machine: ${machineUiName(brush.typeId)}` : brush.kind;
   const rate = throughput === null
     ? "unavailable"
@@ -962,10 +944,7 @@ export function Factory({
     : `machine:${machineUiName(hoveredMachine.def.typeId)}`;
   const hoverPlacementValid = hoverCell === null || brush.kind === "erase"
     ? true
-    : paint(layout, hoverCell.x, hoverCell.y, brush, brushDir, footRot, {
-        rot: effectRot,
-        flip: effectFlip,
-      }) !== layout;
+    : paint(layout, hoverCell.x, hoverCell.y, brush, brushDir, footRot, machineStroke) !== layout;
   const ghostCells = hoverCell === null
     ? []
     : brush.kind === "machine"
@@ -995,11 +974,7 @@ export function Factory({
     </button>
   );
 
-  const facilityName = mode === "research"
-    ? "Research Route Floor"
-    : mode === "pilot"
-      ? "Pilot Plant"
-      : "Production";
+  const facilityName = mode === "pilot" ? "Pilot Plant" : "Production";
 
   return (
     <div className={`game-view factory-workspace facility-${mode}`} data-testid={`${mode}-facility-workspace`}>
@@ -1020,7 +995,7 @@ export function Factory({
               <button
                 type="button"
                 className="facility-command"
-                onClick={onCommand}
+                onClick={() => onCommand(layoutRef.current)}
                 disabled={commandDisabled}
                 data-testid={`${mode}-command`}
                 aria-label={mode === "pilot" ? "Validate Pilot layout and commission Production" : commandLabel}
@@ -1061,8 +1036,8 @@ export function Factory({
 
           <div className="toolbelt" role="toolbar" aria-label={`${facilityName} build hotbar`} data-testid="factory-toolbelt">
             {tileBrushBtn("belt", "Belt", "➜", "1")}
-            {mode !== "research" && tileBrushBtn("splitter", "Split", "⑂", "2")}
-            {mode !== "research" && tileBrushBtn("merger", "Merge", "⑃", "3")}
+            {tileBrushBtn("splitter", "Split", "⑂", "2")}
+            {tileBrushBtn("merger", "Merge", "⑃", "3")}
             {tileBrushBtn("source", "Source", "S", "4")}
             {tileBrushBtn("sink", "Sink", "◎", "5")}
             {tileBrushBtn("erase", "Erase", "×", "6")}
@@ -1074,7 +1049,10 @@ export function Factory({
                 <button
                   key={entry.typeId}
                   type="button"
-                  onClick={() => setBrush({ kind: "machine", typeId: entry.typeId })}
+                  onClick={() => {
+                    setBrush({ kind: "machine", typeId: entry.typeId });
+                    setMachineStroke(entry.path.length);
+                  }}
                   disabled={!unlocked}
                   className={`tool-slot${brush.kind === "machine" && brush.typeId === entry.typeId ? " is-selected" : ""}${unlocked ? "" : " is-locked"}`}
                   aria-pressed={brush.kind === "machine" && brush.typeId === entry.typeId}
@@ -1082,7 +1060,7 @@ export function Factory({
                   title={`${machineUiName(entry.typeId)} · ${entry.speed} ticks/unit`}
                 >
                   <span className="tool-symbol">
-                    <MachineIcon typeId={entry.typeId} transform={entry.transform} orientation={IDENTITY} size={26} />
+                    <MachineIcon typeId={entry.typeId} path={entry.path} stroke={entry.path.length} size={26} />
                   </span>
                   <span className="tool-name">{machineUiName(entry.typeId)}</span>
                   {shortcutIndex >= 0 && shortcutIndex < 4 && (
@@ -1110,12 +1088,9 @@ export function Factory({
               <div><span>Clock</span><strong>Stopped</strong></div>
               <div><span>Build cost</span><strong>Free</strong></div>
               <div><span>Machines</span><strong>{layout.machines.length}</strong></div>
-              {mode === "research"
-                ? <div><span>Experiment</span><strong data-testid="research-sample-state">Hidden until Dispense</strong></div>
-                : <div><span>Sample</span><strong data-testid="facility-sample-outcome">{sampleSummary}</strong></div>}
+              <div><span>Sample</span><strong data-testid="facility-sample-outcome">{sampleSummary}</strong></div>
               {mode === "pilot" && <div><span>Throughput</span><strong data-testid="pilot-rate">{rate}/tick</strong></div>}
               {mode === "pilot" && <div><span>Bottleneck</span><strong data-testid="pilot-bottleneck">{throughput === null ? "unavailable" : throughput.bottleneck === null ? "none" : `#${throughput.bottleneck} (${throughput.bottleneckType})`}</strong></div>}
-              {contract !== null && <div><span>Contract</span><strong>{recipeValid === null ? "unproven" : recipeValid ? "matches" : "differs"}</strong></div>}
             </div>
           )}
 
@@ -1132,35 +1107,14 @@ export function Factory({
             </div>
             <div className="panel-actions">
               <button type="button" onClick={rotateActiveBrush} className="game-control" data-testid="brush-rotate">R · Rotate</button>
-              <button type="button" onClick={() => setFootRot((value) => ((value + 1) & 3) as Rotation)} disabled={!brushIsMachine} className="game-control" data-testid="brush-footrot">foot {footRot * 90}°</button>
-              <button type="button" onClick={() => setEffectRot((value) => ((value + 1) & 3) as Rotation)} disabled={!brushAcceptsEffectOrientation} className="game-control" data-testid="brush-effect-rotate">V · effect {effectRot * 90}°</button>
-              <button type="button" onClick={() => setEffectFlip((value) => !value)} disabled={!brushAcceptsEffectOrientation} className={`game-control${effectFlip ? " is-active" : ""}`} data-testid="brush-effect-flip">H · flip {effectFlip ? "on" : "off"}</button>
+              <button type="button" onClick={() => setMachineStroke((value) => Math.max(1, value - 1))} disabled={!brushIsMachine || machineStroke <= 1} className="game-control" data-testid="brush-stroke-less">[ · shorter</button>
+              <button type="button" onClick={() => {
+                if (brush.kind === "machine") {
+                  setMachineStroke((value) => Math.min(entryOf(brush.typeId).path.length, value + 1));
+                }
+              }} disabled={!brushIsMachine || (brush.kind === "machine" && machineStroke >= entryOf(brush.typeId).path.length)} className="game-control" data-testid="brush-stroke-more">] · longer</button>
             </div>
-            {brushIsMachine && <p>Speed {entryOf(brush.typeId).speed} ticks/unit. Footprint rotation and drug effect orientation are independent.</p>}
-          </div>
-
-          <div className="panel-section">
-            <h2>{mode === "research" ? "Exploration route" : "Research contract"}</h2>
-            <div data-testid="factory-recipe">
-              {contract === null
-                ? mode === "research"
-                  ? "The physical source-to-sink route defines the experiment."
-                  : "No Research contract has been transferred yet."
-                : `Contract · ${contract.steps.length} machine effects`}
-            </div>
-            <div className={recipeValid === false ? "is-error-text" : "is-success-text"} data-testid="factory-validity">
-              {mode === "research"
-                ? "Connect one physical source-to-sink route. Its effects stay hidden until Dispense."
-                : sampleAnalysis.error !== null
-                ? "Bounded sample unavailable; live validation remains authoritative."
-                : recipeValid === null
-                  ? mode === "production"
-                    ? "No contract. Sink output is treated as waste."
-                    : "Build and connect a physical source-to-sink route."
-                  : recipeValid
-                    ? "Bounded sample matches the commissioned contract."
-                    : "Bounded sample diverges; live mismatches are waste."}
-            </div>
+            {brushIsMachine && <p>Path {machineStroke}/{entryOf(brush.typeId).path.length} · {entryOf(brush.typeId).speed} ticks</p>}
           </div>
 
           {analysisError !== "" && <div role="alert" data-testid="factory-analysis-error" className="game-alert">{analysisError}</div>}

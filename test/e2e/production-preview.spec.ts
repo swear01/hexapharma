@@ -1,25 +1,17 @@
 import { expect, test } from "@playwright/test";
 import { createGameState } from "../../src/sim/game";
+import { LAB_VIEWPORT } from "../../src/render/labCamera";
 import { serializeGameAuthority } from "../../src/sim/save";
 import { defaultGenOptions } from "../../src/ui/Game";
 
 const maximumGameMap = createGameState(
-  { ...defaultGenOptions(14, 4), width: 64, height: 64 },
+  { ...defaultGenOptions(14), width: 64, height: 64 },
   200,
   0,
 );
 const maximumGameMapCheckpoint = JSON.stringify({
   version: 2,
   head: serializeGameAuthority(maximumGameMap),
-  history: [],
-});
-const maximumTwoMapCheckpoint = JSON.stringify({
-  version: 2,
-  head: serializeGameAuthority(createGameState(
-    { ...defaultGenOptions(14, 2), width: 64, height: 64 },
-    200,
-    0,
-  )),
   history: [],
 });
 
@@ -33,13 +25,12 @@ test("production preview loads every lazy UI surface without runtime errors", as
   await page.goto("/");
   await expect(page.locator("[data-testid='lab-canvas'] canvas")).toBeVisible();
   await expect(page.getByTestId("lab-render-error")).toHaveCount(0);
-
-  await page.getByTestId("research-show-floor").click();
-  await expect(page.locator("[data-testid='factory-canvas'] canvas")).toBeVisible();
-  await expect(page.getByTestId("factory-render-error")).toHaveCount(0);
+  await expect(page.getByTestId("research-path-hotbar")).toBeVisible();
+  await expect(page.getByTestId("research-workspace").getByTestId("factory-canvas")).toHaveCount(0);
 
   await page.getByTestId("view-pilot").click();
   await expect(page.locator("[data-testid='factory-canvas'] canvas").last()).toBeVisible();
+  await expect(page.getByTestId("factory-render-error")).toHaveCount(0);
 
   await page.getByTestId("view-production").click();
   await expect(page.getByTestId("production-uncommissioned")).toBeVisible();
@@ -76,19 +67,22 @@ test("production preview renders the maximum Game-authorized map dimensions", as
     width: (element as HTMLCanvasElement).width,
     height: (element as HTMLCanvasElement).height,
   }));
-  expect(size.width).toBe(704);
-  expect(size.height).toBe(512);
+  expect(size).toEqual(LAB_VIEWPORT);
   expect(errors).toEqual([]);
 });
 
-test("the widest maximum Game map stays inside the Lab content width", async ({ page }) => {
+test("the maximum Game map stays inside the Atlas content width", async ({ page }) => {
   await page.goto("/");
   await page.evaluate((checkpoint) => {
     localStorage.setItem("hexapharma.save.checkpoint.0", checkpoint);
-  }, maximumTwoMapCheckpoint);
+  }, maximumGameMapCheckpoint);
   await page.reload();
   await page.getByTestId("load").click();
   const canvas = page.locator("[data-testid='lab-canvas'] canvas");
   await expect(canvas).toBeVisible();
-  expect(await canvas.evaluate((element) => (element as HTMLCanvasElement).width)).toBe(704);
+  const canvasBox = await canvas.boundingBox();
+  const frameBox = await page.getByTestId("lab-map-frame").boundingBox();
+  if (canvasBox === null || frameBox === null) throw new Error("Atlas canvas has no bounds");
+  expect(canvasBox.width).toBeLessThanOrEqual(frameBox.width + 1);
+  expect(canvasBox.height).toBeLessThanOrEqual(frameBox.height + 1);
 });

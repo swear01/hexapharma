@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   BASE_GAME_FACTORY_HEIGHT,
   BASE_GAME_FACTORY_WIDTH,
-  DEFAULT_CATALOG,
+  DEFAULT_SHAPES,
   type GenOptions,
   type EconomyState,
   type PatentState,
@@ -24,26 +24,30 @@ import { applyGameIntent, availableCatalog, createGameState } from "../../src/si
 
 /** Small, fast options for an end-to-end loop. */
 function opts(seed: number): GenOptions {
+  const catalog = availableCatalog({ unlocked: [] }).filter(
+    (entry) => DEFAULT_SHAPES[entry.typeId] !== undefined,
+  );
   return {
     seed,
-    nMaps: 2,
+    nMaps: 1,
     width: 32,
     height: 32,
-    catalog: DEFAULT_CATALOG,
-    diseaseCount: 2,
+    catalog,
+    diseaseCount: 1,
     difficulty: { min: 2, max: 8 },
   };
 }
 
-describe("integration: map → recipe → factory plus economy/patent/save contracts", () => {
+describe("integration: Atlas → program → factory plus economy, patent, and save", () => {
   it("a generated disease can be solved, compiled, produced, and sold", () => {
-    const level = generate(opts(7));
+    const options = opts(7);
+    const level = generate(options);
     const start = initialState(level.mm);
     const disease = level.diseases[0]!;
 
     // research: solver finds a sound recipe for the disease (INV-13)
     const sol = solve(level.mm, start, {
-      catalog: availableCatalog({ unlocked: [] }),
+      catalog: options.catalog,
       maxDepth: disease.difficulty + 4,
       targets: [disease.id],
     });
@@ -71,7 +75,7 @@ describe("integration: map → recipe → factory plus economy/patent/save contr
   it("selling diminishes per-disease but rewards diversifying (anti-degeneracy)", () => {
     const level = generate(opts(7));
     const dA = level.diseases[0]!;
-    const dB = level.diseases[1]!;
+    const dB = { id: dA.id + 1, basePrice: dA.basePrice };
     let econ: EconomyState = { cash: 0, research: 0, sold: [] };
 
     // spam disease A: each successive unit nets no more than the previous
@@ -95,27 +99,25 @@ describe("integration: map → recipe → factory plus economy/patent/save contr
     expect(rB.econ.cash).toBe(econ.cash + rB.net);
   });
 
-  it("patents gate on cash + prerequisites; new-map requires bench-2", () => {
+  it("patents gate on cash + prerequisites; floor-depth requires bench-2", () => {
     let patents: PatentState = { unlocked: [] };
     // too poor for bench-2 (cost 120)
     expect(canUnlock(DEFAULT_PATENTS, patents, 50, 9999, "bench-2")).toBe(false);
-    // new-map locked until bench-2
-    expect(canUnlock(DEFAULT_PATENTS, patents, 9999, 9999, "new-map")).toBe(false);
+    expect(canUnlock(DEFAULT_PATENTS, patents, 9999, 9999, "floor-depth")).toBe(false);
 
     const u1 = unlockPatent(DEFAULT_PATENTS, patents, 200, 9999, "bench-2");
     patents = u1.patents;
     expect(patents.unlocked).toContain("bench-2");
     expect(u1.cash).toBe(80); // 200 − 120
 
-    // now new-map is unlockable with enough cash
-    expect(canUnlock(DEFAULT_PATENTS, patents, 9999, u1.research, "new-map")).toBe(true);
+    expect(canUnlock(DEFAULT_PATENTS, patents, 9999, u1.research, "floor-depth")).toBe(true);
   });
 
   it("a full GameState round-trips through save", () => {
     const options = opts(7);
     const level = generate(options);
     const template = solve(level.mm, initialState(level.mm), {
-      catalog: availableCatalog({ unlocked: [] }),
+      catalog: options.catalog,
       maxDepth: 12,
       targets: [0],
     })!.template;
@@ -126,15 +128,19 @@ describe("integration: map → recipe → factory plus economy/patent/save contr
       BASE_GAME_FACTORY_HEIGHT,
     ).layout;
     g = applyGameIntent(g, {
-      kind: "setResearchLayout",
-      layout,
+      kind: "setResearchProgram",
+      program: template,
     });
     g = applyGameIntent(g, { kind: "beginResearchShot" });
     while (g.research.shot !== null) {
       g = applyGameIntent(g, { kind: "advanceResearchShot" });
     }
-    g = applyGameIntent(g, { kind: "sendResearchToPilot" });
+    g = applyGameIntent(g, { kind: "setPilotLayout", layout });
+    expect(g.research.lastOutcome).not.toBeNull();
+    expect(g.production.layout).toBeNull();
     g = applyGameIntent(g, { kind: "sendPilotToProduction" });
+    expect(g.production.layout).toEqual(g.pilot.layout);
+    expect(g.production.layout).not.toBe(g.pilot.layout);
     g = applyGameIntent(g, { kind: "productionTicks", ticks: 200 });
     const product = g.inventory[0]!;
     g = applyGameIntent(g, {

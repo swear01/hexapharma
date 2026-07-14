@@ -1,48 +1,49 @@
 # Structure
 
-> 狀態：✅ 已實作｜🔧 驗證中｜📋 後續。
+> 狀態：✅ implemented and verified。2026-07-14完整`npm run check`通過。
 
-| Path | 狀態 | Responsibility |
+| Path | 狀態 | Responsibility / migration |
 |---|---:|---|
-| `AGENTS.md` | ✅ | 專案硬規則、唯一 gate、真人伺服器 port、文件 lifecycle。 |
-| `docs/` | 🔧 | active design／overview／invariants／decisions／plan／roadmap／playtest／UI 契約。 |
-| `src/sim/phase0_interfaces.ts` | ✅ | sim 共用型別、catalog/shapes、Research/Pilot/Production/GameState/GameIntent 契約。 |
-| `src/sim/drug-graph/` | ✅ | translate/scale/swap、supercover sweep、evaluate、preview 與 fog reveal。 |
-| `src/sim/mapgen/` | ✅ | seed-pure constructive map generation、連通 regions、difficulty/price。 |
-| `src/sim/solver/` | ✅ | dev/test-only soundness 與平衡搜尋；production dependency graph 禁止 import。 |
-| `src/sim/rng/`, `hash.ts`, `state.ts` | ✅ | 唯一 seeded RNG、hash、factory replay determinism。 |
-| `src/sim/factory-geom.ts` | ✅ | footprint/ports 的共享世界幾何。 |
-| `src/sim/factory-sim/` | ✅ | fixed-capacity SoA runtime、routing/cursors、product events、throughput/deadlock diagnostics。 |
-| `src/sim/recipe/` | ✅ | 嚴格驗證 Research 唯一線性 source→machines→sink route，推導 deep-frozen descriptor/template。 |
-| `src/sim/game.ts` | ✅ | 三場域 reducer、ResearchShot、exact transfers、Production ticks、inventory/economy/deeper reset、replay/hash。 |
-| `src/sim/replay-work.ts` | ✅ | 三場域 intents 的 raw replay work preflight。 |
-| `src/sim/economy/`, `patent/` | ✅ | 實體藥結算、Knowledge、遞減收益、Technology tree/deeper-level reset。 |
-| `src/sim/save/` | ✅ | Save v5 full/compact codecs、semantic replay、slots 與 budget boundaries。 |
-| `src/blueprint/format.ts` | ✅ | portable Blueprint v1、strict schema、canonical SHA-256 checksum、layout materialization。 |
-| `src/blueprint/storage.ts` | ✅ | 與 save slots 分離的 cross-save Blueprint Library；64 entries/4 MiB bounds。 |
-| `src/render/labCamera.ts` | ✅ | `704×512` 局部鏡頭、pan/zoom/focus/culling、origin-aligned minor/5×5 major grid。 |
-| `src/render/labRenderer.ts` | ✅ | Effect Atlas Pixi renderer；無玩家 XY 十字軸、opaque fog、revealed features、route/token。 |
-| `src/render/factoryRenderer.ts` | ✅ | Research/Pilot/Production 共用的 dumb spatial renderer。 |
-| `public/assets/lab/` | ✅ | 原創 atlas raster assets、manifest 與來源/權利說明。 |
-| `src/ui/App.tsx` | ✅ | Effect Atlas React wrapper、active layer cameras、手動 focus、無 auto-follow。 |
-| `src/ui/Factory.tsx` | ✅ | `research|pilot|production` 共用直接操作 editor；Production 才顯示 transport。 |
-| `src/ui/Game.tsx` | ✅ | F1 Research、F2 Pilot、F3 Production，Market/Technology/Blueprint drawers，save/checkpoint shell。 |
-| `src/ui/BlueprintLibrary.tsx` | ✅ | capture/import/upload/download/apply/delete Blueprint UI。 |
-| `src/ui/checkpointStorage.ts` | ✅ | Save v5 compact checkpoint、lineage、rewind/recovery。 |
-| `test/integration/` | ✅ | 無畫面 Research→Pilot→Production→Market→Technology vertical loop。 |
-| `test/e2e/` | 🔧 | 三場域、atlas/grid/fog、exact transfer、drawers、Blueprint cross-save、responsive 與 production preview。 |
-| `tools/` | ✅ | headless sim 與 balance sweep；不進遊戲內自動解。 |
+| `AGENTS.md` | ✅ | 專案硬規則、唯一 gate、真人 port、文件 lifecycle。 |
+| `docs/` | ✅ | single-Atlas/PathStamp canonical design、invariants、plan、playtest 與 migration truth。 |
+| `src/sim/phase0_interfaces.ts` | ✅ | `PathStamp`/`ResearchProgram`/terrain/portal、contract-free Pilot/Production、Game intents。production Game強制single Atlas，舊Research layout不是active authority。 |
+| `src/sim/drug-graph/` | ✅ | fixed PathStamp traversal、prefix calibration、single-layer terrain/portal、preview/execution authority。 |
+| `src/sim/mapgen/` | ✅ | seeded radial + motif constructive Atlas、paired portals、reference ResearchProgram、quality metrics。 |
+| `src/sim/solver/` | ✅ | dev/test-only soundness/quality/balance tool；production dependency graph禁止 import。 |
+| `src/sim/rng/`, `hash.ts`, `state.ts` | ✅ | seeded RNG、program/state hash、replay determinism。 |
+| `src/sim/factory-geom.ts` | ✅ | Pilot/Production footprint/ports 的共享世界幾何；不定義 Research PathStamp。 |
+| `src/sim/factory-sim/` | ✅ | SoA runtime、routing/cursors、actual product events、throughput/deadlock；無contract assumption。 |
+| `src/sim/recipe/` | ✅ | Factory prototype compilation；不作Research/commission/Blueprint authority。 |
+| `src/sim/game.ts` | ✅ | ResearchProgram execution/fog、independent Pilot sandbox、exact no-contract commission、Production outcomes/economy/reset。 |
+| `src/sim/replay-work.ts` | ✅ | Save v6 intents/raw work preflight。 |
+| `src/sim/economy/`, `patent/` | ✅ | 實體藥結算與single-Atlas technology；無contract/layer progression。 |
+| `src/sim/save/` | ✅ | Save v6 full/compact/slots/rewind、strict parser、raw-work/semantic replay/hash、cold runtime與v5 rejection。 |
+| `src/blueprint/format.ts` | ✅ | wire/ruleset v2 kind-specific `research-program`/`pilot-plant` schema、strict checksum/content/calibration/bounds/geometry validators與materializers。 |
+| `src/blueprint/storage.ts` | ✅ | v2 save-independent Library、quota/dedupe/import/export/delete atomicity。 |
+| `src/render/labCamera.ts` | ✅ | single large Atlas camera、pan/zoom/focus/culling；無active-layer cameras。 |
+| `src/render/labRenderer.ts` | ✅ | single Atlas、PathStamp preview/program/trail、wall/abyss/swamp/portal/fog；無 Route Floor/multi-layer controls。 |
+| `src/render/factoryRenderer.ts` | ✅ | Pilot/Production dumb spatial renderer。 |
+| `public/assets/lab/` | ✅ | 原創Atlas assets與程式化terrain/portal；無legacy hazard vocabulary。 |
+| `src/ui/App.tsx` | ✅ | single Research Atlas wrapper、PathStamp tools/progress；無 A–D layer tabs/Route Floor tutorial。 |
+| `src/ui/Factory.tsx` | ✅ | Pilot/Production shared editor；Pilot diagnostics非 gate，Production transport only。Research 不再使用此 editor。 |
+| `src/ui/Game.tsx` | ✅ | F1 single Research、F2 independent Pilot、F3 commissioned Production；contract-free intents/drawers/save shell。 |
+| `src/ui/BlueprintLibrary.tsx` | ✅ | capture/apply兩種 payload、strict import/export、cross-save Library。 |
+| `src/ui/checkpointStorage.ts` | ✅ | Save v6 compact checkpoint、lineage、rewind/recovery。 |
+| `test/integration/` | ✅ | 解耦 Research exploration、no-contract Pilot→Production、Market/Technology loop。 |
+| `test/e2e/` | ✅ | single Atlas/PathStamp/no-layer UI、Pilot sandbox/exact commission、Blueprint kinds、v6 save、responsive/screenshots；33 tests。 |
+| `tools/` | ✅ | single-Atlas headless sim與mapgen quality/balance sweeps；不進遊戲內自動解。 |
 
 ## Module Boundaries
 
 ```text
 React UI          → read GameState + dispatch GameIntent
-Pixi renderer     → read-only drawing
+Pixi renderer     → read-only ResearchProgram / Factory state
 Pure TS sim core  → authoritative deterministic transitions
 ```
 
 - `src/sim/**` 禁止 Pixi／React／DOM。
 - `GameState` 是遊戲 authority；editor history/camera/hover/drawer 是 UI-local state。
-- `FactoryLayout` 是三場域共用的幾何語言；Research/Pilot/Production 各持有自己的 owned layout。
+- Research `PathStamp` geometry 與 Pilot/Production `FactoryLayout` geometry 是兩個明確 domain；共用操作手感，不共用 validator 或 payload。
+- Pilot/Production 可各 own FactoryLayout；commission 是明示 exact copy，不 alias。
 - Blueprint Library 不是 GameState，也不在 Save/Rewind lineage 內。
 - 模組擁有權見 [module-ownership.md](module-ownership.md)。

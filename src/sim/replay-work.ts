@@ -157,80 +157,45 @@ function mapTraversalWork(mapCells: number, steps: number): number {
   return cappedMultiply(mapCells, steps + 4);
 }
 
-function factoryOutcomeWork(factory: FactoryWorkProfile): number {
-  if (factory.processingTicks > MAX_FACTORY_REPLAY_TICKS) {
-    return MAX_GAME_REPLAY_WORK + 1;
-  }
-  const area = cappedMultiply(factory.width, factory.height);
-  let ticks = Math.min(MAX_FACTORY_REPLAY_TICKS, cappedAdd(area, 16));
-  ticks = ticks >= MAX_FACTORY_REPLAY_TICKS - factory.processingTicks
-    ? MAX_FACTORY_REPLAY_TICKS
-    : ticks + factory.processingTicks;
-  const activeWidth = cappedAdd(area, cappedAdd(factory.machines, factory.sources));
-  return cappedMultiply(cappedMultiply(activeWidth, activeWidth), ticks);
-}
-
 export function estimateGameReplayWork(
   origin: GenOptions,
   intents: readonly GameIntent[],
 ): number {
-  let mapCells = requireMapCells(origin);
+  const mapCells = requireMapCells(origin);
   let total = cappedMultiply(mapCells, 32);
-  let research: FactoryWorkProfile | null = null;
+  let researchSteps = 0;
   let pilot: FactoryWorkProfile | null = null;
-  let pilotContractSteps: number | null = null;
   let production: FactoryWorkProfile | null = null;
-  let productionContractSteps: number | null = null;
-  let nMaps = origin.nMaps;
   for (const intent of intents) {
     let intentWork = 0;
     switch (intent.kind) {
-      case "setResearchLayout":
-        research = layoutProfile(intent.layout);
-        intentWork = research.cold;
+      case "setResearchProgram":
+        researchSteps = intent.program.steps.length;
+        intentWork = mapTraversalWork(mapCells, researchSteps);
         break;
       case "beginResearchShot":
-        intentWork = research === null
+        intentWork = researchSteps === 0
           ? 1
-          : cappedAdd(research.cold, mapTraversalWork(mapCells, 0));
+          : mapTraversalWork(mapCells, researchSteps);
         break;
       case "advanceResearchShot":
-        intentWork = research === null
+        intentWork = researchSteps === 0
           ? 1
-          : cappedAdd(research.cold, mapTraversalWork(mapCells, 1));
+          : mapTraversalWork(mapCells, 1);
         break;
       case "abortResearchShot":
         intentWork = 1;
-        break;
-      case "sendResearchToPilot":
-        if (research === null) {
-          intentWork = 1;
-        } else {
-          pilot = research;
-          pilotContractSteps = research.machines;
-          intentWork = cappedAdd(
-            research.cold,
-            mapTraversalWork(mapCells, research.machines),
-          );
-        }
         break;
       case "setPilotLayout":
         pilot = layoutProfile(intent.layout);
         intentWork = pilot.cold;
         break;
       case "sendPilotToProduction":
-        if (pilot === null || pilotContractSteps === null) {
+        if (pilot === null) {
           intentWork = 1;
         } else {
           production = pilot;
-          productionContractSteps = pilotContractSteps;
-          intentWork = cappedAdd(
-            pilot.cold,
-            cappedAdd(
-              mapTraversalWork(mapCells, pilotContractSteps),
-              factoryOutcomeWork(pilot),
-            ),
-          );
+          intentWork = pilot.cold;
         }
         break;
       case "setProductionLayout":
@@ -243,12 +208,6 @@ export function estimateGameReplayWork(
             production.cold,
             cappedMultiply(intent.ticks, production.perTick),
           );
-          if (productionContractSteps !== null) {
-            intentWork = cappedAdd(
-              intentWork,
-              mapTraversalWork(mapCells, productionContractSteps),
-            );
-          }
         }
         break;
       case "resetProduction":
@@ -262,33 +221,17 @@ export function estimateGameReplayWork(
         break;
       case "unlockPatent":
         intentWork = 262_144;
-        if (intent.id === "bench-2") {
-          if (research !== null) {
-            research = expandProfile(research, 2, 0);
-            intentWork = cappedAdd(intentWork, research.cold);
-          }
+        if (intent.id === "bench-2" || intent.id === "floor-depth") {
+          const dw = intent.id === "bench-2" ? 2 : 0;
+          const dh = intent.id === "floor-depth" ? 2 : 0;
           if (pilot !== null) {
-            pilot = expandProfile(pilot, 2, 0);
+            pilot = expandProfile(pilot, dw, dh);
             intentWork = cappedAdd(intentWork, pilot.cold);
           }
           if (production !== null) {
-            production = expandProfile(production, 2, 0);
+            production = expandProfile(production, dw, dh);
             intentWork = cappedAdd(intentWork, production.cold);
           }
-        } else if (
-          intent.id === "new-map" ||
-          intent.id === "new-map-4" ||
-          intent.id === "deep-map-4"
-        ) {
-          nMaps = Math.min(4, nMaps + 1);
-          const dimension = 63;
-          mapCells = nMaps * dimension * dimension;
-          intentWork = cappedAdd(intentWork, cappedMultiply(mapCells, 32));
-          research = null;
-          pilot = null;
-          pilotContractSteps = null;
-          production = null;
-          productionContractSteps = null;
         }
         break;
     }

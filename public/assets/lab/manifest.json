@@ -1,6 +1,6 @@
 {
   "id": "hexapharma-microscope-atlas-v1",
-  "revision": 1,
+  "revision": 2,
   "baseUrl": "/assets/lab/",
   "assets": {
     "substrate": {
@@ -25,15 +25,7 @@
       "height": 512,
       "alpha": true,
       "repeat": false,
-      "role": "Protein-crystal collision cluster."
-    },
-    "hazard": {
-      "file": "hazard-corrosive.png",
-      "width": 512,
-      "height": 512,
-      "alpha": true,
-      "repeat": false,
-      "role": "Corrosive enzyme hazard region."
+      "role": "Protein-crystal detail over the runtime's solid high-contrast masonry wall."
     },
     "sideEffect": {
       "file": "side-effect-colony.png",

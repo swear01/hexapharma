@@ -165,10 +165,13 @@ describe("balance: anti-degeneracy — 狂產單一藥 ≠ 最佳解 (§8)", () 
     return { single, even, greedy };
   }
 
-  it("even-split revenue > single-spam for a representative seed (comparable prices)", () => {
-    // Seed 1 generates two diseases with near-equal basePrices, so an even split
-    // strictly out-earns dumping all K units into one (diminishing returns bite).
-    const { single, even } = allocate(1);
+  it("even-split revenue > single-spam when diseases have the same base price", () => {
+    const basePrice = 500;
+    const single = totalRevenue([{ disease: 0, basePrice, units: K }]);
+    const even = totalRevenue([
+      { disease: 0, basePrice, units: K / 2 },
+      { disease: 1, basePrice, units: K / 2 },
+    ]);
     expect(even).toBeGreaterThan(single);
   });
 

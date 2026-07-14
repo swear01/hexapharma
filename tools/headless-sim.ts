@@ -1,5 +1,5 @@
 /**
- * Headless CLI harness. Once mapgen + drug-graph land:
+ * Headless CLI harness for the active single-Atlas rules:
  *   npm run sim gen 42     # generate a level from a seed, print diseases/difficulty/price
  *   npm run sim run 42     # generate + run each disease's reference solution, print outcomes
  */
@@ -11,11 +11,11 @@ import { pathToFileURL } from "node:url";
 function optsFor(seed: number): GenOptions {
   return {
     seed,
-    nMaps: 2,
+    nMaps: 1,
     width: 32,
     height: 32,
     catalog: DEFAULT_CATALOG,
-    diseaseCount: 2,
+    diseaseCount: 1,
     difficulty: { min: 2, max: 12 },
   };
 }

@@ -1,29 +1,39 @@
 import { worldCells } from "../sim/factory-geom";
-import { deriveLinearRoute } from "../sim/recipe";
 import {
   DEFAULT_CATALOG,
   DEFAULT_SHAPES,
+  MAX_FACTORY_MACHINES,
   MAX_GAME_FACTORY_CELLS,
   MAX_GAME_FACTORY_DIMENSION,
+  MAX_TEMPLATE_STEPS,
   type Dir,
   type FactoryLayout,
   type FactoryTile,
+  type Machine,
+  type MachineCatalogEntry,
   type PlacedMachine,
   type Rotation,
+  type Template,
 } from "../sim/phase0_interfaces";
 
 export const BLUEPRINT_FORMAT = "hexapharma-blueprint" as const;
-export const BLUEPRINT_VERSION = 1 as const;
-export const BLUEPRINT_RULESET = 1 as const;
+export const BLUEPRINT_VERSION = 2 as const;
+export const BLUEPRINT_RULESET = 2 as const;
 export const MAX_BLUEPRINT_BYTES = 1_048_576;
 export const MAX_BLUEPRINT_NAME_LENGTH = 80;
 
-export type BlueprintKind = "research-route" | "pilot-plant";
+export type BlueprintKind = "research-program" | "pilot-plant";
 
 function contentFingerprint(): string {
   const payload = JSON.stringify({
-    catalog: DEFAULT_CATALOG,
-    shapes: Object.entries(DEFAULT_SHAPES),
+    catalog: DEFAULT_CATALOG.map((entry) => ({
+      typeId: entry.typeId,
+      path: entry.path,
+      cost: entry.cost,
+      speed: entry.speed,
+    })),
+    shapes: Object.entries(DEFAULT_SHAPES).sort(([left], [right]) =>
+      left < right ? -1 : left > right ? 1 : 0),
   });
   let hash = 0x811c9dc5;
   for (let index = 0; index < payload.length; index++) {
@@ -59,13 +69,15 @@ export type PortableFactoryTile =
     })
   | (PortableTilePosition & { readonly kind: "sink" });
 
-export interface PortableMachine {
+export interface PortableResearchStep {
+  readonly typeId: string;
+  readonly stroke: number;
+}
+
+export interface PortablePilotMachine {
   readonly id: number;
   readonly typeId: string;
-  readonly orientation: {
-    readonly rot: Rotation;
-    readonly flip: boolean;
-  };
+  readonly stroke: number;
   readonly anchor: {
     readonly x: number;
     readonly y: number;
@@ -73,18 +85,30 @@ export interface PortableMachine {
   readonly footRot: Rotation;
 }
 
-export interface PortableBlueprint {
-  readonly kind: BlueprintKind;
+interface PortableBlueprintBase {
   readonly name: string;
   readonly ruleset: typeof BLUEPRINT_RULESET;
   readonly content: string;
+}
+
+export interface PortableResearchBlueprint extends PortableBlueprintBase {
+  readonly kind: "research-program";
+  readonly program: {
+    readonly steps: readonly PortableResearchStep[];
+  };
+}
+
+export interface PortablePilotBlueprint extends PortableBlueprintBase {
+  readonly kind: "pilot-plant";
   readonly layout: {
     readonly width: number;
     readonly height: number;
     readonly tiles: readonly PortableFactoryTile[];
-    readonly machines: readonly PortableMachine[];
+    readonly machines: readonly PortablePilotMachine[];
   };
 }
+
+export type PortableBlueprint = PortableResearchBlueprint | PortablePilotBlueprint;
 
 interface BlueprintDocument {
   readonly format: typeof BLUEPRINT_FORMAT;
@@ -129,11 +153,6 @@ function requireRotation(value: unknown, path: string): Rotation {
   return requireInteger(value, path, 0, 3) as Rotation;
 }
 
-function requireBoolean(value: unknown, path: string): boolean {
-  if (typeof value !== "boolean") throw new Error(`blueprint: ${path} must be a boolean`);
-  return value;
-}
-
 function requireDirectionList(value: unknown, path: string): readonly Dir[] {
   if (!Array.isArray(value) || value.length < 1 || value.length > 4) {
     throw new Error(`blueprint: ${path} must contain from 1 to 4 directions`);
@@ -143,6 +162,66 @@ function requireDirectionList(value: unknown, path: string): readonly Dir[] {
     throw new Error(`blueprint: ${path} must not contain duplicate directions`);
   }
   return result;
+}
+
+function requireName(value: unknown): string {
+  if (
+    typeof value !== "string" ||
+    value.trim().length === 0 ||
+    value.length > MAX_BLUEPRINT_NAME_LENGTH ||
+    Array.from(value).some((character) => {
+      const code = character.codePointAt(0) ?? 0;
+      return code <= 0x1f || code === 0x7f;
+    })
+  ) {
+    throw new Error(
+      `blueprint: name must be non-empty, contain no control characters, and be at most ` +
+        `${MAX_BLUEPRINT_NAME_LENGTH} characters`,
+    );
+  }
+  return value;
+}
+
+function catalogEntry(value: unknown, path: string): MachineCatalogEntry {
+  if (typeof value !== "string") throw new Error(`blueprint: ${path} must be a string`);
+  const entry = DEFAULT_CATALOG.find((candidate) => candidate.typeId === value);
+  if (entry === undefined) throw new Error(`blueprint: ${path} is an unknown machine type`);
+  return entry;
+}
+
+function requireStroke(value: unknown, entry: MachineCatalogEntry, path: string): number {
+  if (!Number.isSafeInteger(value) || (value as number) < 1 || (value as number) > entry.path.length) {
+    throw new Error(
+      `blueprint: ${path} prefix calibration must be an integer from 1 to ${entry.path.length}`,
+    );
+  }
+  return value as number;
+}
+
+function parseResearchStep(value: unknown, index: number): PortableResearchStep {
+  const path = `blueprint.program.steps[${index}]`;
+  const record = requireRecord(value, path);
+  requireExactKeys(record, ["typeId", "stroke"], path);
+  const entry = catalogEntry(record.typeId, `${path}.typeId`);
+  return {
+    typeId: entry.typeId,
+    stroke: requireStroke(record.stroke, entry, `${path}.stroke`),
+  };
+}
+
+function parseProgram(value: unknown): PortableResearchBlueprint["program"] {
+  const program = requireRecord(value, "blueprint.program");
+  requireExactKeys(program, ["steps"], "blueprint.program");
+  if (
+    !Array.isArray(program.steps) ||
+    program.steps.length < 1 ||
+    program.steps.length > MAX_TEMPLATE_STEPS
+  ) {
+    throw new Error(
+      `blueprint: program.steps must contain from 1 to ${MAX_TEMPLATE_STEPS} calibrated steps`,
+    );
+  }
+  return { steps: program.steps.map(parseResearchStep) };
 }
 
 function parseTile(value: unknown, width: number, height: number, index: number): PortableFactoryTile {
@@ -193,30 +272,25 @@ function parseTile(value: unknown, width: number, height: number, index: number)
   }
 }
 
-function parseMachine(value: unknown, width: number, height: number, index: number): PortableMachine {
+function parsePilotMachine(
+  value: unknown,
+  width: number,
+  height: number,
+  index: number,
+): PortablePilotMachine {
   const path = `blueprint.layout.machines[${index}]`;
   const record = requireRecord(value, path);
-  requireExactKeys(record, ["id", "typeId", "orientation", "anchor", "footRot"], path);
-  const id = requireInteger(record.id, `${path}.id`, 0, 0x7fff_ffff);
-  if (typeof record.typeId !== "string") throw new Error(`blueprint: ${path}.typeId must be a string`);
-  const catalog = DEFAULT_CATALOG.find((entry) => entry.typeId === record.typeId);
-  if (catalog === undefined || DEFAULT_SHAPES[record.typeId] === undefined) {
-    throw new Error(`blueprint: ${path}.typeId is an unknown machine type`);
-  }
-  const orientation = requireRecord(record.orientation, `${path}.orientation`);
-  requireExactKeys(orientation, ["rot", "flip"], `${path}.orientation`);
-  const rot = requireRotation(orientation.rot, `${path}.orientation.rot`);
-  const flip = requireBoolean(orientation.flip, `${path}.orientation.flip`);
-  if (!catalog.orientable && (rot !== 0 || flip)) {
-    throw new Error(`blueprint: ${path}.orientation does not match the local catalog`);
+  requireExactKeys(record, ["id", "typeId", "stroke", "anchor", "footRot"], path);
+  const entry = catalogEntry(record.typeId, `${path}.typeId`);
+  if (DEFAULT_SHAPES[entry.typeId] === undefined) {
+    throw new Error(`blueprint: ${path}.typeId has no local factory shape`);
   }
   const anchor = requireRecord(record.anchor, `${path}.anchor`);
   requireExactKeys(anchor, ["x", "y"], `${path}.anchor`);
-
   return {
-    id,
-    typeId: record.typeId,
-    orientation: { rot, flip },
+    id: requireInteger(record.id, `${path}.id`, 0, 0x7fff_ffff),
+    typeId: entry.typeId,
+    stroke: requireStroke(record.stroke, entry, `${path}.stroke`),
     anchor: {
       x: requireInteger(anchor.x, `${path}.anchor.x`, 0, width - 1),
       y: requireInteger(anchor.y, `${path}.anchor.y`, 0, height - 1),
@@ -225,37 +299,8 @@ function parseMachine(value: unknown, width: number, height: number, index: numb
   };
 }
 
-function parseBlueprint(value: unknown): PortableBlueprint {
-  const record = requireRecord(value, "blueprint");
-  requireExactKeys(record, ["kind", "name", "ruleset", "content", "layout"], "blueprint");
-  if (record.kind !== "research-route" && record.kind !== "pilot-plant") {
-    throw new Error("blueprint: kind must be research-route or pilot-plant");
-  }
-  if (
-    typeof record.name !== "string" ||
-    record.name.trim().length === 0 ||
-    record.name.length > MAX_BLUEPRINT_NAME_LENGTH ||
-    Array.from(record.name).some((character) => {
-      const code = character.codePointAt(0) ?? 0;
-      return code <= 0x1f || code === 0x7f;
-    })
-  ) {
-    throw new Error(
-      `blueprint: name must be non-empty, contain no control characters, and be at most ` +
-        `${MAX_BLUEPRINT_NAME_LENGTH} characters`,
-    );
-  }
-  if (record.ruleset !== BLUEPRINT_RULESET) {
-    throw new Error(`blueprint: unsupported ruleset ${String(record.ruleset)}`);
-  }
-  if (record.content !== BLUEPRINT_CONTENT_FINGERPRINT) {
-    throw new Error(
-      `blueprint: machine-content fingerprint ${String(record.content)} does not match ` +
-        BLUEPRINT_CONTENT_FINGERPRINT,
-    );
-  }
-
-  const layout = requireRecord(record.layout, "blueprint.layout");
+function parseLayout(value: unknown): PortablePilotBlueprint["layout"] {
+  const layout = requireRecord(value, "blueprint.layout");
   requireExactKeys(layout, ["width", "height", "tiles", "machines"], "blueprint.layout");
   const width = requireInteger(layout.width, "blueprint.layout.width", 1, MAX_GAME_FACTORY_DIMENSION);
   const height = requireInteger(layout.height, "blueprint.layout.height", 1, MAX_GAME_FACTORY_DIMENSION);
@@ -266,7 +311,10 @@ function parseBlueprint(value: unknown): PortableBlueprint {
   if (!Array.isArray(layout.tiles) || layout.tiles.length > area) {
     throw new Error("blueprint: layout tiles must be a bounded sparse array");
   }
-  if (!Array.isArray(layout.machines) || layout.machines.length > area) {
+  if (
+    !Array.isArray(layout.machines) ||
+    layout.machines.length > Math.min(area, MAX_FACTORY_MACHINES)
+  ) {
     throw new Error("blueprint: layout machines must be a bounded array");
   }
 
@@ -277,26 +325,69 @@ function parseBlueprint(value: unknown): PortableBlueprint {
     if (tilePositions.has(position)) throw new Error(`blueprint: duplicate tile at ${tile.x},${tile.y}`);
     tilePositions.add(position);
   }
-  tiles.sort((a, b) => a.y - b.y || a.x - b.x);
+  tiles.sort((left, right) => left.y - right.y || left.x - right.x);
 
-  const machines = layout.machines.map((machine, index) => parseMachine(machine, width, height, index));
+  const machines = layout.machines.map((machine, index) =>
+    parsePilotMachine(machine, width, height, index));
   const machineIds = new Set<number>();
   for (const machine of machines) {
     if (machineIds.has(machine.id)) throw new Error(`blueprint: duplicate machine id ${machine.id}`);
     machineIds.add(machine.id);
   }
-  machines.sort((a, b) => a.id - b.id);
+  machines.sort((left, right) => left.id - right.id);
+  return { width, height, tiles, machines };
+}
 
+function parseBlueprint(value: unknown): PortableBlueprint {
+  const record = requireRecord(value, "blueprint");
+  if (record.kind !== "research-program" && record.kind !== "pilot-plant") {
+    throw new Error("blueprint: kind must be research-program or pilot-plant");
+  }
+  const payloadKey = record.kind === "research-program" ? "program" : "layout";
+  requireExactKeys(record, ["kind", "name", "ruleset", "content", payloadKey], "blueprint");
+  const name = requireName(record.name);
+  if (record.ruleset !== BLUEPRINT_RULESET) {
+    throw new Error(`blueprint: unsupported ruleset ${String(record.ruleset)}`);
+  }
+  if (record.content !== BLUEPRINT_CONTENT_FINGERPRINT) {
+    throw new Error(
+      `blueprint: content fingerprint ${String(record.content)} does not match ` +
+        BLUEPRINT_CONTENT_FINGERPRINT,
+    );
+  }
+
+  if (record.kind === "research-program") {
+    return {
+      kind: "research-program",
+      name,
+      ruleset: BLUEPRINT_RULESET,
+      content: BLUEPRINT_CONTENT_FINGERPRINT,
+      program: parseProgram(record.program),
+    };
+  }
   return {
-    kind: record.kind,
-    name: record.name,
+    kind: "pilot-plant",
+    name,
     ruleset: BLUEPRINT_RULESET,
     content: BLUEPRINT_CONTENT_FINGERPRINT,
-    layout: { width, height, tiles, machines },
+    layout: parseLayout(record.layout),
   };
 }
 
-function materializeCanonical(blueprint: PortableBlueprint): FactoryLayout {
+function materializeProgramCanonical(blueprint: PortableResearchBlueprint): Template {
+  return {
+    steps: blueprint.program.steps.map((step): Machine => {
+      const entry = catalogEntry(step.typeId, "program step typeId");
+      return {
+        typeId: entry.typeId,
+        path: [...entry.path],
+        stroke: step.stroke,
+      };
+    }),
+  };
+}
+
+function materializeLayoutCanonical(blueprint: PortablePilotBlueprint): FactoryLayout {
   const { width, height } = blueprint.layout;
   const tiles: FactoryTile[] = Array.from({ length: width * height }, () => ({ kind: "empty" }));
   for (const tile of blueprint.layout.tiles) {
@@ -321,19 +412,19 @@ function materializeCanonical(blueprint: PortableBlueprint): FactoryLayout {
   }
 
   const machines: PlacedMachine[] = blueprint.layout.machines.map((machine) => {
-    const catalog = DEFAULT_CATALOG.find((entry) => entry.typeId === machine.typeId);
-    const shape = DEFAULT_SHAPES[machine.typeId];
-    if (catalog === undefined || shape === undefined) {
-      throw new Error(`blueprint: machine ${machine.id} is absent from the local catalog`);
+    const entry = catalogEntry(machine.typeId, `machine ${machine.id} typeId`);
+    const shape = DEFAULT_SHAPES[entry.typeId];
+    if (shape === undefined) {
+      throw new Error(`blueprint: machine ${machine.id} is absent from the local shape catalog`);
     }
     return {
       id: machine.id,
       def: {
-        typeId: catalog.typeId,
-        transform: catalog.transform,
-        orientation: { rot: machine.orientation.rot, flip: machine.orientation.flip },
-        cost: catalog.cost,
-        speed: catalog.speed,
+        typeId: entry.typeId,
+        path: [...entry.path],
+        stroke: machine.stroke,
+        cost: entry.cost,
+        speed: entry.speed,
       },
       anchor: { x: machine.anchor.x, y: machine.anchor.y },
       footRot: machine.footRot,
@@ -352,7 +443,7 @@ function materializeCanonical(blueprint: PortableBlueprint): FactoryLayout {
         throw new Error(`blueprint: machine ${machine.id} footprint overlaps another machine`);
       }
       if (tiles[index]?.kind !== "empty") {
-        throw new Error(`blueprint: machine ${machine.id} footprint overlaps a tile`);
+        throw new Error(`blueprint: machine ${machine.id} footprint overlaps a routing tile`);
       }
       occupied[index] = machine.id;
     }
@@ -360,19 +451,13 @@ function materializeCanonical(blueprint: PortableBlueprint): FactoryLayout {
   return { width, height, tiles, machines };
 }
 
-function validateBlueprintGeometry(blueprint: PortableBlueprint): void {
-  const layout = materializeCanonical(blueprint);
-  if (blueprint.kind === "research-route") {
-    const route = deriveLinearRoute(layout);
-    if (route.template.steps.length === 0) {
-      throw new Error("blueprint: Research route must contain at least one machine");
-    }
-  }
+function validateGeometry(blueprint: PortableBlueprint): void {
+  if (blueprint.kind === "pilot-plant") materializeLayoutCanonical(blueprint);
 }
 
 function normalizeBlueprint(value: unknown): PortableBlueprint {
   const blueprint = parseBlueprint(value);
-  validateBlueprintGeometry(blueprint);
+  validateGeometry(blueprint);
   return blueprint;
 }
 
@@ -423,6 +508,9 @@ export async function decodeBlueprint(source: string): Promise<PortableBlueprint
   const document = requireRecord(parsed, "document");
   requireExactKeys(document, ["format", "version", "checksum", "blueprint"], "document");
   if (document.format !== BLUEPRINT_FORMAT) throw new Error("blueprint: unsupported format");
+  if (document.version === 1) {
+    throw new Error("blueprint: legacy blueprint version 1 is not supported by the v2 schema");
+  }
   if (document.version !== BLUEPRINT_VERSION) {
     throw new Error(`blueprint: unsupported version ${String(document.version)}`);
   }
@@ -432,12 +520,24 @@ export async function decodeBlueprint(source: string): Promise<PortableBlueprint
   const blueprint = parseBlueprint(document.blueprint);
   const expected = await blueprintChecksum(blueprint);
   if (document.checksum !== expected) throw new Error("blueprint: checksum mismatch");
-  validateBlueprintGeometry(blueprint);
+  validateGeometry(blueprint);
   return blueprint;
 }
 
-export function materializeBlueprint(value: PortableBlueprint): FactoryLayout {
-  return materializeCanonical(normalizeBlueprint(value));
+export function materializeResearchProgram(value: PortableBlueprint): Template {
+  const blueprint = normalizeBlueprint(value);
+  if (blueprint.kind !== "research-program") {
+    throw new Error("blueprint: cannot materialize a Pilot Blueprint as a ResearchProgram");
+  }
+  return materializeProgramCanonical(blueprint);
+}
+
+export function materializePilotLayout(value: PortableBlueprint): FactoryLayout {
+  const blueprint = normalizeBlueprint(value);
+  if (blueprint.kind !== "pilot-plant") {
+    throw new Error("blueprint: cannot materialize a Research Blueprint as a Pilot layout");
+  }
+  return materializeLayoutCanonical(blueprint);
 }
 
 function portableTile(tile: FactoryTile, x: number, y: number): PortableFactoryTile | null {
@@ -457,43 +557,84 @@ function portableTile(tile: FactoryTile, x: number, y: number): PortableFactoryT
   }
 }
 
-export function blueprintFromLayout(
-  kind: BlueprintKind,
-  name: string,
-  layout: FactoryLayout,
-): PortableBlueprint {
-  if (!Array.isArray(layout.tiles) || layout.tiles.length !== layout.width * layout.height) {
+function sameData(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+export function blueprintFromProgram(name: string, program: Template): PortableResearchBlueprint {
+  if (!Array.isArray(program.steps)) throw new Error("blueprint: source program steps must be an array");
+  const steps = program.steps.map((step, index): PortableResearchStep => {
+    const entry = catalogEntry(step.typeId, `source program.steps[${index}].typeId`);
+    if (!sameData(step.path, entry.path)) {
+      throw new Error(`blueprint: source program.steps[${index}].path does not match the catalog`);
+    }
+    return {
+      typeId: entry.typeId,
+      stroke: requireStroke(step.stroke, entry, `source program.steps[${index}].stroke`),
+    };
+  });
+  return normalizeBlueprint({
+    kind: "research-program",
+    name,
+    ruleset: BLUEPRINT_RULESET,
+    content: BLUEPRINT_CONTENT_FINGERPRINT,
+    program: { steps },
+  }) as PortableResearchBlueprint;
+}
+
+export function blueprintFromPilotLayout(name: string, layout: FactoryLayout): PortablePilotBlueprint {
+  const width = requireInteger(layout.width, "source layout.width", 1, MAX_GAME_FACTORY_DIMENSION);
+  const height = requireInteger(layout.height, "source layout.height", 1, MAX_GAME_FACTORY_DIMENSION);
+  if (width * height > MAX_GAME_FACTORY_CELLS) {
+    throw new Error(`blueprint: source layout must contain at most ${MAX_GAME_FACTORY_CELLS} cells`);
+  }
+  if (!Array.isArray(layout.tiles) || layout.tiles.length !== width * height) {
     throw new Error("blueprint: source layout tile count does not match its dimensions");
   }
-  if (!Array.isArray(layout.machines)) throw new Error("blueprint: source layout machines must be an array");
+  if (!Array.isArray(layout.machines)) {
+    throw new Error("blueprint: source layout machines must be an array");
+  }
+
   const tiles: PortableFactoryTile[] = [];
   for (let index = 0; index < layout.tiles.length; index++) {
     const tile = layout.tiles[index];
     if (tile === undefined || typeof tile !== "object") {
       throw new Error(`blueprint: source layout tile ${index} is invalid`);
     }
-    const encoded = portableTile(tile, index % layout.width, Math.floor(index / layout.width));
+    const encoded = portableTile(tile, index % width, Math.floor(index / width));
+    if (encoded === undefined) throw new Error(`blueprint: source layout tile ${index} kind is unknown`);
     if (encoded !== null) tiles.push(encoded);
   }
+
+  const machines = layout.machines.map((machine, index): PortablePilotMachine => {
+    const entry = catalogEntry(machine.def.typeId, `source layout.machines[${index}].typeId`);
+    const shape = DEFAULT_SHAPES[entry.typeId];
+    if (shape === undefined) {
+      throw new Error(`blueprint: source layout.machines[${index}] has no local factory shape`);
+    }
+    if (!sameData(machine.def.path, entry.path)) {
+      throw new Error(`blueprint: source layout.machines[${index}].path does not match the catalog`);
+    }
+    if (machine.def.cost !== entry.cost || machine.def.speed !== entry.speed) {
+      throw new Error(`blueprint: source layout.machines[${index}] cost/speed does not match the catalog`);
+    }
+    if (!sameData(machine.shape, shape)) {
+      throw new Error(`blueprint: source layout.machines[${index}].shape does not match the catalog`);
+    }
+    return {
+      id: machine.id,
+      typeId: entry.typeId,
+      stroke: requireStroke(machine.def.stroke, entry, `source layout.machines[${index}].stroke`),
+      anchor: { x: machine.anchor.x, y: machine.anchor.y },
+      footRot: machine.footRot,
+    };
+  });
+
   return normalizeBlueprint({
-    kind,
+    kind: "pilot-plant",
     name,
     ruleset: BLUEPRINT_RULESET,
     content: BLUEPRINT_CONTENT_FINGERPRINT,
-    layout: {
-      width: layout.width,
-      height: layout.height,
-      tiles,
-      machines: layout.machines.map((machine) => ({
-        id: machine.id,
-        typeId: machine.def.typeId,
-        orientation: {
-          rot: machine.def.orientation.rot,
-          flip: machine.def.orientation.flip,
-        },
-        anchor: { x: machine.anchor.x, y: machine.anchor.y },
-        footRot: machine.footRot,
-      })),
-    },
-  });
+    layout: { width, height, tiles, machines },
+  }) as PortablePilotBlueprint;
 }

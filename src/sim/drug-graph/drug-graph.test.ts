@@ -1,817 +1,436 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import type {
-  Vec2,
+  CardinalDelta,
   EffectMap,
-  MultiMap,
   Machine,
+  MultiMap,
+  PathStamp,
   Template,
-  Orientation,
-  Rotation,
-  TranslateRelation,
+  Vec2,
 } from "../phase0_interfaces";
-import { CellKind, IDENTITY } from "../phase0_interfaces";
+import { CellKind, DEFAULT_CATALOG } from "../phase0_interfaces";
 import {
-  orient,
-  effectiveDelta,
-  initialState,
   applyStep,
-  previewStep,
   applyTemplate,
   evaluate,
+  initialState,
+  previewStep,
   revealAlong,
+  validateEffectMap,
+  validateMachinePath,
+  validatePathStamp,
+  walkPathInto,
+  walkValidatedPathInto,
 } from "./index";
-import { sweep, sweepInto } from "./sweep";
 
-// ───────────────────────────── fixture helpers ─────────────────────────────
+const indexOf = (map: EffectMap, x: number, y: number): number => y * map.width + x;
 
-const idx = (w: number, x: number, y: number): number => y * w + x;
-
-/** An NxN map, all-Empty, fully fogged, with given start + origin. */
-function emptyMap(n: number, start: Vec2, origin: Vec2 = { x: 0, y: 0 }): EffectMap {
-  const len = n * n;
+function emptyMap(
+  width: number,
+  height: number,
+  start: Vec2,
+  origin: Vec2 = { x: 0, y: 0 },
+): EffectMap {
+  const length = width * height;
   return {
-    width: n,
-    height: n,
+    width,
+    height,
     origin,
     start,
-    cell: new Uint8Array(len), // all Empty (0)
-    cureId: new Int16Array(len).fill(-1),
-    sideEffectId: new Int32Array(len).fill(-1),
-    fog: new Uint8Array(len), // all fogged (0)
+    cell: new Uint8Array(length),
+    cureId: new Int16Array(length).fill(-1),
+    sideEffectId: new Int32Array(length).fill(-1),
+    portalTo: new Int32Array(length).fill(-1),
+    fog: new Uint8Array(length),
   };
 }
 
-/** Return a copy of `m` with cell (x,y) set to `kind` (+ optional cure/side ids). */
 function withCell(
-  m: EffectMap,
+  map: EffectMap,
   x: number,
   y: number,
   kind: number,
-  ids?: { cure?: number; side?: number },
+  options: { readonly cureId?: number; readonly sideEffectId?: number; readonly portalTo?: Vec2 } = {},
 ): EffectMap {
-  const cell = Uint8Array.from(m.cell);
-  const cureId = Int16Array.from(m.cureId);
-  const sideEffectId = Int32Array.from(m.sideEffectId);
-  const i = idx(m.width, x, y);
-  cell[i] = kind;
-  if (ids?.cure !== undefined) cureId[i] = ids.cure;
-  if (ids?.side !== undefined) sideEffectId[i] = ids.side;
-  return { ...m, cell, cureId, sideEffectId };
+  const cell = Uint8Array.from(map.cell);
+  const cureId = Int16Array.from(map.cureId);
+  const sideEffectId = Int32Array.from(map.sideEffectId);
+  const portalTo = Int32Array.from(map.portalTo);
+  const index = indexOf(map, x, y);
+  cell[index] = kind;
+  if (options.cureId !== undefined) cureId[index] = options.cureId;
+  if (options.sideEffectId !== undefined) sideEffectId[index] = options.sideEffectId;
+  if (options.portalTo !== undefined) {
+    portalTo[index] = indexOf(map, options.portalTo.x, options.portalTo.y);
+  }
+  return { ...map, cell, cureId, sideEffectId, portalTo };
 }
 
-const wall = (m: EffectMap, x: number, y: number): EffectMap => withCell(m, x, y, CellKind.Wall);
-const hazard = (m: EffectMap, x: number, y: number): EffectMap =>
-  withCell(m, x, y, CellKind.Hazard);
-const cure = (m: EffectMap, x: number, y: number, cureId: number): EffectMap =>
-  withCell(m, x, y, CellKind.Cure, { cure: cureId });
-const side = (m: EffectMap, x: number, y: number, sideId: number): EffectMap =>
-  withCell(m, x, y, CellKind.SideEffect, { side: sideId });
-
-const mm = (...maps: EffectMap[]): MultiMap => ({ maps });
-
-const translate = (
-  delta: Vec2,
-  relation: TranslateRelation = "forward",
-  orientation: Orientation = IDENTITY,
-): Machine => ({ typeId: "t", transform: { kind: "translate", delta, relation }, orientation });
-
-const scale = (num: number, den: number): Machine => ({
-  typeId: "s",
-  transform: { kind: "scale", num, den },
-  orientation: IDENTITY,
+const machine = (path: PathStamp, stroke = path.length): Machine => ({
+  typeId: "test-stamp",
+  path,
+  stroke,
 });
+const template = (...steps: Machine[]): Template => ({ steps });
+const multiMap = (...maps: EffectMap[]): MultiMap => ({ maps });
+const east = Object.freeze({ x: 1, y: 0 } as const);
+const west = Object.freeze({ x: -1, y: 0 } as const);
+const north = Object.freeze({ x: 0, y: -1 } as const);
+const south = Object.freeze({ x: 0, y: 1 } as const);
 
-const swap = (a: number, b: number): Machine => ({
-  typeId: "w",
-  transform: { kind: "swap", a, b },
-  orientation: IDENTITY,
-});
+describe("path contract validation", () => {
+  it("accepts a non-empty cardinal-unit path and a stroke within its length", () => {
+    const path = [east, south, west, north] as const;
+    expect(() => validatePathStamp(path)).not.toThrow();
+    expect(() => validateMachinePath(machine(path, 1))).not.toThrow();
+    expect(() => validateMachinePath(machine(path, path.length))).not.toThrow();
+  });
 
-const tpl = (...steps: Machine[]): Template => ({ steps });
+  it("rejects an empty path", () => {
+    expect(() => validatePathStamp([])).toThrow(/non-empty/i);
+  });
 
-// ───────────────────────────── arbitraries ─────────────────────────────
+  it.each([
+    { x: 0, y: 0 },
+    { x: 1, y: 1 },
+    { x: 2, y: 0 },
+    { x: 0, y: -2 },
+    { x: 0.5, y: 0 },
+  ])("rejects non-cardinal unit delta $x,$y", (delta) => {
+    expect(() => validatePathStamp([delta] as unknown as PathStamp)).toThrow(/cardinal unit/i);
+  });
 
-const arbVec = fc.record({
-  x: fc.integer({ min: -8, max: 8 }),
-  y: fc.integer({ min: -8, max: 8 }),
-});
-const arbRot = fc.constantFrom<Rotation>(0, 1, 2, 3);
-const arbOrient: fc.Arbitrary<Orientation> = fc.record({ rot: arbRot, flip: fc.boolean() });
+  it.each([0, -1, 4, 1.5, Number.NaN])("rejects invalid stroke %s", (stroke) => {
+    expect(() => validateMachinePath(machine([east, south, west], stroke))).toThrow(/stroke/i);
+  });
 
-// ───────────────────────────── INV-4 / INV-5: orient ─────────────────────────────
-
-describe("orient (INV-4, INV-5)", () => {
-  it("rotating any vector 4×90° returns the original", () => {
+  it("accepts all generated cardinal paths and legal strokes", () => {
+    const delta = fc.constantFrom<CardinalDelta>(east, south, west, north);
     fc.assert(
-      fc.property(arbVec, (v) => {
-        let r = v;
-        for (let k = 0; k < 4; k++) r = orient(r, { rot: 1, flip: false });
-        expect(r).toEqual(v);
+      fc.property(fc.array(delta, { minLength: 1, maxLength: 64 }), fc.nat(), (path, n) => {
+        const stroke = (n % path.length) + 1;
+        expect(() => validateMachinePath(machine(path, stroke))).not.toThrow();
       }),
     );
   });
 
-  it("a rot=0 rotation is identity and full-turn (applied as one) is identity", () => {
-    fc.assert(
-      fc.property(arbVec, (v) => {
-        expect(orient(v, { rot: 0, flip: false })).toEqual(v);
-        // four discrete quarter turns equals identity regardless of start
-        const a = orient(orient(orient(orient(v, { rot: 1, flip: false }), { rot: 1, flip: false }), { rot: 1, flip: false }), { rot: 1, flip: false });
-        expect(a).toEqual(v);
-      }),
-    );
+  it("ships seven distinct, immutable, non-straight catalog stamps", () => {
+    const serialized = new Set<string>();
+    expect(DEFAULT_CATALOG).toHaveLength(7);
+    expect(Object.isFrozen(DEFAULT_CATALOG)).toBe(true);
+
+    for (const entry of DEFAULT_CATALOG) {
+      expect(() => validatePathStamp(entry.path)).not.toThrow();
+      expect(Object.isFrozen(entry)).toBe(true);
+      expect(Object.isFrozen(entry.path)).toBe(true);
+      expect(new Set(entry.path.map((delta) => `${delta.x},${delta.y}`)).size).toBeGreaterThan(1);
+      serialized.add(JSON.stringify(entry.path));
+    }
+
+    expect(serialized.size).toBe(DEFAULT_CATALOG.length);
   });
 
-  it("flipping any vector twice returns the original", () => {
-    fc.assert(
-      fc.property(arbVec, arbRot, (v, rot) => {
-        const once = orient(v, { rot, flip: true });
-        // applying the same flip (no extra rotation) twice cancels the mirror
-        const twice = orient(once, { rot: 0, flip: true });
-        // 'once' already rotated; undo nothing but re-mirror -> rotated-only vector
-        const rotatedOnly = orient(v, { rot, flip: false });
-        expect(twice).toEqual(rotatedOnly);
-      }),
-    );
-  });
+  it("includes a self-intersecting loop, a reversal, and an alternating zigzag", () => {
+    const visitsSamePositionTwice = (path: PathStamp): boolean => {
+      let x = 0;
+      let y = 0;
+      const visited = new Set(["0,0"]);
+      for (const delta of path) {
+        x += delta.x;
+        y += delta.y;
+        const key = `${x},${y}`;
+        if (visited.has(key)) return true;
+        visited.add(key);
+      }
+      return false;
+    };
+    const containsOppositeDirections = (path: PathStamp): boolean =>
+      path.some((left) =>
+        path.some((right) => left.x === -right.x && left.y === -right.y),
+      );
+    const alternatesAxes = (path: PathStamp): boolean =>
+      path.length >= 4 &&
+      path.every((delta, index) =>
+        index === 0 ? true : (delta.x === 0) !== (path[index - 1]?.x === 0),
+      );
 
-  it("90° clockwise in a y-down grid sends (1,0) -> (0,1)", () => {
-    expect(orient({ x: 1, y: 0 }, { rot: 1, flip: false })).toEqual({ x: 0, y: 1 });
-    expect(orient({ x: 0, y: 1 }, { rot: 1, flip: false })).toEqual({ x: -1, y: 0 });
-    expect(orient({ x: 1, y: 0 }, { rot: 2, flip: false })).toEqual({ x: -1, y: 0 });
-  });
-
-  it("flip mirrors x after rotation", () => {
-    // rot=0, flip: (3,1) -> (-3,1)
-    expect(orient({ x: 3, y: 1 }, { rot: 0, flip: true })).toEqual({ x: -3, y: 1 });
-    // rot=1 then flip: (1,0) -> rot ->(0,1) -> flip ->(0,1)  [x already 0]
-    expect(orient({ x: 1, y: 0 }, { rot: 1, flip: true })).toEqual({ x: 0, y: 1 });
+    expect(DEFAULT_CATALOG.some((entry) => visitsSamePositionTwice(entry.path))).toBe(true);
+    expect(DEFAULT_CATALOG.some((entry) => containsOppositeDirections(entry.path))).toBe(true);
+    expect(DEFAULT_CATALOG.some((entry) => alternatesAxes(entry.path))).toBe(true);
   });
 });
 
-// ───────────────────────────── effectiveDelta ─────────────────────────────
+describe("portal destination validation", () => {
+  it("accepts an in-bounds same-map portal destination", () => {
+    const map = withCell(emptyMap(5, 3, { x: 0, y: 1 }), 1, 1, CellKind.Portal, {
+      portalTo: { x: 4, y: 1 },
+    });
+    expect(() => validateEffectMap(map)).not.toThrow();
+  });
 
-describe("effectiveDelta", () => {
-  it("forward = orient(delta); reverse = orient(-delta); perpendicular = orient(perpCW(delta))", () => {
-    // Coords are canonicalized (-0 -> 0), so build expected vectors the same way.
-    const z = (n: number): number => n + 0;
+  it("requires portalTo to be authoritative for every cell", () => {
+    const base = emptyMap(3, 3, { x: 0, y: 0 });
+    expect(() => validateEffectMap({ ...base, portalTo: new Int32Array(8) })).toThrow(
+      /portalTo.*length/i,
+    );
+
+    const stray = Int32Array.from(base.portalTo);
+    stray[0] = 1;
+    expect(() => validateEffectMap({ ...base, portalTo: stray })).toThrow(/non-portal.*-1/i);
+  });
+
+  it.each([-1, 9, 100])("rejects illegal portal destination %s", (destination) => {
+    const base = withCell(emptyMap(3, 3, { x: 0, y: 0 }), 1, 1, CellKind.Portal);
+    const portalTo = Int32Array.from(base.portalTo);
+    portalTo[4] = destination;
+    expect(() => validateEffectMap({ ...base, portalTo })).toThrow(/portal destination/i);
+  });
+});
+
+describe("path stepping", () => {
+  it("applies the stroke prefix of the fixed path, one cardinal unit at a time", () => {
+    const map = emptyMap(9, 9, { x: 4, y: 4 });
+    const stamp = machine([east, east, south, west, north], 4);
+    const result = previewStep(multiMap(map), initialState(multiMap(map)), stamp);
+
+    expect(result.next).toEqual({ pos: [{ x: 5, y: 5 }], failed: false });
+    expect(result.trails).toEqual([
+      [
+        { x: 5, y: 4 },
+        { x: 6, y: 4 },
+        { x: 6, y: 5 },
+        { x: 5, y: 5 },
+      ],
+    ]);
+  });
+
+  it("applies the same path independently from each map's current position", () => {
+    const first = emptyMap(9, 9, { x: 1, y: 1 });
+    const second = emptyMap(9, 9, { x: 5, y: 6 });
+    const maps = multiMap(first, second);
+    const result = applyStep(maps, initialState(maps), machine([east, south], 2));
+
+    expect(result.pos).toEqual([
+      { x: 2, y: 2 },
+      { x: 6, y: 7 },
+    ]);
+  });
+
+  it("cancels only a wall-blocked unit and continues the remaining stamp", () => {
+    const base = emptyMap(7, 7, { x: 2, y: 2 });
+    const map = withCell(base, 3, 2, CellKind.Wall);
+    const result = previewStep(
+      multiMap(map),
+      initialState(multiMap(map)),
+      machine([east, south, east], 3),
+    );
+
+    expect(result.next.pos).toEqual([{ x: 3, y: 3 }]);
+    expect(result.trails).toEqual([[{ x: 2, y: 3 }, { x: 3, y: 3 }]]);
+  });
+
+  it("cancels only an out-of-bounds unit and continues the remaining stamp", () => {
+    const map = emptyMap(4, 4, { x: 0, y: 1 });
+    const result = previewStep(
+      multiMap(map),
+      initialState(multiMap(map)),
+      machine([west, south, east], 3),
+    );
+
+    expect(result.next.pos).toEqual([{ x: 1, y: 2 }]);
+    expect(result.trails).toEqual([[{ x: 0, y: 2 }, { x: 1, y: 2 }]]);
+  });
+
+  it("enters abyss, records it, and fails sticky before later machines", () => {
+    const base = emptyMap(8, 5, { x: 1, y: 2 });
+    const map = withCell(base, 3, 2, CellKind.Abyss);
+    const maps = multiMap(map);
+    const first = machine([east, east, east], 3);
+    const second = machine([south, south], 2);
+    const preview = previewStep(maps, initialState(maps), first);
+
+    expect(preview.next).toEqual({ pos: [{ x: 3, y: 2 }], failed: true });
+    expect(preview.trails).toEqual([[{ x: 2, y: 2 }, { x: 3, y: 2 }]]);
+    expect(applyTemplate(maps, initialState(maps), template(first, second))).toEqual(preview.next);
+  });
+
+  it("charges two energy to enter swamp and stops once stroke energy is insufficient", () => {
+    const base = emptyMap(8, 5, { x: 1, y: 2 });
+    const map = withCell(base, 2, 2, CellKind.Swamp);
+    const result = previewStep(
+      multiMap(map),
+      initialState(multiMap(map)),
+      machine([east, east, east], 3),
+    );
+
+    expect(result.next.pos).toEqual([{ x: 3, y: 2 }]);
+    expect(result.trails).toEqual([[{ x: 2, y: 2 }, { x: 3, y: 2 }]]);
+  });
+
+  it("does not enter swamp when the remaining stroke energy is one", () => {
+    const base = emptyMap(5, 5, { x: 1, y: 2 });
+    const map = withCell(base, 2, 2, CellKind.Swamp);
+    const result = previewStep(
+      multiMap(map),
+      initialState(multiMap(map)),
+      machine([east], 1),
+    );
+
+    expect(result.next.pos).toEqual([{ x: 1, y: 2 }]);
+    expect(result.trails).toEqual([[]]);
+  });
+
+  it("records portal entry and exit, then continues the same stamp from the exit", () => {
+    const base = emptyMap(8, 3, { x: 0, y: 1 });
+    const map = withCell(base, 1, 1, CellKind.Portal, { portalTo: { x: 5, y: 1 } });
+    const result = previewStep(
+      multiMap(map),
+      initialState(multiMap(map)),
+      machine([east, east], 2),
+    );
+
+    expect(result.next.pos).toEqual([{ x: 6, y: 1 }]);
+    expect(result.trails).toEqual([
+      [
+        { x: 1, y: 1 },
+        { x: 5, y: 1 },
+        { x: 6, y: 1 },
+      ],
+    ]);
+  });
+
+  it("uses each map's own portal authority and never crosses or swaps maps", () => {
+    const first = withCell(emptyMap(8, 3, { x: 0, y: 1 }), 1, 1, CellKind.Portal, {
+      portalTo: { x: 4, y: 1 },
+    });
+    const second = withCell(emptyMap(8, 3, { x: 0, y: 1 }), 1, 1, CellKind.Portal, {
+      portalTo: { x: 6, y: 1 },
+    });
+    const maps = multiMap(first, second);
+
+    expect(applyStep(maps, initialState(maps), machine([east], 1)).pos).toEqual([
+      { x: 4, y: 1 },
+      { x: 6, y: 1 },
+    ]);
+  });
+
+  it("rejects an exit configured as another activating portal", () => {
+    let map = withCell(emptyMap(7, 3, { x: 0, y: 1 }), 1, 1, CellKind.Portal, {
+      portalTo: { x: 4, y: 1 },
+    });
+    map = withCell(map, 4, 1, CellKind.Portal, { portalTo: { x: 6, y: 1 } });
+
+    expect(() => initialState(multiMap(map))).toThrow(/destination.*portal entry/i);
+  });
+
+  it("keeps the allocation-free walker result aligned with preview semantics", () => {
+    let map = withCell(emptyMap(10, 3, { x: 0, y: 1 }), 1, 1, CellKind.Portal, {
+      portalTo: { x: 4, y: 1 },
+    });
+    map = withCell(map, 5, 1, CellKind.Swamp);
+    map = withCell(map, 7, 1, CellKind.Abyss);
+    const stamp = machine([east, east, east, east, east], 5);
+    const out = new Int32Array(7).fill(-99);
+    const prevalidatedOut = new Int32Array(3);
+
+    walkPathInto(map, 0, 1, stamp, out, 2);
+    validateEffectMap(map);
+    validateMachinePath(stamp);
+    walkValidatedPathInto(map, 0, 1, stamp, prevalidatedOut, 0);
+    const preview = previewStep(multiMap(map), initialState(multiMap(map)), stamp);
+
+    expect(Array.from(out)).toEqual([-99, -99, 7, 1, 1, -99, -99]);
+    expect(Array.from(prevalidatedOut)).toEqual([7, 1, 1]);
+    expect(preview.next).toEqual({ pos: [{ x: out[2], y: out[3] }], failed: out[4] === 1 });
+  });
+
+  it("is deterministic and does not mutate map, state, path, or typed arrays", () => {
+    const map = withCell(emptyMap(7, 5, { x: 1, y: 2 }), 2, 2, CellKind.Swamp);
+    const maps = multiMap(map);
+    const path = [east, east, south] as const;
+    const stamp = machine(path, 3);
+    const state = initialState(maps);
+    const before = {
+      cell: Uint8Array.from(map.cell),
+      portalTo: Int32Array.from(map.portalTo),
+      state: structuredClone(state),
+      path: structuredClone(path),
+    };
+
+    const first = previewStep(maps, state, stamp);
+    const second = previewStep(maps, state, stamp);
+
+    expect(first).toEqual(second);
+    expect(map.cell).toEqual(before.cell);
+    expect(map.portalTo).toEqual(before.portalTo);
+    expect(state).toEqual(before.state);
+    expect(path).toEqual(before.path);
+  });
+
+  it("on an open map, generated paths end at the sum of the stroke prefix", () => {
+    const delta = fc.constantFrom<CardinalDelta>(east, south, west, north);
     fc.assert(
-      fc.property(arbVec, arbOrient, (d, o) => {
-        expect(effectiveDelta(d, "forward", o)).toEqual(orient(d, o));
-        expect(effectiveDelta(d, "reverse", o)).toEqual(orient({ x: z(-d.x), y: z(-d.y) }, o));
-        expect(effectiveDelta(d, "perpendicular", o)).toEqual(
-          orient({ x: z(-d.y), y: d.x }, o),
+      fc.property(fc.array(delta, { minLength: 1, maxLength: 24 }), fc.nat(), (path, n) => {
+        const stroke = (n % path.length) + 1;
+        const map = emptyMap(101, 101, { x: 50, y: 50 });
+        const expected = path.slice(0, stroke).reduce(
+          (position, step) => ({ x: position.x + step.x, y: position.y + step.y }),
+          map.start,
         );
-      }),
-    );
-  });
-
-  it("identity-oriented relations match hand values", () => {
-    const d = { x: 2, y: 0 };
-    expect(effectiveDelta(d, "forward", IDENTITY)).toEqual({ x: 2, y: 0 });
-    expect(effectiveDelta(d, "reverse", IDENTITY)).toEqual({ x: -2, y: 0 });
-    expect(effectiveDelta(d, "perpendicular", IDENTITY)).toEqual({ x: 0, y: 2 });
-  });
-
-  it("offset = orient(skew(delta)) where skew(x,y) = (x - y, x + y)", () => {
-    const z = (n: number): number => n + 0;
-    const skew = (v: Vec2): Vec2 => ({ x: z(v.x - v.y), y: z(v.x + v.y) });
-    fc.assert(
-      fc.property(arbVec, arbOrient, (d, o) => {
-        expect(effectiveDelta(d, "offset", o)).toEqual(orient(skew(d), o));
-      }),
-    );
-  });
-
-  it("offset hand values: (1,0)->(1,1), (0,1)->(-1,1)", () => {
-    expect(effectiveDelta({ x: 1, y: 0 }, "offset", IDENTITY)).toEqual({ x: 1, y: 1 });
-    expect(effectiveDelta({ x: 0, y: 1 }, "offset", IDENTITY)).toEqual({ x: -1, y: 1 });
-    expect(effectiveDelta({ x: 2, y: 0 }, "offset", IDENTITY)).toEqual({ x: 2, y: 2 });
-    // rot=1 CW (y-down) of skew(1,0)=(1,1): (1,1)->(-1,1)
-    expect(effectiveDelta({ x: 1, y: 0 }, "offset", { rot: 1, flip: false })).toEqual({
-      x: -1,
-      y: 1,
-    });
-    // rot=2 of (1,1) -> (-1,-1)
-    expect(effectiveDelta({ x: 1, y: 0 }, "offset", { rot: 2, flip: false })).toEqual({
-      x: -1,
-      y: -1,
-    });
-    // flip mirrors x: skew(1,0)=(1,1) -> (-1,1)
-    expect(effectiveDelta({ x: 1, y: 0 }, "offset", { rot: 0, flip: true })).toEqual({
-      x: -1,
-      y: 1,
-    });
-  });
-});
-
-// ───────────────────────────── initialState ─────────────────────────────
-
-describe("initialState", () => {
-  it("sets each map's pos to its start and failed=false", () => {
-    const m0 = emptyMap(5, { x: 1, y: 2 });
-    const m1 = emptyMap(5, { x: 4, y: 0 });
-    const s = initialState(mm(m0, m1));
-    expect(s.failed).toBe(false);
-    expect(s.pos).toEqual([{ x: 1, y: 2 }, { x: 4, y: 0 }]);
-  });
-});
-
-// ───────────────────────────── INV-1: translate sweep ─────────────────────────────
-
-describe("translate sweep (INV-1)", () => {
-  it("advances to the vector end on a clear path", () => {
-    const m = emptyMap(6, { x: 0, y: 0 });
-    const s = applyStep(mm(m), initialState(mm(m)), translate({ x: 3, y: 0 }));
-    expect(s.failed).toBe(false);
-    expect(s.pos[0]).toEqual({ x: 3, y: 0 });
-  });
-
-  it("stops one cell before a wall", () => {
-    // wall at x=3; pushing right from 0 by 5 should rest at x=2.
-    const m = wall(emptyMap(6, { x: 0, y: 0 }), 3, 0);
-    const s = applyStep(mm(m), initialState(mm(m)), translate({ x: 5, y: 0 }));
-    expect(s.failed).toBe(false);
-    expect(s.pos[0]).toEqual({ x: 2, y: 0 });
-  });
-
-  it("stops one cell before the grid edge", () => {
-    const m = emptyMap(4, { x: 0, y: 0 }); // valid x: 0..3
-    const s = applyStep(mm(m), initialState(mm(m)), translate({ x: 10, y: 0 }));
-    expect(s.failed).toBe(false);
-    expect(s.pos[0]).toEqual({ x: 3, y: 0 });
-  });
-
-  it("fails when the path enters a hazard, resting on the hazard cell", () => {
-    const m = hazard(emptyMap(6, { x: 0, y: 0 }), 2, 0);
-    const s = applyStep(mm(m), initialState(mm(m)), translate({ x: 5, y: 0 }));
-    expect(s.failed).toBe(true);
-    expect(s.pos[0]).toEqual({ x: 2, y: 0 });
-  });
-
-  it("a wall before a hazard stops cleanly (no fail)", () => {
-    let m = emptyMap(8, { x: 0, y: 0 });
-    m = wall(m, 2, 0);
-    m = hazard(m, 4, 0);
-    const s = applyStep(mm(m), initialState(mm(m)), translate({ x: 7, y: 0 }));
-    expect(s.failed).toBe(false);
-    expect(s.pos[0]).toEqual({ x: 1, y: 0 });
-  });
-
-  it("respects orientation: a forward +x push, rotated 90° CW, moves +y (down)", () => {
-    const m = emptyMap(6, { x: 0, y: 0 });
-    const o: Orientation = { rot: 1, flip: false };
-    const s = applyStep(mm(m), initialState(mm(m)), translate({ x: 3, y: 0 }, "forward", o));
-    expect(s.pos[0]).toEqual({ x: 0, y: 3 });
-  });
-
-  it("property: with no obstacles, an axis-aligned translate lands at start+effectiveDelta (clamped to grid)", () => {
-    fc.assert(
-      fc.property(
-        fc.integer({ min: 0, max: 9 }),
-        fc.integer({ min: 0, max: 9 }),
-        arbOrient,
-        fc.integer({ min: -6, max: 6 }),
-        (sx, sy, o, dx) => {
-          const n = 10;
-          const m = emptyMap(n, { x: sx, y: sy });
-          // pure +x delta; effective delta is axis-aligned for any orientation.
-          const s = applyStep(mm(m), initialState(mm(m)), translate({ x: dx, y: 0 }, "forward", o));
-          const eff = effectiveDelta({ x: dx, y: 0 }, "forward", o);
-          const expected = {
-            x: Math.max(0, Math.min(n - 1, sx + eff.x)),
-            y: Math.max(0, Math.min(n - 1, sy + eff.y)),
-          };
-          expect(s.failed).toBe(false);
-          expect(s.pos[0]).toEqual(expected);
-        },
-      ),
-    );
-  });
-
-  it("a spoiled drug ignores all further machines", () => {
-    const m = hazard(emptyMap(6, { x: 0, y: 0 }), 1, 0);
-    const failed = applyStep(mm(m), initialState(mm(m)), translate({ x: 4, y: 0 }));
-    expect(failed.failed).toBe(true);
-    const after = applyStep(mm(m), failed, translate({ x: -1, y: 0 }));
-    expect(after).toBe(failed); // unchanged reference
-  });
-});
-
-// ───────────────────────────── offset / diagonal supercover sweep ─────────────────────────────
-
-describe("offset machine + diagonal supercover sweep", () => {
-  it("an offset translate moves the drug diagonally to start + skew(delta) on a clear board", () => {
-    // skew(3,0) = (3,3): from (1,1) -> (4,4) on a clear board.
-    const m = emptyMap(8, { x: 1, y: 1 });
-    const s = applyStep(mm(m), initialState(mm(m)), translate({ x: 3, y: 0 }, "offset"));
-    expect(s.failed).toBe(false);
-    expect(s.pos[0]).toEqual({ x: 4, y: 4 });
-  });
-
-  it("offset respects orientation: skew(1,0)=(1,1) rotated 90° CW -> (-1,1)", () => {
-    // from (4,1), effective delta (-1,1) -> (3,2).
-    const m = emptyMap(8, { x: 4, y: 1 });
-    const s = applyStep(
-      mm(m),
-      initialState(mm(m)),
-      translate({ x: 1, y: 0 }, "offset", { rot: 1, flip: false }),
-    );
-    expect(s.failed).toBe(false);
-    expect(s.pos[0]).toEqual({ x: 3, y: 2 });
-  });
-
-  it("diagonal sweep enters both grazed corners then the diagonal cell, in order", () => {
-    // from (0,0) to (2,2): per corner crossing visits x-neighbor, y-neighbor, diagonal.
-    const m = emptyMap(6, { x: 0, y: 0 });
-    const out = revealAlong(mm(m), initialState(mm(m)), tpl(translate({ x: 2, y: 0 }, "offset")));
-    const fog = out.maps[0]!.fog;
-    // grazed + diagonal cells for the (0,0)->(2,2) walk:
-    expect(fog[idx(6, 1, 0)]).toBe(1); // x-step graze
-    expect(fog[idx(6, 0, 1)]).toBe(1); // y-step graze
-    expect(fog[idx(6, 1, 1)]).toBe(1); // diagonal
-    expect(fog[idx(6, 2, 1)]).toBe(1); // x-step graze (second corner)
-    expect(fog[idx(6, 1, 2)]).toBe(1); // y-step graze
-    expect(fog[idx(6, 2, 2)]).toBe(1); // diagonal target
-  });
-
-  it("hazard on the diagonal cell fails the drug", () => {
-    // diagonal path (0,0)->(2,2) passes through (1,1); hazard there fails.
-    const m = hazard(emptyMap(6, { x: 0, y: 0 }), 1, 1);
-    const s = applyStep(mm(m), initialState(mm(m)), translate({ x: 2, y: 0 }, "offset"));
-    expect(s.failed).toBe(true);
-    expect(s.pos[0]).toEqual({ x: 1, y: 1 });
-  });
-
-  it("hazard on a grazed corner cell fails the drug before the diagonal", () => {
-    // first corner crossing grazes (1,0) (x-step) before reaching diagonal (1,1).
-    const m = hazard(emptyMap(6, { x: 0, y: 0 }), 1, 0);
-    const s = applyStep(mm(m), initialState(mm(m)), translate({ x: 2, y: 0 }, "offset"));
-    expect(s.failed).toBe(true);
-    expect(s.pos[0]).toEqual({ x: 1, y: 0 }); // rests on the grazed hazard
-  });
-
-  it("a wall on a grazed corner stops the sweep before the diagonal", () => {
-    // wall at the x-step graze (1,0): cannot squeeze diagonally past it.
-    const m = wall(emptyMap(6, { x: 0, y: 0 }), 1, 0);
-    const s = applyStep(mm(m), initialState(mm(m)), translate({ x: 2, y: 0 }, "offset"));
-    expect(s.failed).toBe(false);
-    expect(s.pos[0]).toEqual({ x: 0, y: 0 }); // stuck at start; corner blocked
-  });
-
-  it("a wall on the second grazed corner stops mid-diagonal", () => {
-    // first corner clear -> reach diagonal (1,1); second corner x-graze (2,1) is a wall.
-    const m = wall(emptyMap(6, { x: 0, y: 0 }), 2, 1);
-    const s = applyStep(mm(m), initialState(mm(m)), translate({ x: 2, y: 0 }, "offset"));
-    expect(s.failed).toBe(false);
-    expect(s.pos[0]).toEqual({ x: 1, y: 1 }); // rests on the first diagonal
-  });
-});
-
-// ───────────────────────────── axis-aligned regression ─────────────────────────────
-
-describe("axis-aligned sweep regression (no corner duplicates)", () => {
-  it("horizontal sweep enters exactly the straight cells, in order", () => {
-    const m = emptyMap(6, { x: 0, y: 2 });
-    const out = revealAlong(mm(m), initialState(mm(m)), tpl(translate({ x: 4, y: 0 })));
-    const fog = out.maps[0]!.fog;
-    for (let x = 1; x <= 4; x++) expect(fog[idx(6, x, 2)]).toBe(1);
-    expect(fog[idx(6, 0, 2)]).toBe(0); // start not entered
-    // no off-row cells revealed (no grazing)
-    for (let x = 0; x < 6; x++) {
-      for (let y = 0; y < 6; y++) {
-        if (y === 2 && x >= 1 && x <= 4) continue;
-        expect(fog[idx(6, x, y)]).toBe(0);
-      }
-    }
-  });
-
-  it("vertical sweep enters exactly the straight cells, in order", () => {
-    const m = emptyMap(6, { x: 3, y: 0 });
-    const out = revealAlong(mm(m), initialState(mm(m)), tpl(translate({ x: 4, y: 0 }, "perpendicular")));
-    const fog = out.maps[0]!.fog;
-    for (let y = 1; y <= 4; y++) expect(fog[idx(6, 3, y)]).toBe(1);
-    expect(fog[idx(6, 3, 0)]).toBe(0);
-    for (let x = 0; x < 6; x++) {
-      for (let y = 0; y < 6; y++) {
-        if (x === 3 && y >= 1 && y <= 4) continue;
-        expect(fog[idx(6, x, y)]).toBe(0);
-      }
-    }
-  });
-
-  it("property: any axis-aligned sweep reveals only same-row/col cells (no grazing)", () => {
-    fc.assert(
-      fc.property(
-        fc.integer({ min: 0, max: 9 }),
-        fc.integer({ min: 0, max: 9 }),
-        fc.integer({ min: 1, max: 8 }),
-        fc.constantFrom<TranslateRelation>("forward", "reverse"),
-        fc.boolean(),
-        (sx, sy, mag, rel, horizontal) => {
-          const n = 10;
-          const m = emptyMap(n, { x: sx, y: sy });
-          // horizontal: pure +x delta; vertical: pure +y delta. Both axis-aligned.
-          const d = horizontal ? { x: mag, y: 0 } : { x: 0, y: mag };
-          const out = revealAlong(mm(m), initialState(mm(m)), tpl(translate(d, rel)));
-          const fog = out.maps[0]!.fog;
-          for (let y = 0; y < n; y++) {
-            for (let x = 0; x < n; x++) {
-              if (fog[idx(n, x, y)] === 1) {
-                // every revealed cell shares the row (horizontal eff) or column (vertical eff)
-                expect(x === sx || y === sy).toBe(true);
-              }
-            }
-          }
-        },
-      ),
-    );
-  });
-});
-
-describe("allocation-free sweep endpoint", () => {
-  it("matches the canonical sweep for arbitrary walls, hazards, and vectors", () => {
-    fc.assert(
-      fc.property(
-        fc.array(fc.integer({ min: CellKind.Empty, max: CellKind.Hazard }), {
-          minLength: 49,
-          maxLength: 49,
-        }),
-        fc.integer({ min: 0, max: 6 }),
-        fc.integer({ min: 0, max: 6 }),
-        fc.integer({ min: -3, max: 9 }),
-        fc.integer({ min: -3, max: 9 }),
-        (cells, fromX, fromY, targetX, targetY) => {
-          const map = emptyMap(7, { x: fromX, y: fromY });
-          map.cell.set(cells);
-          const expected = sweep(map, { x: fromX, y: fromY }, { x: targetX, y: targetY });
-          const out = new Int32Array(3);
-          sweepInto(map, fromX, fromY, targetX, targetY, out, 0);
-          expect([out[0], out[1], out[2]]).toEqual([
-            expected.pos.x,
-            expected.pos.y,
-            expected.failed ? 1 : 0,
-          ]);
-        },
-      ),
-      { numRuns: 250 },
-    );
-  });
-});
-
-// ───────────────────────────── INV-2: scale ─────────────────────────────
-
-describe("scale (INV-2)", () => {
-  it("pulls toward origin by the exact rational, truncating toward zero", () => {
-    // origin at (0,0), start at (10, 6), scale 1/2 -> trunc(-10/2)=-5, trunc(-6/2)=-3 -> (5,3)
-    const m = emptyMap(12, { x: 10, y: 6 }, { x: 0, y: 0 });
-    const s = applyStep(mm(m), initialState(mm(m)), scale(1, 2));
-    expect(s.pos[0]).toEqual({ x: 5, y: 3 });
-    expect(s.failed).toBe(false);
-  });
-
-  it("truncates toward zero on odd distances (no float drift)", () => {
-    // origin (0,0), start (7,5), 1/2: trunc(-7/2)=-3, trunc(-5/2)=-2 -> (4,3)
-    const m = emptyMap(12, { x: 7, y: 5 }, { x: 0, y: 0 });
-    const s = applyStep(mm(m), initialState(mm(m)), scale(1, 2));
-    expect(s.pos[0]).toEqual({ x: 4, y: 3 });
-  });
-
-  it("works with a non-origin target and 1/3 ratio", () => {
-    // origin (1,1), start (10,7): delta=(-9,-6)*1/3=(-3,-2) -> (7,5)
-    const m = emptyMap(12, { x: 10, y: 7 }, { x: 1, y: 1 });
-    const s = applyStep(mm(m), initialState(mm(m)), scale(1, 3));
-    expect(s.pos[0]).toEqual({ x: 7, y: 5 });
-  });
-
-  it("scale toward origin past a wall stops one cell before it", () => {
-    // origin (0,0), start (10,0), 1/2 -> target (5,0). Put a wall at x=7.
-    const m = wall(emptyMap(12, { x: 10, y: 0 }, { x: 0, y: 0 }), 7, 0);
-    const s = applyStep(mm(m), initialState(mm(m)), scale(1, 2));
-    expect(s.failed).toBe(false);
-    expect(s.pos[0]).toEqual({ x: 8, y: 0 });
-  });
-
-  it("scale through a hazard fails", () => {
-    const m = hazard(emptyMap(12, { x: 10, y: 0 }, { x: 0, y: 0 }), 7, 0);
-    const s = applyStep(mm(m), initialState(mm(m)), scale(1, 2));
-    expect(s.failed).toBe(true);
-    expect(s.pos[0]).toEqual({ x: 7, y: 0 });
-  });
-
-  it("property: scale target equals pos + trunc((origin-pos)*num/den) component-wise", () => {
-    fc.assert(
-      fc.property(
-        fc.integer({ min: 0, max: 15 }),
-        fc.integer({ min: 0, max: 15 }),
-        fc.integer({ min: 0, max: 15 }),
-        fc.integer({ min: 0, max: 15 }),
-        fc.integer({ min: 1, max: 5 }),
-        fc.integer({ min: 1, max: 6 }),
-        (px, py, ox, oy, num, den0) => {
-          fc.pre(num < den0); // require 0 < num < den
-          const den = den0;
-          const n = 16;
-          const m = emptyMap(n, { x: px, y: py }, { x: ox, y: oy });
-          const s = applyStep(mm(m), initialState(mm(m)), scale(num, den));
-          const expected = {
-            x: px + Math.trunc(((ox - px) * num) / den),
-            y: py + Math.trunc(((oy - py) * num) / den),
-          };
-          // On an empty grid (no walls/hazards) the sweep reaches the target.
-          expect(s.failed).toBe(false);
-          expect(s.pos[0]).toEqual(expected);
-        },
-      ),
-    );
-  });
-});
-
-// ───────────────────────────── INV-3: swap ─────────────────────────────
-
-describe("swap (INV-3)", () => {
-  it("rejects same-map and out-of-range indices instead of silently doing nothing", () => {
-    const M = mm(emptyMap(5, { x: 1, y: 1 }), emptyMap(5, { x: 3, y: 3 }));
-    expect(() => applyStep(M, initialState(M), swap(0, 0))).toThrow(/swap.*distinct/i);
-    expect(() => applyStep(M, initialState(M), swap(0, 2))).toThrow(/swap.*range/i);
-  });
-
-  it("exchanges two maps' positions and never fails", () => {
-    const m0 = emptyMap(5, { x: 1, y: 1 });
-    const m1 = emptyMap(5, { x: 4, y: 3 });
-    const M = mm(m0, m1);
-    const s = applyStep(M, initialState(M), swap(0, 1));
-    expect(s.failed).toBe(false);
-    expect(s.pos[0]).toEqual({ x: 4, y: 3 });
-    expect(s.pos[1]).toEqual({ x: 1, y: 1 });
-  });
-
-  it("applying the same swap twice restores the original positions", () => {
-    fc.assert(
-      fc.property(
-        fc.integer({ min: 0, max: 4 }),
-        fc.integer({ min: 0, max: 4 }),
-        fc.integer({ min: 0, max: 4 }),
-        fc.integer({ min: 0, max: 4 }),
-        (ax, ay, bx, by) => {
-          const m0 = emptyMap(5, { x: ax, y: ay });
-          const m1 = emptyMap(5, { x: bx, y: by });
-          const M = mm(m0, m1);
-          const start = initialState(M);
-          const once = applyStep(M, start, swap(0, 1));
-          const twice = applyStep(M, once, swap(0, 1));
-          expect(twice.pos).toEqual(start.pos);
-          expect(twice.failed).toBe(false);
-        },
-      ),
-    );
-  });
-
-  it("swap ignores hazards entirely (never fails even atop a hazard cell)", () => {
-    const m0 = hazard(emptyMap(5, { x: 1, y: 1 }), 4, 3);
-    const m1 = hazard(emptyMap(5, { x: 4, y: 3 }), 1, 1);
-    const M = mm(m0, m1);
-    const s = applyStep(M, initialState(M), swap(0, 1));
-    expect(s.failed).toBe(false);
-    expect(s.pos[0]).toEqual({ x: 4, y: 3 });
-    expect(s.pos[1]).toEqual({ x: 1, y: 1 });
-  });
-});
-
-describe("previewStep", () => {
-  it("returns the authoritative entered cells when a wall stops the sweep", () => {
-    const map = wall(emptyMap(7, { x: 1, y: 1 }), 4, 1);
-    const M = mm(map);
-    const start = initialState(M);
-    const machine = translate({ x: 5, y: 0 });
-
-    const preview = previewStep(M, start, machine);
-
-    expect(preview.trails).toEqual([[{ x: 2, y: 1 }, { x: 3, y: 1 }]]);
-    expect(preview.next).toEqual({ pos: [{ x: 3, y: 1 }], failed: false });
-    expect(preview.next).toEqual(applyStep(M, start, machine));
-  });
-
-  it("reports no swept cells for a phase exchange", () => {
-    const M = mm(emptyMap(7, { x: 1, y: 1 }), emptyMap(7, { x: 5, y: 5 }));
-    const start = initialState(M);
-
-    const preview = previewStep(M, start, swap(0, 1));
-
-    expect(preview.trails).toEqual([[], []]);
-    expect(preview.next.pos).toEqual([start.pos[1], start.pos[0]]);
-  });
-});
-
-// ───────────────────────────── INV-6 / INV-7: evaluate ─────────────────────────────
-
-describe("evaluate (INV-6, INV-7)", () => {
-  it("final position alone determines cure/side-effect (two maps land on cures)", () => {
-    // A single uniform +x push of 3 lands BOTH maps on their cure cell at (3,0).
-    const m0 = cure(emptyMap(6, { x: 0, y: 0 }), 3, 0, 42);
-    const m1 = cure(emptyMap(6, { x: 0, y: 0 }), 3, 0, 9);
-    const M = mm(m0, m1);
-    const out = evaluate(M, initialState(M), tpl(translate({ x: 3, y: 0 })));
-    expect(out.failed).toBe(false);
-    expect(out.final).toEqual([{ x: 3, y: 0 }, { x: 3, y: 0 }]);
-    expect(out.cured).toEqual([42, 9]); // ascending MAP order, not id order
-    expect(out.sideEffects).toEqual([]);
-  });
-
-  it("final position alone determines outcome: stopping short of a cure cures nothing", () => {
-    // Cure at (3,0) but a wall at (2,0) stops the drug at (1,0): no cure.
-    const m = wall(cure(emptyMap(6, { x: 0, y: 0 }), 3, 0, 42), 2, 0);
-    const M = mm(m);
-    const out = evaluate(M, initialState(M), tpl(translate({ x: 3, y: 0 })));
-    expect(out.failed).toBe(false);
-    expect(out.final).toEqual([{ x: 1, y: 0 }]);
-    expect(out.cured).toEqual([]);
-  });
-
-  it("collects cure and side-effect ids in ascending map order", () => {
-    const m0 = cure(emptyMap(6, { x: 0, y: 0 }), 2, 0, 100);
-    const m1 = side(emptyMap(6, { x: 0, y: 0 }), 2, 0, 200);
-    const M = mm(m0, m1);
-    const out = evaluate(M, initialState(M), tpl(translate({ x: 2, y: 0 })));
-    expect(out.cured).toEqual([100]);
-    expect(out.sideEffects).toEqual([200]);
-  });
-
-  it("a spoiled drug cures nothing but still reports final position", () => {
-    let m = cure(emptyMap(6, { x: 0, y: 0 }), 5, 0, 1);
-    m = hazard(m, 2, 0);
-    const M = mm(m);
-    const out = evaluate(M, initialState(M), tpl(translate({ x: 5, y: 0 })));
-    expect(out.failed).toBe(true);
-    expect(out.cured).toEqual([]);
-    expect(out.sideEffects).toEqual([]);
-    expect(out.final).toEqual([{ x: 2, y: 0 }]);
-  });
-
-  it("is deterministic: evaluating twice yields an identical Outcome", () => {
-    const m0 = cure(side(emptyMap(7, { x: 0, y: 0 }), 6, 6, 3), 3, 0, 1);
-    const m1 = emptyMap(7, { x: 6, y: 0 }, { x: 0, y: 0 });
-    const M = mm(m0, m1);
-    const t = tpl(translate({ x: 3, y: 0 }), scale(1, 2), swap(0, 1));
-    const a = evaluate(M, initialState(M), t);
-    const b = evaluate(M, initialState(M), t);
-    expect(a).toEqual(b);
-  });
-
-  it("INV-7 property: evaluate is a pure function of (mm, start, template)", () => {
-    const arbStep: fc.Arbitrary<Machine> = fc.oneof(
-      fc.record({ d: arbVec, r: fc.constantFrom<TranslateRelation>("forward", "reverse", "perpendicular"), o: arbOrient }).map(
-        ({ d, r, o }) => translate(d, r, o),
-      ),
-      fc.record({ num: fc.integer({ min: 1, max: 3 }), den: fc.integer({ min: 2, max: 4 }) })
-        .filter(({ num, den }) => num < den)
-        .map(({ num, den }) => scale(num, den)),
-      fc.constant(swap(0, 1)),
-    );
-    fc.assert(
-      fc.property(fc.array(arbStep, { maxLength: 6 }), (steps) => {
-        const m0 = cure(emptyMap(8, { x: 2, y: 3 }, { x: 0, y: 0 }), 5, 5, 11);
-        const m1 = side(emptyMap(8, { x: 5, y: 1 }, { x: 7, y: 7 }), 1, 1, 22);
-        const M = mm(m0, m1);
-        const t = tpl(...steps);
-        const a = evaluate(M, initialState(M), t);
-        const b = evaluate(M, initialState(M), t);
-        const c = evaluate(M, initialState(M), t);
-        expect(b).toEqual(a);
-        expect(c).toEqual(a);
-        // applyTemplate must agree with evaluate's reported finals
-        const st = applyTemplate(M, initialState(M), t);
-        expect(a.final).toEqual(st.pos);
-        expect(a.failed).toBe(st.failed);
+        const result = applyStep(multiMap(map), initialState(multiMap(map)), machine(path, stroke));
+        expect(result.pos).toEqual([expected]);
       }),
     );
   });
 });
 
-// ───────────────────────────── INV-8: anti-copy ─────────────────────────────
+describe("evaluation and reveal", () => {
+  it("evaluates only final Cure and SideEffect cells", () => {
+    const curedMap = withCell(emptyMap(5, 5, { x: 1, y: 2 }), 2, 2, CellKind.Cure, {
+      cureId: 17,
+    });
+    const sideMap = withCell(emptyMap(5, 5, { x: 1, y: 2 }), 2, 2, CellKind.SideEffect, {
+      sideEffectId: 29,
+    });
+    const maps = multiMap(curedMap, sideMap);
 
-/** Rotate every translate step's orientation by +90° (rot+1 mod 4); leave others. */
-function rotateTemplate(t: Template): Template {
-  return {
-    steps: t.steps.map((m) => {
-      if (m.transform.kind !== "translate") return m;
-      const rot = ((m.orientation.rot + 1) % 4) as Rotation;
-      return { ...m, orientation: { rot, flip: m.orientation.flip } };
-    }),
-  };
-}
-
-describe("anti-copy (INV-8)", () => {
-  it("constructed: rotating a push template +90° changes the final positions", () => {
-    // Open 11x11 map, start near center; a forward +x push and a +x push2.
-    const m = emptyMap(11, { x: 5, y: 5 });
-    const M = mm(m);
-    const t = tpl(translate({ x: 3, y: 0 }, "forward"), translate({ x: 2, y: 0 }, "forward"));
-    const base = evaluate(M, initialState(M), t);
-    const rot = evaluate(M, initialState(M), rotateTemplate(t));
-    expect(base.final).not.toEqual(rot.final); // (10,5) vs (5,10)
+    expect(evaluate(maps, initialState(maps), template(machine([east], 1)))).toEqual({
+      failed: false,
+      final: [
+        { x: 2, y: 2 },
+        { x: 2, y: 2 },
+      ],
+      cured: [17],
+      sideEffects: [29],
+    });
   });
 
-  it("samples many open-map templates; rotation changes the outcome in the overwhelming majority", () => {
-    const arbTranslate: fc.Arbitrary<Machine> = fc
-      .record({
-        d: fc.record({ x: fc.integer({ min: -3, max: 3 }), y: fc.integer({ min: -3, max: 3 }) }),
-        r: fc.constantFrom<TranslateRelation>("forward", "reverse", "perpendicular"),
-        o: arbOrient,
-      })
-      // skip zero deltas (degenerate: rotation of (0,0) is still (0,0))
-      .filter(({ d }) => d.x !== 0 || d.y !== 0)
-      .map(({ d, r, o }) => translate(d, r, o));
+  it("a failed drug reports no cures or side effects", () => {
+    let map = withCell(emptyMap(5, 5, { x: 1, y: 2 }), 2, 2, CellKind.Abyss);
+    map = withCell(map, 3, 2, CellKind.Cure, { cureId: 17 });
+    const maps = multiMap(map);
 
-    let total = 0;
-    let changed = 0;
-    fc.assert(
-      fc.property(
-        fc.array(arbTranslate, { minLength: 1, maxLength: 4 }),
-        fc.record({ x: fc.integer({ min: 8, max: 12 }), y: fc.integer({ min: 8, max: 12 }) }),
-        (steps, start) => {
-          // Large open map so edges rarely clip and rotation genuinely matters.
-          const n = 21;
-          const clamp = (v: number): number => Math.max(0, Math.min(n - 1, v));
-          const m = emptyMap(n, { x: clamp(start.x), y: clamp(start.y) });
-          const M = mm(m);
-          const t = tpl(...steps);
-          const base = applyTemplate(M, initialState(M), t);
-          const rot = applyTemplate(M, initialState(M), rotateTemplate(t));
-          total++;
-          if (base.pos[0]?.x !== rot.pos[0]?.x || base.pos[0]?.y !== rot.pos[0]?.y) changed++;
-        },
-      ),
-      { numRuns: 400 },
-    );
-    // Robust, non-flaky: the vast majority must differ. (Some net-zero or
-    // rotation-symmetric sequences legitimately coincide.)
-    expect(changed / total).toBeGreaterThan(0.8);
-  });
-});
-
-// ───────────────────────────── revealAlong ─────────────────────────────
-
-describe("revealAlong", () => {
-  it("reveals every entered cell along the sweep and copies fog (no input mutation)", () => {
-    const m = emptyMap(6, { x: 0, y: 0 });
-    const M = mm(m);
-    const out = revealAlong(M, initialState(M), tpl(translate({ x: 3, y: 0 })));
-    const fog = out.maps[0]!.fog;
-    // start (0,0) NOT entered; (1,0),(2,0),(3,0) entered.
-    expect(fog[idx(6, 0, 0)]).toBe(0);
-    expect(fog[idx(6, 1, 0)]).toBe(1);
-    expect(fog[idx(6, 2, 0)]).toBe(1);
-    expect(fog[idx(6, 3, 0)]).toBe(1);
-    expect(fog[idx(6, 4, 0)]).toBe(0);
-    // input untouched
-    expect(M.maps[0]!.fog.every((v) => v === 0)).toBe(true);
-    // it is a NEW MultiMap / fog buffer
-    expect(out.maps[0]!.fog).not.toBe(M.maps[0]!.fog);
+    expect(evaluate(maps, initialState(maps), template(machine([east, east], 2)))).toEqual({
+      failed: true,
+      final: [{ x: 2, y: 2 }],
+      cured: [],
+      sideEffects: [],
+    });
   });
 
-  it("reveals up to and including the hazard cell that fails the drug", () => {
-    const m = hazard(emptyMap(6, { x: 0, y: 0 }), 2, 0);
-    const M = mm(m);
-    const out = revealAlong(M, initialState(M), tpl(translate({ x: 5, y: 0 })));
-    const fog = out.maps[0]!.fog;
-    expect(fog[idx(6, 1, 0)]).toBe(1);
-    expect(fog[idx(6, 2, 0)]).toBe(1); // the hazard cell IS entered
-    expect(fog[idx(6, 3, 0)]).toBe(0); // nothing beyond
-  });
+  it("reveals every entered path cell, including portal entry/exit and abyss", () => {
+    let map = withCell(emptyMap(8, 3, { x: 0, y: 1 }), 1, 1, CellKind.Portal, {
+      portalTo: { x: 5, y: 1 },
+    });
+    map = withCell(map, 6, 1, CellKind.Abyss);
+    const maps = multiMap(map);
+    const revealed = revealAlong(maps, initialState(maps), template(machine([east, east], 2)));
+    const fog = revealed.maps[0]?.fog;
 
-  it("does not reveal the wall cell that merely stops the sweep", () => {
-    const m = wall(emptyMap(6, { x: 0, y: 0 }), 3, 0);
-    const M = mm(m);
-    const out = revealAlong(M, initialState(M), tpl(translate({ x: 5, y: 0 })));
-    const fog = out.maps[0]!.fog;
-    expect(fog[idx(6, 2, 0)]).toBe(1);
-    expect(fog[idx(6, 3, 0)]).toBe(0); // the wall itself stays fogged
-  });
-
-  it("once the drug fails, later steps reveal nothing further", () => {
-    const m = hazard(emptyMap(8, { x: 0, y: 0 }), 1, 0);
-    const M = mm(m);
-    // Step 1 fails at (1,0). Step 2 would otherwise sweep far.
-    const out = revealAlong(M, initialState(M), tpl(translate({ x: 1, y: 0 }), translate({ x: 5, y: 0 })));
-    const fog = out.maps[0]!.fog;
-    expect(fog[idx(8, 1, 0)]).toBe(1);
-    for (let x = 2; x < 8; x++) expect(fog[idx(8, x, 0)]).toBe(0);
-  });
-});
-
-// ───────────────────────────── purity / immutability ─────────────────────────────
-
-describe("purity", () => {
-  it("applyStep returns a new state and never mutates inputs", () => {
-    const m = emptyMap(6, { x: 0, y: 0 });
-    const M = mm(m);
-    const start = initialState(M);
-    const snapshotPos = start.pos.map((p) => ({ ...p }));
-    const next = applyStep(M, start, translate({ x: 2, y: 0 }));
-    expect(next).not.toBe(start);
-    expect(start.pos).toEqual(snapshotPos); // start unchanged
-    expect(next.pos[0]).toEqual({ x: 2, y: 0 });
+    expect(fog?.[indexOf(map, 1, 1)]).toBe(1);
+    expect(fog?.[indexOf(map, 5, 1)]).toBe(1);
+    expect(fog?.[indexOf(map, 6, 1)]).toBe(1);
+    expect(map.fog.every((value) => value === 0)).toBe(true);
   });
 });

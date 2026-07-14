@@ -7,9 +7,11 @@ game.
 
 ## Visual language
 
-- Deep teal cellular substrate provides scale without exposing a visible tile grid.
-- Cyan protein crystals communicate impassable walls.
-- Amber-red enzymes communicate corrosive hazards.
+- Deep teal cellular substrate provides scale beneath the runtime's always-visible grid.
+- Solid high-contrast masonry plus protein-crystal detail communicates impassable walls.
+- Abyss, swamp, and paired directional portals are drawn by deterministic runtime geometry,
+  so their void rim, viscous drag marks, and portal destination markers remain unmistakable
+  at every zoom without relying on interchangeable bitmap decoration.
 - Violet colonies communicate side effects.
 - Gold/cyan receptors communicate therapeutic destinations.
 - The capsule and cyan halo keep the player's current position legible; the runtime draws route history separately.
@@ -17,10 +19,10 @@ game.
 
 `manifest.json` is the runtime integration contract. Texture URLs are resolved
 from `/assets/lab/`. The substrate and fog repeat exactly at their outer pixel
-edges. All six world sprites are normalized to transparent 512×512 PNGs.
+edges. All five sprite overlays are normalized to transparent 512×512 PNGs.
 
 The substrate must only be drawn for revealed terrain. Unrevealed terrain must
-be covered by an opaque fog or solid mask before any wall, hazard, side-effect,
+be covered by an opaque fog or solid mask before any wall, abyss, swamp, portal, side-effect,
 or cure sprite is rendered; otherwise the artwork would leak map information.
 
 ## Source and rights

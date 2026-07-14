@@ -1,4 +1,4 @@
-export const LAB_VIEWPORT = { width: 704, height: 512 } as const;
+export const LAB_VIEWPORT = { width: 832, height: 512 } as const;
 export const LAB_CELL_PIXELS = 40;
 export const LAB_MIN_ZOOM = 0.75;
 export const LAB_MAX_ZOOM = 2.25;

@@ -20,6 +20,8 @@ import type {
   FactoryTile,
   FactoryLayout,
   FactoryRuntime,
+  PathStamp,
+  Vec2,
 } from "../sim/phase0_interfaces";
 import { worldCells, worldInPorts, worldOutPorts } from "../sim/factory-geom";
 
@@ -72,7 +74,7 @@ export function machineVisualStyle(typeId: string): MachineVisualStyle {
       return { body: 0x258d9a, face: 0xcdf6f4, accent: 0x0d4d58 };
     case "dilute":
       return { body: 0x3a9b70, face: 0xd1f2df, accent: 0x15553a };
-    case "swap01":
+    case "settle":
       return { body: 0xbb4f83, face: 0xffddeb, accent: 0x6e2148 };
     default:
       return { body: 0x607080, face: 0xe2e8ed, accent: 0x26323d };
@@ -195,6 +197,47 @@ function drawTile(tile: FactoryTile, x: number, y: number, ctx: DrawCtx): void {
   cells.rect(px, py, CELL, CELL).stroke({ color: GRID_LINE, width: 1 });
 }
 
+export interface MachinePathGlyph {
+  readonly points: readonly Vec2[];
+  readonly activePointCount: number;
+}
+
+export function machinePathGlyph(path: PathStamp, stroke: number): MachinePathGlyph {
+  if (path.length === 0 || !Number.isSafeInteger(stroke) || stroke < 1 || stroke > path.length) {
+    throw new Error("Factory renderer requires a non-empty path and valid stroke prefix");
+  }
+  const authored: Vec2[] = [{ x: 0, y: 0 }];
+  let x = 0;
+  let y = 0;
+  let minX = 0;
+  let minY = 0;
+  let maxX = 0;
+  let maxY = 0;
+  for (const delta of path) {
+    x += delta.x;
+    y += delta.y;
+    authored.push({ x, y });
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+  }
+  const scale = 22 / Math.max(1, maxX - minX, maxY - minY);
+  const centerX = (minX + maxX) / 2;
+  const centerY = (minY + maxY) / 2;
+  return {
+    points: authored.map((point) => ({
+      x: (point.x - centerX) * scale,
+      y: (point.y - centerY) * scale,
+    })),
+    activePointCount: stroke + 1,
+  };
+}
+
+export function placedMachinePathGlyph(machine: PlacedMachine): MachinePathGlyph {
+  return machinePathGlyph(machine.def.path, machine.def.stroke);
+}
+
 function drawMachineGlyph(
   g: Graphics,
   machine: PlacedMachine,
@@ -202,39 +245,43 @@ function drawMachineGlyph(
   cy: number,
   color: number,
 ): void {
-  const typeId = machine.def.typeId;
-  if (typeId === "dilute") {
-    g.circle(cx, cy, 13).stroke({ color, width: 3 });
-    g.circle(cx, cy, 5).stroke({ color, width: 2 });
-    return;
+  const glyph = placedMachinePathGlyph(machine);
+  const first = glyph.points[0];
+  if (first === undefined) throw new Error("Factory renderer path glyph is missing its origin");
+  g.moveTo(cx + first.x, cy + first.y);
+  for (let index = 1; index < glyph.points.length; index++) {
+    const point = glyph.points[index];
+    if (point !== undefined) g.lineTo(cx + point.x, cy + point.y);
   }
-  if (typeId === "swap01") {
-    g.circle(cx - 9, cy - 6, 5).stroke({ color, width: 3 });
-    g.circle(cx + 9, cy + 6, 5).stroke({ color, width: 3 });
-    g.moveTo(cx - 13, cy + 7).bezierCurveTo(cx - 4, cy + 15, cx + 5, cy + 14, cx + 12, cy + 7)
-      .stroke({ color, width: 3 });
-    g.moveTo(cx + 13, cy - 7).bezierCurveTo(cx + 4, cy - 15, cx - 5, cy - 14, cx - 12, cy - 7)
-      .stroke({ color, width: 3 });
-    return;
+  g.stroke({ color, width: 2, alpha: 0.28 });
+
+  g.moveTo(cx + first.x, cy + first.y);
+  for (let index = 1; index < glyph.activePointCount; index++) {
+    const point = glyph.points[index];
+    if (point !== undefined) g.lineTo(cx + point.x, cy + point.y);
   }
-  if (typeId === "skew") {
-    g.moveTo(cx - 13, cy - 13).lineTo(cx + 12, cy + 12).stroke({ color, width: 4 });
-    drawArrow(g, cx + 5, cy + 5, 1, color, 0.22);
-    return;
+  g.stroke({ color, width: 3.5, alpha: 1 });
+  g.circle(cx + first.x, cy + first.y, 2.6).fill({ color });
+
+  const activeEnd = glyph.points[glyph.activePointCount - 1];
+  const beforeEnd = glyph.points[glyph.activePointCount - 2];
+  if (activeEnd === undefined || beforeEnd === undefined) {
+    throw new Error("Factory renderer path glyph is missing its active stroke endpoint");
   }
-  if (typeId === "shear") {
-    g.moveTo(cx - 13, cy - 9).lineTo(cx, cy - 9).lineTo(cx, cy + 11).stroke({ color, width: 4 });
-    drawArrow(g, cx, cy + 7, 1, color, 0.22);
-    return;
-  }
-  const base = machine.def.orientation.rot as Dir;
-  const direction = typeId === "pull" ? ((base + 2) & 3) as Dir : base;
-  drawArrow(g, cx, cy, direction, color, typeId === "push2" ? 0.4 : 0.32);
-  if (typeId === "push2") {
-    const dx = DIR_DX[direction] ?? 0;
-    const dy = DIR_DY[direction] ?? 0;
-    drawArrow(g, cx - dx * 12, cy - dy * 12, direction, color, 0.28);
-  }
+  const dx = activeEnd.x - beforeEnd.x;
+  const dy = activeEnd.y - beforeEnd.y;
+  const length = Math.hypot(dx, dy);
+  const ux = dx / length;
+  const uy = dy / length;
+  const px = -uy;
+  const py = ux;
+  const tipX = cx + activeEnd.x;
+  const tipY = cy + activeEnd.y;
+  g.moveTo(tipX, tipY)
+    .lineTo(tipX - ux * 6 + px * 4, tipY - uy * 6 + py * 4)
+    .lineTo(tipX - ux * 6 - px * 4, tipY - uy * 6 - py * 4)
+    .lineTo(tipX, tipY)
+    .fill({ color });
 }
 
 /** Draw a placed multi-cell machine: shaped body, semantic glyph, and port notches. */

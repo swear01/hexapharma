@@ -9,9 +9,8 @@ import type {
   FactoryTile,
   FactoryLayout,
   PlacedMachine,
-  Transform,
 } from "./phase0_interfaces";
-import { IDENTITY, MAX_FACTORY_REPLAY_TICKS, SHAPE_1x1 } from "./phase0_interfaces";
+import { CellKind, MAX_FACTORY_REPLAY_TICKS, SHAPE_1x1 } from "./phase0_interfaces";
 import { initialState } from "./drug-graph";
 import { hashFactory, replayFactory } from "./state";
 import { initFactory, snapshotFactory, stepFactory } from "./factory-sim";
@@ -30,18 +29,24 @@ function emptyMap(n: number, start: Vec2): EffectMap {
     cell: new Uint8Array(len),
     cureId: new Int16Array(len).fill(-1),
     sideEffectId: new Int32Array(len).fill(-1),
+    portalTo: new Int32Array(len).fill(-1),
     fog: new Uint8Array(len),
   };
 }
 
 function twoMaps(): MultiMap {
-  return { maps: [emptyMap(20, { x: 5, y: 5 }), emptyMap(20, { x: 8, y: 8 })] };
+  const first = emptyMap(20, { x: 5, y: 5 });
+  first.cell[0] = CellKind.Wall;
+  first.cell[1] = CellKind.Abyss;
+  first.cell[2] = CellKind.Swamp;
+  first.cell[3] = CellKind.Portal;
+  first.portalTo[3] = 19;
+  const second = emptyMap(20, { x: 8, y: 8 });
+  return { maps: [first, second] };
 }
 
-const PUSH_E: Transform = { kind: "translate", delta: { x: 1, y: 0 }, relation: "forward" };
-
 function machineDef(typeId: string, speed: number): FactoryMachineDef {
-  return { typeId, transform: PUSH_E, orientation: IDENTITY, cost: 1, speed };
+  return { typeId, path: [{ x: 1, y: 0 }], stroke: 1, cost: 1, speed };
 }
 
 function lineLayout(period: number, speed: number): FactoryLayout {

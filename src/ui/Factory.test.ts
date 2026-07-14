@@ -18,8 +18,7 @@ describe("facility workspace initialization", () => {
 });
 
 describe("facility sample visibility", () => {
-  it("never evaluates an outcome while planning a Research route", () => {
-    expect(facilityMayAnalyzeOutcome("research")).toBe(false);
+  it("evaluates zero-time Pilot samples and live Production outcomes", () => {
     expect(facilityMayAnalyzeOutcome("pilot")).toBe(true);
     expect(facilityMayAnalyzeOutcome("production")).toBe(true);
   });

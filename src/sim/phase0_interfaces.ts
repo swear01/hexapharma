@@ -7,24 +7,19 @@
  *
  * Hard rules (enforced by eslint on src/sim/**): no Math.random (use rng),
  * no Date.now/performance.now, no render/UI/DOM imports. Discrete quantities are
- * integers; ratios (scale) are rationals (num/den), never floats.
+ * integers.
  *
  * ───────────────────────────── Phase 0 invariants ─────────────────────────────
  * drug-graph:
- *   INV-1  translate: cell-by-cell sweep; stop one cell before a wall; if the path
- *          enters a hazard cell the whole drug fails; otherwise advance to vector end.
- *   INV-2  scale: each map's position is pulled toward that map's origin by the exact
- *          rational num/den (integer arithmetic only — no float drift).
- *   INV-3  swap: exchanges two maps' positions (pure relabel; no sweep, never fails).
- *   INV-4  orient: rotating a vector 4×90° returns the original vector.
- *   INV-5  orient: flipping twice returns the original vector.
- *   INV-6  evaluate: each map's FINAL position alone determines cure / side-effect;
+ *   INV-1  path: machines apply their cardinal-unit path prefix independently on
+ *          every map. Wall/OOB cancel one delta; Abyss fails; Swamp costs 2 energy.
+ *   INV-2  portal: entering a Portal records entry + same-map exit, then continues.
+ *   INV-3  stroke: an integer in [1,path.length], used as both prefix and energy.
+ *   INV-4  evaluate: each map's FINAL position alone determines cure / side-effect;
  *          fully deterministic and reproducible.
- *   INV-7  rearrange-invariance: identical machine sequence + orientations + per-unit
+ *   INV-5  rearrange-invariance: identical machine sequence + per-unit
  *          processing order ⇒ identical Outcome, regardless of belt layout
  *          (effect depends ONLY on the ordered steps, never on routing).
- *   INV-8  anti-copy: for most templates, synchronously rotating every translate step
- *          by +90° changes the Outcome (a blueprint cannot be blindly rotated/reused).
  * mapgen + solver:
  *   INV-9  constructive solvability: a generated level admits its constructed reference
  *          solution (evaluate(reference) cures the disease, not failed).
@@ -56,14 +51,18 @@ export interface Vec2 {
   readonly y: number;
 }
 
-/** Square-grid orientation: `rot` × 90° clockwise, then optional mirror (`flip`). */
+/** Physical square-grid rotation: `rot` × 90° clockwise. */
 export type Rotation = 0 | 1 | 2 | 3;
-export interface Orientation {
-  readonly rot: Rotation;
-  readonly flip: boolean;
-}
 
-export const IDENTITY: Orientation = { rot: 0, flip: false };
+/** A single cardinal, unit-length chemical path delta. */
+export type CardinalDelta =
+  | { readonly x: -1; readonly y: 0 }
+  | { readonly x: 1; readonly y: 0 }
+  | { readonly x: 0; readonly y: -1 }
+  | { readonly x: 0; readonly y: 1 };
+
+/** A machine's fixed chemical route, applied in array order. */
+export type PathStamp = readonly CardinalDelta[];
 
 // ─────────────────────────────── cells / maps ───────────────────────────────
 
@@ -71,9 +70,11 @@ export const IDENTITY: Orientation = { rot: 0, flip: false };
 export const CellKind = {
   Empty: 0,
   Wall: 1,
-  Hazard: 2,
-  SideEffect: 3,
-  Cure: 4,
+  Abyss: 2,
+  Swamp: 3,
+  Portal: 4,
+  SideEffect: 5,
+  Cure: 6,
 } as const;
 export type CellKind = (typeof CellKind)[keyof typeof CellKind];
 
@@ -94,6 +95,8 @@ export interface EffectMap {
   readonly cureId: Int16Array;
   /** length width*height; globally unique SideEffectId at SideEffect cells, else -1. */
   readonly sideEffectId: Int32Array;
+  /** length width*height; same-map destination index at Portal cells, else -1. */
+  readonly portalTo: Int32Array;
   /** length width*height; 0 = fogged/hidden, 1 = revealed. */
   readonly fog: Uint8Array;
 }
@@ -106,52 +109,19 @@ export interface MultiMap {
 /** Dynamic per-drug state: one position per map + a sticky failure flag. */
 export interface DrugState {
   readonly pos: readonly Vec2[]; // length N
-  readonly failed: boolean; // true once a sweep has entered a hazard
+  readonly failed: boolean; // true once a path has entered an abyss
 }
 
-// ─────────────────────────────── machines / transforms ───────────────────────────────
+// ─────────────────────────────── machines / paths ───────────────────────────────
 
-/**
- * How a translate machine's physical orientation maps to its effect direction.
- * Heterogeneous relations are what stop a finished blueprint from being blindly
- * rotated onto a new target (INV-8). The four classes match design D11 (順/逆/垂直/偏移):
- *  - "forward":       effect delta = orient(delta, o)
- *  - "reverse":       effect delta = orient(negate(delta), o)
- *  - "perpendicular": effect delta = orient(perpCW(delta), o)         where perpCW(x,y) = (-y, x)
- *  - "offset":        effect delta = orient(skew(delta), o)           where skew(x,y) = (x - y, x + y)
- *                     (a +45° diagonal skew: an axis delta like (a,0) becomes the diagonal (a,a),
- *                      so offset machines move the drug diagonally — the sweep is supercover.)
- */
-export type TranslateRelation = "forward" | "reverse" | "perpendicular" | "offset";
-
-export type Transform =
-  | {
-      readonly kind: "translate";
-      readonly delta: Vec2;
-      readonly relation: TranslateRelation;
-    }
-  | {
-      /** Pull every map's position toward its origin by num/den. Requires 0 < num < den. */
-      readonly kind: "scale";
-      readonly num: number;
-      readonly den: number;
-    }
-  | {
-      /** Swap the drug's positions on maps a and b. Requires a !== b and both in range. */
-      readonly kind: "swap";
-      readonly a: MapIndex;
-      readonly b: MapIndex;
-    };
-
-/** A machine = an oriented transform applied uniformly to ALL maps in one step. */
+/** A fixed chemical path and its active prefix/energy, applied to every map. */
 export interface Machine {
   readonly typeId: MachineTypeId;
-  readonly transform: Transform;
-  /** Meaningful only for translate; ignored by scale/swap. */
-  readonly orientation: Orientation;
+  readonly path: PathStamp;
+  readonly stroke: number;
 }
 
-/** A recipe = an ordered sequence of machine steps (each carries its own orientation). */
+/** A recipe = an ordered sequence of fixed chemical path steps. */
 export interface Template {
   readonly steps: readonly Machine[];
 }
@@ -166,29 +136,19 @@ export interface Outcome {
 
 // ─────────────────────────────── drug-graph API ───────────────────────────────
 
-/** Rotate/mirror a vector about the origin per orientation. INV-4, INV-5. */
-export type OrientFn = (v: Vec2, o: Orientation) => Vec2;
-
-/** The effective translation a translate-machine applies, combining relation + orientation. */
-export type EffectiveDeltaFn = (
-  delta: Vec2,
-  relation: TranslateRelation,
-  o: Orientation,
-) => Vec2;
-
 /** Drug state at the start of a level: pos = each map's start, failed = false. */
 export type InitialStateFn = (mm: MultiMap) => DrugState;
 
-/** Apply one machine to all maps with sweep semantics. INV-1, INV-2, INV-3. */
+/** Apply one machine path independently to all maps. INV-1..3. */
 export type ApplyStepFn = (mm: MultiMap, s: DrugState, m: Machine) => DrugState;
 
 /** Apply a whole template in order. */
 export type ApplyTemplateFn = (mm: MultiMap, start: DrugState, t: Template) => DrugState;
 
-/** Evaluate a template into a cure/side-effect/failure outcome. INV-6, INV-7. */
+/** Evaluate a template into a cure/side-effect/failure outcome. INV-4, INV-5. */
 export type EvaluateFn = (mm: MultiMap, start: DrugState, t: Template) => Outcome;
 
-/** Reveal fog along every sweep path of a template (lab experimentation). Returns a new MultiMap. */
+/** Reveal fog along every entered path cell (research experimentation). Returns a new MultiMap. */
 export type RevealAlongFn = (mm: MultiMap, start: DrugState, t: Template) => MultiMap;
 
 // ─────────────────────────────── rng API ───────────────────────────────
@@ -217,15 +177,13 @@ export type RestoreRngFn = (state: RngState) => Rng;
 
 // ─────────────────────────────── solver API ───────────────────────────────
 
-/** A machine type the solver/mapgen may use, with its processing cost. */
+/** A machine type's immutable full path and processing attributes. */
 export interface MachineCatalogEntry {
   readonly typeId: MachineTypeId;
-  readonly transform: Transform;
+  readonly path: PathStamp;
   readonly cost: number;
   /** Fixed ticks to process one unit in the factory. */
   readonly speed: number;
-  /** If true (translate only), the search may rotate/flip this machine. */
-  readonly orientable: boolean;
 }
 
 export interface SolveOptions {
@@ -286,8 +244,8 @@ export type DifficultyToBasePriceFn = (difficulty: number, refCost: number) => n
 
 /**
  * Default Phase 0 machine catalog. Frozen shared data so CLI, solver, mapgen and
- * tests all agree. Orientable translate entries expand to all 4 rotations (+flip)
- * during search, so axis-specific variants are unnecessary.
+ * tests all agree. Paths are fixed chemical routes; physical footprint rotation
+ * never rotates these deltas.
  */
 function deepFreezeData<T>(value: T): T {
   if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
@@ -297,14 +255,34 @@ function deepFreezeData<T>(value: T): T {
   return value;
 }
 
+const EAST: CardinalDelta = { x: 1, y: 0 };
+const WEST: CardinalDelta = { x: -1, y: 0 };
+const NORTH: CardinalDelta = { x: 0, y: -1 };
+const SOUTH: CardinalDelta = { x: 0, y: 1 };
+
 export const DEFAULT_CATALOG: readonly MachineCatalogEntry[] = deepFreezeData([
-  { typeId: "push", transform: { kind: "translate", delta: { x: 3, y: 0 }, relation: "forward" }, cost: 2, speed: 2, orientable: true },
-  { typeId: "push2", transform: { kind: "translate", delta: { x: 7, y: 0 }, relation: "forward" }, cost: 6, speed: 7, orientable: true },
-  { typeId: "pull", transform: { kind: "translate", delta: { x: 3, y: 0 }, relation: "reverse" }, cost: 2, speed: 3, orientable: true },
-  { typeId: "shear", transform: { kind: "translate", delta: { x: 4, y: 0 }, relation: "perpendicular" }, cost: 4, speed: 5, orientable: true },
-  { typeId: "skew", transform: { kind: "translate", delta: { x: 4, y: 0 }, relation: "offset" }, cost: 5, speed: 6, orientable: true },
-  { typeId: "dilute", transform: { kind: "scale", num: 1, den: 2 }, cost: 6, speed: 8, orientable: false },
-  { typeId: "swap01", transform: { kind: "swap", a: 0, b: 1 }, cost: 7, speed: 9, orientable: false },
+  { typeId: "push", path: [EAST, EAST, SOUTH], cost: 2, speed: 2 },
+  {
+    typeId: "push2",
+    path: [EAST, NORTH, EAST, SOUTH, EAST, SOUTH, EAST],
+    cost: 6,
+    speed: 7,
+  },
+  { typeId: "pull", path: [WEST, WEST, NORTH], cost: 2, speed: 3 },
+  { typeId: "shear", path: [NORTH, NORTH, EAST, SOUTH], cost: 4, speed: 5 },
+  { typeId: "skew", path: [SOUTH, EAST, SOUTH, WEST, SOUTH, EAST], cost: 5, speed: 6 },
+  {
+    typeId: "dilute",
+    path: [EAST, SOUTH, WEST, NORTH, EAST, SOUTH, WEST, NORTH],
+    cost: 6,
+    speed: 8,
+  },
+  {
+    typeId: "settle",
+    path: [SOUTH, SOUTH, EAST, EAST, NORTH, NORTH, NORTH, WEST, WEST],
+    cost: 7,
+    speed: 9,
+  },
 ]);
 
 // ═══════════════════════════════ Phase 2 — factory (spatial packing + throughput) ═══════════════════════════════
@@ -315,9 +293,8 @@ export const DEFAULT_CATALOG: readonly MachineCatalogEntry[] = deepFreezeData([
 // Invariants: mass conservation, no spawn/vanish, throughput consistency (steady-state
 // output = real bottleneck under parallelism), deadlock detection, determinism (INV-15).
 //
-// EFFECT vs PACKING: a machine's `def.orientation` (recipe-locked) determines the DRUG
-// EFFECT; its `footRot` (placement) only rotates the footprint/ports for spatial packing
-// and NEVER changes the effect — so packing + belt routing preserve the cure (INV-7).
+// EFFECT vs PACKING: a machine's `def.path` determines the DRUG EFFECT; its `footRot`
+// only rotates the footprint/ports for spatial packing and NEVER changes the effect.
 
 /** Cardinal direction on the square grid (y-down): 0=E, 1=S, 2=W, 3=N. */
 export type Dir = 0 | 1 | 2 | 3;
@@ -342,11 +319,11 @@ export const MAX_REWIND_HISTORY_REPLAY_TICKS = 12_000;
 export const MAX_REWIND_HISTORY_TRACE_ENTRIES = 8_192;
 export const MAX_REWIND_HISTORY_REPLAY_WORK = 100_000_000;
 
-/** A machine as placed in the factory: a drug-transform + throughput attributes. */
+/** A machine as placed in the factory: a chemical path + throughput attributes. */
 export interface FactoryMachineDef {
   readonly typeId: MachineTypeId;
-  readonly transform: Transform; // applied to a unit's DrugState when processing completes
-  readonly orientation: Orientation; // for translate
+  readonly path: PathStamp;
+  readonly stroke: number;
   readonly cost: number; // processing cost charged per unit produced
   readonly speed: number; // ticks to process one unit (integer >= 1; larger = slower = bottleneck)
 }
@@ -366,8 +343,8 @@ export interface MachineShape {
 
 /**
  * A machine placed on the factory grid. `footRot` rotates the footprint cells + ports
- * about the anchor (0..3 quarter-turns) for spatial packing ONLY; the effect-determining
- * drug orientation lives in `def.orientation` and is independent (INV-7).
+ * about the anchor (0..3 quarter-turns) for spatial packing ONLY; it never rotates
+ * the chemical path in `def.path`.
  * Phase 2: one unit in process per machine at a time (capacity 1) — parallelism comes
  * from placing multiple machines fed by a splitter.
  */
@@ -406,7 +383,7 @@ export interface FactoryLayout {
  * A drug in transit. On a belt: `machineId = null`, `proc = 0`, `pos` = the belt cell.
  * Inside a machine: `machineId` = that machine's id, `proc` counts up to its `speed`,
  * `pos` = the machine's (world) input-port cell it entered through. On completion the
- * transform is applied once and the unit leaves via an output port onto the belt.
+ * path is applied once and the unit leaves via an output port onto the belt.
  */
 export interface Unit {
   readonly id: number;
@@ -630,6 +607,17 @@ export const SHAPE_VAT: MachineShape = deepFreezeData({
   outPorts: [{ cell: { x: 2, y: 1 }, side: SH_E }],
 });
 
+/** Seven-cell U-settler; the open chamber makes its return path legible in packing. */
+export const SHAPE_SETTLER: MachineShape = deepFreezeData({
+  cells: [
+    { x: 0, y: 0 }, { x: 0, y: 1 }, { x: 0, y: 2 },
+    { x: 1, y: 2 },
+    { x: 2, y: 2 }, { x: 2, y: 1 }, { x: 2, y: 0 },
+  ],
+  inPorts: [{ cell: { x: 0, y: 0 }, side: SH_W }],
+  outPorts: [{ cell: { x: 2, y: 0 }, side: SH_E }],
+});
+
 /** Canonical footprint per machine type (each type has a fixed shape, Big-Pharma style). */
 export const DEFAULT_SHAPES: Readonly<Record<MachineTypeId, MachineShape>> = deepFreezeData({
   push: SHAPE_PUMP,
@@ -638,7 +626,7 @@ export const DEFAULT_SHAPES: Readonly<Record<MachineTypeId, MachineShape>> = dee
   shear: SHAPE_CENTRIFUGE,
   skew: SHAPE_SKEW,
   dilute: SHAPE_VAT,
-  swap01: SHAPE_LONG_BED,
+  settle: SHAPE_SETTLER,
 });
 
 // ═══════════════════════════════ Phase 3 — economy / patent / save ═══════════════════════════════
@@ -690,8 +678,7 @@ export type NextUnitPriceFn = (basePrice: number, alreadySold: number) => number
 export type PatentEffect =
   | { readonly kind: "unlockMachine"; readonly typeId: MachineTypeId }
   | { readonly kind: "expandFactory"; readonly dw: number; readonly dh: number }
-  | { readonly kind: "revealAid"; readonly amount: number }
-  | { readonly kind: "unlockMap" }; // unlock a new ingredient map (go deeper)
+  | { readonly kind: "revealAid"; readonly amount: number };
 
 export interface PatentNode {
   readonly id: string;
@@ -743,7 +730,7 @@ export interface GameOrigin {
 }
 
 export interface ResearchShot {
-  /** Number of route machines whose effects have already completed. */
+  /** Number of programmed machine paths whose effects have already completed. */
   readonly step: number;
   /** The physical drug state after `step` completed effects. */
   readonly drug: DrugState;
@@ -752,31 +739,27 @@ export interface ResearchShot {
 }
 
 export interface ResearchFacilityState {
-  readonly layout: FactoryLayout | null;
+  readonly program: Template;
   readonly shot: ResearchShot | null;
   readonly lastOutcome: Outcome | null;
 }
 
 export interface PilotFacilityState {
   readonly layout: FactoryLayout | null;
-  /** Effect contract proven by the Research route that seeded this Pilot layout. */
-  readonly contract: Template | null;
 }
 
 export interface ProductionFacilityState {
   readonly layout: FactoryLayout | null;
-  readonly contract: Template | null;
   readonly runtime: FactoryRuntime | null;
   readonly waste: number;
 }
 
 /** Every authoritative whole-game state transition; consecutive factory ticks are normalized. */
 export type GameIntent =
-  | { readonly kind: "setResearchLayout"; readonly layout: FactoryLayout }
+  | { readonly kind: "setResearchProgram"; readonly program: Template }
   | { readonly kind: "beginResearchShot" }
   | { readonly kind: "advanceResearchShot" }
   | { readonly kind: "abortResearchShot" }
-  | { readonly kind: "sendResearchToPilot" }
   | { readonly kind: "setPilotLayout"; readonly layout: FactoryLayout }
   | { readonly kind: "sendPilotToProduction" }
   | { readonly kind: "setProductionLayout"; readonly layout: FactoryLayout }

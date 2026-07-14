@@ -1,45 +1,49 @@
 # Roadmap
 
-> 原則：先完成可 headless 驗證的 sim authority，再接薄 render/UI；每階段以 `npm run check` 為唯一自動驗收。
+> 原則：先完成可 headless 驗證的 authority，再接薄 render/UI；每階段以 `npm run check` 為唯一自動驗收。舊階段記錄是 implementation history，不凌駕目前 breaking target。
 
-## Phase 0 — Drug graph / mapgen / solver ✅
+## Historical baseline
 
-- 確定性多圖 transform、sweep、evaluate、fog。
-- Constructive mapgen、difficulty/price、dev/test-only solver、RNG/hash/replay。
+### Phase 0 — Drug graph / early mapgen / solver
 
-## Phase 1 — Effect Atlas ✅
+曾完成 deterministic transform/sweep/evaluate、constructive generation、RNG/hash 與 dev/test solver。其multi-layer/swap與舊terrain API已由single-layer PathStamp core取代。
 
-- Pixi/React 可見研究地圖、opaque fog、active layers、局部 camera、原創 atlas assets。
-- `63×63` 中心開局、1→2→3→4 layer progression。
+### Phase 1 — Early Effect Atlas
 
-## Phase 2 — Factory sim ✅
+曾完成 Pixi/React Atlas、opaque fog、camera 與原創資產。Atlas renderer/camera 可重用，但 A–D tabs、route token 與舊 map assumptions 不是新 milestone truth。
 
-- Multi-cell machines、belts、splitter/merger、processing、throughput/deadlock。
-- fixed SoA zero-allocation hot tick、cold snapshot/hash/replay、geometry identity。
+### Phase 2 — Factory sim
 
-## Phase 3 — Economy / Technology / Save ✅
+fixed-capacity SoA runtime、multi-cell machines、belts、splitter/merger、throughput/deadlock、cold snapshot/hash 是保留基礎；contract-dependent product acceptance後由Phase 6改成actual outcome。
 
-- 實體產品、Market、Knowledge、patent tree/deeper reset。
-- GameState intent replay、Save/Checkpoint budgets、multi-slot rewind/recovery。
+### Phase 3 — Economy / Technology / Save v5
 
-## Phase 4 — Direct-operation game shell ✅
+Market、Knowledge、patents、intent replay/checkpoint提供遷移基礎；Save v5、layer unlock/reset與contract fields後由v6/single-Atlas authority取代。
 
-- viewport shell、HUD、hotbar/inspector、Factory direct manipulation、responsive/playwright coverage。
-- world-first 原創視覺，管理功能使用 cards/drawers 而非把世界做成 web form。
+### Phase 4 — Direct-operation shell
 
-## Phase 5 — Three facilities / Blueprint v1 ✅
+F1–F3 world shell、drawers、Factory direct manipulation與responsive patterns已重用；Research Route Floor/modebar與舊onboarding已移除，screenshot evidence由Phase 6重建。
 
-- Research：實體 route、付費 progressive shot、完成步驟才揭霧。
-- Pilot Plant：零時間/零成本的 layout prototype。
-- Production：唯一 continuous tick authority。
-- exact Research→Pilot→Production transfer；移除舊 Pilot Bench/Recipe-list authority。
-- F1–F3 三頁、M/T/B drawers；origin-centered 5×5 grid、無 XY 軸/auto-follow。
-- cross-save strict Blueprint Library v1；Save v5。
-- 驗收證據：active docs 已同步、完整 gate 通過、六輪 audit 無 blocker/major、`:53346` 真人 smoke 通過。
+### Phase 5 — Old three-facility contract chain（superseded）
 
-## Next — Playtesting and balance
+曾實作 Research linear FactoryLayout → contract → Pilot validation → Production。這條 authority 已被新設計推翻，不再是完成標準，也不能以舊 gate/audit 證據宣稱新 milestone 完成。
 
-- 以真人資料調 machine distance/shape/speed/cost、最短解、吞吐、difficulty→price 與 unlock pacing。
-- 補 onboarding、更多疾病/transform/美術與聲音、可觀測性與正式內容。
-- 正式 release candidate 才 freeze save format 並設計 migration policy。
-- 雲端 Blueprint 分享、帳戶與社群 repository 屬 post-MVP；本地標準化匯入匯出已先成立。
+## Phase 6 — Single-Atlas PathStamp redesign ✅
+
+- fixed irregular Machine PathStamp + prefix calibration + ResearchProgram。
+- wall／abyss／swamp／same-layer A→B portal；暫停 cross-layer/swap。
+- seeded radial + motif constructive mapgen。
+- Research 只探索；Pilot 是 independent zero-time/cost FactoryLayout sandbox。
+- no-contract/no-cure commission；Production exact copy Pilot並承擔 actual outcomes。
+- Blueprint wire/ruleset v2已完成：`research-program`/`pilot-plant` strict codec、Library UI與cross-save lifecycle。
+- Save v6 full/compact/slots/rewind、new intents/hash/replay與checkpoint UI/lineage已完成；E2E隨gate驗證。
+- single Atlas UI、new screenshots、updated playtest、full gate + remote browser smoke已完成。
+
+狀態與TDD證據見[plan.md](plan.md)。2026-07-14 `npm run check`通過：37個Vitest files／468 tests、33個Playwright tests。
+
+## Later
+
+- 依真人資料調 radial/motif density、terrain rules、Research cost、machine throughput、difficulty/price 與 unlock pacing。
+- 增加 motifs、PathStamps、factory machines、疾病、市場與正式美術/聲音。
+- Blueprint v2與Save v6 core wire都已先breaking freeze；之後若改wire必須升版而非reinterpret。Release candidate再建立正式migration/deprecation matrix。
+- 雲端 Blueprint 分享、帳戶與社群 repository 屬 post-MVP。

@@ -1,101 +1,59 @@
-import type { Orientation, Transform } from "../sim/phase0_interfaces";
-import { IDENTITY } from "../sim/phase0_interfaces";
+import type { PathStamp } from "../sim/phase0_interfaces";
 
 export interface MachineIconProps {
   readonly typeId: string;
-  readonly transform: Transform;
-  readonly orientation?: Orientation;
+  readonly path: PathStamp;
+  readonly stroke?: number;
   readonly title?: string;
   readonly size?: number;
 }
 
-type TranslateShape = "arrow" | "double-arrow" | "reverse-arrow" | "right-angle" | "diagonal";
-
-function translateShape(typeId: string, transform: Extract<Transform, { kind: "translate" }>): TranslateShape {
-  if (typeId === "push2") return "double-arrow";
-  if (transform.relation === "reverse" || typeId === "pull") return "reverse-arrow";
-  if (transform.relation === "perpendicular" || typeId === "shear") return "right-angle";
-  if (transform.relation === "offset" || typeId === "skew") return "diagonal";
-  return "arrow";
+interface Point {
+  readonly x: number;
+  readonly y: number;
 }
 
-function TranslateDrawing({ shape }: { readonly shape: TranslateShape }) {
-  if (shape === "double-arrow") {
-    return (
-      <g data-icon-shape="double-arrow">
-        <path d="M-14-6H9" />
-        <path d="m3-12 7 6-7 6" />
-        <path d="M-14 6H9" />
-        <path d="m3 0 7 6-7 6" />
-      </g>
-    );
+function iconPoints(path: PathStamp): readonly Point[] {
+  const raw: Point[] = [{ x: 0, y: 0 }];
+  let x = 0;
+  let y = 0;
+  for (const delta of path) {
+    x += delta.x;
+    y += delta.y;
+    raw.push({ x, y });
   }
-  if (shape === "reverse-arrow") {
-    return (
-      <g data-icon-shape="reverse-arrow">
-        <path d="M14 0H-10" />
-        <path d="m-4-7-7 7 7 7" />
-      </g>
-    );
-  }
-  if (shape === "right-angle") {
-    return (
-      <g data-icon-shape="right-angle">
-        <path d="M-14-8H0V10" />
-        <path d="m-6 4 6 7 6-7" />
-      </g>
-    );
-  }
-  if (shape === "diagonal") {
-    return (
-      <g data-icon-shape="diagonal">
-        <path d="m-11-11 20 20" />
-        <path d="M9 1v8H1" />
-      </g>
-    );
-  }
-  return (
-    <g data-icon-shape="arrow">
-      <path d="M-14 0H10" />
-      <path d="m4-7 7 7-7 7" />
-    </g>
-  );
+  const xs = raw.map((point) => point.x);
+  const ys = raw.map((point) => point.y);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const span = Math.max(1, maxX - minX, maxY - minY);
+  const scale = 30 / span;
+  const centerX = (minX + maxX) / 2;
+  const centerY = (minY + maxY) / 2;
+  return raw.map((point) => ({
+    x: 24 + (point.x - centerX) * scale,
+    y: 24 + (point.y - centerY) * scale,
+  }));
 }
 
-function InwardRing() {
-  return (
-    <g data-icon-shape="inward-ring">
-      <circle r="15" />
-      <circle r="5" />
-      <path d="M0-14v7m-4-4 4 4 4-4" />
-      <path d="M14 0H7m4-4-4 4 4 4" />
-      <path d="M0 14V7m4 4-4-4-4 4" />
-      <path d="M-14 0h7m-4 4 4-4-4-4" />
-    </g>
-  );
-}
-
-function PhaseSwap() {
-  return (
-    <g data-icon-shape="phase-swap">
-      <circle cx="-9" cy="-7" r="5" />
-      <circle cx="9" cy="7" r="5" />
-      <path d="M-13 6C-8 13 2 14 9 8" />
-      <path d="m4 7 6 1-1 6" />
-      <path d="M13-6C8-13-2-14-9-8" />
-      <path d="m-4-7-6-1 1-6" />
-    </g>
-  );
+function pointList(points: readonly Point[]): string {
+  return points.map((point) => `${point.x},${point.y}`).join(" ");
 }
 
 export function MachineIcon({
   typeId,
-  transform,
-  orientation = IDENTITY,
+  path,
+  stroke = path.length,
   title,
   size = 24,
 }: MachineIconProps) {
   const labelled = title !== undefined;
+  const points = iconPoints(path);
+  const activeCount = Math.max(1, Math.min(stroke, path.length)) + 1;
+  const active = points.slice(0, activeCount);
+  const endpoint = active.at(-1) ?? points[0]!;
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
@@ -112,17 +70,13 @@ export function MachineIcon({
       role={labelled ? "img" : undefined}
       aria-label={title}
       data-machine-icon={typeId}
+      data-stroke={stroke}
     >
       {labelled && <title>{title}</title>}
-      {transform.kind === "translate" ? (
-        <g transform={`translate(24 24) scale(${orientation.flip ? -1 : 1} 1) rotate(${orientation.rot * 90})`}>
-          <TranslateDrawing shape={translateShape(typeId, transform)} />
-        </g>
-      ) : (
-        <g transform="translate(24 24)">
-          {transform.kind === "scale" ? <InwardRing /> : <PhaseSwap />}
-        </g>
-      )}
+      <polyline points={pointList(points)} opacity="0.25" data-icon-shape="full-path" />
+      <polyline points={pointList(active)} data-icon-shape="active-path" />
+      <circle cx={points[0]!.x} cy={points[0]!.y} r="3" fill="currentColor" />
+      <circle cx={endpoint.x} cy={endpoint.y} r="4" fill="none" data-icon-endpoint="true" />
     </svg>
   );
 }

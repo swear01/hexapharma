@@ -94,7 +94,7 @@ function normalizedIntentExtends(earlier: GameIntent, later: GameIntent): boolea
     return later.ticks >= earlier.ticks;
   }
   if (
-    (earlier.kind === "setResearchLayout" ||
+    (earlier.kind === "setResearchProgram" ||
       earlier.kind === "setPilotLayout" ||
       earlier.kind === "setProductionLayout") &&
     later.kind === earlier.kind

@@ -42,7 +42,7 @@ import {
 // BFS over free cells, connecting source→m0.in, each m_i.out→m_{i+1}.in, and
 // m_last.out→sink.
 //
-// The effect-determining drug orientation lives in each machine's `def.orientation`
+// The effect-determining fixed path lives in each machine's `def.path`/`def.stroke`
 // and is INDEPENDENT of `footRot` (packing only) — so the shaped packing + belt
 // routing preserve the cure exactly (INV-7). factoryOutcome runs the layout via
 // the fixed-capacity runtime until a unit reaches the sink, then reads its final DrugState into
@@ -73,19 +73,23 @@ function shapeOf(typeId: string): MachineShape {
 
 function defOf(step: Machine): FactoryMachineDef {
   const entry = catalogEntry(step.typeId);
-  const transform = step.transform.kind === "translate"
-    ? {
-        kind: "translate" as const,
-        delta: { x: step.transform.delta.x, y: step.transform.delta.y },
-        relation: step.transform.relation,
-      }
-    : step.transform.kind === "scale"
-      ? { kind: "scale" as const, num: step.transform.num, den: step.transform.den }
-      : { kind: "swap" as const, a: step.transform.a, b: step.transform.b };
+  if (
+    !Array.isArray(step.path) ||
+    step.path.length !== entry.path.length ||
+    step.path.some((delta, index) => {
+      const expected = entry.path[index];
+      return expected === undefined || delta.x !== expected.x || delta.y !== expected.y;
+    })
+  ) {
+    throw new Error(`compileTemplate: machine "${step.typeId}" path does not match the catalog`);
+  }
+  if (!Number.isSafeInteger(step.stroke) || step.stroke < 1 || step.stroke > entry.path.length) {
+    throw new Error(`compileTemplate: machine "${step.typeId}" stroke is invalid`);
+  }
   return {
     typeId: step.typeId,
-    transform,
-    orientation: { rot: step.orientation.rot, flip: step.orientation.flip },
+    path: step.path.map((delta) => ({ x: delta.x, y: delta.y })) as Machine["path"],
+    stroke: step.stroke,
     cost: entry.cost,
     speed: entry.speed,
   };
@@ -362,19 +366,8 @@ export function compilePrototype(
 function machineStep(placed: PlacedMachine): Machine {
   return {
     typeId: placed.def.typeId,
-    transform: placed.def.transform.kind === "translate"
-      ? {
-          kind: "translate",
-          delta: { x: placed.def.transform.delta.x, y: placed.def.transform.delta.y },
-          relation: placed.def.transform.relation,
-        }
-      : placed.def.transform.kind === "scale"
-        ? { kind: "scale", num: placed.def.transform.num, den: placed.def.transform.den }
-        : { kind: "swap", a: placed.def.transform.a, b: placed.def.transform.b },
-    orientation: {
-      rot: placed.def.orientation.rot,
-      flip: placed.def.orientation.flip,
-    },
+    path: placed.def.path.map((delta) => ({ x: delta.x, y: delta.y })) as Machine["path"],
+    stroke: placed.def.stroke,
   };
 }
 
@@ -445,23 +438,23 @@ export function deriveLinearRoute(layout: FactoryLayout): LinearRoute {
   if (!Number.isSafeInteger(layout.width) || !Number.isSafeInteger(layout.height) ||
       layout.width < 1 || layout.height < 1 ||
       layout.tiles.length !== layout.width * layout.height) {
-    throw new Error("Research route: layout dimensions and tile count must agree");
+    throw new Error("Factory prototype route: layout dimensions and tile count must agree");
   }
   let source: { readonly x: number; readonly y: number; readonly dir: Dir } | null = null;
   let sinks = 0;
   for (let index = 0; index < layout.tiles.length; index++) {
     const tile = layout.tiles[index];
     if (tile?.kind === "splitter" || tile?.kind === "merger") {
-      throw new Error("Research route: splitters and mergers are not allowed");
+      throw new Error("Factory prototype route: splitters and mergers are not allowed");
     }
     if (tile?.kind === "source") {
-      if (source !== null) throw new Error("Research route: exactly one source is required");
+      if (source !== null) throw new Error("Factory prototype route: exactly one source is required");
       source = { x: index % layout.width, y: Math.floor(index / layout.width), dir: tile.dir };
     }
     if (tile?.kind === "sink") sinks++;
   }
   if (source === null || sinks !== 1) {
-    throw new Error("Research route: exactly one source and one analyzer sink are required");
+    throw new Error("Factory prototype route: exactly one source and one analyzer sink are required");
   }
 
   const area = layout.width * layout.height;
@@ -473,19 +466,19 @@ export function deriveLinearRoute(layout: FactoryLayout): LinearRoute {
   for (let slot = 0; slot < layout.machines.length; slot++) {
     const machine = layout.machines[slot]!;
     if (machineIds.has(machine.id)) {
-      throw new Error("Research route: every placed machine needs a unique machine id");
+      throw new Error("Factory prototype route: every placed machine needs a unique machine id");
     }
     machineIds.add(machine.id);
     for (const port of worldInPorts(machine)) {
       if (port.x < 0 || port.y < 0 || port.x >= layout.width || port.y >= layout.height) {
-        throw new Error("Research route: machine input lies outside the floor");
+        throw new Error("Factory prototype route: machine input lies outside the floor");
       }
       const moveDir = ((port.side + 2) & 3) as Dir;
       const key = (at(layout.width, port.x, port.y) * 4) + moveDir;
       inputOwner[key] = inputOwner[key] === 0 ? slot + 1 : -1;
     }
     const outputs = worldOutPorts(machine);
-    if (outputs.length !== 1) throw new Error("Research route: each machine needs one output port");
+    if (outputs.length !== 1) throw new Error("Factory prototype route: each machine needs one output port");
     outputX[slot] = outputs[0]!.x;
     outputY[slot] = outputs[0]!.y;
     outputSide[slot] = outputs[0]!.side;
@@ -510,18 +503,18 @@ export function deriveLinearRoute(layout: FactoryLayout): LinearRoute {
   const maxHops = layout.width * layout.height + layout.machines.length + 1;
   for (let hop = 0; hop < maxHops; hop++) {
     if (x < 0 || y < 0 || x >= layout.width || y >= layout.height) {
-      throw new Error("Research route: route leaves the floor before reaching the analyzer");
+      throw new Error("Factory prototype route: route leaves the floor before reaching the analyzer");
     }
     const stateKey = (at(layout.width, x, y) * 4) + moveDir;
-    if (visited[stateKey] === 1) throw new Error("Research route: route contains a cycle");
+    if (visited[stateKey] === 1) throw new Error("Factory prototype route: route contains a cycle");
     visited[stateKey] = 1;
 
     const owner = inputOwner[stateKey] ?? 0;
-    if (owner < 0) throw new Error("Research route: route has an ambiguous machine input");
+    if (owner < 0) throw new Error("Factory prototype route: route has an ambiguous machine input");
     if (owner > 0) {
       const slot = owner - 1;
       const machine = layout.machines[slot]!;
-      if (usedMachines[slot] === 1) throw new Error("Research route: route revisits a machine");
+      if (usedMachines[slot] === 1) throw new Error("Factory prototype route: route revisits a machine");
       usedMachines[slot] = 1;
       usedMachineCount++;
       steps.push(machineStep(machine));
@@ -562,11 +555,11 @@ export function deriveLinearRoute(layout: FactoryLayout): LinearRoute {
       });
       nodes.push({ kind: "sink", position: { x, y }, enterDir: moveDir });
       if (usedMachineCount !== layout.machines.length) {
-        throw new Error("Research route: every placed machine must belong to the source-to-sink route");
+        throw new Error("Factory prototype route: every placed machine must belong to the source-to-sink route");
       }
       for (let tileIndex = 0; tileIndex < layout.tiles.length; tileIndex++) {
         if (layout.tiles[tileIndex]?.kind === "belt" && visitedBelts[tileIndex] !== 1) {
-          throw new Error("Research route: every belt must belong to the source-to-sink route");
+          throw new Error("Factory prototype route: every belt must belong to the source-to-sink route");
         }
       }
       return freezeLinearRoute({
@@ -577,7 +570,7 @@ export function deriveLinearRoute(layout: FactoryLayout): LinearRoute {
       });
     }
     if (tile?.kind !== "belt") {
-      throw new Error("Research route: route is broken before reaching the analyzer");
+      throw new Error("Factory prototype route: route is broken before reaching the analyzer");
     }
     visitedBelts[cellIndex] = 1;
     segmentCells.push({ x, y });
@@ -585,7 +578,7 @@ export function deriveLinearRoute(layout: FactoryLayout): LinearRoute {
     x += DIR_DX[moveDir] ?? 0;
     y += DIR_DY[moveDir] ?? 0;
   }
-  throw new Error("Research route: route exceeds the acyclic traversal bound");
+  throw new Error("Factory prototype route: route exceeds the acyclic traversal bound");
 }
 
 /**
