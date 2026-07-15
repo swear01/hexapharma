@@ -5,8 +5,8 @@ import {
   type PortableBlueprint,
 } from "./format";
 
-export const BLUEPRINT_LIBRARY_KEY = "hexapharma.blueprint-library.v2";
-export const BLUEPRINT_LIBRARY_VERSION = 2 as const;
+export const BLUEPRINT_LIBRARY_KEY = "hexapharma.blueprint-library.v3";
+export const BLUEPRINT_LIBRARY_VERSION = 3 as const;
 export const MAX_LIBRARY_BLUEPRINTS = 64;
 export const MAX_LIBRARY_BYTES = 4_000_000;
 

@@ -1,4 +1,6 @@
 import {
+  BASE_GAME_FACTORY_HEIGHT,
+  BASE_GAME_FACTORY_WIDTH,
   MAX_GAME_FACTORY_CELLS,
   MAX_GAME_FACTORY_DIMENSION,
   MAX_GAME_INVENTORY_PRODUCTS,
@@ -165,7 +167,15 @@ export function estimateGameReplayWork(
   let total = cappedMultiply(mapCells, 32);
   let researchSteps = 0;
   let pilot: FactoryWorkProfile | null = null;
-  let production: FactoryWorkProfile | null = null;
+  let production = profile(
+    BASE_GAME_FACTORY_WIDTH,
+    BASE_GAME_FACTORY_HEIGHT,
+    0,
+    0,
+    0,
+    BASE_GAME_FACTORY_WIDTH * BASE_GAME_FACTORY_HEIGHT,
+    0,
+  );
   for (const intent of intents) {
     let intentWork = 0;
     switch (intent.kind) {
@@ -190,28 +200,18 @@ export function estimateGameReplayWork(
         pilot = layoutProfile(intent.layout);
         intentWork = pilot.cold;
         break;
-      case "sendPilotToProduction":
-        if (pilot === null) {
-          intentWork = 1;
-        } else {
-          production = pilot;
-          intentWork = pilot.cold;
-        }
-        break;
-      case "setProductionLayout":
+      case "buildProductionLayout":
         production = layoutProfile(intent.layout);
         intentWork = production.cold;
         break;
       case "productionTicks":
-        if (production !== null) {
-          intentWork = cappedAdd(
-            production.cold,
-            cappedMultiply(intent.ticks, production.perTick),
-          );
-        }
+        intentWork = cappedAdd(
+          production.cold,
+          cappedMultiply(intent.ticks, production.perTick),
+        );
         break;
       case "resetProduction":
-        intentWork = production?.cold ?? 1;
+        intentWork = production.cold;
         break;
       case "sellProduct":
         intentWork = MAX_GAME_INVENTORY_PRODUCTS + 1;
@@ -228,10 +228,8 @@ export function estimateGameReplayWork(
             pilot = expandProfile(pilot, dw, dh);
             intentWork = cappedAdd(intentWork, pilot.cold);
           }
-          if (production !== null) {
-            production = expandProfile(production, dw, dh);
-            intentWork = cappedAdd(intentWork, production.cold);
-          }
+          production = expandProfile(production, dw, dh);
+          intentWork = cappedAdd(intentWork, production.cold);
         }
         break;
     }

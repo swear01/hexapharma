@@ -1,43 +1,48 @@
 # Overview
 
-HexaPharma 是「程序化藥效 Atlas + 實體工廠」的確定性單人遊戲。現行build以三個角色清楚且資料解耦的建築取代舊Research Route Floor／contract chain。
+HexaPharma 是「程序化藥效 Atlas + 實體工廠」的確定性單人遊戲。三個 world page 使用一致的直接操作語言，但擁有彼此獨立的 authority。
 
-> 狀態：現行implemented authority；是否通過驗收仍以當前commit的`npm run check`結果為準。
-
-## 三個建築
+## 三個場域
 
 1. **Research**
-   - 只有單一大型 Atlas，沒有 Route Floor、FactoryLayout、source/belt/sink 或常駐教學區塊。
-   - 玩家以固定奇形 Machine `PathStamp` 組成 `ResearchProgram`；prefix calibration 只負責把下一段固定 path 接到既有 prefix，不改寫 stamp 幾何。
-   - 執行 program 才能沿實際路徑探索 fog。Research 不產生 cure contract，也不把 layout 送往 Pilot。
+   - 單一大型 Atlas；玩家依序放入 catalog 定義的完整奇形 `PathStamp`。
+   - 結構地形始終可讀：牆、深淵、沼澤與成對傳送門直接影響規劃預覽。
+   - 治療區與副作用區仍藏在霧下；只有出藥後的實際路徑會揭露發現。
+   - Research 不產生工廠 layout，也不是 Pilot 或 Production 的前置條件。
 2. **Pilot Plant**
-   - 無時間、無建造成本、無耗材、inventory 或 waste，是任意合法 `FactoryLayout` 的 sandbox。
-   - 可自由使用 belt、machine、splitter、merger、source、sink，並立即看實際診斷。
-   - Commission 只要求 layout 合法且可建立 Production；不要求 Research contract、cure、特定 outcome 或「匹配配方」。
+   - 無時間、無建造費、無 inventory／waste 的 `FactoryLayout` 沙盒。
+   - 可立即觀察 outcome、throughput、bottleneck 與 deadlock；診斷只提供資訊。
+   - 可保存 Factory Blueprint，或依 Production 差異報價付費建造。
 3. **Production**
-   - commission 時逐欄位接收 Pilot layout，不 auto-pack、repair、rotate 或重接 routing。
-   - 唯一具有連續 tick、在途產品、吞吐、inventory、waste 與經濟後果。
-   - cure、side effect、failure、no-cure、deadlock 與低吞吐都由實際 layout/runtime 承擔，不由 contract 事先保證。
+   - 新局即有空白 24×12 editor；玩家可直接建廠，不需先開 Pilot。
+   - 每次 layout edit 付建造費。接受變更後重建 runtime，但保留累積 waste。
+   - 唯一具有連續 tick、在途產品、inventory、waste 與經濟後果的場域。
 
-## Atlas 與 mapgen
+## Atlas 與地圖生成
 
-- Active Research 是單層 Atlas；跨層互動、layer swap／Phase Exchange 與 A–D progression 暫停，不得留在 palette、Blueprint 或 active tutorial。
-- 地形 vocabulary 是 wall、abyss、swamp，以及定向的同層 A→B portal。它們是不同 authority kind，不能假裝成舊 hazard／side-effect skin。
-- mapgen 使用 seeded radial structure + motifs，並以 constructive program 生成可探索路線；同 seed + 完整設定必須重現同一份 Atlas 與 reference ResearchProgram。
-- solver 只供 tests/tools 驗證與分析，不進 production 自動解。
+- 現行 Research 是單層 Atlas；跨層互動與交換層工具暫不提供。
+- terrain vocabulary 是 wall、abyss、swamp 與同層 A→B portal；治療／副作用是被探索遮罩保護的 discovery layer。
+- mapgen 使用 seeded radial structure + motifs，constructive 地產生可探索路線；同 seed + 完整設定重現相同 Atlas 與 reference program。
+- solver 只供 tests/tools 驗證與分析，不進遊戲內自動解。
+
+## Factory
+
+- Pilot 與 Production 共用 footprint、ports、routing 與 direct-manipulation editor。
+- transport renderer 依實際 accept／emit connection 畫 endpoint、straight、corner、tee、cross 與 machine ports。
+- Belt 拖曳使用四向連續的單一正交轉角，逐格設定方向，不產生對角階梯。
+- Production 價格：belt 2、splitter／merger 8、source 12、sink 6、machine `10 × processing cost`；拆除不退款。
 
 ## Blueprint 與 Save
 
-- Blueprint Library 仍獨立於 save slots，使用 strict versioned JSON、checksum、bounds 與 content compatibility 驗證。
-- Blueprint wire/ruleset 固定為 v2。`research-program` 保存 ordered `{typeId,stroke}`，fixed path由content-compatible catalog還原；不保存FactoryLayout/path cells/fog/seed/outcome。
-- `pilot-plant` 保存sparse routing與machines `{id,typeId,stroke,anchor,footRot}`；不保存chemical orientation/path、Research program、fog、seed、runtime、economy或實際結果。
-- v1 layout-based `research-route` 是舊 truth且顯式拒絕；不能猜測轉換。
-- Save core wire固定為breaking v6：full/compact/slots保存ResearchProgram/shot與contract-free Pilot/Production，catalog/layout使用path/stroke，v5顯式拒絕。Checkpoint UI/lineage integration已完成；早期開發不維護跨build相容。
+- Blueprint v3：`research-program` 只存 ordered `{typeId}`；`factory-layout` 存 routing 與 `{id,typeId,anchor,footRot}`。
+- Factory Blueprint 不綁來源場域，可免費開到 Pilot，或付費建到 Production。Library 與 save slots 分離並跨存檔。
+- Save v7 保存 non-null Production layout/runtime、paid build intents、Research、Pilot、economy 與 fog；舊開發版顯式拒絕。
+- 正式 release candidate 前不維護跨 build 相容。
 
 ## 技術界線
 
-- 純 TypeScript sim core，React UI，PixiJS render，Vite build。
-- Research path/mapgen 與 Production sim 都確定性；Production 成功熱 tick 使用固定容量 SoA、零配置。
-- UI/renderer 只讀 sim 並送 intent，不能持有第二份 path/layout authority。
+- 純 TypeScript sim core，React UI，PixiJS renderer，Vite build。
+- Research path／mapgen 與 Production sim 都確定性；Production 熱 tick 使用固定容量資料結構。
+- UI／renderer 只讀 sim 並送 intent，不能持有第二份 terrain、path、layout 或 transport authority。
 
-Canonical 規格見 [design.md](design.md)，操作契約見 [ui-interaction.md](ui-interaction.md)，實作順序見 [plan.md](plan.md)。
+Canonical 規格見 [design.md](design.md)，詳細操作見 [player-guide.md](player-guide.md)，互動契約見 [ui-interaction.md](ui-interaction.md)。

@@ -116,7 +116,7 @@ describe("ResearchProgram workflow", () => {
 
     game = dispatch(game, { kind: "advanceResearchShot" });
     expect(fogSnapshot(game)).toEqual(expected.map((layer) => [...layer]));
-    expect(game.production.runtime).toBeNull();
+    expect(game.production.runtime.tick).toBe(0);
   });
 
   it("completes one fixed machine at a time without advancing Production", () => {
@@ -129,7 +129,7 @@ describe("ResearchProgram workflow", () => {
     }
     expect(game.research.shot).toBeNull();
     expect(game.research.lastOutcome).not.toBeNull();
-    expect(game.production.runtime).toBeNull();
+    expect(game.production.runtime.tick).toBe(0);
   });
 
   it("freezes editing during a shot and aborts without refund or reveal", () => {
@@ -150,12 +150,11 @@ describe("ResearchProgram workflow", () => {
     expect(fogSnapshot(game)).toEqual(fog);
   });
 
-  it("owns planned paths and rejects empty, foreign, or invalid calibration programs", () => {
+  it("owns planned paths and rejects empty, foreign, or partial fixed-path programs", () => {
     const catalog = structuredClone(DEFAULT_CATALOG[0]!);
     const mutable: Machine = {
       typeId: catalog.typeId,
       path: catalog.path,
-      stroke: catalog.path.length,
     };
     let game = createGameState(options, 500, 0);
     game = dispatch(game, { kind: "setResearchProgram", program: { steps: [mutable] } });
@@ -170,8 +169,13 @@ describe("ResearchProgram workflow", () => {
     })).toThrow(/path does not match/i);
     expect(() => dispatch(createGameState(options, 500, 0), {
       kind: "setResearchProgram",
-      program: { steps: [{ ...mutable, path: DEFAULT_CATALOG[0]!.path, stroke: 0 }] },
-    })).toThrow(/stroke/i);
+      program: {
+        steps: [{
+          typeId: DEFAULT_CATALOG[0]!.typeId,
+          path: DEFAULT_CATALOG[0]!.path.slice(0, -1),
+        }],
+      },
+    })).toThrow(/path does not match/i);
   });
 
   it("contains no phase-exchange machine or cross-layer calibration", () => {
@@ -184,7 +188,7 @@ describe("ResearchProgram workflow", () => {
   it("applies exploration-aid patents only to an actually dispensed trail", () => {
     const machine = DEFAULT_CATALOG[0]!;
     const program = {
-      steps: [{ typeId: machine.typeId, path: machine.path, stroke: machine.path.length }],
+      steps: [{ typeId: machine.typeId, path: machine.path }],
     };
     const initial = createGameState(options, 500, 10);
     const before = fogSnapshot(initial);
@@ -202,34 +206,40 @@ describe("ResearchProgram workflow", () => {
   });
 });
 
-describe("contract-free Pilot commissioning", () => {
-  it("commissions an independent no-cure Pilot layout exactly into Production", () => {
+describe("optional Pilot and direct Production construction", () => {
+  it("builds an independent no-cure Pilot layout exactly into Production for its cost", () => {
     const layout = emptyPilotLayout();
     let game = createGameState(options, 500, 0);
 
     game = dispatch(game, { kind: "setPilotLayout", layout });
-    game = dispatch(game, { kind: "sendPilotToProduction" });
+    game = dispatch(game, { kind: "buildProductionLayout", layout });
 
     expect(game.production.layout).toEqual(layout);
-    expect(game.production.runtime?.tick).toBe(0);
+    expect(game.production.runtime.tick).toBe(0);
+    expect(game.economy.cash).toBe(482);
     expect("contract" in game.pilot).toBe(false);
     expect("contract" in game.production).toBe(false);
   });
 
-  it("does not require or infer a Research route before commissioning", () => {
+  it("does not require or infer a Research route before building a Pilot design", () => {
     const { layout } = reference();
-    let game = createGameState(options, 500, 0);
+    let game = createGameState(options, 10_000, 0);
     expect(game.research.program.steps).toEqual([]);
 
     game = dispatch(game, { kind: "setPilotLayout", layout });
-    game = dispatch(game, { kind: "sendPilotToProduction" });
+    game = dispatch(game, { kind: "buildProductionLayout", layout });
     expect(game.production.layout).toEqual(game.pilot.layout);
   });
 
-  it("rejects direct Production edits until a Pilot layout has been commissioned", () => {
+  it("allows paid direct Production construction without creating a Pilot layout", () => {
     const layout = emptyPilotLayout();
-    const game = createGameState(options, 500, 0);
-    expect(() => dispatch(game, { kind: "setProductionLayout", layout })).toThrow(/commission|Pilot/i);
-    expect(game.production.layout).toBeNull();
+    const initial = createGameState(options, 500, 0);
+    const built = dispatch(initial, { kind: "buildProductionLayout", layout });
+
+    expect(initial.pilot.layout).toBeNull();
+    expect(built.pilot.layout).toBeNull();
+    expect(built.production.layout).toEqual(layout);
+    expect(built.production.layout).not.toBe(layout);
+    expect(built.economy.cash).toBe(482);
   });
 });

@@ -9,7 +9,7 @@ import {
 } from "../../src/sim/phase0_interfaces";
 import { defaultGenOptions } from "../../src/ui/Game";
 
-function commissionedCheckpoint(): string {
+function productionCheckpoint(): string {
   const options = defaultGenOptions(14);
   const layout = compileEntitledPrototype(
     generate(options).diseases[0]!.reference,
@@ -18,7 +18,8 @@ function commissionedCheckpoint(): string {
   ).layout;
   let game = createGameState(options, 9_999, 9_999);
   game = applyGameIntent(game, { kind: "setPilotLayout", layout });
-  game = applyGameIntent(game, { kind: "sendPilotToProduction" });
+  game = applyGameIntent(game, { kind: "buildProductionLayout", layout });
+  game = applyGameIntent(game, { kind: "productionTicks", ticks: 1 });
   return JSON.stringify({ version: 2, head: serializeGameAuthority(game), history: [] });
 }
 
@@ -79,11 +80,11 @@ test("factory and machine prerequisites unlock without introducing map layers", 
   await expect(page.locator("[data-testid^='lab-layer-']")).toHaveCount(0);
 });
 
-test("factory expansion confirms before resetting commissioned Production", async ({ page }) => {
+test("factory expansion confirms before resetting built Production", async ({ page }) => {
   await page.goto("/");
   await page.evaluate((checkpoint) => {
     localStorage.setItem("hexapharma.save.checkpoint.0", checkpoint);
-  }, commissionedCheckpoint());
+  }, productionCheckpoint());
   await page.reload();
   await page.getByTestId("load").click();
   await page.getByTestId("view-technology").click();

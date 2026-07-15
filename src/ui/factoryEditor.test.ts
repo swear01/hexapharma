@@ -4,10 +4,12 @@ import {
   clampCamera,
   createEditorHistory,
   gridCellCenterToScreen,
+  orientBeltGesture,
   panCamera,
   rasterizeGridLine,
   redoEditorHistory,
   reconcilePendingCommit,
+  routeBeltGesture,
   screenToGrid,
   undoEditorHistory,
   pushEditorHistory,
@@ -94,7 +96,7 @@ describe("factory editor coordinates", () => {
 });
 
 describe("factory editor gestures", () => {
-  it("rasterizes fast horizontal, diagonal, reverse, and stationary drags", () => {
+  it("rasterizes fast drags as a single readable orthogonal bend", () => {
     expect(rasterizeGridLine({ x: 1, y: 2 }, { x: 5, y: 2 })).toEqual([
       { x: 1, y: 2 },
       { x: 2, y: 2 },
@@ -104,8 +106,20 @@ describe("factory editor gestures", () => {
     ]);
     expect(rasterizeGridLine({ x: 1, y: 1 }, { x: 4, y: 4 })).toEqual([
       { x: 1, y: 1 },
-      { x: 2, y: 2 },
-      { x: 3, y: 3 },
+      { x: 2, y: 1 },
+      { x: 3, y: 1 },
+      { x: 4, y: 1 },
+      { x: 4, y: 2 },
+      { x: 4, y: 3 },
+      { x: 4, y: 4 },
+    ]);
+    expect(rasterizeGridLine({ x: 1, y: 1 }, { x: 4, y: 4 }, "vertical")).toEqual([
+      { x: 1, y: 1 },
+      { x: 1, y: 2 },
+      { x: 1, y: 3 },
+      { x: 1, y: 4 },
+      { x: 2, y: 4 },
+      { x: 3, y: 4 },
       { x: 4, y: 4 },
     ]);
     expect(rasterizeGridLine({ x: 3, y: 1 }, { x: 1, y: 1 })).toEqual([
@@ -116,15 +130,38 @@ describe("factory editor gestures", () => {
     expect(rasterizeGridLine({ x: 2, y: 8 }, { x: 2, y: 8 })).toEqual([{ x: 2, y: 8 }]);
   });
 
+  it("replaces a belt drag preview with one bend from its original cell", () => {
+    expect(routeBeltGesture(
+      [{ x: 2, y: 2 }, { x: 3, y: 2 }, { x: 3, y: 3 }],
+      { x: 6, y: 5 },
+      0,
+    )).toEqual([
+      { x: 2, y: 2 }, { x: 3, y: 2 }, { x: 4, y: 2 }, { x: 5, y: 2 },
+      { x: 6, y: 2 }, { x: 6, y: 3 }, { x: 6, y: 4 }, { x: 6, y: 5 },
+    ]);
+    expect(routeBeltGesture([{ x: 2, y: 2 }], { x: 4, y: 4 }, 1)).toEqual([
+      { x: 2, y: 2 }, { x: 2, y: 3 }, { x: 2, y: 4 }, { x: 3, y: 4 }, { x: 4, y: 4 },
+    ]);
+  });
+
   it("never repeats a rasterized cell and never skips a neighboring cell", () => {
     const cells = rasterizeGridLine({ x: -8, y: 3 }, { x: 17, y: 11 });
     expect(new Set(cells.map((cell) => `${cell.x},${cell.y}`)).size).toBe(cells.length);
     for (let index = 1; index < cells.length; index++) {
       const previous = cells[index - 1]!;
       const current = cells[index]!;
-      expect(Math.abs(current.x - previous.x)).toBeLessThanOrEqual(1);
-      expect(Math.abs(current.y - previous.y)).toBeLessThanOrEqual(1);
+      expect(Math.abs(current.x - previous.x) + Math.abs(current.y - previous.y)).toBe(1);
     }
+  });
+
+  it("orients every belt toward the next cell and keeps the final tangent", () => {
+    expect(orientBeltGesture([
+      { x: 1, y: 1 },
+      { x: 2, y: 1 },
+      { x: 2, y: 2 },
+      { x: 3, y: 2 },
+    ], 3)).toEqual([0, 1, 0, 0]);
+    expect(orientBeltGesture([{ x: 4, y: 4 }], 2)).toEqual([2]);
   });
 
   it("appends only unseen cells in stable gesture order without mutating inputs", () => {

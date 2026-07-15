@@ -73,8 +73,7 @@ export function Patents({
   return (
     <div className="game-view management-view patents-view">
       <header className="management-header">
-        <div className="panel-kicker">Research network</div>
-        <h1>Patent Lattice</h1>
+        <h1>Technology</h1>
         <div data-testid="patents-effects" className="effects-strip">
           <span>Facility floors +{eff.factoryDw}w +{eff.factoryDh}h</span>
           <span>Trail scan +{eff.revealAid}</span>

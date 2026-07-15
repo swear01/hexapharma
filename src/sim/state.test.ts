@@ -46,7 +46,7 @@ function twoMaps(): MultiMap {
 }
 
 function machineDef(typeId: string, speed: number): FactoryMachineDef {
-  return { typeId, path: [{ x: 1, y: 0 }], stroke: 1, cost: 1, speed };
+  return { typeId, path: [{ x: 1, y: 0 }], cost: 1, speed };
 }
 
 function lineLayout(period: number, speed: number): FactoryLayout {

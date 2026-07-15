@@ -49,6 +49,7 @@ import {
 import { hashInit, hashU32 } from "./hash";
 import { worldCells } from "./factory-geom";
 import { estimateGameReplayWork } from "./replay-work";
+import { quoteProductionBuild } from "./construction";
 
 export const SIDE_EFFECT_PENALTY = 25;
 
@@ -72,7 +73,6 @@ function ownMachine(machine: Machine): Machine {
   return Object.freeze({
     typeId: machine.typeId,
     path: ownPath(machine.path),
-    stroke: canonicalNumber(machine.stroke),
   });
 }
 
@@ -280,13 +280,12 @@ function ownGameIntent(intent: GameIntent): GameIntent {
     case "beginResearchShot":
     case "advanceResearchShot":
     case "abortResearchShot":
-    case "sendPilotToProduction":
     case "resetProduction":
       return Object.freeze({ kind: intent.kind });
     case "setPilotLayout":
       return Object.freeze({ kind: "setPilotLayout", layout: ownFactoryLayout(intent.layout) });
-    case "setProductionLayout":
-      return Object.freeze({ kind: "setProductionLayout", layout: ownFactoryLayout(intent.layout) });
+    case "buildProductionLayout":
+      return Object.freeze({ kind: "buildProductionLayout", layout: ownFactoryLayout(intent.layout) });
     case "productionTicks":
       return Object.freeze({ kind: "productionTicks", ticks: canonicalNumber(intent.ticks) });
     case "sellProduct":
@@ -340,9 +339,6 @@ function requireAllowedMachine(game: GameState, machine: Machine): MachineCatalo
   if (entry === undefined) throw new Error(`game intent: machine "${machine.typeId}" is locked`);
   if (canonical(machine.path) !== canonical(entry.path)) {
     throw new Error(`game intent: machine "${machine.typeId}" path does not match catalog`);
-  }
-  if (!Number.isSafeInteger(machine.stroke) || machine.stroke < 1 || machine.stroke > entry.path.length) {
-    throw new Error(`game intent: machine "${machine.typeId}" stroke is invalid`);
   }
   return entry;
 }
@@ -606,6 +602,13 @@ export function createGameState(genOptions: GenOptions, cash: number, research: 
   validateGameMapOptions(ownedOptions);
   validateGameCatalog(ownedOptions.catalog);
   const level = levelFor(ownedOptions);
+  const productionLayout = ownFactoryLayout({
+    width: BASE_GAME_FACTORY_WIDTH,
+    height: BASE_GAME_FACTORY_HEIGHT,
+    tiles: new Array<FactoryTile>(BASE_GAME_FACTORY_WIDTH * BASE_GAME_FACTORY_HEIGHT)
+      .fill(Object.freeze({ kind: "empty" as const })),
+    machines: [],
+  });
   return {
     origin: Object.freeze({
       genOptions: ownedOptions,
@@ -619,7 +622,11 @@ export function createGameState(genOptions: GenOptions, cash: number, research: 
     patents: { unlocked: [] },
     research: Object.freeze({ program: Object.freeze({ steps: Object.freeze([]) }), shot: null, lastOutcome: null }),
     pilot: Object.freeze({ layout: null }),
-    production: Object.freeze({ layout: null, runtime: null, waste: 0 }),
+    production: Object.freeze({
+      layout: productionLayout,
+      runtime: initFactory(productionLayout, level.mm, level.start),
+      waste: 0,
+    }),
     inventory: [],
     nextInventoryId: 0,
     fog: freshFog(level.mm),
@@ -741,7 +748,6 @@ function sellPhysicalProducts(
 }
 
 function factoryRuntimeIsInitial(game: GameState): boolean {
-  if (game.production.runtime === null || game.production.waste !== 0) return false;
   const snapshot = snapshotFactory(game.production.runtime);
   return (
     snapshot.tick === 0 &&
@@ -880,38 +886,22 @@ function reduceGameIntent(game: GameState, intent: GameIntent): GameState {
         pilot: Object.freeze({ ...game.pilot, layout: ownFactoryLayout(intent.layout) }),
       };
     }
-    case "sendPilotToProduction": {
-      const layout = game.pilot.layout;
-      if (layout === null) {
-        throw new Error("game intent: Pilot Plant requires a physical layout");
-      }
-      requireEntitledFacilityLayout(game, layout, "Pilot Plant");
-      const level = levelFor(game.genOptions);
-      const ownedLayout = ownFactoryLayout(layout);
-      return {
-        ...game,
-        production: Object.freeze({
-          layout: ownedLayout,
-          runtime: initFactory(ownedLayout, level.mm, level.start),
-          waste: 0,
-        }),
-      };
-    }
-    case "setProductionLayout": {
+    case "buildProductionLayout": {
       requireEntitledFacilityLayout(game, intent.layout, "Production");
-      if (game.production.layout === null) {
-        throw new Error("game intent: Production requires a commissioned Pilot layout");
-      }
       if (canonical(game.production.layout) === canonical(intent.layout)) return game;
+      const cost = quoteProductionBuild(game.production.layout, intent.layout);
+      if (game.economy.cash < cost) {
+        throw new Error(`game intent: Production construction requires ${cost} cash`);
+      }
       const level = levelFor(game.genOptions);
       const layout = ownFactoryLayout(intent.layout);
       return {
         ...game,
+        economy: Object.freeze({ ...game.economy, cash: game.economy.cash - cost }),
         production: Object.freeze({
           ...game.production,
           layout,
           runtime: initFactory(layout, level.mm, level.start),
-          waste: 0,
         }),
       };
     }
@@ -920,22 +910,17 @@ function reduceGameIntent(game: GameState, intent: GameIntent): GameState {
         throw new Error("game intent: factory ticks must be a non-negative safe integer");
       }
       if (intent.ticks === 0) return game;
-      if (game.production.layout === null) {
-        throw new Error("game intent: no authoritative Production layout is active");
-      }
-      if (game.production.runtime !== null && game.production.runtime.producedEvents.count !== 0) {
+      if (game.production.runtime.producedEvents.count !== 0) {
         throw new Error("game intent: factory product events must be drained before advancing");
       }
       const level = levelFor(game.genOptions);
       const layout = game.production.layout;
-      const state = game.production.runtime === null
-        ? initFactory(layout, level.mm, level.start)
-        : restoreFactory(
-            layout,
-            level.mm,
-            level.start,
-            snapshotFactory(game.production.runtime),
-          );
+      const state = restoreFactory(
+        layout,
+        level.mm,
+        level.start,
+        snapshotFactory(game.production.runtime),
+      );
       const drained: ProductDrain = {
         sourceInventory: game.inventory,
         inventory: null,
@@ -960,7 +945,6 @@ function reduceGameIntent(game: GameState, intent: GameIntent): GameState {
       };
     }
     case "resetProduction": {
-      if (game.production.layout === null) return game;
       if (factoryRuntimeIsInitial(game)) return game;
       const level = levelFor(game.genOptions);
       return {
@@ -968,7 +952,6 @@ function reduceGameIntent(game: GameState, intent: GameIntent): GameState {
         production: Object.freeze({
           ...game.production,
           runtime: initFactory(game.production.layout, level.mm, level.start),
-          waste: 0,
         }),
       };
     }
@@ -1002,16 +985,18 @@ function reduceGameIntent(game: GameState, intent: GameIntent): GameState {
       };
       if (node.effect.kind === "expandFactory") {
         const { dw, dh } = node.effect;
-        const expand = (layout: FactoryLayout | null): FactoryLayout | null => layout === null
+        const expandPilot = (layout: FactoryLayout | null): FactoryLayout | null => layout === null
           ? null
           : ownFactoryLayout(expandFactory(layout, dw, dh));
+        const productionLayout = ownFactoryLayout(expandFactory(next.production.layout, dw, dh));
+        const level = levelFor(next.genOptions);
         next = {
           ...next,
-          pilot: Object.freeze({ ...next.pilot, layout: expand(next.pilot.layout) }),
+          pilot: Object.freeze({ ...next.pilot, layout: expandPilot(next.pilot.layout) }),
           production: Object.freeze({
             ...next.production,
-            layout: expand(next.production.layout),
-            runtime: null,
+            layout: productionLayout,
+            runtime: initFactory(productionLayout, level.mm, level.start),
             waste: 0,
           }),
         };
@@ -1051,8 +1036,7 @@ function appendIntentTrace(game: GameState, intent: GameIntent, next: GameState)
   const previous = game.intentTrace[game.intentTrace.length - 1];
   if (
     (intent.kind === "setResearchProgram" ||
-      intent.kind === "setPilotLayout" ||
-      intent.kind === "setProductionLayout") &&
+      intent.kind === "setPilotLayout") &&
     previous?.kind === intent.kind
   ) {
     return {
@@ -1092,7 +1076,6 @@ export function applyGameIntent(game: GameState, intent: GameIntent): GameState 
       throw new Error("game intent: factory ticks must be a non-negative safe integer");
     }
     if (
-      game.production.layout !== null &&
       intent.ticks > 0 &&
       (intent.ticks > MAX_REPLAY_TICKS || game.replayTicks > MAX_REPLAY_TICKS - intent.ticks)
     ) {
@@ -1102,7 +1085,6 @@ export function applyGameIntent(game: GameState, intent: GameIntent): GameState 
   const ownedIntent = ownGameIntent(intent);
   if (
     ownedIntent.kind === "productionTicks" &&
-    game.production.layout !== null &&
     ownedIntent.ticks > 0
   ) {
     const previous = game.intentTrace[game.intentTrace.length - 1];
@@ -1216,13 +1198,12 @@ function validateTraceIntent(intent: unknown, index: number): asserts intent is 
       requireObject(intent.program, `${path}.program`);
       return;
     case "setPilotLayout":
-    case "setProductionLayout":
+    case "buildProductionLayout":
       requireObject(intent.layout, `${path}.layout`);
       return;
     case "beginResearchShot":
     case "advanceResearchShot":
     case "abortResearchShot":
-    case "sendPilotToProduction":
     case "productionTicks":
       if (intent.kind === "productionTicks") {
         requireSafeInteger(intent.ticks as number, `${path}.ticks`, 1);
@@ -1314,9 +1295,7 @@ function comparableGame(game: GameState): unknown {
     ...game,
     production: {
       ...game.production,
-      runtime: game.production.runtime === null
-        ? null
-        : snapshotFactory(game.production.runtime),
+      runtime: snapshotFactory(game.production.runtime),
     },
   };
 }
@@ -1531,15 +1510,13 @@ export function validateGameState(game: GameState): GameState {
       previousWasTicks = false;
       if (
         (intent.kind === "setResearchProgram" ||
-          intent.kind === "setPilotLayout" ||
-          intent.kind === "setProductionLayout") &&
+          intent.kind === "setPilotLayout") &&
         previousLayoutKind === intent.kind
       ) {
         throw new Error("game state: consecutive same-facility layouts must be normalized");
       }
       previousLayoutKind = intent.kind === "setResearchProgram" ||
-        intent.kind === "setPilotLayout" ||
-        intent.kind === "setProductionLayout"
+        intent.kind === "setPilotLayout"
         ? intent.kind
         : null;
       if (intent.kind === "sellProduct" || intent.kind === "sellProducts") {
@@ -1636,25 +1613,9 @@ export function validateGameState(game: GameState): GameState {
 
   if (game.pilot.layout !== null) requireEntitledFacilityLayout(game, game.pilot.layout, "Pilot Plant");
 
-  if (game.production.layout !== null) {
-    requireEntitledFacilityLayout(game, game.production.layout, "Production");
-  }
-  if (game.production.runtime !== null) {
-    if (game.production.layout === null) {
-      throw new Error("game state: Production runtime requires a physical layout");
-    }
-    validateRuntime(game.production.layout, game.production.runtime, level);
-  }
+  requireEntitledFacilityLayout(game, game.production.layout, "Production");
+  validateRuntime(game.production.layout, game.production.runtime, level);
   requireSafeInteger(game.production.waste, "game state: Production waste", 0);
-  if (game.production.runtime === null && game.production.waste !== 0) {
-    throw new Error("game state: Production waste requires a live runtime");
-  }
-  if (
-    game.production.runtime !== null &&
-    game.production.waste > game.production.runtime.producedTotal
-  ) {
-    throw new Error("game state: Production waste exceeds total production");
-  }
 
   requireSafeInteger(game.nextInventoryId, "game state: next inventory id", 0);
   if (game.inventory.length > MAX_GAME_INVENTORY_PRODUCTS) {
@@ -1736,9 +1697,7 @@ export function hashGame(game: GameState): number {
     ...game,
     production: {
       ...game.production,
-      runtime: game.production.runtime === null
-        ? null
-        : snapshotFactory(game.production.runtime),
+      runtime: snapshotFactory(game.production.runtime),
     },
   };
   return hashCanonicalValue(hashInit(), comparable, new Uint8Array(256)) >>> 0;
@@ -1746,20 +1705,18 @@ export function hashGame(game: GameState): number {
 
 export function replayGame(initial: GameState, intents: readonly GameIntent[]): GameState {
   const level = levelFor(initial.genOptions);
-  let game: GameState = initial.production.layout === null || initial.production.runtime === null
-    ? initial
-    : {
-        ...initial,
-        production: {
-          ...initial.production,
-          runtime: restoreFactory(
-            initial.production.layout,
-            level.mm,
-            level.start,
-            snapshotFactory(initial.production.runtime),
-          ),
-        },
-      };
+  let game: GameState = {
+    ...initial,
+    production: {
+      ...initial.production,
+      runtime: restoreFactory(
+        initial.production.layout,
+        level.mm,
+        level.start,
+        snapshotFactory(initial.production.runtime),
+      ),
+    },
+  };
   for (const intent of intents) game = applyGameIntent(game, intent);
   return game;
 }

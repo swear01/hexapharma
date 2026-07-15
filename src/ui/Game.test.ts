@@ -4,6 +4,7 @@ import {
   researchCandidateTrails,
   researchDisplayDrug,
   researchKeyboardAction,
+  researchPlanningMap,
   researchPlanningTrails,
   researchTrailsForProgram,
   transientSaveMessage,
@@ -52,7 +53,7 @@ describe("default Lab world options", () => {
     expect(displayed.pos[0]).toEqual(level.mm.maps[0]!.start);
   });
 
-  it("keeps hidden portals inactive in planning and breaks an actually traversed portal jump", () => {
+  it("keeps portals active before discovery and breaks an actually traversed portal jump", () => {
     const width = 7;
     const cells = width * width;
     const cell = new Uint8Array(cells);
@@ -74,13 +75,13 @@ describe("default Lab world options", () => {
     const program = { steps: [{
       typeId: DEFAULT_CATALOG[0]!.typeId,
       path: DEFAULT_CATALOG[0]!.path,
-      stroke: DEFAULT_CATALOG[0]!.path.length,
     }] };
 
     const hidden = new Uint8Array(cells);
     hidden[3 * width + 4] = 1;
     expect(researchPlanningTrails(mm, [hidden], start, program)[0]).toEqual([
-      { x: 3, y: 3 }, { x: 4, y: 3 }, { x: 5, y: 3 }, { x: 5, y: 4 },
+      { x: 3, y: 3 }, { x: 4, y: 3 }, null,
+      { x: 1, y: 1 }, { x: 2, y: 1 }, { x: 2, y: 2 },
     ]);
     const known = Uint8Array.from(hidden);
     known[1 * width + 1] = 1;
@@ -94,7 +95,7 @@ describe("default Lab world options", () => {
     ]);
   });
 
-  it("uses revealed terrain in planning without revealing hidden portal behavior", () => {
+  it("uses structural terrain in planning before it is discovered", () => {
     const width = 7;
     const cells = width * width;
     const cell = new Uint8Array(cells);
@@ -115,7 +116,6 @@ describe("default Lab world options", () => {
     const program = { steps: [{
       typeId: "known-wall",
       path: [{ x: 1 as const, y: 0 as const }, { x: 0 as const, y: 1 as const }],
-      stroke: 2,
     }] };
     const fog = new Uint8Array(cells);
     fog[3 * width + 4] = 1;
@@ -123,6 +123,37 @@ describe("default Lab world options", () => {
     expect(researchPlanningTrails(mm, [fog], start, program)[0]).toEqual([
       { x: 3, y: 3 }, { x: 3, y: 4 },
     ]);
+  });
+
+  it("hides undiscovered effects without hiding structural terrain", () => {
+    const width = 3;
+    const cells = width * width;
+    const cell = new Uint8Array(cells);
+    cell[0] = CellKind.Wall;
+    cell[1] = CellKind.Cure;
+    cell[2] = CellKind.SideEffect;
+    const cureId = new Int16Array(cells).fill(-1);
+    cureId[1] = 4;
+    const sideEffectId = new Int32Array(cells).fill(-1);
+    sideEffectId[2] = 7;
+    const mm: MultiMap = { maps: [{
+      width,
+      height: width,
+      origin: { x: 1, y: 1 },
+      start: { x: 1, y: 1 },
+      cell,
+      cureId,
+      sideEffectId,
+      portalTo: new Int32Array(cells).fill(-1),
+      fog: new Uint8Array(cells),
+    }] };
+
+    const planning = researchPlanningMap(mm, [new Uint8Array(cells)]).maps[0]!;
+    expect(planning.cell[0]).toBe(CellKind.Wall);
+    expect(planning.cell[1]).toBe(CellKind.Empty);
+    expect(planning.cell[2]).toBe(CellKind.Empty);
+    expect(planning.cureId[1]).toBe(-1);
+    expect(planning.sideEffectId[2]).toBe(-1);
   });
 
   it("draws only the held candidate as the preview suffix", () => {
@@ -165,7 +196,6 @@ describe("default Lab world options", () => {
     const program = { steps: [{
       typeId: DEFAULT_CATALOG[0]!.typeId,
       path: [{ x: 1 as const, y: 0 as const }],
-      stroke: 1,
     }] };
 
     expect(researchTrailsForProgram(mm, start, program, 1)[0]).toEqual([{ x: 2, y: 2 }]);

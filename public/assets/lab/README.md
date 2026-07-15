@@ -15,15 +15,16 @@ game.
 - Violet colonies communicate side effects.
 - Gold/cyan receptors communicate therapeutic destinations.
 - The capsule and cyan halo keep the player's current position legible; the runtime draws route history separately.
-- Defocused navy particulate fog hides unrevealed terrain rather than merely tinting it.
+- Defocused navy particulate fog marks unsurveyed space without erasing structural terrain.
 
 `manifest.json` is the runtime integration contract. Texture URLs are resolved
 from `/assets/lab/`. The substrate and fog repeat exactly at their outer pixel
 edges. All five sprite overlays are normalized to transparent 512×512 PNGs.
 
-The substrate must only be drawn for revealed terrain. Unrevealed terrain must
-be covered by an opaque fog or solid mask before any wall, abyss, swamp, portal, side-effect,
-or cure sprite is rendered; otherwise the artwork would leak map information.
+The substrate, grid, wall, abyss, swamp, and both endpoints of a portal pair are
+always visible. Fog is drawn as a survey boundary below those structural motifs.
+Undiscovered side-effect and cure cells use the same render plan as empty substrate;
+their motif and sprite are not drawn until the discovery mask is set.
 
 ## Source and rights
 

@@ -1,5 +1,6 @@
 import type { EffectMap } from "../sim/phase0_interfaces";
 import { CellKind } from "../sim/phase0_interfaces";
+import { portalExitLookup } from "./labTerrain";
 
 export interface RegionEdges {
   readonly top: boolean;
@@ -12,13 +13,24 @@ function sameRegion(map: EffectMap, x: number, y: number, nx: number, ny: number
   if (nx < 0 || ny < 0 || nx >= map.width || ny >= map.height) return false;
   const index = y * map.width + x;
   const neighbor = ny * map.width + nx;
-  if (map.fog[index] !== 1 || map.fog[neighbor] !== 1 || map.cell[index] !== map.cell[neighbor]) {
-    return false;
-  }
-  if (map.cell[index] === CellKind.Cure) return map.cureId[index] === map.cureId[neighbor];
-  if (map.cell[index] === CellKind.SideEffect) return true;
-  if (map.cell[index] === CellKind.Portal) return false;
+  const kind = visibleKind(map, index);
+  const neighborKind = visibleKind(map, neighbor);
+  if (kind !== neighborKind) return false;
+  if (kind === CellKind.Cure) return map.cureId[index] === map.cureId[neighbor];
+  if (kind === CellKind.Portal) return false;
   return true;
+}
+
+function visibleKind(map: EffectMap, index: number): CellKind {
+  if ((portalExitLookup(map)[index] ?? -1) >= 0) return CellKind.Portal;
+  const kind = map.cell[index] ?? CellKind.Empty;
+  if (
+    map.fog[index] !== 1 &&
+    (kind === CellKind.Cure || kind === CellKind.SideEffect)
+  ) {
+    return CellKind.Empty;
+  }
+  return kind as CellKind;
 }
 
 export function revealedRegionEdges(map: EffectMap, x: number, y: number): RegionEdges {

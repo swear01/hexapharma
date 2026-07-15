@@ -137,8 +137,9 @@ describe("integration: Atlas → program → factory plus economy, patent, and s
     }
     g = applyGameIntent(g, { kind: "setPilotLayout", layout });
     expect(g.research.lastOutcome).not.toBeNull();
-    expect(g.production.layout).toBeNull();
-    g = applyGameIntent(g, { kind: "sendPilotToProduction" });
+    expect(g.production.layout.machines).toEqual([]);
+    expect(g.production.layout.tiles.every((tile) => tile.kind === "empty")).toBe(true);
+    g = applyGameIntent(g, { kind: "buildProductionLayout", layout });
     expect(g.production.layout).toEqual(g.pilot.layout);
     expect(g.production.layout).not.toBe(g.pilot.layout);
     g = applyGameIntent(g, { kind: "productionTicks", ticks: 200 });

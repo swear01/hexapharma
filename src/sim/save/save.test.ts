@@ -62,7 +62,7 @@ function reachProduction(game = createGameState(OPTIONS, 10_000, 100)): GameStat
   const { layout } = researchFixture(game.genOptions);
   let next = completeResearch(game);
   next = applyGameIntent(next, { kind: "setPilotLayout", layout });
-  return applyGameIntent(next, { kind: "sendPilotToProduction" });
+  return applyGameIntent(next, { kind: "buildProductionLayout", layout });
 }
 
 function baseGame(): GameState {
@@ -104,7 +104,6 @@ function expensiveRawTrace(): unknown[] {
         steps: new Array(MAX_TEMPLATE_STEPS).fill({
           typeId: machine.typeId,
           path: machine.path,
-          stroke: machine.path.length,
         }),
       },
     },
@@ -113,12 +112,12 @@ function expensiveRawTrace(): unknown[] {
 }
 
 describe("serializeGame / deserializeGame", () => {
-  it("uses only the breaking v6 three-facility schema", () => {
-    expect(SAVE_VERSION).toBe(6);
+  it("uses only the breaking v7 three-facility schema", () => {
+    expect(SAVE_VERSION).toBe(7);
     const serialized = serializeGame(baseGame());
     const parsed = JSON.parse(serialized) as { version: number; game: Record<string, any> };
 
-    expect(parsed.version).toBe(6);
+    expect(parsed.version).toBe(7);
     expect(parsed.game).toHaveProperty("research");
     expect(parsed.game).toHaveProperty("pilot");
     expect(parsed.game).toHaveProperty("production");
@@ -139,10 +138,10 @@ describe("serializeGame / deserializeGame", () => {
       waste: expect.any(Number),
     }));
     expect(parsed.game.production).not.toHaveProperty("contract");
-    expect(parsed.game.research.program.steps[0]).toEqual(expect.objectContaining({
+    expect(parsed.game.research.program.steps[0]).toEqual({
+      typeId: expect.any(String),
       path: expect.any(Array),
-      stroke: expect.any(Number),
-    }));
+    });
     expect(serialized).not.toMatch(/"(?:saveRecipe|runLab|setFactory|factoryTicks|resetFactory)"/);
     expect(serialized).not.toMatch(/"(?:contract|transform|orientation|orientable)"\s*:/);
   });
@@ -186,7 +185,7 @@ describe("serializeGame / deserializeGame", () => {
     });
 
     let reset = applyGameIntent(reachProduction(), {
-      kind: "setProductionLayout",
+      kind: "buildProductionLayout",
       layout: emptyFactory(layout),
     });
     reset = applyGameIntent(reset, { kind: "productionTicks", ticks: 5 });
@@ -200,8 +199,8 @@ describe("serializeGame / deserializeGame", () => {
   it("round-trips a live Production runtime with cumulative waste", () => {
     let game = reachProduction();
     game = applyGameIntent(game, {
-      kind: "setProductionLayout",
-      layout: emptyFactory(game.production.layout!),
+      kind: "buildProductionLayout",
+      layout: emptyFactory(game.production.layout),
     });
     game = applyGameIntent(game, { kind: "productionTicks", ticks: 5 });
     expect(game.production.waste).toBeGreaterThan(0);
@@ -211,11 +210,11 @@ describe("serializeGame / deserializeGame", () => {
   it("round-trips behavior-affecting Production splitter cursors", () => {
     let game = reachProduction();
     game = applyGameIntent(game, {
-      kind: "setProductionLayout",
-      layout: splitterFactory(game.production.layout!),
+      kind: "buildProductionLayout",
+      layout: splitterFactory(game.production.layout),
     });
     game = applyGameIntent(game, { kind: "productionTicks", ticks: 2 });
-    expect(game.production.runtime?.splitterCursors).toEqual(new Int32Array([1]));
+    expect(game.production.runtime.splitterCursors).toEqual(new Int32Array([1]));
     expect(deserializeGame(serializeGame(game))).toEqual(game);
   });
 
@@ -247,7 +246,7 @@ describe("serializeGame / deserializeGame", () => {
     });
     const active = applyGameIntent(editing, { kind: "beginResearchShot" });
     const pilot = applyGameIntent(editing, { kind: "setPilotLayout", layout });
-    const production = applyGameIntent(pilot, { kind: "sendPilotToProduction" });
+    const production = applyGameIntent(pilot, { kind: "buildProductionLayout", layout });
 
     for (const game of [editing, active, pilot, production]) {
       const loaded = deserializeGameAuthority(serializeGameAuthority(game));
@@ -303,28 +302,47 @@ describe("serializeGame / deserializeGame", () => {
 });
 
 describe("deserializeGame schema validation", () => {
-  it("explicitly rejects legacy v5 full saves, authority, and slots without migration", () => {
-    const game = baseGame();
-    const full = JSON.parse(serializeGame(game));
-    full.version = 5;
-    expect(() => deserializeGame(JSON.stringify(full))).toThrow(/legacy.*version 5|incompatible version 5.*expected 6/i);
+  it.each([6, 2])(
+    "explicitly rejects legacy v%s full saves, authority, and slots without migration",
+    (legacyVersion) => {
+      const game = baseGame();
+      const full = JSON.parse(serializeGame(game));
+      full.version = legacyVersion;
+      expect(() => deserializeGame(JSON.stringify(full))).toThrow(
+        new RegExp(
+          `legacy.*version ${legacyVersion}|` +
+            `incompatible version ${legacyVersion}.*expected 7`,
+          "i",
+        ),
+      );
 
-    const authority = JSON.parse(serializeGameAuthority(game));
-    authority.version = 5;
-    expect(() => deserializeGameAuthority(JSON.stringify(authority))).toThrow(
-      /legacy.*version 5|incompatible version 5.*expected 6/i,
-    );
+      const authority = JSON.parse(serializeGameAuthority(game));
+      authority.version = legacyVersion;
+      expect(() => deserializeGameAuthority(JSON.stringify(authority))).toThrow(
+        new RegExp(
+          `legacy.*version ${legacyVersion}|` +
+            `incompatible version ${legacyVersion}.*expected 7`,
+          "i",
+        ),
+      );
 
-    const slots = JSON.parse(serializeSlots([game]));
-    slots.version = 5;
-    expect(() => deserializeSlots(JSON.stringify(slots))).toThrow(
-      /legacy.*version 5|incompatible version 5.*expected 6/i,
-    );
-  });
+      const slots = JSON.parse(serializeSlots([game]));
+      slots.version = legacyVersion;
+      expect(() => deserializeSlots(JSON.stringify(slots))).toThrow(
+        new RegExp(
+          `legacy.*version ${legacyVersion}|` +
+            `incompatible version ${legacyVersion}.*expected 7`,
+          "i",
+        ),
+      );
+    },
+  );
 
   it.each([
     "setResearchLayout",
     "sendResearchToPilot",
+    "sendPilotToProduction",
+    "setProductionLayout",
     "saveRecipe",
     "runLab",
     "setFactory",
@@ -410,7 +428,6 @@ describe("deserializeGame schema validation", () => {
       tiles: [],
       machines: [],
     };
-    layout.game.production.runtime = null;
     expect(() => deserializeGame(JSON.stringify(layout))).toThrow(/dimensions.*exceed|area.*exceed/i);
 
     const oversizedSlots = {
@@ -430,6 +447,16 @@ describe("deserializeGame schema validation", () => {
     );
   });
 
+  it("requires a non-null Production layout and runtime", () => {
+    const layout = wire();
+    layout.game.production.layout = null;
+    expect(() => deserializeGame(JSON.stringify(layout))).toThrow(/production\.layout.*object/i);
+
+    const runtime = wire();
+    runtime.game.production.runtime = null;
+    expect(() => deserializeGame(JSON.stringify(runtime))).toThrow(/production\.runtime.*object/i);
+  });
+
   it("rejects unknown tiles and tile-count mismatches in both factory facilities", () => {
     for (const facility of ["pilot", "production"] as const) {
       const unknown = wire();
@@ -439,7 +466,6 @@ describe("deserializeGame schema validation", () => {
         tiles: [{ kind: "wormhole" }],
         machines: [],
       };
-      if (facility === "production") unknown.game.production.runtime = null;
       expect(() => deserializeGame(JSON.stringify(unknown))).toThrow(/unknown FactoryTile kind/);
 
       const mismatch = wire();
@@ -449,7 +475,6 @@ describe("deserializeGame schema validation", () => {
         tiles: [{ kind: "empty" }],
         machines: [],
       };
-      if (facility === "production") mismatch.game.production.runtime = null;
       expect(() => deserializeGame(JSON.stringify(mismatch))).toThrow(/layout\.tiles/);
     }
   });
@@ -492,24 +517,21 @@ describe("deserializeGame schema validation", () => {
 });
 
 describe("deserializeGame semantic authority", () => {
-  it("rejects tampered catalog, Research paths/strokes, and factory machine authority", () => {
+  it("rejects tampered catalog, Research paths, obsolete strokes, and factory authority", () => {
     for (const facility of ["pilot", "production"] as const) {
       for (const [field, value] of [["cost", -999], ["speed", 0]] as const) {
         const parsed = wire();
         parsed.game[facility].layout.machines[0].def[field] = value;
-        if (facility === "production") parsed.game.production.runtime = null;
         expect(() => deserializeGame(JSON.stringify(parsed))).toThrow(/catalog|cost|speed/i);
       }
 
       const path = wire();
       path.game[facility].layout.machines[0].def.path[0] = { x: -1, y: 0 };
-      if (facility === "production") path.game.production.runtime = null;
       expect(() => deserializeGame(JSON.stringify(path))).toThrow(/path|catalog|replay mismatch/i);
 
       const stroke = wire();
       stroke.game[facility].layout.machines[0].def.stroke = 0;
-      if (facility === "production") stroke.game.production.runtime = null;
-      expect(() => deserializeGame(JSON.stringify(stroke))).toThrow(/stroke|catalog/i);
+      expect(() => deserializeGame(JSON.stringify(stroke))).toThrow(/unknown field.*stroke/i);
     }
 
     const researchPath = wire();
@@ -518,7 +540,7 @@ describe("deserializeGame semantic authority", () => {
 
     const researchStroke = wire();
     researchStroke.game.research.program.steps[0].stroke = 0;
-    expect(() => deserializeGame(JSON.stringify(researchStroke))).toThrow(/stroke/i);
+    expect(() => deserializeGame(JSON.stringify(researchStroke))).toThrow(/unknown field.*stroke/i);
 
     const catalog = wire();
     catalog.game.genOptions.catalog[0].cost = -1;
@@ -645,8 +667,8 @@ describe("deserializeGame semantic authority", () => {
   it("rejects forged or out-of-range Production splitter cursors", () => {
     let game = reachProduction();
     game = applyGameIntent(game, {
-      kind: "setProductionLayout",
-      layout: splitterFactory(game.production.layout!),
+      kind: "buildProductionLayout",
+      layout: splitterFactory(game.production.layout),
     });
     game = applyGameIntent(game, { kind: "productionTicks", ticks: 2 });
     const outOfRange = wire(game);
@@ -664,14 +686,12 @@ describe("deserializeGame semantic authority", () => {
       (tile: any) => tile.kind === "source",
     );
     sourceTile.period = 0;
-    source.game.production.runtime = null;
-    expect(() => deserializeGame(JSON.stringify(source))).toThrow(/period/i);
+    expect(() => deserializeGame(JSON.stringify(source))).toThrow(/source|period/i);
 
     const duplicate = wire();
-    expect(duplicate.game.production.layout.machines.length).toBeGreaterThan(1);
-    duplicate.game.production.layout.machines[1].id =
-      duplicate.game.production.layout.machines[0].id;
-    duplicate.game.production.runtime = null;
+    expect(duplicate.game.pilot.layout.machines.length).toBeGreaterThan(1);
+    duplicate.game.pilot.layout.machines[1].id =
+      duplicate.game.pilot.layout.machines[0].id;
     expect(() => deserializeGame(JSON.stringify(duplicate))).toThrow(/duplicate.*id/i);
   });
 
@@ -680,7 +700,7 @@ describe("deserializeGame semantic authority", () => {
     const invalid = { ...game, production: { ...game.production, waste: -1 } };
     expect(() => serializeGame(invalid)).toThrow(SaveError);
 
-    const runtime = game.production.runtime!;
+    const runtime = game.production.runtime;
     const unused = runtime.capacity - 1;
     expect(unused).toBeGreaterThanOrEqual(runtime.unitCount);
     runtime.unitX[unused] = 1;
@@ -704,7 +724,7 @@ describe("multi-save slots and rewind", () => {
     });
     const active = applyGameIntent(editing, { kind: "beginResearchShot" });
     const pilot = applyGameIntent(editing, { kind: "setPilotLayout", layout });
-    const production = applyGameIntent(pilot, { kind: "sendPilotToProduction" });
+    const production = applyGameIntent(pilot, { kind: "buildProductionLayout", layout });
     const states = [active, pilot, production];
 
     expect(deserializeSlots(serializeSlots(states))).toEqual(states);
@@ -744,7 +764,7 @@ describe("multi-save slots and rewind", () => {
     });
     const active = applyGameIntent(editing, { kind: "beginResearchShot" });
     const pilot = applyGameIntent(editing, { kind: "setPilotLayout", layout });
-    const production = applyGameIntent(pilot, { kind: "sendPilotToProduction" });
+    const production = applyGameIntent(pilot, { kind: "buildProductionLayout", layout });
 
     const recalled = rewind([active, pilot, production], 2).state;
     expect(recalled).toEqual(active);

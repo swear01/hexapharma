@@ -1,49 +1,48 @@
 # Roadmap
 
-> 原則：先完成可 headless 驗證的 authority，再接薄 render/UI；每階段以 `npm run check` 為唯一自動驗收。舊階段記錄是 implementation history，不凌駕目前 breaking target。
+> 先完成 headless authority，再接薄 render/UI；每階段以當前 commit 的 `npm run check` 驗收。早期實作紀錄不凌駕現行 design。
 
-## Historical baseline
+## Foundation
 
-### Phase 0 — Drug graph / early mapgen / solver
+### Phase 0 — Drug graph / mapgen / solver
 
-曾完成 deterministic transform/sweep/evaluate、constructive generation、RNG/hash 與 dev/test solver。其multi-layer/swap與舊terrain API已由single-layer PathStamp core取代。
+完成 deterministic path/evaluate、seeded RNG/hash、constructive generation與 dev/test-only solver。
 
-### Phase 1 — Early Effect Atlas
+### Phase 1 — Research Atlas
 
-曾完成 Pixi/React Atlas、opaque fog、camera 與原創資產。Atlas renderer/camera 可重用，但 A–D tabs、route token 與舊 map assumptions 不是新 milestone truth。
+完成 Pixi/React 大型 Atlas、camera、fog、terrain/portal 與原創程式化視覺。現行規則是單層、結構地形可見、Cure／SideEffect 隱藏。
 
 ### Phase 2 — Factory sim
 
-fixed-capacity SoA runtime、multi-cell machines、belts、splitter/merger、throughput/deadlock、cold snapshot/hash 是保留基礎；contract-dependent product acceptance後由Phase 6改成actual outcome。
+完成 fixed-capacity SoA runtime、multi-cell machines、belt、splitter/merger、throughput/deadlock、cold snapshot/hash。
 
-### Phase 3 — Economy / Technology / Save v5
+### Phase 3 — Economy / Technology / save
 
-Market、Knowledge、patents、intent replay/checkpoint提供遷移基礎；Save v5、layer unlock/reset與contract fields後由v6/single-Atlas authority取代。
+完成 Market、Knowledge、patents、intent replay/checkpoint。當前 wire 是 Save v7，早期 schema 不再支援。
 
 ### Phase 4 — Direct-operation shell
 
-F1–F3 world shell、drawers、Factory direct manipulation與responsive patterns已重用；Research Route Floor/modebar與舊onboarding已移除，screenshot evidence由Phase 6重建。
+完成 F1–F3 world shell、drawers、Factory direct manipulation、responsive patterns 與三場域分離。
 
-### Phase 5 — Old three-facility contract chain（superseded）
+### Phase 5 — Single-Atlas fixed paths
 
-曾實作 Research linear FactoryLayout → contract → Pilot validation → Production。這條 authority 已被新設計推翻，不再是完成標準，也不能以舊 gate/audit 證據宣稱新 milestone 完成。
+完成奇形 PathStamp、terrain-aware traversal、radial motifs、Research-only exploration、free Pilot sandbox 與 actual Production outcomes。
 
-## Phase 6 — Single-Atlas PathStamp redesign ✅
+## Current — direct construction and readable topology
 
-- fixed irregular Machine PathStamp + prefix calibration + ResearchProgram。
-- wall／abyss／swamp／same-layer A→B portal；暫停 cross-layer/swap。
-- seeded radial + motif constructive mapgen。
-- Research 只探索；Pilot 是 independent zero-time/cost FactoryLayout sandbox。
-- no-contract/no-cure commission；Production exact copy Pilot並承擔 actual outcomes。
-- Blueprint wire/ruleset v2已完成：`research-program`/`pilot-plant` strict codec、Library UI與cross-save lifecycle。
-- Save v6 full/compact/slots/rewind、new intents/hash/replay與checkpoint UI/lineage已完成；E2E隨gate驗證。
-- single Atlas UI、new screenshots、updated playtest、full gate + remote browser smoke已完成。
-
-狀態與TDD證據見[plan.md](plan.md)。2026-07-14 `npm run check`通過：37個Vitest files／468 tests、33個Playwright tests。
+- Research machine 只走完整 catalog path；移除所有部分路徑資料與控制。
+- 結構 terrain 在霧下仍可見並影響 preview；發現維持隱藏。
+- Production 新局即有空 24×12 editor；直接 edit 或套 Factory Blueprint 都按差異付費。
+- Pilot 保持可選、free/no-clock，可按報價建到 Production。
+- transport renderer 使用 sim-derived connected topology；Belt drag 支援四向連續轉角。
+- Blueprint v3：`research-program` + generic `factory-layout`；Save v7：non-null Production + paid build trace。
+- UI 刪除不必要常駐文案；詳細操作移到玩家指南。
+- 完成標準與執行次序見 [plan.md](plan.md)。
 
 ## Later
 
-- 依真人資料調 radial/motif density、terrain rules、Research cost、machine throughput、difficulty/price 與 unlock pacing。
-- 增加 motifs、PathStamps、factory machines、疾病、市場與正式美術/聲音。
-- Blueprint v2與Save v6 core wire都已先breaking freeze；之後若改wire必須升版而非reinterpret。Release candidate再建立正式migration/deprecation matrix。
+- 依真人資料調 radial/motif density、terrain rules、Research cost、建造價格、machine throughput、difficulty/price 與 unlock pacing。
+- 增加 motifs、PathStamps、factory machines、疾病、市場內容與正式美術／聲音。
+- 擴充 transport feedback、selection tools 與大型藍圖工作流，但不得引入自動解。
+- release candidate 時才建立正式 save migration／deprecation matrix。
 - 雲端 Blueprint 分享、帳戶與社群 repository 屬 post-MVP。

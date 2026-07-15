@@ -102,27 +102,28 @@ describe("fixed-path solver", () => {
     expect(solution).toMatchObject({ difficulty: 0, cost: 0, template: { steps: [] } });
   });
 
-  it("searches every legal calibration prefix without rotating the stamp", () => {
+  it("searches only complete fixed paths without rotating or truncating the stamp", () => {
     const catalog = [entry("hook", [E, S, E])];
     const east = maps(cure(emptyMap(7, 7, { x: 2, y: 2 }), 3, 2, 1));
     const bend = maps(cure(emptyMap(7, 7, { x: 2, y: 2 }), 3, 3, 2));
     const north = maps(cure(emptyMap(7, 7, { x: 2, y: 2 }), 2, 1, 3));
 
-    expect(solve(east, initialState(east), options(catalog, 1, [1]))?.template.steps[0]?.stroke)
-      .toBe(1);
-    expect(solve(bend, initialState(bend), options(catalog, 1, [2]))?.template.steps[0]?.stroke)
-      .toBe(2);
+    expect(solve(east, initialState(east), options(catalog, 1, [1]))).toBeNull();
+    expect(solve(bend, initialState(bend), options(catalog, 1, [2]))).toBeNull();
+    const full = maps(cure(emptyMap(7, 7, { x: 2, y: 2 }), 4, 3, 4));
+    expect(solve(full, initialState(full), options(catalog, 1, [4]))?.template.steps[0])
+      .toEqual({ typeId: "hook", path: [E, S, E] });
     expect(solve(north, initialState(north), options(catalog, 3, [3]))).toBeNull();
   });
 
-  it("rewards machine diversity and scores a shaped prefix deterministically", () => {
+  it("rewards machine diversity and scores a shaped path deterministically", () => {
     const catalog = [entry("east", [E]), entry("hook", [E, S])];
     const mm = maps(cure(emptyMap(7, 7, { x: 1, y: 1 }), 3, 2, 8));
     const start = initialState(mm);
     const solution = solve(mm, start, options(catalog, 2, [8]));
 
     expect(solution?.template.steps.map((step) => step.typeId)).toEqual(["east", "hook"]);
-    expect(solution?.template.steps.map((step) => step.stroke)).toEqual([1, 2]);
+    expect(solution?.template.steps.map((step) => step.path.length)).toEqual([1, 2]);
     expect(solution?.difficulty).toBe(5);
     expectCures(mm, start, solution!, [8]);
   });
@@ -132,7 +133,7 @@ describe("fixed-path solver", () => {
     map = cure(map, 1, 1, 9);
     const mm = maps(map);
     const solution = solve(mm, initialState(mm), options([entry("wall-hook", [E, S, E])], 1, [9]));
-    expect(solution?.template.steps[0]?.stroke).toBe(3);
+    expect(solution?.template.steps[0]?.path).toEqual([E, S, E]);
     expectCures(mm, initialState(mm), solution!, [9]);
   });
 
@@ -143,12 +144,12 @@ describe("fixed-path solver", () => {
     expect(solve(mm, initialState(mm), options(EAST, 8, [4]))).toBeNull();
   });
 
-  it("accounts for swamp energy when choosing a prefix", () => {
+  it("accounts for swamp energy while applying the complete path", () => {
     let map = swamp(emptyMap(7, 3, { x: 0, y: 1 }), 1, 1);
     map = cure(map, 2, 1, 5);
     const mm = maps(map);
     const solution = solve(mm, initialState(mm), options([entry("long", [E, E, E])], 1, [5]));
-    expect(solution?.template.steps[0]?.stroke).toBe(3);
+    expect(solution?.template.steps[0]?.path).toEqual([E, E, E]);
     expectCures(mm, initialState(mm), solution!, [5]);
   });
 

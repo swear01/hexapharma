@@ -168,7 +168,7 @@ function freezeMaps(maps: readonly ScratchMap[]): MultiMap {
   return { maps: maps.map(freezeMap) };
 }
 
-function ownMachine(entry: MachineCatalogEntry, stroke: number): Machine {
+function ownMachine(entry: MachineCatalogEntry): Machine {
   const path = entry.path.map((delta): CardinalDelta => {
     if (delta.x === -1) return Object.freeze({ x: -1, y: 0 });
     if (delta.x === 1) return Object.freeze({ x: 1, y: 0 });
@@ -178,7 +178,6 @@ function ownMachine(entry: MachineCatalogEntry, stroke: number): Machine {
   return Object.freeze({
     typeId: entry.typeId,
     path: Object.freeze(path),
-    stroke,
   });
 }
 
@@ -196,9 +195,7 @@ function referenceDifficulty(reference: Template): number {
 function stepEndpoint(position: Vec2, machine: Machine, width: number, height: number): Vec2 {
   let x = position.x;
   let y = position.y;
-  for (let index = 0; index < machine.stroke; index++) {
-    const delta = machine.path[index];
-    if (delta === undefined) break;
+  for (const delta of machine.path) {
     const nx = x + delta.x;
     const ny = y + delta.y;
     if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
@@ -265,13 +262,12 @@ function makeProgramCandidate(
   if (entries.length < distinctTarget) return null;
   const steps: Machine[] = [];
   let cost = 0;
-  let totalStroke = 0;
+  let totalPathLength = 0;
   for (let stepIndex = 0; stepIndex < stepCount; stepIndex++) {
     const entry = entries[(stepIndex + ordinal) % entries.length];
     if (entry === undefined) return null;
-    const stroke = 1 + ((ordinal * 7 + disease * 3 + stepIndex * 5) % entry.path.length);
-    steps.push(ownMachine(entry, stroke));
-    totalStroke += stroke;
+    steps.push(ownMachine(entry));
+    totalPathLength += entry.path.length;
     cost += entry.cost;
   }
   const reference: Template = Object.freeze({ steps: Object.freeze(steps) });
@@ -284,7 +280,7 @@ function makeProgramCandidate(
   const quality =
     entries.length * 100_000 -
     Math.abs(radius - desiredRadius) * 2_000 +
-    Math.min(totalStroke, 99) * 20 -
+    Math.min(totalPathLength, 99) * 20 -
     ordinal;
   return { ordinal, reference, endpoint, difficulty, cost, quality };
 }
@@ -342,9 +338,7 @@ function protectReference(map: ScratchMap, reference: Template): void {
   let position = map.start;
   map.protectedCells[idx(map.width, position.x, position.y)] = 1;
   for (const machine of reference.steps) {
-    for (let pathIndex = 0; pathIndex < machine.stroke; pathIndex++) {
-      const delta = machine.path[pathIndex];
-      if (delta === undefined) break;
+    for (const delta of machine.path) {
       const nx = position.x + delta.x;
       const ny = position.y + delta.y;
       if (nx < 0 || ny < 0 || nx >= map.width || ny >= map.height) continue;

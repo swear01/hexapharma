@@ -48,7 +48,7 @@ test("Research is one large centered Atlas with no Route Floor or layer-transfer
   await expect(page.getByRole("button", { name: /swap|phase|transfer/i })).toHaveCount(0);
 });
 
-test("fixed paths support calibration, position preview, world-click commit, and paid Dispense", async ({
+test("fixed paths support position preview, world-click commit, and paid Dispense", async ({
   page,
 }) => {
   await page.goto("/?cash=200");
@@ -57,17 +57,16 @@ test("fixed paths support calibration, position preview, world-click commit, and
   await expect(canvas).toBeVisible({ timeout: 15_000 });
   const push = page.getByTestId("research-machine-push");
   await expect(push).toHaveAttribute("aria-pressed", "true");
-  const fullPath = await push.locator("[data-icon-shape='full-path']").getAttribute("points");
-  const activePath = push.locator("[data-icon-shape='active-path']");
-  await expect(activePath).toHaveAttribute("points", fullPath ?? "");
-  await expect(page.getByTestId("research-calibration")).toContainText("3/3");
+  await expect(push.locator("[data-icon-shape='path']")).toHaveCount(1);
+  await expect(page.getByTestId("research-calibration")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /shorter|longer/i })).toHaveCount(0);
 
   const fullPreview = await canvas.screenshot({ animations: "disabled" });
-  await page.getByRole("button", { name: "Shorter path" }).click();
-  await expect(page.getByTestId("research-calibration")).toContainText("2/3");
+  await page.getByTestId("research-machine-push2").click();
   await page.waitForTimeout(50);
-  const shorterPreview = await canvas.screenshot({ animations: "disabled" });
-  expect(shorterPreview.equals(fullPreview)).toBe(false);
+  const otherPreview = await canvas.screenshot({ animations: "disabled" });
+  expect(otherPreview.equals(fullPreview)).toBe(false);
+  await push.click();
 
   const cash = page.getByTestId("cash");
   const revealed = page.getByTestId("revealed-count");
@@ -93,16 +92,14 @@ test("machine hotkeys select paths while Enter dispenses the committed program",
   await page.goto("/");
   const hotbar = page.getByTestId("research-path-hotbar");
   const available = DEFAULT_CATALOG.slice(0, 4);
-  const fullPaths = await hotbar.locator("[data-icon-shape='full-path']")
+  const fullPaths = await hotbar.locator("[data-icon-shape='path']")
     .evaluateAll((paths) => paths.map((path) => path.getAttribute("points")));
   expect(new Set(fullPaths).size).toBe(available.length);
   await page.keyboard.press("Digit2");
   await expect(page.getByTestId(`research-machine-${available[1]!.typeId}`))
     .toHaveAttribute("aria-pressed", "true");
   await page.keyboard.press("[");
-  await expect(page.getByTestId("research-calibration")).toContainText(
-    `${available[1]!.path.length - 1}/${available[1]!.path.length}`,
-  );
+  await expect(page.getByTestId("research-calibration")).toHaveCount(0);
   const frame = page.getByTestId("lab-map-frame");
   const box = await frame.boundingBox();
   if (box === null) throw new Error("Research Atlas has no bounds");
@@ -140,7 +137,7 @@ test("compact Research keeps every command and path control reachable", async ({
   const stage = await page.getByTestId("game-stage").boundingBox();
   const nav = await page.getByTestId("nav-rail").boundingBox();
   if (stage === null || nav === null) throw new Error("compact Research chrome has no bounds");
-  for (const testId of ["research-command", "research-path-hotbar", "research-calibration"]) {
+  for (const testId of ["research-command", "research-path-hotbar"]) {
     const control = await page.getByTestId(testId).boundingBox();
     if (control === null) throw new Error(`${testId} has no compact bounds`);
     expect(control.x).toBeGreaterThanOrEqual(stage.x);

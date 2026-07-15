@@ -41,10 +41,10 @@ function emptyMap(size: number, start: Vec2): EffectMap {
   };
 }
 
-function machine(typeId: string, stroke?: number): Machine {
+function machine(typeId: string): Machine {
   const entry = DEFAULT_CATALOG.find((candidate) => candidate.typeId === typeId);
   if (entry === undefined) throw new Error(`missing test machine ${typeId}`);
-  return { typeId, path: entry.path, stroke: stroke ?? entry.path.length };
+  return { typeId, path: entry.path };
 }
 
 const template = (...steps: Machine[]): Template => ({ steps });
@@ -60,7 +60,7 @@ function firstProduct(layout: FactoryLayout, mm: MultiMap, ticks: number) {
 }
 
 function defOf(step: Machine): FactoryMachineDef {
-  return { typeId: step.typeId, path: step.path, stroke: step.stroke, cost: 0, speed: 1 };
+  return { typeId: step.typeId, path: step.path, cost: 0, speed: 1 };
 }
 
 function spacedLine(value: Template, gap: number): FactoryLayout {
@@ -99,10 +99,10 @@ function serpentineLayout(size: number): FactoryLayout {
 
 const samples: readonly Template[] = [
   template(machine("push")),
-  template(machine("push2", 4)),
+  template(machine("push2")),
   template(machine("dilute")),
-  template(machine("skew", 5), machine("pull", 2)),
-  template(machine("push", 2), machine("shear"), machine("settle", 6)),
+  template(machine("skew"), machine("pull")),
+  template(machine("push"), machine("shear"), machine("settle")),
 ];
 
 describe("compileTemplate and factoryOutcome", () => {
@@ -124,7 +124,7 @@ describe("compileTemplate and factoryOutcome", () => {
   });
 
   it("rejects oversized templates before sizing geometry", () => {
-    const step = machine("push", 1);
+    const step = machine("push");
     expect(() => compileTemplate({ steps: new Array(MAX_TEMPLATE_STEPS + 1).fill(step) }))
       .toThrow(/steps|256/i);
   });
@@ -140,7 +140,7 @@ describe("compileTemplate and factoryOutcome", () => {
 
   it("owns a caller's mutable path without freezing it", () => {
     const catalog = structuredClone(DEFAULT_CATALOG.find((entry) => entry.typeId === "push")!);
-    const step: Machine = { typeId: catalog.typeId, path: catalog.path, stroke: catalog.path.length };
+    const step: Machine = { typeId: catalog.typeId, path: catalog.path };
     const layout = compileTemplate(template(step));
     (catalog.path[0] as { x: number }).x = -1;
 
@@ -160,7 +160,7 @@ describe("compileTemplate and factoryOutcome", () => {
       tiles: [{ kind: "source", dir: E, period: 1 }, { kind: "empty" }, { kind: "sink" }],
       machines: [{
         id: 0,
-        def: { typeId: "slow", path: [{ x: 1, y: 0 }], stroke: 1, cost: 1, speed: MAX_FACTORY_REPLAY_TICKS },
+        def: { typeId: "slow", path: [{ x: 1, y: 0 }], cost: 1, speed: MAX_FACTORY_REPLAY_TICKS },
         anchor: { x: 1, y: 0 },
         footRot: 0,
         shape: SHAPE_1x1,
@@ -205,7 +205,7 @@ describe("compileTemplate and factoryOutcome", () => {
   }
 
   it("lands on and reports a cure reached by an irregular path", () => {
-    const value = template(machine("push"), machine("shear", 3));
+    const value = template(machine("push"), machine("shear"));
     const open = multimaps(emptyMap(41, { x: 20, y: 20 }));
     const final = applyTemplate(open, initialState(open), value).pos[0]!;
     const map = emptyMap(41, { x: 20, y: 20 });
@@ -217,44 +217,36 @@ describe("compileTemplate and factoryOutcome", () => {
   });
 
   it("rejects unknown machine types", () => {
-    expect(() => compileTemplate(template({ typeId: "missing", path: [{ x: 1, y: 0 }], stroke: 1 })))
+    expect(() => compileTemplate(template({ typeId: "missing", path: [{ x: 1, y: 0 }] })))
       .toThrow(/unknown machine/i);
     expect(() => compileTemplate(template({
       typeId: "push",
       path: [{ x: -1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: -1 }],
-      stroke: 3,
     }))).toThrow(/path does not match/i);
-    expect(() => compileTemplate(template({
-      typeId: "push",
-      path: DEFAULT_CATALOG[0]!.path,
-      stroke: 0,
-    }))).toThrow(/stroke/i);
   });
 });
 
 describe("factory rearrange invariance", () => {
   it("belt spacing and physical packing do not alter chemical paths", () => {
-    const value = template(machine("push", 2), machine("skew"), machine("pull", 2));
+    const value = template(machine("push"), machine("skew"), machine("pull"));
     const mm = multimaps(emptyMap(63, { x: 31, y: 31 }));
     const pure = evaluate(mm, initialState(mm), value);
     expect(factoryOutcome(spacedLine(value, 1), mm, initialState(mm))).toEqual(pure);
     expect(factoryOutcome(spacedLine(value, 6), mm, initialState(mm))).toEqual(pure);
   });
 
-  it("compiles and runs deterministically for random catalog prefixes", () => {
+  it("compiles and runs deterministically for random full catalog paths", () => {
     fc.assert(fc.property(
       fc.array(fc.record({
         type: fc.integer({ min: 0, max: DEFAULT_CATALOG.length - 1 }),
-        strokeSeed: fc.nat(),
       }), { minLength: 1, maxLength: 5 }),
       (specs) => {
         const value: Template = {
-          steps: specs.map(({ type, strokeSeed }) => {
+          steps: specs.map(({ type }) => {
             const catalog = DEFAULT_CATALOG[type]!;
             return {
               typeId: catalog.typeId,
               path: catalog.path,
-              stroke: 1 + strokeSeed % catalog.path.length,
             };
           }),
         };

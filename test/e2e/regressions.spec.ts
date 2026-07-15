@@ -30,7 +30,7 @@ test("loading a finished Research shot preserves fog and its independent outcome
   await expect(page.getByTestId("research-command")).toHaveText("Dispense");
   await expect(page.getByRole("button", { name: /send.*pilot|transfer/i })).toHaveCount(0);
   await page.getByTestId("view-pilot").click();
-  await expect(page.getByTestId("pilot-command")).toBeEnabled();
+  await expect(page.getByTestId("pilot-command")).toBeDisabled();
   expect(errors).toEqual([]);
 });
 

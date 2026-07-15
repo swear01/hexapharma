@@ -23,12 +23,12 @@ function walkPathCore(
 ): void {
   let x = fromX;
   let y = fromY;
-  let energy = machine.stroke;
+  let energy = machine.path.length;
   let failed = 0;
 
-  for (let stepIndex = 0; stepIndex < machine.stroke; stepIndex++) {
+  for (let stepIndex = 0; stepIndex < machine.path.length; stepIndex++) {
     const delta = machine.path[stepIndex];
-    if (delta === undefined) throw new Error("drug graph: validated path prefix is missing a delta");
+    if (delta === undefined) throw new Error("drug graph: validated path is missing a delta");
 
     const nextX = x + delta.x;
     const nextY = y + delta.y;

@@ -17,12 +17,12 @@ import {
 } from "../sim/phase0_interfaces";
 
 export const BLUEPRINT_FORMAT = "hexapharma-blueprint" as const;
-export const BLUEPRINT_VERSION = 2 as const;
-export const BLUEPRINT_RULESET = 2 as const;
+export const BLUEPRINT_VERSION = 3 as const;
+export const BLUEPRINT_RULESET = 3 as const;
 export const MAX_BLUEPRINT_BYTES = 1_048_576;
 export const MAX_BLUEPRINT_NAME_LENGTH = 80;
 
-export type BlueprintKind = "research-program" | "pilot-plant";
+export type BlueprintKind = "research-program" | "factory-layout";
 
 function contentFingerprint(): string {
   const payload = JSON.stringify({
@@ -71,13 +71,11 @@ export type PortableFactoryTile =
 
 export interface PortableResearchStep {
   readonly typeId: string;
-  readonly stroke: number;
 }
 
-export interface PortablePilotMachine {
+export interface PortableFactoryMachine {
   readonly id: number;
   readonly typeId: string;
-  readonly stroke: number;
   readonly anchor: {
     readonly x: number;
     readonly y: number;
@@ -98,17 +96,17 @@ export interface PortableResearchBlueprint extends PortableBlueprintBase {
   };
 }
 
-export interface PortablePilotBlueprint extends PortableBlueprintBase {
-  readonly kind: "pilot-plant";
+export interface PortableFactoryBlueprint extends PortableBlueprintBase {
+  readonly kind: "factory-layout";
   readonly layout: {
     readonly width: number;
     readonly height: number;
     readonly tiles: readonly PortableFactoryTile[];
-    readonly machines: readonly PortablePilotMachine[];
+    readonly machines: readonly PortableFactoryMachine[];
   };
 }
 
-export type PortableBlueprint = PortableResearchBlueprint | PortablePilotBlueprint;
+export type PortableBlueprint = PortableResearchBlueprint | PortableFactoryBlueprint;
 
 interface BlueprintDocument {
   readonly format: typeof BLUEPRINT_FORMAT;
@@ -189,24 +187,12 @@ function catalogEntry(value: unknown, path: string): MachineCatalogEntry {
   return entry;
 }
 
-function requireStroke(value: unknown, entry: MachineCatalogEntry, path: string): number {
-  if (!Number.isSafeInteger(value) || (value as number) < 1 || (value as number) > entry.path.length) {
-    throw new Error(
-      `blueprint: ${path} prefix calibration must be an integer from 1 to ${entry.path.length}`,
-    );
-  }
-  return value as number;
-}
-
 function parseResearchStep(value: unknown, index: number): PortableResearchStep {
   const path = `blueprint.program.steps[${index}]`;
   const record = requireRecord(value, path);
-  requireExactKeys(record, ["typeId", "stroke"], path);
+  requireExactKeys(record, ["typeId"], path);
   const entry = catalogEntry(record.typeId, `${path}.typeId`);
-  return {
-    typeId: entry.typeId,
-    stroke: requireStroke(record.stroke, entry, `${path}.stroke`),
-  };
+  return { typeId: entry.typeId };
 }
 
 function parseProgram(value: unknown): PortableResearchBlueprint["program"] {
@@ -218,7 +204,7 @@ function parseProgram(value: unknown): PortableResearchBlueprint["program"] {
     program.steps.length > MAX_TEMPLATE_STEPS
   ) {
     throw new Error(
-      `blueprint: program.steps must contain from 1 to ${MAX_TEMPLATE_STEPS} calibrated steps`,
+      `blueprint: program.steps must contain from 1 to ${MAX_TEMPLATE_STEPS} fixed-path steps`,
     );
   }
   return { steps: program.steps.map(parseResearchStep) };
@@ -272,15 +258,15 @@ function parseTile(value: unknown, width: number, height: number, index: number)
   }
 }
 
-function parsePilotMachine(
+function parseFactoryMachine(
   value: unknown,
   width: number,
   height: number,
   index: number,
-): PortablePilotMachine {
+): PortableFactoryMachine {
   const path = `blueprint.layout.machines[${index}]`;
   const record = requireRecord(value, path);
-  requireExactKeys(record, ["id", "typeId", "stroke", "anchor", "footRot"], path);
+  requireExactKeys(record, ["id", "typeId", "anchor", "footRot"], path);
   const entry = catalogEntry(record.typeId, `${path}.typeId`);
   if (DEFAULT_SHAPES[entry.typeId] === undefined) {
     throw new Error(`blueprint: ${path}.typeId has no local factory shape`);
@@ -290,7 +276,6 @@ function parsePilotMachine(
   return {
     id: requireInteger(record.id, `${path}.id`, 0, 0x7fff_ffff),
     typeId: entry.typeId,
-    stroke: requireStroke(record.stroke, entry, `${path}.stroke`),
     anchor: {
       x: requireInteger(anchor.x, `${path}.anchor.x`, 0, width - 1),
       y: requireInteger(anchor.y, `${path}.anchor.y`, 0, height - 1),
@@ -299,7 +284,7 @@ function parsePilotMachine(
   };
 }
 
-function parseLayout(value: unknown): PortablePilotBlueprint["layout"] {
+function parseLayout(value: unknown): PortableFactoryBlueprint["layout"] {
   const layout = requireRecord(value, "blueprint.layout");
   requireExactKeys(layout, ["width", "height", "tiles", "machines"], "blueprint.layout");
   const width = requireInteger(layout.width, "blueprint.layout.width", 1, MAX_GAME_FACTORY_DIMENSION);
@@ -328,7 +313,7 @@ function parseLayout(value: unknown): PortablePilotBlueprint["layout"] {
   tiles.sort((left, right) => left.y - right.y || left.x - right.x);
 
   const machines = layout.machines.map((machine, index) =>
-    parsePilotMachine(machine, width, height, index));
+    parseFactoryMachine(machine, width, height, index));
   const machineIds = new Set<number>();
   for (const machine of machines) {
     if (machineIds.has(machine.id)) throw new Error(`blueprint: duplicate machine id ${machine.id}`);
@@ -340,8 +325,8 @@ function parseLayout(value: unknown): PortablePilotBlueprint["layout"] {
 
 function parseBlueprint(value: unknown): PortableBlueprint {
   const record = requireRecord(value, "blueprint");
-  if (record.kind !== "research-program" && record.kind !== "pilot-plant") {
-    throw new Error("blueprint: kind must be research-program or pilot-plant");
+  if (record.kind !== "research-program" && record.kind !== "factory-layout") {
+    throw new Error("blueprint: kind must be research-program or factory-layout");
   }
   const payloadKey = record.kind === "research-program" ? "program" : "layout";
   requireExactKeys(record, ["kind", "name", "ruleset", "content", payloadKey], "blueprint");
@@ -366,7 +351,7 @@ function parseBlueprint(value: unknown): PortableBlueprint {
     };
   }
   return {
-    kind: "pilot-plant",
+    kind: "factory-layout",
     name,
     ruleset: BLUEPRINT_RULESET,
     content: BLUEPRINT_CONTENT_FINGERPRINT,
@@ -381,13 +366,12 @@ function materializeProgramCanonical(blueprint: PortableResearchBlueprint): Temp
       return {
         typeId: entry.typeId,
         path: [...entry.path],
-        stroke: step.stroke,
       };
     }),
   };
 }
 
-function materializeLayoutCanonical(blueprint: PortablePilotBlueprint): FactoryLayout {
+function materializeLayoutCanonical(blueprint: PortableFactoryBlueprint): FactoryLayout {
   const { width, height } = blueprint.layout;
   const tiles: FactoryTile[] = Array.from({ length: width * height }, () => ({ kind: "empty" }));
   for (const tile of blueprint.layout.tiles) {
@@ -422,7 +406,6 @@ function materializeLayoutCanonical(blueprint: PortablePilotBlueprint): FactoryL
       def: {
         typeId: entry.typeId,
         path: [...entry.path],
-        stroke: machine.stroke,
         cost: entry.cost,
         speed: entry.speed,
       },
@@ -452,7 +435,7 @@ function materializeLayoutCanonical(blueprint: PortablePilotBlueprint): FactoryL
 }
 
 function validateGeometry(blueprint: PortableBlueprint): void {
-  if (blueprint.kind === "pilot-plant") materializeLayoutCanonical(blueprint);
+  if (blueprint.kind === "factory-layout") materializeLayoutCanonical(blueprint);
 }
 
 function normalizeBlueprint(value: unknown): PortableBlueprint {
@@ -508,8 +491,8 @@ export async function decodeBlueprint(source: string): Promise<PortableBlueprint
   const document = requireRecord(parsed, "document");
   requireExactKeys(document, ["format", "version", "checksum", "blueprint"], "document");
   if (document.format !== BLUEPRINT_FORMAT) throw new Error("blueprint: unsupported format");
-  if (document.version === 1) {
-    throw new Error("blueprint: legacy blueprint version 1 is not supported by the v2 schema");
+  if (document.version === 1 || document.version === 2) {
+    throw new Error(`blueprint: legacy blueprint version ${document.version} is not supported by the v3 schema`);
   }
   if (document.version !== BLUEPRINT_VERSION) {
     throw new Error(`blueprint: unsupported version ${String(document.version)}`);
@@ -527,15 +510,15 @@ export async function decodeBlueprint(source: string): Promise<PortableBlueprint
 export function materializeResearchProgram(value: PortableBlueprint): Template {
   const blueprint = normalizeBlueprint(value);
   if (blueprint.kind !== "research-program") {
-    throw new Error("blueprint: cannot materialize a Pilot Blueprint as a ResearchProgram");
+    throw new Error("blueprint: cannot materialize a Factory Blueprint as a ResearchProgram");
   }
   return materializeProgramCanonical(blueprint);
 }
 
-export function materializePilotLayout(value: PortableBlueprint): FactoryLayout {
+export function materializeFactoryLayout(value: PortableBlueprint): FactoryLayout {
   const blueprint = normalizeBlueprint(value);
-  if (blueprint.kind !== "pilot-plant") {
-    throw new Error("blueprint: cannot materialize a Research Blueprint as a Pilot layout");
+  if (blueprint.kind !== "factory-layout") {
+    throw new Error("blueprint: cannot materialize a Research Blueprint as a Factory layout");
   }
   return materializeLayoutCanonical(blueprint);
 }
@@ -568,10 +551,7 @@ export function blueprintFromProgram(name: string, program: Template): PortableR
     if (!sameData(step.path, entry.path)) {
       throw new Error(`blueprint: source program.steps[${index}].path does not match the catalog`);
     }
-    return {
-      typeId: entry.typeId,
-      stroke: requireStroke(step.stroke, entry, `source program.steps[${index}].stroke`),
-    };
+    return { typeId: entry.typeId };
   });
   return normalizeBlueprint({
     kind: "research-program",
@@ -582,7 +562,7 @@ export function blueprintFromProgram(name: string, program: Template): PortableR
   }) as PortableResearchBlueprint;
 }
 
-export function blueprintFromPilotLayout(name: string, layout: FactoryLayout): PortablePilotBlueprint {
+export function blueprintFromFactoryLayout(name: string, layout: FactoryLayout): PortableFactoryBlueprint {
   const width = requireInteger(layout.width, "source layout.width", 1, MAX_GAME_FACTORY_DIMENSION);
   const height = requireInteger(layout.height, "source layout.height", 1, MAX_GAME_FACTORY_DIMENSION);
   if (width * height > MAX_GAME_FACTORY_CELLS) {
@@ -606,7 +586,7 @@ export function blueprintFromPilotLayout(name: string, layout: FactoryLayout): P
     if (encoded !== null) tiles.push(encoded);
   }
 
-  const machines = layout.machines.map((machine, index): PortablePilotMachine => {
+  const machines = layout.machines.map((machine, index): PortableFactoryMachine => {
     const entry = catalogEntry(machine.def.typeId, `source layout.machines[${index}].typeId`);
     const shape = DEFAULT_SHAPES[entry.typeId];
     if (shape === undefined) {
@@ -624,17 +604,16 @@ export function blueprintFromPilotLayout(name: string, layout: FactoryLayout): P
     return {
       id: machine.id,
       typeId: entry.typeId,
-      stroke: requireStroke(machine.def.stroke, entry, `source layout.machines[${index}].stroke`),
       anchor: { x: machine.anchor.x, y: machine.anchor.y },
       footRot: machine.footRot,
     };
   });
 
   return normalizeBlueprint({
-    kind: "pilot-plant",
+    kind: "factory-layout",
     name,
     ruleset: BLUEPRINT_RULESET,
     content: BLUEPRINT_CONTENT_FINGERPRINT,
     layout: { width, height, tiles, machines },
-  }) as PortablePilotBlueprint;
+  }) as PortableFactoryBlueprint;
 }

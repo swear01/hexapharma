@@ -21,13 +21,6 @@ export function validatePathStamp(path: PathStamp): void {
 
 export function validateMachinePath(machine: Machine): void {
   validatePathStamp(machine.path);
-  if (
-    !Number.isSafeInteger(machine.stroke) ||
-    machine.stroke < 1 ||
-    machine.stroke > machine.path.length
-  ) {
-    throw new Error("drug graph: stroke must be an integer in [1, path.length]");
-  }
 }
 
 export function validateEffectMap(map: EffectMap): void {

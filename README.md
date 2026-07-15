@@ -2,34 +2,31 @@
 
 > codename，正式名稱待議。
 
-一款把 **Big Pharma 的實體工廠**與 **Potion Craft 式大地圖探索**結合的確定性 2D 單人遊戲，使用 shapez/Factorio 類的直接操作語言，但採原創 UI 與美術。
+一款把 **Big Pharma 式實體工廠**與 **Potion Craft 式地圖探索**結合的確定性 2D 單人遊戲。操作借鏡 shapez／Factorio 的直接建造語言；UI、素材與美術皆為原創。
 
-## Single-Atlas redesign
-
-下列 breaking redesign authority 已實作；最終完成宣告仍以本 commit 的完整 gate 與真人 smoke 為準：
+## 現行玩法
 
 ```text
-Research：在單一 Atlas 以固定奇形 Machine PathStamp 組 ResearchProgram，執行後探索迷霧
-  → Pilot Plant：無時間、無成本的任意合法 FactoryLayout sandbox
-  → Commission：不要求 Research contract 或 cure，逐欄位複製 Pilot layout
-  → Production：連續 ticks，實際承擔 cure／side effect／failure／waste 與經濟結果
-  → Market / Technology
+Research：在大型單層 Atlas 上串接固定、完整、奇形的機器路徑；出藥後才揭露發現
+Pilot Plant：免費、無時間的工廠配置沙盒
+Production：新局即可直接建造；每次變更付費並承擔持續生產的結果
+Market / Technology / Blueprints
 ```
 
-- F1/F2/F3 仍是 Research、Pilot Plant、Production；Market/Technology/Blueprints 是 M/T/B drawers。
-- Research 只有一個大型 Atlas；不再有 Route Floor、source/belt/sink 研究路線或常駐教學文。
-- Research 使用 catalog-defined、固定幾何的奇形 `PathStamp`；每段以 prefix calibration 接到既有 program，不用 Factory footprint 或 auto-routing 猜路。
-- Active Research 是單層玩法：wall、abyss、swamp 與同層 A→B portal。跨層互動、A–D layer progression 與 swap/Phase Exchange 暫停。
-- mapgen 由 seed 決定 radial progression 與 motifs，並以 constructive ResearchProgram 保證目標可走；production 不接 solver。
-- Research 只產生探索知識，不產生 Pilot/Production contract。Pilot 可自行建立任意合法 factory layout；Production 初始 layout 必須是 Pilot commission 的 exact copy。
-- Blueprint wire/ruleset 已 breaking freeze 為 **v2**：`research-program` 只保存 ordered `{typeId, stroke}` steps，`pilot-plant` 保存 routing 與 `{id,typeId,stroke,anchor,footRot}` machines。Library 使用獨立 v2 namespace；舊 v1 `research-route` 文件顯式拒絕。
-- Save core wire 已 breaking freeze 為 **v6**：full、compact replay authority、slots/rewind都保存ResearchProgram與contract-free Pilot/Production，v5顯式拒絕。Checkpoint UI/lineage與完整gate已完成；正式release candidate前不維護跨build migration。
+- F1／F2／F3 分別開啟 Research、Pilot Plant、Production；M／T／B 開啟抽屜。
+- Atlas 的牆、深淵、沼澤與成對傳送門即使尚未探索也可見，且會影響路徑預覽；治療區與副作用區仍藏在霧下。
+- Research 機器只使用 catalog 定義的完整路徑；不能截短。不同怪異形狀的組合就是探索謎題。
+- Production 新局即有空白 24×12 場地，不要求先使用 Pilot。傳送帶 $2、分流／合流 $8、來源 $12、出口 $6、機器是每單位處理成本的 10 倍；拆除不退款。
+- Pilot Plant 免費且沒有時間，只是可選的設計空間。完成後可按標示價格建到 Production。
+- 傳送帶依真實連線顯示端點、直線、轉角、T 字與十字，拖曳轉彎會逐格設定正確方向。
+- Blueprint v3 有 `research-program` 與通用 `factory-layout`；工廠藍圖可免費開到 Pilot，或付費建到 Production，Library 跨存檔保存。
+- Save v7 僅保證同 content build 內正確；舊開發版存檔直接拒絕，不做 migration。
 
-舊三場域 contract/Route Floor active authority已移除。實作證據與驗證狀態見 [docs/plan.md](docs/plan.md)。
+詳細操作見 [玩家指南](docs/player-guide.md)，設計與正確性規格見 [docs/design.md](docs/design.md) 與 [docs/invariants.md](docs/invariants.md)。
 
-## Stack / architecture
+## Architecture
 
-TypeScript 6｜React 19｜PixiJS 8｜Vite 8｜Vitest/fast-check｜Playwright。
+TypeScript 6｜React 19｜PixiJS 8｜Vite 8｜Vitest／fast-check｜Playwright。
 
 ```text
 React UI          → read GameState + dispatch GameIntent
@@ -37,9 +34,9 @@ Pixi renderer     → read-only drawing
 Pure TS sim core  → deterministic path/mapgen/tick/economy/save/replay
 ```
 
-`src/sim/**` 禁止 Pixi/React/DOM。mapgen/sim 不用 `Math.random()` 或 wall-clock；Production 成功熱 tick 使用 fixed-capacity SoA TypedArrays 與預配置 buffers。solver 只供 tests/tools，絕不進遊戲內自動解。
+`src/sim/**` 禁止 Pixi／React／DOM。mapgen 與 sim 不用 `Math.random()` 或 wall-clock；Production 熱迴圈使用固定容量資料結構。solver 只供 tests/tools，絕不進遊戲內自動解。
 
-## Run
+## 啟動
 
 ```bash
 npm ci
@@ -48,9 +45,9 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 
 - 同機器：<http://127.0.0.1:53346/>
 - 遠端：`http://<Oracle 公網 IP>:53346/`
-- Oracle Cloud 只白名單 53346，禁止靜默換 port。
+- Oracle Cloud 只開放 53346；`--strictPort` 禁止靜默換 port。
 
-breaking milestone 的手動驗證清單見 [docs/playtest.md](docs/playtest.md)；每個最終 commit 都要重新執行，不能沿用途中證據。
+真人驗證清單見 [docs/playtest.md](docs/playtest.md)。
 
 ## Gate
 
@@ -58,22 +55,23 @@ breaking milestone 的手動驗證清單見 [docs/playtest.md](docs/playtest.md)
 npm run check
 ```
 
-唯一驗收閘：`tsc --noEmit && eslint . && vitest run && playwright test`。自動測試使用 throwaway 53347/53348；不碰真人 53346 server。2026-07-14 final run通過：37個Vitest files／468 tests、33個Playwright tests。
+唯一自動驗收閘：`tsc --noEmit && eslint . && vitest run && playwright test`。自動 E2E 使用 throwaway port，不碰真人測試用的 53346。
 
-## Documentation
+## 文件
 
-| File | Purpose |
+| 文件 | 用途 |
 |---|---|
-| [docs/design.md](docs/design.md) | canonical target game/technical design |
-| [docs/overview.md](docs/overview.md) | short domain overview |
-| [docs/ui-interaction.md](docs/ui-interaction.md) | direct-operation and visual contract |
-| [docs/invariants.md](docs/invariants.md) | target correctness invariants |
-| [docs/decisions.md](docs/decisions.md) | architecture and superseded decisions |
-| [docs/structure.md](docs/structure.md) | modules, boundaries, migration status |
-| [docs/playtest.md](docs/playtest.md) | remote startup and milestone manual validation |
-| [docs/plan.md](docs/plan.md), [docs/roadmap.md](docs/roadmap.md) | current breaking work / future phases |
-| [docs/development-policy.md](docs/development-policy.md) | early save compatibility policy |
-| [docs/module-ownership.md](docs/module-ownership.md) | collaboration ownership |
+| [docs/design.md](docs/design.md) | canonical 遊戲與技術設計 |
+| [docs/player-guide.md](docs/player-guide.md) | 啟動、操作與遊玩流程 |
+| [docs/ui-interaction.md](docs/ui-interaction.md) | world-first 互動與視覺契約 |
+| [docs/invariants.md](docs/invariants.md) | 正確性不變式 |
+| [docs/overview.md](docs/overview.md) | 短版 domain overview |
+| [docs/structure.md](docs/structure.md) | 模組與邊界 |
+| [docs/plan.md](docs/plan.md), [docs/roadmap.md](docs/roadmap.md) | 現行工作與後續階段 |
+| [docs/playtest.md](docs/playtest.md) | 遠端啟動與手動驗收 |
+| [docs/development-policy.md](docs/development-policy.md) | 早期存檔政策 |
+| [docs/decisions.md](docs/decisions.md) | 關鍵決策 |
+| [docs/module-ownership.md](docs/module-ownership.md) | 協作 ownership |
 
 ## License
 

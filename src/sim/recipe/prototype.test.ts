@@ -37,7 +37,6 @@ function step(typeId: string): Machine {
   return {
     typeId: entry.typeId,
     path: entry.path,
-    stroke: entry.path.length,
   };
 }
 

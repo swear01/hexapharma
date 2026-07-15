@@ -137,10 +137,7 @@ function assertReferences(level: GeneratedLevel): void {
     expect(outcome.final[disease.map]).toEqual(disease.node);
     expect(disease.difficulty).toBeGreaterThanOrEqual(4);
     expect(disease.difficulty).toBeLessThanOrEqual(12);
-    for (const step of disease.reference.steps) {
-      expect(step.stroke).toBeGreaterThanOrEqual(1);
-      expect(step.stroke).toBeLessThanOrEqual(step.path.length);
-    }
+    for (const step of disease.reference.steps) expect(step.path.length).toBeGreaterThan(0);
   }
 }
 

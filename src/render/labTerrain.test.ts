@@ -21,13 +21,13 @@ function map(): EffectMap {
 }
 
 describe("Lab terrain visual language", () => {
-  it("assigns unmistakable, non-interchangeable motifs to blocking terrain", () => {
+  it("keeps structural terrain readable before any discovery", () => {
     const level = map();
-    const terrain = [CellKind.Wall, CellKind.Abyss, CellKind.Swamp] as const;
+    const terrain = [CellKind.Wall, CellKind.Abyss, CellKind.Swamp, CellKind.Portal] as const;
     for (let index = 0; index < terrain.length; index++) {
       level.cell[index] = terrain[index]!;
-      level.fog[index] = 1;
     }
+    level.portalTo[3] = 6;
 
     expect(labTerrainVisual(level, 0, 0)).toMatchObject({
       kind: "wall",
@@ -44,72 +44,69 @@ describe("Lab terrain visual language", () => {
       motif: "viscous-drag",
       opaque: true,
     });
+    expect(labTerrainVisual(level, 3, 0)).toMatchObject({
+      kind: "portal",
+      motif: "paired-directional",
+      role: "entry",
+      pairMarker: "P3-6",
+      destination: { x: 6, y: 0 },
+      direction: { x: 1, y: 0 },
+    });
+    expect(labTerrainVisual(level, 6, 0)).toMatchObject({
+      kind: "portal",
+      role: "exit",
+      pairMarker: "P3-6",
+      direction: { x: 1, y: 0 },
+    });
   });
 
-  it("returns only opaque fog for hidden terrain regardless of its true kind", () => {
-    const wall = map();
-    wall.cell[0] = CellKind.Wall;
-    const portal = map();
-    portal.cell[0] = CellKind.Portal;
-    portal.portalTo[0] = 6;
+  it("gives undiscovered effects the same render plan as empty substrate", () => {
+    const level = map();
+    level.cell[1] = CellKind.Cure;
+    level.cureId[1] = 4;
+    level.cell[2] = CellKind.SideEffect;
+    level.sideEffectId[2] = 9;
 
-    expect(labTerrainVisual(wall, 0, 0)).toEqual({ kind: "fog", opaque: true });
-    expect(labTerrainVisual(portal, 0, 0)).toEqual({ kind: "fog", opaque: true });
+    const empty = labTerrainVisual(level, 0, 0);
+    expect(labTerrainVisual(level, 1, 0)).toEqual(empty);
+    expect(labTerrainVisual(level, 2, 0)).toEqual(empty);
+
+    level.fog[1] = 1;
+    level.fog[2] = 1;
+    expect(labTerrainVisual(level, 1, 0)).toMatchObject({ kind: "cure", motif: "cure-receptor" });
+    expect(labTerrainVisual(level, 2, 0)).toMatchObject({
+      kind: "sideEffect",
+      motif: "side-effect-colony",
+    });
   });
 
-  it("renders a directed entry and reverse-looked-up exit without leaking a fogged pair", () => {
+  it("keeps portal pairing and direction independent of discovery", () => {
     const level = map();
     const left = 1 * level.width + 1;
     const right = 1 * level.width + 5;
     level.cell[left] = CellKind.Portal;
     level.portalTo[left] = right;
+
+    const hiddenEntry = labTerrainVisual(level, 1, 1);
+    const hiddenExit = labTerrainVisual(level, 5, 1);
     level.fog[left] = 1;
-
-    expect(labTerrainVisual(level, 1, 1)).toMatchObject({
-      kind: "portal",
-      motif: "paired-directional",
-      role: "entry",
-      pairMarker: null,
-      destination: null,
-      direction: null,
-    });
-    expect(labTerrainVisual(level, 5, 1)).toEqual({ kind: "fog", opaque: true });
-
     level.fog[right] = 1;
-    const entry = labTerrainVisual(level, 1, 1);
-    const exit = labTerrainVisual(level, 5, 1);
-    expect(entry).toMatchObject({
+
+    expect(labTerrainVisual(level, 1, 1)).toEqual(hiddenEntry);
+    expect(labTerrainVisual(level, 5, 1)).toEqual(hiddenExit);
+    expect(hiddenEntry).toMatchObject({
+      kind: "portal",
       role: "entry",
       pairMarker: `P${left}-${right}`,
       destination: { x: 5, y: 1 },
       direction: { x: 1, y: 0 },
     });
-    expect(exit).toMatchObject({
+    expect(hiddenExit).toMatchObject({
       kind: "portal",
       role: "exit",
       pairMarker: `P${left}-${right}`,
       destination: { x: 5, y: 1 },
       direction: { x: 1, y: 0 },
-    });
-    expect(entry.kind === "portal" && exit.kind === "portal" && entry.pairMarker).toBe(
-      exit.kind === "portal" ? exit.pairMarker : "",
-    );
-  });
-
-  it("does not disclose pair identity or direction until both endpoints are revealed", () => {
-    const level = map();
-    const entryIndex = 1 * level.width + 1;
-    const exitIndex = 1 * level.width + 5;
-    level.cell[entryIndex] = CellKind.Portal;
-    level.portalTo[entryIndex] = exitIndex;
-    level.fog[exitIndex] = 1;
-
-    expect(labTerrainVisual(level, 5, 1)).toMatchObject({
-      kind: "portal",
-      role: "exit",
-      pairMarker: null,
-      destination: null,
-      direction: null,
     });
   });
 

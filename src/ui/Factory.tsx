@@ -9,14 +9,14 @@
  * NEW model recap:
  *  - Machines are NOT tiles. A PlacedMachine = { id, def, anchor, footRot, shape }.
  *    Its WORLD footprint = local shape rotated by `footRot` quarter-turns CW about
- *    the anchor; `def.path` remains fixed while `def.stroke` selects its prefix.
+ *    the anchor; `def.path` remains fixed.
  *  - Belts/splitters/mergers/source/sink are tiles; splitter fans one input out
  *    round-robin, merger fans inputs into one output → REAL parallelism: a
  *    source→splitter→[two machines]→merger→sink out-produces a single machine.
  *
  * A facility with no authority opens as an empty entitled floor. Nothing is
  * auto-packed or committed: the player builds geometry directly, and Production
- * receives its commissioned Pilot layout through the game reducer.
+ * sends edits to the game reducer.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MachineIcon } from "./MachineIcon";
@@ -39,6 +39,7 @@ import type {
 import { DEFAULT_CATALOG, DEFAULT_SHAPES } from "../sim/phase0_interfaces";
 import { initFactory, analyzeThroughput } from "../sim/factory-sim";
 import { factoryOutcome } from "../sim/recipe";
+import { quoteProductionBuild } from "../sim/construction";
 import type { FactoryRenderer } from "../render/factoryRenderer";
 import {
   appendUniqueCells,
@@ -47,6 +48,8 @@ import {
   panCamera,
   pushEditorHistory,
   rasterizeGridLine,
+  routeBeltGesture,
+  orientBeltGesture,
   reconcilePendingCommit,
   redoEditorHistory,
   screenToGrid,
@@ -114,13 +117,11 @@ function entryOf(typeId: MachineTypeId): MachineCatalogEntry {
   return entry;
 }
 
-function machineDef(typeId: MachineTypeId, requestedStroke?: number): FactoryMachineDef {
+function machineDef(typeId: MachineTypeId): FactoryMachineDef {
   const entry = entryOf(typeId);
-  const stroke = requestedStroke ?? entry.path.length;
   return {
     typeId,
     path: entry.path,
-    stroke: Math.max(1, Math.min(entry.path.length, stroke)),
     cost: entry.cost,
     speed: entry.speed,
   };
@@ -184,7 +185,6 @@ interface ClipboardBrush {
   readonly brush: Brush;
   readonly dir: Dir;
   readonly footRot: Rotation;
-  readonly stroke: number;
 }
 
 const DIR_LABEL: Record<Dir, string> = { 0: "→ E", 1: "↓ S", 2: "← W", 3: "↑ N" };
@@ -231,7 +231,6 @@ function brushAt(layout: FactoryLayout, cell: GridCell): ClipboardBrush | null {
       brush: { kind: "machine", typeId: machine.def.typeId },
       dir: E,
       footRot: machine.footRot,
-      stroke: machine.def.stroke,
     };
   }
   const tile = layout.tiles[cell.y * layout.width + cell.x];
@@ -245,7 +244,6 @@ function brushAt(layout: FactoryLayout, cell: GridCell): ClipboardBrush | null {
     brush: { kind: tile.kind },
     dir,
     footRot: 0,
-    stroke: 1,
   };
 }
 
@@ -257,14 +255,13 @@ function paint(
   brush: Brush,
   dir: Dir,
   footRot: Rotation,
-  stroke: number,
 ): FactoryLayout {
   if (brush.kind === "machine") {
     const shape: MachineShape | undefined = DEFAULT_SHAPES[brush.typeId];
     if (shape === undefined) throw new Error(`Factory: unknown machine shape "${brush.typeId}"`);
     const m: PlacedMachine = {
       id: nextMachineId(layout),
-      def: machineDef(brush.typeId, stroke),
+      def: machineDef(brush.typeId),
       anchor: { x, y },
       footRot,
       shape,
@@ -300,6 +297,20 @@ function paint(
   return { ...layout, tiles, machines };
 }
 
+export function paintBeltRoute(
+  layout: FactoryLayout,
+  cells: readonly GridCell[],
+  fallbackDirection: Dir,
+): FactoryLayout {
+  const directions = orientBeltGesture(cells, fallbackDirection);
+  let next = layout;
+  for (let index = 0; index < cells.length; index++) {
+    const cell = cells[index]!;
+    next = paint(next, cell.x, cell.y, { kind: "belt" }, directions[index] ?? fallbackDirection, 0);
+  }
+  return next;
+}
+
 const CELL = 42;
 const PAD = 12;
 
@@ -309,8 +320,17 @@ const TICK_MS = 80;
 
 type FacilityMode = "pilot" | "production";
 
-export function facilityMayAnalyzeOutcome(_mode: FacilityMode): boolean {
-  return true;
+export function previewProductionBuildCost(
+  mode: FacilityMode,
+  current: FactoryLayout,
+  proposed: FactoryLayout,
+): number | null {
+  if (mode !== "production" || current === proposed) return null;
+  return quoteProductionBuild(current, proposed);
+}
+
+export function facilityMayAnalyzeOutcome(mode: FacilityMode, rateNum: number): boolean {
+  return mode === "pilot" && rateNum > 0;
 }
 
 export function formatFacilityOutcome(outcome: Outcome): string {
@@ -372,12 +392,13 @@ export function Factory({
     initialFacilityLayout(authoritativeLayout, entitledWidth, entitledHeight)
   );
   const [playing, setPlaying] = useState<boolean>(false);
+  const playingRef = useRef(playing);
+  playingRef.current = playing;
 
   // editing brush + parameters.
   const [brush, setBrush] = useState<Brush>({ kind: "belt" });
   const [brushDir, setBrushDir] = useState<Dir>(E);
   const [footRot, setFootRot] = useState<Rotation>(0);
-  const [machineStroke, setMachineStroke] = useState(1);
   const [clipboardLabel, setClipboardLabel] = useState("empty");
   const [hoverCell, setHoverCell] = useState<GridCell | null>(null);
   const [camera, setCamera] = useState<Camera>({ x: 0, y: 0, zoom: 1 });
@@ -446,7 +467,11 @@ export function Factory({
     readonly outcome: Outcome | null;
     readonly error: string | null;
   }>(() => {
-    if (authoritativeLayout === null) {
+    if (
+      authoritativeLayout === null ||
+      throughput === null ||
+      !facilityMayAnalyzeOutcome(mode, throughput.rateNum)
+    ) {
       return { outcome: null, error: null };
     }
     try {
@@ -457,7 +482,7 @@ export function Factory({
         error: `Sample unavailable: ${error instanceof Error ? error.message : String(error)}`,
       };
     }
-  }, [authoritativeLayout, layout, mm, start]);
+  }, [authoritativeLayout, layout, mm, mode, start, throughput]);
   const analysisError = [throughputAnalysis.error, sampleAnalysis.error]
     .filter((entry): entry is string => entry !== null)
     .join(" ");
@@ -481,6 +506,7 @@ export function Factory({
 
   const commitLayout = useCallback(
     (next: FactoryLayout) => {
+      playingRef.current = false;
       setPlaying(false);
       if (next === layoutRef.current) return false;
       if (!onLayoutChange(next)) return false;
@@ -502,6 +528,7 @@ export function Factory({
     setHistory(next);
     layoutRef.current = next.present;
     setLayout(next.present);
+    playingRef.current = false;
     setPlaying(false);
   }, [onLayoutChange]);
 
@@ -605,14 +632,21 @@ export function Factory({
   useEffect(() => {
     if (!playing || mode !== "production" || onAdvance === undefined) return;
     const id = window.setInterval(() => {
-      if (!onAdvance(8)) setPlaying(false);
+      if (!playingRef.current) return;
+      if (!onAdvance(8)) {
+        playingRef.current = false;
+        setPlaying(false);
+      }
     }, TICK_MS);
     return () => window.clearInterval(id);
   }, [mode, onAdvance, playing]);
 
   // stop playing automatically on deadlock.
   useEffect(() => {
-    if (state.deadlocked && playing) setPlaying(false);
+    if (state.deadlocked && playing) {
+      playingRef.current = false;
+      setPlaying(false);
+    }
   }, [state.deadlocked, playing]);
 
   // ── controls ──
@@ -621,6 +655,7 @@ export function Factory({
   }, [onAdvance]);
 
   const reset = useCallback(() => {
+    playingRef.current = false;
     setPlaying(false);
     onReset?.();
   }, [onReset]);
@@ -759,12 +794,15 @@ export function Factory({
     setHoverCell(cell);
     const gesture = gestureRef.current;
     if (cell === null || gesture?.pointerId !== event.pointerId) return;
+    const cells = gesture.mode === "paint" && brush.kind === "belt"
+      ? routeBeltGesture(gesture.cells, cell, brushDir)
+      : appendUniqueCells(gesture.cells, rasterizeGridLine(gesture.last, cell));
     gestureRef.current = {
       ...gesture,
-      cells: appendUniqueCells(gesture.cells, rasterizeGridLine(gesture.last, cell)),
+      cells,
       last: cell,
     };
-  }, [pointerCell, updateCamera]);
+  }, [brush.kind, brushDir, pointerCell, updateCamera]);
 
   const finishCanvasGesture = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     const touchGesture = touchGestureRef.current;
@@ -778,7 +816,6 @@ export function Factory({
           brush,
           brushDir,
           footRot,
-          machineStroke,
         ));
       }
       return;
@@ -792,12 +829,16 @@ export function Factory({
     if (gesture?.pointerId !== event.pointerId) return;
     gestureRef.current = null;
     const activeBrush: Brush = gesture.mode === "erase" ? { kind: "erase" } : brush;
-    let next = gesture.base;
-    for (const cell of gesture.cells) {
-      next = paint(next, cell.x, cell.y, activeBrush, brushDir, footRot, machineStroke);
+    let next = activeBrush.kind === "belt"
+      ? paintBeltRoute(gesture.base, gesture.cells, brushDir)
+      : gesture.base;
+    if (activeBrush.kind !== "belt") {
+      for (const cell of gesture.cells) {
+        next = paint(next, cell.x, cell.y, activeBrush, brushDir, footRot);
+      }
     }
     commitLayout(next);
-  }, [brush, brushDir, commitLayout, footRot, machineStroke]);
+  }, [brush, brushDir, commitLayout, footRot]);
 
   const onCanvasWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -822,7 +863,6 @@ export function Factory({
     setBrush(picked.brush);
     setBrushDir(picked.dir);
     setFootRot(picked.footRot);
-    setMachineStroke(picked.stroke);
   }, [hoverCell, layout]);
 
   const copyHovered = useCallback((cut: boolean) => {
@@ -832,7 +872,7 @@ export function Factory({
     clipboardRef.current = copied;
     setClipboardLabel(copied.brush.kind === "machine" ? copied.brush.typeId : copied.brush.kind);
     if (cut) {
-      commitLayout(paint(layoutRef.current, hoverCell.x, hoverCell.y, { kind: "erase" }, E, 0, 1));
+      commitLayout(paint(layoutRef.current, hoverCell.x, hoverCell.y, { kind: "erase" }, E, 0));
     }
   }, [commitLayout, hoverCell]);
 
@@ -846,7 +886,6 @@ export function Factory({
       copied.brush,
       copied.dir,
       copied.footRot,
-      copied.stroke,
     ));
   }, [commitLayout, hoverCell]);
 
@@ -897,17 +936,10 @@ export function Factory({
         const entry = catalog[slot];
         if (entry !== undefined) {
           setBrush({ kind: "machine", typeId: entry.typeId });
-          setMachineStroke(entry.path.length);
         }
       } else if (lower === "r") {
         event.preventDefault();
         rotateActiveBrush();
-      } else if (event.key === "[" || event.key === "]") {
-        event.preventDefault();
-        if (brush.kind === "machine") {
-          const limit = entryOf(brush.typeId).path.length;
-          setMachineStroke((value) => Math.max(1, Math.min(limit, value + (event.key === "]" ? 1 : -1))));
-        }
       } else if (lower === "q") {
         event.preventDefault();
         pickHovered();
@@ -942,10 +974,20 @@ export function Factory({
   const hoverKind = hoveredMachine === undefined
     ? hoveredTile?.kind ?? "outside"
     : `machine:${machineUiName(hoveredMachine.def.typeId)}`;
+  const activeGesture = gestureRef.current;
+  const beltGestureCandidate = activeGesture?.mode === "paint" && brush.kind === "belt"
+    ? paintBeltRoute(activeGesture.base, activeGesture.cells, brushDir)
+    : null;
+  const hoverCandidate = beltGestureCandidate ?? (hoverCell === null
+    ? layout
+    : paint(layout, hoverCell.x, hoverCell.y, brush, brushDir, footRot));
   const hoverPlacementValid = hoverCell === null || brush.kind === "erase"
     ? true
-    : paint(layout, hoverCell.x, hoverCell.y, brush, brushDir, footRot, machineStroke) !== layout;
-  const ghostCells = hoverCell === null
+    : hoverCandidate !== layout;
+  const hoverBuildCost = previewProductionBuildCost(mode, layout, hoverCandidate);
+  const ghostCells = beltGestureCandidate !== null && activeGesture !== null
+    ? activeGesture.cells
+    : hoverCell === null
     ? []
     : brush.kind === "machine"
       ? DEFAULT_SHAPES[brush.typeId]!.cells.map((cell) => {
@@ -990,7 +1032,6 @@ export function Factory({
                 <button type="button" onClick={reset} data-testid="factory-reset">↺</button>
               </>
             )}
-            {mode !== "production" && <strong className="facility-clock-state">◇ No clock · layout edits are free</strong>}
             {onCommand !== undefined && commandLabel !== undefined && (
               <button
                 type="button"
@@ -998,7 +1039,7 @@ export function Factory({
                 onClick={() => onCommand(layoutRef.current)}
                 disabled={commandDisabled}
                 data-testid={`${mode}-command`}
-                aria-label={mode === "pilot" ? "Validate Pilot layout and commission Production" : commandLabel}
+                aria-label={commandLabel}
               >
                 {commandLabel}
               </button>
@@ -1031,6 +1072,13 @@ export function Factory({
                   style={{ left: PAD + cell.x * CELL, top: PAD + cell.y * CELL }}
                 />
               ))}
+              {hoverCell !== null && hoverBuildCost !== null && (
+                <output
+                  className="factory-ghost-cost"
+                  data-testid="factory-ghost-cost"
+                  style={{ left: PAD + hoverCell.x * CELL, top: PAD + hoverCell.y * CELL }}
+                >${hoverBuildCost}</output>
+              )}
             </div>
           </div>
 
@@ -1051,7 +1099,6 @@ export function Factory({
                   type="button"
                   onClick={() => {
                     setBrush({ kind: "machine", typeId: entry.typeId });
-                    setMachineStroke(entry.path.length);
                   }}
                   disabled={!unlocked}
                   className={`tool-slot${brush.kind === "machine" && brush.typeId === entry.typeId ? " is-selected" : ""}${unlocked ? "" : " is-locked"}`}
@@ -1060,7 +1107,7 @@ export function Factory({
                   title={`${machineUiName(entry.typeId)} · ${entry.speed} ticks/unit`}
                 >
                   <span className="tool-symbol">
-                    <MachineIcon typeId={entry.typeId} path={entry.path} stroke={entry.path.length} size={26} />
+                    <MachineIcon typeId={entry.typeId} path={entry.path} size={26} />
                   </span>
                   <span className="tool-name">{machineUiName(entry.typeId)}</span>
                   {shortcutIndex >= 0 && shortcutIndex < 4 && (
@@ -1073,7 +1120,6 @@ export function Factory({
         </section>
 
         <aside className="inspector factory-inspector" data-testid="factory-inspector">
-          <div className="panel-kicker">{mode === "production" ? "Live facility" : "Zero-time workspace"}</div>
           <h1>{facilityName}</h1>
           {mode === "production" ? (
             <div className={`factory-metrics${state.deadlocked ? " is-error" : ""}`} data-testid="factory-status" role="status">
@@ -1107,14 +1153,8 @@ export function Factory({
             </div>
             <div className="panel-actions">
               <button type="button" onClick={rotateActiveBrush} className="game-control" data-testid="brush-rotate">R · Rotate</button>
-              <button type="button" onClick={() => setMachineStroke((value) => Math.max(1, value - 1))} disabled={!brushIsMachine || machineStroke <= 1} className="game-control" data-testid="brush-stroke-less">[ · shorter</button>
-              <button type="button" onClick={() => {
-                if (brush.kind === "machine") {
-                  setMachineStroke((value) => Math.min(entryOf(brush.typeId).path.length, value + 1));
-                }
-              }} disabled={!brushIsMachine || (brush.kind === "machine" && machineStroke >= entryOf(brush.typeId).path.length)} className="game-control" data-testid="brush-stroke-more">] · longer</button>
             </div>
-            {brushIsMachine && <p>Path {machineStroke}/{entryOf(brush.typeId).path.length} · {entryOf(brush.typeId).speed} ticks</p>}
+            {brushIsMachine && <p>{entryOf(brush.typeId).speed} ticks</p>}
           </div>
 
           {analysisError !== "" && <div role="alert" data-testid="factory-analysis-error" className="game-alert">{analysisError}</div>}
@@ -1130,7 +1170,6 @@ export function Factory({
               <button type="button" onClick={pasteHovered} disabled={clipboardLabel === "empty" || hoverCell === null} className="game-control" data-testid="factory-paste">Paste</button>
             </div>
           </div>
-          <div className="key-help"><span className="hotkey">LMB drag</span> build · <span className="hotkey">RMB drag</span> erase · <span className="hotkey">Shift drag</span> pan · <span className="hotkey">Wheel</span> zoom · <span className="hotkey">Ctrl C/X/V</span> clipboard · <span className="hotkey">Ctrl Z/Y</span> history</div>
         </aside>
       </div>
     </div>

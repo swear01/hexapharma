@@ -1,27 +1,28 @@
 # Notes
 
-## Current breaking-design gotchas
+## Current design gotchas
 
-- **Research 不是小工廠**：只有 Atlas + ResearchProgram。不要保留 Route Floor toggle、source/belt/sink、linear route descriptor、Factory sample 或常駐 tutorial panel。
-- **PathStamp fixed means fixed**：奇形 path cells/entry/exit 屬 catalog content。Factory 的 footRot/effect flip、CSS transform 或 renderer scale 都不能改 Research path authority。
-- **prefix calibration 不是 auto-route**：它只把下一 stamp 接到當前 prefix endpoint，必須 canonical/serializable；不能改 stamp、跳過 prefix、偷跑 solver 或 silent repair。
-- **Research 只探索**：fog/progress 只由實際 program execution 改變。Research 不鑄造 Pilot contract，不送 layout，也不替 Production 保證 cure。
-- **Active Atlas 單層**：暫停 A–D tabs、跨層座標、swap/Phase Exchange 與 deeper-layer progression。舊 engine code存在不代表 UI/content可以繼續曝光。
-- **portal 是同層 A→B**：成對、定向、trail 斷段；不能畫穿過中間未知格，也不能把 B 當回程入口。
-- **terrain 不是換皮**：wall、abyss、swamp 必須在 pure path core 有不同 deterministic semantics；未定稿前 renderer 不猜。
-- **mapgen constructive**：seeded radial bands + motifs 先構造合法 ResearchProgram；solver 只做 tests/tools quality audit，不進 production rejection loop。
-- **Pilot 是 sandbox**：無 clock/cost/inventory/waste；可以從空地做任意合法 split/merge/parallel layout，與 Research 狀態解耦。
-- **diagnostic 不是 gate**：Pilot 顯示 cure/side effects/final/throughput/deadlock，但 commission 不要求 cure、contract match 或好結果。只擋非法 layout／無法建立 Production 的 authority 錯誤。
-- **Production 承擔後果**：initial layout exact copy Pilot；no-cure/failure/deadlock/副作用與低吞吐都不是 copy 時偷修的理由。
-- **Blueprint v2 kind 不共用 payload**：`research-program`只存ordered `{typeId,stroke}`；`pilot-plant`存routing與`{id,typeId,stroke,anchor,footRot}`，不存chemical orientation/path。舊v1 `research-route`不可被decoder猜成program。
-- **Blueprint ≠ save**：Library namespace/lifecycle 仍獨立；不含 fog/seed/economy/runtime/results。Load/Rewind 不能改 Library。
-- **Save v6與checkpoint integration已完成**：full/compact/slots/rewind已用program/path/stroke與no-contract facilities，v5顯式拒絕；checkpointStorage lineage/recovery已完成；UI/E2E與gate須隨改動持續驗證。
-- **hidden mounted ≠ active**：已造訪建築可 mounted 保存 camera/tool，但 hidden page 不接 gameplay input。
-- **renderer failure must be visible**：Pixi dynamic import/asset/init 失敗不能用空 canvas 或 debug fallback 冒充成功。
+- **Research 不是小工廠**：只有 Atlas + ordered full PathStamps；不要加入 source／belt／sink、FactoryLayout、route editor 或 DOM timeline。
+- **完整 path 才是 puzzle piece**：機器的奇形 path cells 屬 catalog content。UI、Blueprint、Save、footRot 或 CSS transform 都不能截短或改寫它。
+- **terrain 與 discovery 分層**：wall／abyss／swamp／portal 即使在未揭露區也必須可見並影響 preview；Cure／SideEffect 在揭露前必須完全中性化。
+- **portal 是同層 A→B**：成對、有向、trail 斷段；B 不是回程入口。
+- **Research 只探索**：選路徑與載入 Blueprint 不改 fog；只有付費出藥後的 actual segments 揭露。
+- **mapgen constructive**：seeded radial bands + motifs 先構造合法 reference program；solver 只做 tests/tools quality audit。
+- **Pilot 是可選 sandbox**：無 clock／cost／inventory／waste，與 Research、Production 狀態解耦。
+- **Production 可直接建造**：新局已有空 24×12 layout。不要再加入 Pilot 前置、封鎖頁或隱藏 token。
+- **建造差異就是經濟 authority**：tile/machine 新建收費；拆除不退款。接受 edit 後 runtime 重建，但累積 waste 保留。
+- **Blueprint v3 factory kind 是通用的**：`factory-layout` 不記錄來自 Pilot 或 Production；同文件可開到 Pilot 或付費建到 Production。
+- **Blueprint ≠ save**：Library lifecycle 獨立；不含 fog、seed、economy、runtime 或結果。Load／Rewind 不能改 Library。
+- **Save v7 不兼容舊開發版**：full／compact／slots／rewind 都必須保留 paid build trace 與 non-null Production。
+- **connected texture 不是鄰居 skin**：只畫 sim 真正形成的 accept→emit edge；錯向相鄰格必須看得出沒有連接。
+- **hidden mounted ≠ active**：已造訪建築可 mounted 保存 camera/tool/history；hidden page 不接 gameplay input。
+- **renderer failure 必須可見**：asset/init 失敗不能用空 canvas 或 debug fallback 冒充成功。
+- **畫面文字要克制**：常駐 UI 不放設計理由、形容詞式副標與長教學；細節寫在 [player-guide.md](player-guide.md)。
 
-## Why this redesign
+## Why
 
-- 把 FactoryLayout 塞進 Research，會讓探索變成第二個工廠 editor；固定奇形 PathStamp 讓玩家直接在 Atlas 上思考路徑、terrain 與 motif。
-- multi-layer/swap 在核心路徑未穩前增加太多不可讀組合；同層 portal 先保留非連續路徑決策，跨層互動暫停而非偷偷半支援。
-- Research contract 讓 Pilot/Production 退化成「驗證通過才能按下一步」的 web workflow。Research 只提供玩家知識、Pilot 免費試作、Production承擔實際結果，三頁才各有遊戲性。
-- Blueprint 保存玩家可攜知識；因此 ResearchProgram 與 FactoryLayout 必須是兩種明確 payload，而不是用同一 layout schema 假裝。
+- 固定完整奇形路徑讓玩家在 Atlas 上思考形狀與地形，而不是把 Research 做成第二個 Factory editor。
+- 結構 terrain 可見，讓組合有可預期的空間決策；把治療／副作用藏霧下，仍保留探索未知與試錯成本。
+- Pilot 提供免費畫藍圖的便利，但不限制直接 Production 建造；Production 的成本與 runtime 後果才是正式風險。
+- connected topology 讓 factory 一眼可讀，也讓拖曳轉彎、split／merge 與 machine ports 使用一致視覺語言。
+- ResearchProgram 與 FactoryLayout 是兩種可攜知識，因此 Blueprint 必須是兩個明確 payload，而不是互相猜測轉換。

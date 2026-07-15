@@ -34,7 +34,7 @@ function pilotSave(): string {
 function productionSave(): string {
   let game = createGameState(defaultGenOptions(14), 10_000, 100);
   game = applyGameIntent(game, { kind: "setPilotLayout", layout: referenceLayout() });
-  game = applyGameIntent(game, { kind: "sendPilotToProduction" });
+  game = applyGameIntent(game, { kind: "buildProductionLayout", layout: referenceLayout() });
   return serializeGame(game);
 }
 
@@ -57,7 +57,6 @@ function machineGallerySave(): string {
     def: {
       typeId: entry.typeId,
       path: entry.path,
-      stroke: entry.path.length,
       cost: entry.cost,
       speed: entry.speed,
     },
@@ -140,7 +139,7 @@ test("Production runs continuous time, produces sink outcomes, and resets", asyn
   await expect(tick).toHaveText("0");
 });
 
-test("Pilot commissions without a Research contract and Production is an exact copy", async ({ page }) => {
+test("Pilot builds without a Research contract and Production is an exact copy", async ({ page }) => {
   await loadLegacySave(page, pilotSave());
   await expect(page.getByTestId("research-program-count")).toHaveText("0 placed");
   await page.getByTestId("view-pilot").click();
@@ -152,21 +151,43 @@ test("Pilot commissions without a Research contract and Production is an exact c
   await page.getByTestId("save").click();
 
   const raw = await page.evaluate(() => localStorage.getItem("hexapharma.save.checkpoint.0"));
-  if (raw === null) throw new Error("commissioned checkpoint was not saved");
+  if (raw === null) throw new Error("built Production checkpoint was not saved");
   const envelope = JSON.parse(raw) as { readonly head: string };
   const saved = deserializeGameAuthority(envelope.head);
   expect(saved.research.program.steps).toHaveLength(0);
   expect(saved.production.layout).toEqual(saved.pilot.layout);
 });
 
-test("a fresh empty Pilot draft can be commissioned without a preliminary edit", async ({ page }) => {
+test("a fresh game opens its empty Production floor without using Pilot", async ({ page }) => {
   await page.goto("/");
-  await page.getByTestId("view-pilot").click();
+  await page.getByTestId("view-production").click();
 
-  await expect(page.getByTestId("pilot-command")).toBeEnabled();
-  await page.getByTestId("pilot-command").click();
   await expect(page.getByRole("heading", { name: "Production" })).toBeVisible();
   await expect(page.getByTestId("production-facility-workspace").locator("canvas")).toBeVisible();
+  await expect(page.getByTestId("factory-tick")).toHaveText("0");
+});
+
+test("Production previews and charges construction while removal gives no refund", async ({ page }) => {
+  await page.goto("/");
+  await page.getByTestId("view-production").click();
+  const frame = page.getByTestId("production-facility-workspace").getByTestId("factory-canvas");
+  const canvas = frame.locator("canvas");
+  await expect(canvas).toBeVisible({ timeout: 15_000 });
+  const box = await canvas.boundingBox();
+  if (box === null) throw new Error("Production canvas has no bounds");
+  const target = { x: box.x + 12 + 4 * 42 + 21, y: box.y + 12 + 4 * 42 + 21 };
+  const end = { x: target.x + 3 * 42, y: target.y + 2 * 42 };
+
+  await page.mouse.move(target.x, target.y);
+  await expect(page.getByTestId("factory-ghost-cost")).toHaveText("$2");
+  await page.mouse.down();
+  await page.mouse.move(end.x, end.y, { steps: 8 });
+  await expect(page.getByTestId("factory-ghost-cost")).toHaveText("$12");
+  await page.mouse.up();
+  await expect(page.getByTestId("cash")).toHaveText("188");
+  await page.getByTestId("brush-erase").click();
+  await page.mouse.click(end.x, end.y);
+  await expect(page.getByTestId("cash")).toHaveText("188");
 });
 
 test("physical footprint rotation leaves the selected chemical path unchanged", async ({ page }) => {
@@ -174,7 +195,7 @@ test("physical footprint rotation leaves the selected chemical path unchanged", 
   await page.getByTestId("view-pilot").click();
   const pilot = page.getByTestId("pilot-facility-workspace");
   await pilot.getByTestId("brush-machine-push").click();
-  const iconPath = pilot.getByTestId("brush-machine-push").locator("[data-icon-shape='full-path']");
+  const iconPath = pilot.getByTestId("brush-machine-push").locator("[data-icon-shape='path']");
   const before = await iconPath.getAttribute("points");
   await page.keyboard.press("r");
   await expect(pilot.getByTestId("brush-direction")).toHaveText("Footprint 90°");
@@ -193,7 +214,7 @@ test("compact Pilot controls remain reachable above the construction hotbar", as
   expect(bar.x).toBeGreaterThanOrEqual(stage.x);
   expect(bar.x + bar.width).toBeLessThanOrEqual(stage.x + stage.width);
   await expect(page.locator(".facility-pilot .facility-clock-state")).toBeHidden();
-  await expect(page.getByTestId("pilot-command")).toHaveText("Commission");
+  await expect(page.getByTestId("pilot-command")).toHaveText(/^Build \$\d+$/);
   await expectPilotMachineAboveToolbelt(page);
 });
 
@@ -223,7 +244,7 @@ test("every unlocked machine family has its own path icon and factory silhouette
   await page.getByTestId("view-pilot").click();
   const pilot = page.getByTestId("pilot-facility-workspace");
   await expect(pilot.getByTestId("factory-canvas").locator("canvas")).toBeVisible({ timeout: 15_000 });
-  const points = await pilot.locator("[data-machine-icon] [data-icon-shape='full-path']")
+  const points = await pilot.locator("[data-machine-icon] [data-icon-shape='path']")
     .evaluateAll((icons) => icons.map((icon) => icon.getAttribute("points")));
   expect(new Set(points).size).toBe(DEFAULT_CATALOG.length);
   await expect(pilot.getByText("Machines").locator("..")).toContainText(String(DEFAULT_CATALOG.length));

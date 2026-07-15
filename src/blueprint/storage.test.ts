@@ -32,15 +32,15 @@ beforeAll(() => {
 function fixture() {
   const entry = DEFAULT_CATALOG[0]!;
   const program: Template = {
-    steps: [{ typeId: entry.typeId, path: entry.path, stroke: 2 }],
+    steps: [{ typeId: entry.typeId, path: entry.path }],
   };
   return blueprintFromProgram("Reusable Research program", program);
 }
 
-describe("cross-save Blueprint Library v2", () => {
-  it("uses a breaking v2 namespace and persists checksummed documents outside save slots", async () => {
-    expect(BLUEPRINT_LIBRARY_VERSION).toBe(2);
-    expect(BLUEPRINT_LIBRARY_KEY).toBe("hexapharma.blueprint-library.v2");
+describe("cross-save Blueprint Library v3", () => {
+  it("uses a breaking v3 namespace and persists checksummed documents outside save slots", async () => {
+    expect(BLUEPRINT_LIBRARY_VERSION).toBe(3);
+    expect(BLUEPRINT_LIBRARY_KEY).toBe("hexapharma.blueprint-library.v3");
     const storage = new MemoryStorage();
     const saved = await saveLibraryBlueprint(storage, fixture());
     expect(storage.getItem(BLUEPRINT_LIBRARY_KEY)).toContain("hexapharma-blueprint");

@@ -25,6 +25,7 @@ import {
   type GameIntent,
 } from "../sim/game";
 import { activeEffects, DEFAULT_PATENTS } from "../sim/patent";
+import { quoteProductionBuild } from "../sim/construction";
 import { App } from "./App";
 import { BlueprintLibrary } from "./BlueprintLibrary";
 import { Factory } from "./Factory";
@@ -45,7 +46,7 @@ const START_CASH = 200;
 const SAVE_SLOTS = 3;
 const LAB_WORLD_SIZE = 63;
 
-function researchPlanningMap(
+export function researchPlanningMap(
   mm: MultiMap,
   fog: readonly Uint8Array[],
 ): MultiMap {
@@ -56,22 +57,21 @@ function researchPlanningMap(
         throw new Error("research planning: fog does not match the Atlas");
       }
       const cell = Uint8Array.from(map.cell);
+      const cureId = Int16Array.from(map.cureId);
+      const sideEffectId = Int32Array.from(map.sideEffectId);
       const portalTo = Int32Array.from(map.portalTo);
       for (let index = 0; index < cell.length; index++) {
-        if (known[index] !== 1) {
+        if (
+          known[index] !== 1 &&
+          (cell[index] === CellKind.Cure || cell[index] === CellKind.SideEffect)
+        ) {
           cell[index] = CellKind.Empty;
+          cureId[index] = -1;
+          sideEffectId[index] = -1;
           portalTo[index] = -1;
-          continue;
-        }
-        if (cell[index] === CellKind.Portal) {
-          const destination = portalTo[index] ?? -1;
-          if (destination < 0 || known[destination] !== 1) {
-            cell[index] = CellKind.Empty;
-            portalTo[index] = -1;
-          }
         }
       }
-      return { ...map, cell, portalTo, fog: known };
+      return { ...map, cell, cureId, sideEffectId, portalTo, fog: known };
     }),
   };
 }
@@ -267,11 +267,9 @@ export function Game() {
   const catalog = useMemo(() => availableCatalog(game.patents), [game.patents]);
   const [researchMachineType, setResearchMachineType] = useState(() => catalog[0]?.typeId ?? "");
   const selectedResearchEntry = catalog.find((entry) => entry.typeId === researchMachineType) ?? catalog[0];
-  const [researchStroke, setResearchStroke] = useState(() => selectedResearchEntry?.path.length ?? 1);
   useEffect(() => {
     if (selectedResearchEntry === undefined) return;
     setResearchMachineType(selectedResearchEntry.typeId);
-    setResearchStroke((value) => Math.max(1, Math.min(selectedResearchEntry.path.length, value)));
   }, [selectedResearchEntry]);
   const patentEffects = useMemo(
     () => activeEffects(DEFAULT_PATENTS, game.patents),
@@ -305,7 +303,7 @@ export function Game() {
     return dispatch({ kind: "setPilotLayout", layout });
   }, [dispatch]);
   const changeProduction = useCallback((layout: FactoryLayout) => {
-    return dispatch({ kind: "setProductionLayout", layout });
+    return dispatch({ kind: "buildProductionLayout", layout });
   }, [dispatch]);
   const advanceProduction = useCallback((ticks: number) => {
     return dispatch({ kind: "productionTicks", ticks });
@@ -321,8 +319,7 @@ export function Game() {
     : {
         typeId: selectedResearchEntry.typeId,
         path: selectedResearchEntry.path,
-        stroke: researchStroke,
-      }, [researchStroke, selectedResearchEntry]);
+      }, [selectedResearchEntry]);
   const previewProgram = useMemo<Template>(() => ({
     steps: game.research.shot === null && selectedResearchMachine !== null
       ? [...game.research.program.steps, selectedResearchMachine]
@@ -395,9 +392,9 @@ export function Game() {
     if (current.research.shot !== null || current.research.program.steps.length === 0) return;
     dispatch({ kind: "beginResearchShot" });
   }, [dispatch]);
-  const commissionProduction = useCallback((layout: FactoryLayout) => {
+  const buildPilotInProduction = useCallback((layout: FactoryLayout) => {
     if (gameRef.current.pilot.layout !== layout && !dispatch({ kind: "setPilotLayout", layout })) return;
-    if (dispatch({ kind: "sendPilotToProduction" })) openBuilding("production");
+    if (dispatch({ kind: "buildProductionLayout", layout })) openBuilding("production");
   }, [dispatch, openBuilding]);
 
   useEffect(() => {
@@ -503,20 +500,11 @@ export function Game() {
         if (entry !== undefined) {
           event.preventDefault();
           setResearchMachineType(entry.typeId);
-          setResearchStroke(entry.path.length);
         }
       } else if (building === "research" && drawer === null && researchKeyboardAction(event.key) !== null) {
         event.preventDefault();
         if (researchKeyboardAction(event.key) === "dispense") researchAction();
         else undoResearchMachine();
-      } else if (building === "research" && drawer === null && (event.key === "[" || event.key === "]")) {
-        if (selectedResearchEntry !== undefined) {
-          event.preventDefault();
-          setResearchStroke((value) => Math.max(
-            1,
-            Math.min(selectedResearchEntry.path.length, value + (event.key === "]" ? 1 : -1)),
-          ));
-        }
       } else if (event.key.toLowerCase() === "m") {
         event.preventDefault();
         setDrawer((current) => current === "market" ? null : "market");
@@ -638,13 +626,6 @@ export function Game() {
                 lastOutcome={game.research.lastOutcome}
                 onWorldActivate={placeResearchMachine}
                 onWorldErase={undoResearchMachine}
-                onCalibrationWheel={(direction) => {
-                  if (selectedResearchEntry === undefined || game.research.shot !== null) return;
-                  setResearchStroke((value) => Math.max(
-                    1,
-                    Math.min(selectedResearchEntry.path.length, value + direction),
-                  ));
-                }}
               />
               <div className="research-path-hotbar" role="toolbar" aria-label="Fixed machine paths" data-testid="research-path-hotbar">
                 {catalog.map((entry, index) => (
@@ -653,25 +634,15 @@ export function Game() {
                     type="button"
                     className={selectedResearchEntry?.typeId === entry.typeId ? "is-selected" : ""}
                     aria-pressed={selectedResearchEntry?.typeId === entry.typeId}
-                    onClick={() => {
-                      setResearchMachineType(entry.typeId);
-                      setResearchStroke(entry.path.length);
-                    }}
+                    onClick={() => setResearchMachineType(entry.typeId)}
                     data-testid={`research-machine-${entry.typeId}`}
                     title={`${entry.typeId} (${index + 1})`}
                   >
-                    <MachineIcon typeId={entry.typeId} path={entry.path} stroke={selectedResearchEntry?.typeId === entry.typeId ? researchStroke : entry.path.length} size={34} />
+                    <MachineIcon typeId={entry.typeId} path={entry.path} size={34} />
                     <span>{entry.typeId}</span>
                     <kbd>{index + 1}</kbd>
                   </button>
                 ))}
-                {selectedResearchEntry !== undefined && (
-                  <div className="research-calibration" data-testid="research-calibration">
-                    <button type="button" onClick={() => setResearchStroke((value) => Math.max(1, value - 1))} disabled={researchStroke <= 1} aria-label="Shorter path">[−]</button>
-                    <strong>{researchStroke}/{selectedResearchEntry.path.length}</strong>
-                    <button type="button" onClick={() => setResearchStroke((value) => Math.min(selectedResearchEntry.path.length, value + 1))} disabled={researchStroke >= selectedResearchEntry.path.length} aria-label="Longer path">[+]</button>
-                  </div>
-                )}
               </div>
             </div>
           )}
@@ -689,37 +660,28 @@ export function Game() {
               entitledHeight={entitledHeight}
               catalog={catalog}
               onLayoutChange={changePilot}
-              commandLabel="Commission"
-              onCommand={commissionProduction}
+              commandLabel={`Build $${quoteProductionBuild(game.production.layout, game.pilot.layout ?? game.production.layout)}`}
+              commandDisabled={game.pilot.layout === null}
+              onCommand={buildPilotInProduction}
             />
           )}
         </section>
         <section className="view-layer" hidden={building !== "production"}>
           {visited.production && (
-            game.production.layout === null ? (
-              <div className="facility-empty-state" data-testid="production-uncommissioned">
-                <span className="nav-glyph">▦</span>
-                <div className="panel-kicker">Production floor offline</div>
-                <h1>Production</h1>
-                <p>Commission a Pilot layout first.</p>
-                <button type="button" onClick={() => openBuilding("pilot")}>Go to Pilot Plant</button>
-              </div>
-            ) : (
-              <Factory
-                active={building === "production"}
-                mode="production"
-                level={level}
-                layout={game.production.layout}
-                runtime={game.production.runtime}
-                waste={game.production.waste}
-                entitledWidth={entitledWidth}
-                entitledHeight={entitledHeight}
-                catalog={catalog}
-                onLayoutChange={changeProduction}
-                onAdvance={advanceProduction}
-                onReset={resetProduction}
-              />
-            )
+            <Factory
+              active={building === "production"}
+              mode="production"
+              level={level}
+              layout={game.production.layout}
+              runtime={game.production.runtime}
+              waste={game.production.waste}
+              entitledWidth={entitledWidth}
+              entitledHeight={entitledHeight}
+              catalog={catalog}
+              onLayoutChange={changeProduction}
+              onAdvance={advanceProduction}
+              onReset={resetProduction}
+            />
           )}
         </section>
 
@@ -732,15 +694,18 @@ export function Game() {
               <Patents
                 economy={game.economy}
                 patents={game.patents}
-                expansionResetsProduction={game.production.layout !== null}
+                expansionResetsProduction={game.production.runtime.tick > 0 || game.production.runtime.unitCount > 0 || game.production.waste > 0}
                 onUnlock={unlock}
               />
             ) : (
               <BlueprintLibrary
                 researchProgram={game.research.program}
                 pilotLayout={game.pilot.layout}
+                productionLayout={game.production.layout}
                 onLoadResearch={(program) => dispatch({ kind: "setResearchProgram", program })}
                 onLoadPilot={changePilot}
+                onBuildProduction={changeProduction}
+                quoteProduction={(layout) => quoteProductionBuild(game.production.layout, layout)}
               />
             )}
           </aside>

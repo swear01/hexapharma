@@ -50,9 +50,7 @@ export function Shop({ level, economy, inventory, onSell }: ShopProps) {
   return (
     <div className="game-view management-view market-view">
       <header className="management-header">
-        <div className="panel-kicker">Commercial operations</div>
-        <h1>Therapeutic Market</h1>
-        <p>Ship physical products into independent disease markets. Repeated sales reduce that market's next price.</p>
+        <h1>Market</h1>
       </header>
       <div className="market-grid" data-testid="market-grid">
         <div className="market-grid-contents" data-testid="shop-table">

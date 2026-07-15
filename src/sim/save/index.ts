@@ -62,7 +62,7 @@ import { estimateGameReplayWork } from "../replay-work";
 // blob field-by-field and rebuilding a structurally-equal GameState — never
 // defaulting silently on missing/wrong fields.
 
-export const SAVE_VERSION = 6;
+export const SAVE_VERSION = 7;
 export const MAX_SLOT_STATES = 20;
 export const MAX_SAVE_CHARACTERS = 5_000_000;
 
@@ -285,11 +285,10 @@ function parsePatents(v: unknown): PatentState {
 }
 
 function parseMachine(v: unknown, path: string): Machine {
-  const o = reqExactObject(v, path, ["typeId", "path", "stroke"]);
+  const o = reqExactObject(v, path, ["typeId", "path"]);
   return {
     typeId: reqString(o.typeId, `${path}.typeId`),
     path: parsePathStamp(o.path, `${path}.path`),
-    stroke: reqInt(o.stroke, `${path}.stroke`),
   };
 }
 
@@ -398,11 +397,10 @@ function parseDir(v: unknown, path: string): 0 | 1 | 2 | 3 {
 }
 
 function parseMachineDef(v: unknown, path: string): FactoryMachineDef {
-  const o = reqExactObject(v, path, ["typeId", "path", "stroke", "cost", "speed"]);
+  const o = reqExactObject(v, path, ["typeId", "path", "cost", "speed"]);
   return {
     typeId: reqString(o.typeId, `${path}.typeId`),
     path: parsePathStamp(o.path, `${path}.path`),
-    stroke: reqInt(o.stroke, `${path}.stroke`),
     cost: reqNumber(o.cost, `${path}.cost`),
     speed: reqInt(o.speed, `${path}.speed`),
   };
@@ -524,7 +522,7 @@ function parseGameIntent(v: unknown, index: number, tracePath = "intentTrace"): 
   const kind = reqString(o.kind, `${path}.kind`);
   switch (kind) {
     case "setPilotLayout":
-    case "setProductionLayout":
+    case "buildProductionLayout":
       requireExactKeys(o, ["kind", "layout"], path);
       return { kind, layout: parseFactory(o.layout, `${path}.layout`) };
     case "setResearchProgram":
@@ -533,7 +531,6 @@ function parseGameIntent(v: unknown, index: number, tracePath = "intentTrace"): 
     case "beginResearchShot":
     case "advanceResearchShot":
     case "abortResearchShot":
-    case "sendPilotToProduction":
     case "resetProduction":
       requireExactKeys(o, ["kind"], path);
       return { kind };
@@ -789,23 +786,18 @@ function parsePilotFacility(v: unknown): GameState["pilot"] {
 }
 
 interface ParsedProductionFacility {
-  readonly layout: FactoryLayout | null;
-  readonly snapshot: FactoryState | null;
+  readonly layout: FactoryLayout;
+  readonly snapshot: FactoryState;
   readonly waste: number;
 }
 
 function parseProductionFacility(v: unknown, expectedMaps: number): ParsedProductionFacility {
   const path = "production";
   const o = reqExactObject(v, path, ["layout", "runtime", "waste"]);
-  const layout = parseNullableFactory(o.layout, `${path}.layout`);
-  if (o.runtime !== null && layout === null) {
-    throw new SaveError(`${path}.runtime: runtime requires a Production layout`);
-  }
+  const layout = parseFactory(o.layout, `${path}.layout`);
   return {
     layout,
-    snapshot: o.runtime === null || layout === null
-      ? null
-      : parseFactorySnapshot(o.runtime, `${path}.runtime`, layout, expectedMaps),
+    snapshot: parseFactorySnapshot(o.runtime, `${path}.runtime`, layout, expectedMaps),
     waste: reqInt(o.waste, `${path}.waste`),
   };
 }
@@ -872,8 +864,8 @@ function parseAuthorityEnvelope(serialized: string): unknown {
   }
   const envelope = reqObject(parsed, "authority save");
   const version = reqInt(envelope.version, "authority save.version");
-  if (version === 5) {
-    throw new SaveError("authority save: legacy version 5 is not supported by Save v6");
+  if (version === 5 || version === 6) {
+    throw new SaveError(`authority save: legacy version ${version} is not supported by Save v7`);
   }
   if (version !== SAVE_VERSION) {
     throw new SaveError(
@@ -925,31 +917,7 @@ function parseGameState(v: unknown): GameState {
   const research = parseResearchFacility(o.research, genOptions.nMaps);
   const pilot = parsePilotFacility(o.pilot);
   const production = parseProductionFacility(o.production, genOptions.nMaps);
-  const parsed: GameState = {
-    origin,
-    intentTrace,
-    replayTicks: reqInt(o.replayTicks, "replayTicks"),
-    genOptions,
-    economy: parseEconomy(o.economy, genOptions.diseaseCount),
-    patents: parsePatents(o.patents),
-    research,
-    pilot,
-    production: {
-      layout: production.layout,
-      runtime: null,
-      waste: production.waste,
-    },
-    inventory: parseInventory(o.inventory, genOptions.nMaps),
-    nextInventoryId: reqInt(o.nextInventoryId, "nextInventoryId"),
-    fog,
-    rng: parseRng(o.rng),
-  };
   try {
-    if (production.snapshot === null) {
-      return validateGameState(parsed);
-    }
-    if (production.layout === null) throw new Error("Production runtime requires a layout");
-    validateFactoryLayout(parsed, production.layout);
     validateFactorySnapshot(
       production.snapshot,
       production.layout,
@@ -957,19 +925,32 @@ function parseGameState(v: unknown): GameState {
       "production.runtime",
     );
     const level = generate(genOptions);
-    const game: GameState = {
-      ...parsed,
+    const parsed: GameState = {
+      origin,
+      intentTrace,
+      replayTicks: reqInt(o.replayTicks, "replayTicks"),
+      genOptions,
+      economy: parseEconomy(o.economy, genOptions.diseaseCount),
+      patents: parsePatents(o.patents),
+      research,
+      pilot,
       production: {
-        ...parsed.production,
+        layout: production.layout,
         runtime: restoreFactory(
           production.layout,
           level.mm,
           level.start,
           production.snapshot,
         ),
+        waste: production.waste,
       },
+      inventory: parseInventory(o.inventory, genOptions.nMaps),
+      nextInventoryId: reqInt(o.nextInventoryId, "nextInventoryId"),
+      fog,
+      rng: parseRng(o.rng),
     };
-    return validateGameState(game);
+    validateFactoryLayout(parsed, production.layout);
+    return validateGameState(parsed);
   } catch (error) {
     if (error instanceof SaveError) throw error;
     throw new SaveError(`game: ${(error as Error).message}`);
@@ -988,7 +969,7 @@ export const serializeGame: SerializeGameFn = (g) => {
     ...g,
     production: {
       ...g.production,
-      runtime: g.production.runtime === null ? null : snapshotFactory(g.production.runtime),
+      runtime: snapshotFactory(g.production.runtime),
     },
   };
   const envelope: SaveEnvelope = { version: SAVE_VERSION, game };
@@ -1012,8 +993,8 @@ export const deserializeGame: DeserializeGameFn = (s) => {
   const env = reqObject(parsed, "save");
   if (!("version" in env)) throw new SaveError("save: missing version tag");
   const version = reqInt(env.version, "save.version");
-  if (version === 5) {
-    throw new SaveError("save: legacy version 5 is not supported by Save v6");
+  if (version === 5 || version === 6) {
+    throw new SaveError(`save: legacy version ${version} is not supported by Save v7`);
   }
   if (version !== SAVE_VERSION) {
     throw new SaveError(`save: incompatible version ${version} (expected ${SAVE_VERSION})`);
@@ -1199,7 +1180,7 @@ export const serializeSlots = (states: readonly GameState[]): string => {
       ...state,
       production: {
         ...state.production,
-        runtime: state.production.runtime === null ? null : snapshotFactory(state.production.runtime),
+        runtime: snapshotFactory(state.production.runtime),
       },
     };
   });
@@ -1224,8 +1205,8 @@ export const deserializeSlots = (s: string): GameState[] => {
   const env = reqObject(parsed, "slots");
   if (!("version" in env)) throw new SaveError("slots: missing version tag");
   const version = reqInt(env.version, "slots.version");
-  if (version === 5) {
-    throw new SaveError("slots: legacy version 5 is not supported by Save v6");
+  if (version === 5 || version === 6) {
+    throw new SaveError(`slots: legacy version ${version} is not supported by Save v7`);
   }
   if (version !== SAVE_VERSION) {
     throw new SaveError(`slots: incompatible version ${version} (expected ${SAVE_VERSION})`);

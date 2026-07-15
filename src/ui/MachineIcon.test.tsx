@@ -3,10 +3,10 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_CATALOG } from "../sim/phase0_interfaces";
 import { MachineIcon } from "./MachineIcon";
 
-function render(typeId: string, stroke?: number, title?: string): string {
+function render(typeId: string, title?: string): string {
   const entry = DEFAULT_CATALOG.find((candidate) => candidate.typeId === typeId)!;
   return renderToStaticMarkup(
-    <MachineIcon typeId={entry.typeId} path={entry.path} stroke={stroke} title={title} size={32} />,
+    <MachineIcon typeId={entry.typeId} path={entry.path} title={title} size={32} />,
   );
 }
 
@@ -15,24 +15,23 @@ describe("MachineIcon", () => {
     for (const entry of DEFAULT_CATALOG) {
       const markup = render(entry.typeId);
       expect(markup).toContain(`data-machine-icon="${entry.typeId}"`);
-      expect(markup).toContain('data-icon-shape="full-path"');
-      expect(markup).toContain('data-icon-shape="active-path"');
+      expect(markup).toContain('data-icon-shape="path"');
       expect(markup).not.toContain("<text");
+      expect(markup).not.toContain("data-stroke");
     }
   });
 
-  it("shows calibration as an active prefix without rotating the fixed path", () => {
-    const short = render("push2", 2);
-    const full = render("push2");
-    expect(short).toContain('data-stroke="2"');
-    expect(full).toContain(`data-stroke="${DEFAULT_CATALOG[1]!.path.length}"`);
-    expect(short).not.toContain("rotate(");
-    expect(short).not.toContain("scale(-1");
+  it("renders only the complete fixed path without a partial-path layer", () => {
+    const markup = render("push2");
+    expect(markup.match(/<polyline/g)).toHaveLength(1);
+    expect(markup).not.toContain('opacity="0.25"');
+    expect(markup).not.toContain("rotate(");
+    expect(markup).not.toContain("scale(-1");
   });
 
   it("uses accessible names only when titled", () => {
     expect(render("push")).toContain('aria-hidden="true"');
-    const labelled = render("push", 2, "Hook pump path");
+    const labelled = render("push", "Hook pump path");
     expect(labelled).toContain('role="img"');
     expect(labelled).toContain('aria-label="Hook pump path"');
     expect(labelled).toContain("<title>Hook pump path</title>");

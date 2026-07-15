@@ -28,13 +28,12 @@ describe("single Research Atlas authority", () => {
     const game = applyGameIntent(createGameState(singleAtlasOptions, 200, 0), {
       kind: "setResearchProgram",
       program: {
-        steps: [{ typeId: machine.typeId, path: machine.path, stroke: machine.path.length }],
+        steps: [{ typeId: machine.typeId, path: machine.path }],
       },
     });
     expect(game.research.program.steps[0]).toEqual({
       typeId: machine.typeId,
       path: machine.path,
-      stroke: machine.path.length,
     });
   });
 

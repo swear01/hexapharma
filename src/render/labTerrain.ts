@@ -10,12 +10,7 @@ export type LabTerrainMotif =
   | "side-effect-colony"
   | "cure-receptor";
 
-export interface HiddenTerrainVisual {
-  readonly kind: "fog";
-  readonly opaque: true;
-}
-
-export interface RevealedTerrainVisual {
+export interface CellTerrainVisual {
   readonly kind: "empty" | "wall" | "abyss" | "swamp" | "sideEffect" | "cure";
   readonly motif: Exclude<LabTerrainMotif, "paired-directional">;
   readonly baseColor: number;
@@ -30,12 +25,20 @@ export interface PortalTerrainVisual {
   readonly baseColor: number;
   readonly rimColor: number;
   readonly opaque: true;
-  readonly pairMarker: string | null;
-  readonly destination: Vec2 | null;
+  readonly pairMarker: string;
+  readonly destination: Vec2;
   readonly direction: Vec2 | null;
 }
 
-export type LabTerrainVisual = HiddenTerrainVisual | RevealedTerrainVisual | PortalTerrainVisual;
+export type LabTerrainVisual = CellTerrainVisual | PortalTerrainVisual;
+
+const EMPTY_TERRAIN_VISUAL: CellTerrainVisual = {
+  kind: "empty",
+  motif: "substrate",
+  baseColor: 0xdce4dc,
+  rimColor: 0xa4b6b2,
+  opaque: true,
+};
 
 const portalExitLookupCache = new WeakMap<Int32Array, Int32Array>();
 
@@ -53,19 +56,15 @@ function portalVisual(
     throw new Error(`Lab portal ${entryIndex} has an invalid same-layer destination`);
   }
   const role = index === entryIndex ? "entry" : "exit";
-  const counterpartIndex = role === "entry" ? destinationIndex : entryIndex;
-  const pairRevealed = revealed(map, counterpartIndex);
-  let destination: Vec2 | null = null;
+  const destination: Vec2 = {
+    x: destinationIndex % map.width,
+    y: Math.floor(destinationIndex / map.width),
+  };
   let direction: Vec2 | null = null;
-  if (pairRevealed) {
-    const fromX = entryIndex % map.width;
-    const fromY = Math.floor(entryIndex / map.width);
-    const toX = destinationIndex % map.width;
-    const toY = Math.floor(destinationIndex / map.width);
-    destination = { x: toX, y: toY };
-    if (toX !== fromX || toY !== fromY) {
-      direction = { x: Math.sign(toX - fromX), y: Math.sign(toY - fromY) };
-    }
+  const fromX = entryIndex % map.width;
+  const fromY = Math.floor(entryIndex / map.width);
+  if (destination.x !== fromX || destination.y !== fromY) {
+    direction = { x: Math.sign(destination.x - fromX), y: Math.sign(destination.y - fromY) };
   }
   return {
     kind: "portal",
@@ -74,7 +73,7 @@ function portalVisual(
     baseColor: 0x17235e,
     rimColor: 0x67e8f9,
     opaque: true,
-    pairMarker: pairRevealed ? `P${entryIndex}-${destinationIndex}` : null,
+    pairMarker: `P${entryIndex}-${destinationIndex}`,
     destination,
     direction,
   };
@@ -104,7 +103,6 @@ export function labTerrainVisual(map: EffectMap, x: number, y: number): LabTerra
     throw new Error("Lab terrain coordinate is outside the effect map");
   }
   const index = y * map.width + x;
-  if (!revealed(map, index)) return { kind: "fog", opaque: true };
 
   const exitEntry = portalEntryForExit(map, index);
   if (exitEntry !== null) return portalVisual(map, index, exitEntry, index);
@@ -140,6 +138,7 @@ export function labTerrainVisual(map: EffectMap, x: number, y: number): LabTerra
       return portalVisual(map, index, index, destination);
     }
     case CellKind.SideEffect:
+      if (!revealed(map, index)) return EMPTY_TERRAIN_VISUAL;
       return {
         kind: "sideEffect",
         motif: "side-effect-colony",
@@ -148,6 +147,7 @@ export function labTerrainVisual(map: EffectMap, x: number, y: number): LabTerra
         opaque: true,
       };
     case CellKind.Cure:
+      if (!revealed(map, index)) return EMPTY_TERRAIN_VISUAL;
       return {
         kind: "cure",
         motif: "cure-receptor",
@@ -156,12 +156,6 @@ export function labTerrainVisual(map: EffectMap, x: number, y: number): LabTerra
         opaque: true,
       };
     default:
-      return {
-        kind: "empty",
-        motif: "substrate",
-        baseColor: 0xdce4dc,
-        rimColor: 0xa4b6b2,
-        opaque: true,
-      };
+      return EMPTY_TERRAIN_VISUAL;
   }
 }

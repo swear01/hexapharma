@@ -42,7 +42,6 @@ function program(stepCount: number): Template {
     steps: Array.from({ length: stepCount }, () => ({
       typeId: entry.typeId,
       path: entry.path,
-      stroke: entry.path.length,
     })),
   };
 }
@@ -71,6 +70,14 @@ describe("game replay work", () => {
       mapCells * 5 +
       1
     );
+  });
+
+  it("profiles the always-present empty Production floor before its first build", () => {
+    const mapCells = options.nMaps * options.width * options.height;
+    const area = 24 * 12;
+    expect(estimateGameReplayWork(options, [
+      { kind: "productionTicks", ticks: 1 },
+    ])).toBe(mapCells * 32 + area * 20 + area);
   });
 
   it("bounds an adversarial Research trace using program step count", () => {
@@ -105,12 +112,12 @@ describe("game replay work", () => {
     const perTick = width * height + 4 * carriers + (carriers + sources) ** 2;
 
     expect(estimateGameReplayWork(options, [
-      { kind: "setProductionLayout", layout },
+      { kind: "buildProductionLayout", layout },
       { kind: "productionTicks", ticks: 10 },
     ])).toBe(mapCells * 32 + cold + cold + perTick * 10);
   });
 
-  it("charges Pilot commissioning without any Research contract", () => {
+  it("charges direct Production construction without any Research contract", () => {
     const layout = emptyLayout(24, 12, true);
     const area = layout.width * layout.height;
     const mapCells = options.nMaps * options.width * options.height;
@@ -119,7 +126,7 @@ describe("game replay work", () => {
     expect(estimateGameReplayWork(options, [
       { kind: "setResearchProgram", program: program(2) },
       { kind: "setPilotLayout", layout },
-      { kind: "sendPilotToProduction" },
+      { kind: "buildProductionLayout", layout },
     ])).toBe(mapCells * 32 + mapCells * 6 + cold + cold);
   });
 
@@ -132,7 +139,7 @@ describe("game replay work", () => {
     const productionPerTick = 4 * 3;
 
     expect(estimateGameReplayWork(options, [
-      { kind: "setProductionLayout", layout: production },
+      { kind: "buildProductionLayout", layout: production },
       { kind: "setResearchProgram", program: program(1) },
       { kind: "setPilotLayout", layout: pilot },
       { kind: "abortResearchShot" },
@@ -153,14 +160,14 @@ describe("game replay work", () => {
     expect(estimateGameReplayWork(options, [
       { kind: "setResearchProgram", program: program(1) },
       { kind: "setPilotLayout", layout },
-      { kind: "setProductionLayout", layout },
+      { kind: "buildProductionLayout", layout },
       { kind: "unlockPatent", id: "bench-2" },
     ])).toBe(
       mapCells * 32 + mapCells * 5 + 2 * currentCold + 262_144 + 2 * expandedCold
     );
   });
 
-  it("does not charge first-product analysis when commissioning a Pilot layout", () => {
+  it("does not charge first-product analysis when building a Pilot layout in Production", () => {
     const width = 64;
     const height = MAX_GAME_FACTORY_CELLS / width;
     const layout = emptyLayout(width, height, true);
@@ -168,7 +175,7 @@ describe("game replay work", () => {
     const cold = width * height * 20;
     expect(estimateGameReplayWork(options, [
       { kind: "setPilotLayout", layout },
-      { kind: "sendPilotToProduction" },
+      { kind: "buildProductionLayout", layout },
     ])).toBe(mapCells * 32 + cold + cold);
   });
 
@@ -177,7 +184,7 @@ describe("game replay work", () => {
     const recipe = generate(productionOptions).diseases[0]!.reference;
     const layout = compileEntitledPrototype(recipe, 24, 12).layout;
     expect(estimateGameReplayWork(productionOptions, [
-      { kind: "setProductionLayout", layout },
+      { kind: "buildProductionLayout", layout },
       { kind: "productionTicks", ticks: MAX_FACTORY_REPLAY_TICKS },
     ])).toBeLessThanOrEqual(MAX_GAME_REPLAY_WORK);
   });
@@ -187,7 +194,7 @@ describe("game replay work", () => {
     const trace: readonly GameIntent[] = [
       { kind: "setResearchProgram", program: program(1) },
       { kind: "setPilotLayout", layout },
-      { kind: "setProductionLayout", layout },
+      { kind: "buildProductionLayout", layout },
       { kind: "unlockPatent", id: "floor-depth" },
       { kind: "beginResearchShot" },
     ];

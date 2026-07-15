@@ -93,9 +93,8 @@ function machineDef(
   typeId: string,
   path: PathStamp,
   speed: number,
-  stroke = path.length,
 ): FactoryMachineDef {
-  return { typeId, path, stroke, cost: 1, speed };
+  return { typeId, path, cost: 1, speed };
 }
 
 function placeMachine(
@@ -240,8 +239,8 @@ describe("path correctness", () => {
     expect(last.producedTotal).toBeGreaterThan(0);
 
     let expected = start;
-    expected = applyStep(mm, expected, { typeId: a.typeId, path: a.path, stroke: a.stroke });
-    expected = applyStep(mm, expected, { typeId: bdef.typeId, path: bdef.path, stroke: bdef.stroke });
+    expected = applyStep(mm, expected, { typeId: a.typeId, path: a.path });
+    expected = applyStep(mm, expected, { typeId: bdef.typeId, path: bdef.path });
 
     for (const product of products(states)) {
       expect(product.drug.pos).toEqual(expected.pos);
@@ -287,17 +286,16 @@ describe("path correctness", () => {
       readonly name: string;
       readonly map: EffectMap;
       readonly path: PathStamp;
-      readonly stroke: number;
     }[] = [
-      { name: "wall", map: wall, path: [{ x: 1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 0 }], stroke: 3 },
-      { name: "out-of-bounds", map: emptyMap(8, { x: 0, y: 1 }), path: [{ x: -1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 0 }], stroke: 3 },
-      { name: "abyss", map: abyss, path: [{ x: 1, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 0 }], stroke: 3 },
-      { name: "swamp", map: swamp, path: [{ x: 1, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 0 }], stroke: 3 },
-      { name: "portal", map: portal, path: [{ x: 1, y: 0 }, { x: 1, y: 0 }], stroke: 2 },
+      { name: "wall", map: wall, path: [{ x: 1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 0 }] },
+      { name: "out-of-bounds", map: emptyMap(8, { x: 0, y: 1 }), path: [{ x: -1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 0 }] },
+      { name: "abyss", map: abyss, path: [{ x: 1, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 0 }] },
+      { name: "swamp", map: swamp, path: [{ x: 1, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 0 }] },
+      { name: "portal", map: portal, path: [{ x: 1, y: 0 }, { x: 1, y: 0 }] },
     ];
 
     for (const scenario of scenarios) {
-      const def = machineDef(scenario.name, scenario.path, 1, scenario.stroke);
+      const def = machineDef(scenario.name, scenario.path, 1);
       const builder = blank(3, 1);
       set(builder, 0, 0, { kind: "source", dir: E, period: 100 });
       set(builder, 2, 0, { kind: "sink" });
@@ -309,7 +307,6 @@ describe("path correctness", () => {
       const expected = applyStep(maps, start, {
         typeId: def.typeId,
         path: def.path,
-        stroke: def.stroke,
       });
       const produced = products(run(layout, maps, start, 20));
 
@@ -880,20 +877,19 @@ describe("cold factory layout authority", () => {
     expect(layout.tiles[0]).toEqual({ kind: "source", dir: E, period: 1 });
   });
 
-  it("rejects empty, non-cardinal, and out-of-range machine paths", () => {
+  it("rejects empty, non-cardinal, and non-safe-integer machine paths", () => {
     const invalid = [
-      { path: [] as unknown as PathStamp, stroke: 1 },
-      { path: [{ x: 1, y: 1 }] as unknown as PathStamp, stroke: 1 },
-      { path: EAST_STEP, stroke: 0 },
-      { path: EAST_STEP, stroke: 2 },
+      [] as unknown as PathStamp,
+      [{ x: 1, y: 1 }] as unknown as PathStamp,
+      [{ x: Number.MAX_SAFE_INTEGER + 1, y: 0 }] as unknown as PathStamp,
     ];
-    for (const entry of invalid) {
+    for (const path of invalid) {
       const b = blank(3, 1);
       set(b, 0, 0, { kind: "source", dir: E, period: 1 });
       set(b, 2, 0, { kind: "sink" });
-      const def = machineDef("invalid-path", entry.path, 1, entry.stroke);
+      const def = machineDef("invalid-path", path, 1);
       const layout = finish(b, [placeMachine(0, def, SHAPE_1x1, { x: 1, y: 0 })]);
-      expect(() => initFactory(layout, twoMaps(), start)).toThrow(/path|cardinal|stroke/i);
+      expect(() => initFactory(layout, twoMaps(), start)).toThrow(/path|cardinal|safe integer/i);
     }
   });
 

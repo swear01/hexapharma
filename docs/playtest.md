@@ -1,94 +1,104 @@
 # 真人試玩與手動驗證
 
-> 這是現行single-Atlas build的真人驗證清單。每個commit仍須實際執行，不能用先前screenshots或focused tests代替；舊seed-14 Research route fixture已刪除且不適用。
+> 本清單驗當前 build；不能沿用舊 commit 的 screenshots、test count 或 smoke 結果。
 
-## 1. 安裝與啟動
+## 1. 啟動
 
 ```bash
-cd /home/ubuntu/hexapharma
 npm ci
 npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 ```
 
-- 同機器：<http://127.0.0.1:53346/>
+- 本機：`http://127.0.0.1:53346/`
 - 遠端：`http://<Oracle 公網 IP>:53346/`
-- `53346` 是 Oracle Cloud 唯一白名單 port；`--strictPort` 必須保留。若被占用先解決衝突，不可讓 Vite換 port。
-- production build：先停 dev，再執行 `npm run build && npm run preview -- --host 0.0.0.0 --port 53346 --strictPort`。
-- 這是 breaking build；依早期政策可先清除此 origin 的舊 v5 localStorage。不要把舊 save／舊 `research-route` Blueprint讀取失敗回報成 migration bug。
+- 確認process實際listen `0.0.0.0:53346`；port被占用應直接失敗，不得靜默換port。
+- 開無cache新頁，清除本origin的舊開發版save與Blueprint Library；本階段不測跨build migration。
 
-## 2. Single Research Atlas
+## 2. Shell / simple UI
 
-1. 按 F1。畫面只能有一張 Research Atlas；不得有 Route Floor toggle、Factory canvas、source/belt/sink palette、Recipe timeline或常駐大段教學文。
-2. 不得有 A–D layer tabs、swap／Phase Exchange或任何跨層 endpoint。Technology也不能把它們當 active unlock。
-3. Atlas 應大於 viewport，start位於generator中心區。drag pan、wheel zoom、Focus/F只在按下時置中；後續 program execution不搶鏡頭。
-4. fog 必須遮住 wall、abyss、swamp、portal與motif；grid/scale cue不能洩漏未知內容。
+1. 以1440×900、1280×720、390×844各開一次。中央world應是主體；HUD、rail、hotbar、inspector都可達。
+2. 確認F1/F2/F3是Research/Pilot Plant/Production；M/T/B drawers可toggle，Escape與×可關。
+3. 畫面不得出現設計註解、形容詞式副標、常駐教學段落或流程解釋；詳細操作只在玩家指南。
+4. hidden page不吃keys/pointers；切回已造訪頁保留camera與tool。
+5. 觸發intent/storage/renderer error時必須可見，且不以空白world冒充成功。
 
-## 3. PathStamp / prefix calibration
+## 3. Research完整路徑
 
-1. 從 Research palette 選至少三個 Machine PathStamp。每個都應有固定、不規則 silhouette及清楚entry/exit；切換 Factory rotate/flip心智模型不能改它的authority geometry。
-2. 放第一 stamp，確認完整nominal path ghost與program prefix可見。commit後program authority只增加一次，Backspace／RMB移除最後一段。
-3. 放第二 stamp，確認prefix calibration只接到目前endpoint；縮短／加長prefix後ghost立即從nominal endpoint重建，不silent shift或repair。
-4. 把candidate移入fog：preview不得顯示未知 terrain、portal B或真實 outcome。
-5. 用`[`／`]`與兩個calibration按鈕走到1與path.length邊界；控制必須clamp／disable，不能寫入非法stroke，program/fog不變。
-6. 揭露Wall／Swamp／Abyss或一對Portal後再次preview；known terrain必須改變ghost，只有單端已知的Portal仍不得洩漏另一端。committed prefix用solid trail，held candidate用不同的dashed trail/token；Enter執行Dispense而不是新增stamp。
+1. 按F1。只有一張大型Atlas；開局camera聚焦generator start，正常viewport只看到整圖一小部分。
+2. pan/zoom後按F回到目前dose；執行時camera不得搶回控制。
+3. 逐一選Research machines。hotbar icon與candidate ghost必須顯示不同完整奇形path。
+4. 確認不存在path長度、縮短、延長或走一部分的控制。
+5. LMB commit第一、第二條path；program count每次加1，第二條從第一條actual endpoint接續。
+6. RMB或Backspace每次只移除最後一條完整path。undo後fog與cash不變。
+7. Enter/Dispense只扣一次完整program費用。Abort、Abyss fail或no-cure不退款。
 
-## 4. Terrain / portal / execution
+## 4. Terrain / fog / portal
 
-1. 使用固定 seed 的新 mapgen fixture，確認 radial progression與motifs可讀且同 seed重開逐欄位相同。
-2. 執行 ResearchProgram。只允許已完成segment更新trail/fog；future suffix不先揭露。
-3. 分別走到wall、abyss、swamp：Wall/OOB取消該delta並繼續；Abyss sticky fail並停止；Swamp消耗2 energy。renderer不能自行猜另一套結果。
-4. 走入同層portal A，確認只到配對B、剩餘path從B繼續，trail在jump斷線且A/B中間未知格不被揭露；B不是反向入口。
-5. execution完成或失敗後，不得出現Research contract、Send to Pilot或自動改Pilot layout。Research只保留program/progress/fog/探索結果。
+使用含Wall、Abyss、Swamp、Portal、Cure與SideEffect的固定seed：
 
-## 5. Pilot Plant sandbox
+1. 在未揭露區確認Wall、Abyss、Swamp、Portal入口/出口、配對與方向可見；fog視覺仍存在。
+2. Cure與SideEffect在揭露前不得有sprite、colored region、label、hover、preview偏差或outcome洩漏。
+3. 把candidate放過known與unknown區；structural terrain無論fog都以同一規則改變preview。
+4. 只規劃、切machine、undo或載入Blueprint，revealed count不得改變。
+5. Dispense後只actual traversed segments與sensor radius揭露。Wall/OOB取消delta、Swamp消耗較多、Abysssticky fail。
+6. 經Portal A後token到B，trail在jump處斷開；B不能反向觸發，也不能揭露A/B中間直線。
+7. 揭露Cure/SideEffect後，其feature與region邊界才出現。
 
-1. 直接按 F2；不做任何Research也能從空地建立合法FactoryLayout。
-2. 顯示No clock/no cost；沒有Production Play/Pause/Step、inventory或waste authority。編輯不得改Cash或Production tick。
-3. 使用source/belt/machines/splitter/merger/sink做一條合法layout；驗LMB/RMB、pan/zoom、rotate、pipette、copy/cut/paste、undo/redo。
-4. inspector即時顯示actual cures/side effects/final endpoints、throughput、bottleneck與deadlock/analysis error；不得有Research contract或matches/differs。
-5. 分別準備no-cure、failure或deadlock但geometry合法的layout。Commission仍應可執行；diagnostic是警告，不是gate。
-6. collision、越界、locked content或無法建立Production authority的layout才應原子拒絕，不能silent repair。
+## 5. Pilot Plant
 
-## 6. Production consequences
+1. 新局直接按F2；應有可編輯空場地，不要求Research狀態。
+2. 放source/belt/machine/splitter/merger/sink，測rotate、drag、erase、pipette、copy/cut/paste、undo/redo。
+3. 確認edit不扣cash、沒有clock、inventory或waste；diagnostics可更新但不擋layout。
+4. 切換Research/Production來回，Pilot layout保持owned且不alias其他場域。
+5. 建一個no-cure或deadlocked但geometry合法的layout，`Build $N`仍可按；只由現金與layout legality決定成功。
 
-1. 新局未commission前按F3，應看到offline/Go to Pilot，不能從空白Production editor繞過Pilot。
-2. 從Pilot commission後，逐欄位比較dimensions、tiles、machine IDs/types、paths/strokes、anchors、footRot、ports/routing；Production必須exact copy。
-3. no-cure/failure/deadlock layout不得在copy時被auto-pack、rotate、repair或換成安全preset。
-4. 只有Production有Step/Play/Reset與連續tick。有效cure進inventory；failed/no-cure成waste；side effects保留在實體產品與市場計價。
-5. 修改Production routing後，結果由live layout承擔；不得出現contract mismatch gate。
-6. Market每顆實體產品只能賣一次；Cash/Knowledge與side-effect penalty使用實際product資料。
-7. 有commissioned Production時解鎖擴廠專利，必須先確認runtime/waste reset；Cancel保持全部authority，確認後也不得中止active Research shot。
+## 6. Direct paid Production
 
-## 7. Blueprint kinds / cross-save
+1. 新局未操作Pilot就按F3。必須直接看到空白24×12editor與transport controls。
+2. 逐項place並核對cash與ghost報價：belt 2、split/merge 8、source 12、sink 6、machine `10 × processing cost`。
+3. 改belt方向應再收belt價；移動／旋轉machine應收新機器價；只改ID的等價layout不收費。
+4. 刪除tile/machine不退款。再undo重建內容時依新增內容收費。
+5. 準備現金不足的edit；放開後cash、layout、runtime、waste與trace都不變，顯示明確錯誤。
+6. Play累積tick、unit或waste後修改layout；播放停止、runtime/tick歸零，在途unit清除，累積waste與inventory保留。
+7. 直接Production與Pilot的`Build $N`都走相同報價。後者成功後開F3，失敗時Pilot不變。
+8. 有進度時解鎖擴廠；確認modal列出runtime/waste影響。Cancel原子不變，Confirm不打斷active Research shot。
 
-1. 在Research保存Blueprint，下載JSON。root version/ruleset應為v2，kind是`research-program`，payload恰為ordered `{typeId,stroke}` steps；不得含path/placement、Factory tiles/machines、fog、seed、terrain discovery或outcome。
-2. 在Pilot保存Blueprint。kind是`pilot-plant`，payload為dimensions、sparse routing與machines `{id,typeId,stroke,anchor,footRot}`；不得含chemical orientation/path、ResearchProgram、diagnostic result、Production runtime或economy。
-3. 對兩種kind做download→import→apply；只能套到相同domain。wrong kind、unknown fields、bad version/fingerprint/checksum、invalid calibration/collision/bounds都明示拒絕且Library原子不變。
-4. 匯入舊layout-based `research-route` v1，必須顯示unsupported；不能猜成ResearchProgram。
-5. Save/Load/Rewind/換slot後Library內容不變；相同canonicalchecksum去重；oversize檔在讀全文前拒絕。
+## 7. Connected belts
 
-## 8. Save v6 / recovery
+1. 拖一條包含水平、垂直與轉角的Belt；格子四向連續，每格輸出朝下一格，末格沿最後切線。
+2. 驗endpoint、straight、corner、tee、cross；線接到格邊，grid在transport下方。
+3. 接source、sink、splitter、merger與不同footRot machines；branch與ports方向和sim一致。
+4. 故意把鄰格方向放錯；視覺應留下斷口，port顯示disconnected，unit不能穿越。
+5. Pilot transport保持靜態；Production Play時markers只隨tick前進，Pause不動。
 
-v6 checkpoint UI/lineage/recovery已整合；core codec focused tests通過仍不等於這份真人流程已通過：
+## 8. Blueprint v3 / cross-save
 
-1. Save後做一個ResearchProgram edit、一個Pilot edit與Production tick，再Save建立同origin history。
-2. Load恢復single Atlas/fog/program/progress、Pilot layout、Production layout/runtime/products、economy/Technology；不存在Route Floor或contract欄位。
-3. Rewind回前snapshot，reload後history仍在；Blueprint Library不受影響。
-4. v5/unknown schema顯式拒絕，不silent migrate或部分載入。
-5. corrupt/partial/disagreeing blob顯示錯誤；Recover前不得自動刪除或覆寫。
+1. 保存Research Blueprint並下載。root version/ruleset是3，kind=`research-program`，steps恰為`{typeId}`；不含path cells、fog、seed、terrain discovery或outcome。
+2. 分別由Pilot與Production保存Blueprint。兩者kind皆為`factory-layout`，payload保存dimensions、sparse routing與`{id,typeId,anchor,footRot}`；不含來源場域、fixed content、runtime、inventory、waste或economy。
+3. Factory card可免費`Open in Pilot`，也可顯示`Build $N`並付費建到Production。
+4. 對兩種kind做download→import→apply；wrong kind、unknown fields、bad version/fingerprint/checksum、collision/bounds都明示拒絕且Library原子不變。
+5. 匯入舊格式必須顯示unsupported，不得猜測轉換。
+6. Save/Load/Rewind/換slot後Library內容不變；相同canonical checksum去重；oversize檔拒絕。
 
-## 9. Gate、residue與回報
+## 9. Save v7 / recovery
+
+1. Save後做Research edit、Pilot edit、兩次paid Production edit與Production ticks，再Save建立同origin history。
+2. Load恢復Atlas/fog/program/progress、Pilot layout、non-null Production layout/runtime/waste、inventory、economy與Technology。
+3. 核對兩次paid build仍存在trace且cash重播相同；不得只保留最後layout。
+4. Rewind回前snapshot，reload後history仍在；Blueprint Library不受影響。
+5. 舊或unknown schema顯式拒絕，不silent migrate或部分載入。
+6. corrupt/partial/disagreeing blob顯示錯誤；Recover前不得自動刪除或覆寫raw data。
+
+## 10. Gate、residue與回報
 
 ```bash
 npm run check
 ```
 
-每個行為變更仍要重新執行：
+完成前另外確認：
 
-- active docs/source/tests residue scan不得把Route Floor、Research contract、multi-layer/swap、Blueprint v1 research layout當active truth；
-- 重建single Atlas、PathStamp/terrain/portal、Pilot sandbox、Production與compact screenshot baselines；
-- 以`0.0.0.0:53346 --strictPort`真人走完整流程並至少做一輪UX修正。
+- active docs/source/tests residue scan沒有部分Research path、terrain完全藏霧、Production需Pilot、Blueprint舊schema、Save舊schema的active truth；
+- 重建Research terrain/fog、path families、Pilot、direct Production、connected belts與compact screenshot baselines；
+- 以53346從遠端真人走完本清單，修完至少一輪UX問題。
 
-2026-07-14本milestone證據：`npm run check`通過（37個Vitest files／468 tests、33個Playwright tests），desktop/mobile與Pilot/Production screenshots已重建，53346 browser smoke完成。
-
-Bug回報附：URL/seed/generation options、tick或path segment區間、完整input trace/ResearchProgram、預期/實際、第一個違反的不變式、UI截圖與console error。
+Bug回報附：URL、seed／generation options、tick或path segment、input trace/program/layout、預期/實際、第一個違反的不變式、screenshot與console error。

@@ -24,6 +24,13 @@ import type {
   Vec2,
 } from "../sim/phase0_interfaces";
 import { worldCells, worldInPorts, worldOutPorts } from "../sim/factory-geom";
+import {
+  buildFactoryTransportTopology,
+  transportAnimationPhase,
+  type FactoryTransportCell,
+  type FactoryTransportEdge,
+  type FactoryTransportTopology,
+} from "./factoryTransportTopology";
 
 // ───────────────────────────── layout constants ─────────────────────────────
 
@@ -53,6 +60,59 @@ const TOKEN_PROC = 0xffb020;
 
 const DIR_DX: readonly number[] = [1, 0, -1, 0];
 const DIR_DY: readonly number[] = [0, 1, 0, -1];
+
+export interface FactoryTransportArmGeometry {
+  readonly side: Dir;
+  readonly from: Vec2;
+  readonly to: Vec2;
+}
+
+export function factoryTransportArmGeometry(mask: number): readonly FactoryTransportArmGeometry[] {
+  if (!Number.isSafeInteger(mask) || mask < 0 || mask > 0b1111) {
+    throw new Error("Factory renderer transport mask must be an integer in [0, 15]");
+  }
+  const arms: FactoryTransportArmGeometry[] = [];
+  for (let rawSide = 0; rawSide < 4; rawSide++) {
+    const side = rawSide as Dir;
+    if ((mask & (1 << side)) === 0) continue;
+    arms.push({
+      side,
+      from: { x: CELL / 2, y: CELL / 2 },
+      to: {
+        x: CELL / 2 + (DIR_DX[side] ?? 0) * CELL / 2,
+        y: CELL / 2 + (DIR_DY[side] ?? 0) * CELL / 2,
+      },
+    });
+  }
+  return arms;
+}
+
+export interface FactoryTransportFlowPoint extends Vec2 {
+  readonly dir: Dir;
+}
+
+export function factoryTransportFlowPoint(
+  edge: FactoryTransportEdge,
+  fromMachine: boolean,
+  toMachine: boolean,
+  phase: number,
+): FactoryTransportFlowPoint {
+  if (!Number.isFinite(phase) || phase < 0 || phase >= 1) {
+    throw new Error("Factory renderer transport animation phase must be in [0, 1)");
+  }
+  const fromX = PAD + edge.from.x * CELL + CELL / 2;
+  const fromY = PAD + edge.from.y * CELL + CELL / 2;
+  const toX = PAD + edge.to.x * CELL + CELL / 2;
+  const toY = PAD + edge.to.y * CELL + CELL / 2;
+  const start = fromMachine ? 0.5 : 0.18;
+  const end = toMachine ? 0.5 : 0.82;
+  const progress = start + (end - start) * phase;
+  return {
+    x: fromX + (toX - fromX) * progress,
+    y: fromY + (toY - fromY) * progress,
+    dir: edge.dir,
+  };
+}
 
 export interface MachineVisualStyle {
   readonly body: number;
@@ -108,7 +168,14 @@ function drawArrow(g: Graphics, cx: number, cy: number, d: Dir, color: number, s
 }
 
 /** Draw a small notch rectangle on the `side` edge of the cell at world (cx,cy). */
-function drawPortNotch(g: Graphics, cx: number, cy: number, side: Dir, color: number): void {
+function drawPortNotch(
+  g: Graphics,
+  cx: number,
+  cy: number,
+  side: Dir,
+  color: number,
+  connected: boolean,
+): void {
   const dx = DIR_DX[side] ?? 0;
   const dy = DIR_DY[side] ?? 0;
   const half = CELL / 2;
@@ -117,40 +184,78 @@ function drawPortNotch(g: Graphics, cx: number, cy: number, side: Dir, color: nu
   const w = dx !== 0 ? 8 : 18;
   const h = dy !== 0 ? 8 : 18;
   g.rect(ex - w / 2 - 2, ey - h / 2 - 2, w + 4, h + 4).fill({ color: 0x19242d });
-  g.rect(ex - w / 2, ey - h / 2, w, h).fill({ color });
+  g.rect(ex - w / 2, ey - h / 2, w, h).fill({
+    color: connected ? color : 0x7b858d,
+    alpha: connected ? 1 : 0.7,
+  });
 }
 
 interface DrawCtx {
   readonly cells: Graphics;
+  readonly topology: FactoryTransportTopology;
 }
 
-/** Draw one belt-grid tile (machines are drawn separately from layout.machines). */
-function drawTile(tile: FactoryTile, x: number, y: number, ctx: DrawCtx): void {
+function drawFloorCell(x: number, y: number, cells: Graphics): void {
+  const px = PAD + x * CELL;
+  const py = PAD + y * CELL;
+  cells.rect(px, py, CELL, CELL).fill({ color: EMPTY_COLOR });
+  cells.rect(px, py, CELL, CELL).stroke({ color: GRID_LINE, width: 1 });
+}
+
+function drawTransportBase(
+  visual: FactoryTransportCell,
+  tile: FactoryTile,
+  x: number,
+  y: number,
+  cells: Graphics,
+): void {
+  const px = PAD + x * CELL;
+  const py = PAD + y * CELL;
+  const cx = px + CELL / 2;
+  const cy = py + CELL / 2;
+  const arms = factoryTransportArmGeometry(visual.incidentMask);
+  if (arms.length === 0) {
+    if (tile.kind !== "belt") return;
+    const dx = DIR_DX[tile.dir] ?? 0;
+    const dy = DIR_DY[tile.dir] ?? 0;
+    cells.moveTo(cx - dx * 4, cy - dy * 4).lineTo(cx + dx * 10, cy + dy * 10)
+      .stroke({ color: BELT_RAIL, width: 22 });
+    cells.moveTo(cx - dx * 4, cy - dy * 4).lineTo(cx + dx * 10, cy + dy * 10)
+      .stroke({ color: BELT_COLOR, width: 16 });
+    return;
+  }
+  for (const arm of arms) {
+    cells.moveTo(px + arm.from.x, py + arm.from.y).lineTo(px + arm.to.x, py + arm.to.y);
+  }
+  cells.stroke({ color: BELT_RAIL, width: 22 });
+  cells.circle(cx, cy, 11).fill({ color: BELT_RAIL });
+  for (const arm of arms) {
+    cells.moveTo(px + arm.from.x, py + arm.from.y).lineTo(px + arm.to.x, py + arm.to.y);
+  }
+  cells.stroke({ color: BELT_COLOR, width: 16 });
+  cells.circle(cx, cy, 8).fill({ color: BELT_COLOR });
+}
+
+/** Draw one transport structure after the shared connection arms. */
+function drawTileBody(
+  tile: FactoryTile,
+  visual: FactoryTransportCell,
+  x: number,
+  y: number,
+  ctx: DrawCtx,
+): void {
   const px = PAD + x * CELL;
   const py = PAD + y * CELL;
   const cx = px + CELL / 2;
   const cy = py + CELL / 2;
   const { cells } = ctx;
 
-  cells.rect(px, py, CELL, CELL).fill({ color: EMPTY_COLOR });
-
   switch (tile.kind) {
     case "empty": {
       break;
     }
     case "belt": {
-      if ((tile.dir & 1) === 0) {
-        cells.rect(px, cy - 9, CELL, 18).fill({ color: BELT_COLOR });
-        cells.moveTo(px, cy - 10).lineTo(px + CELL, cy - 10)
-          .moveTo(px, cy + 10).lineTo(px + CELL, cy + 10)
-          .stroke({ color: BELT_RAIL, width: 2 });
-      } else {
-        cells.rect(cx - 9, py, 18, CELL).fill({ color: BELT_COLOR });
-        cells.moveTo(cx - 10, py).lineTo(cx - 10, py + CELL)
-          .moveTo(cx + 10, py).lineTo(cx + 10, py + CELL)
-          .stroke({ color: BELT_RAIL, width: 2 });
-      }
-      drawArrow(cells, cx, cy, tile.dir, BELT_ARROW, 0.15);
+      if (visual.outMask === 0) drawArrow(cells, cx, cy, tile.dir, BELT_ARROW, 0.13);
       break;
     }
     case "splitter": {
@@ -162,7 +267,6 @@ function drawTile(tile: FactoryTile, x: number, y: number, ctx: DrawCtx): void {
         const dy = DIR_DY[d] ?? 0;
         cells.moveTo(cx, cy).lineTo(cx + dx * CELL * 0.38, cy + dy * CELL * 0.38)
           .stroke({ color: SPLIT_MARK, width: 4 });
-        drawArrow(cells, cx + dx * 7, cy + dy * 7, d, 0xffffff, 0.11);
       }
       break;
     }
@@ -194,17 +298,15 @@ function drawTile(tile: FactoryTile, x: number, y: number, ctx: DrawCtx): void {
       break;
     }
   }
-  cells.rect(px, py, CELL, CELL).stroke({ color: GRID_LINE, width: 1 });
 }
 
 export interface MachinePathGlyph {
   readonly points: readonly Vec2[];
-  readonly activePointCount: number;
 }
 
-export function machinePathGlyph(path: PathStamp, stroke: number): MachinePathGlyph {
-  if (path.length === 0 || !Number.isSafeInteger(stroke) || stroke < 1 || stroke > path.length) {
-    throw new Error("Factory renderer requires a non-empty path and valid stroke prefix");
+export function machinePathGlyph(path: PathStamp): MachinePathGlyph {
+  if (path.length === 0) {
+    throw new Error("Factory renderer requires a non-empty path");
   }
   const authored: Vec2[] = [{ x: 0, y: 0 }];
   let x = 0;
@@ -230,12 +332,11 @@ export function machinePathGlyph(path: PathStamp, stroke: number): MachinePathGl
       x: (point.x - centerX) * scale,
       y: (point.y - centerY) * scale,
     })),
-    activePointCount: stroke + 1,
   };
 }
 
 export function placedMachinePathGlyph(machine: PlacedMachine): MachinePathGlyph {
-  return machinePathGlyph(machine.def.path, machine.def.stroke);
+  return machinePathGlyph(machine.def.path);
 }
 
 function drawMachineGlyph(
@@ -253,30 +354,23 @@ function drawMachineGlyph(
     const point = glyph.points[index];
     if (point !== undefined) g.lineTo(cx + point.x, cy + point.y);
   }
-  g.stroke({ color, width: 2, alpha: 0.28 });
-
-  g.moveTo(cx + first.x, cy + first.y);
-  for (let index = 1; index < glyph.activePointCount; index++) {
-    const point = glyph.points[index];
-    if (point !== undefined) g.lineTo(cx + point.x, cy + point.y);
-  }
   g.stroke({ color, width: 3.5, alpha: 1 });
   g.circle(cx + first.x, cy + first.y, 2.6).fill({ color });
 
-  const activeEnd = glyph.points[glyph.activePointCount - 1];
-  const beforeEnd = glyph.points[glyph.activePointCount - 2];
-  if (activeEnd === undefined || beforeEnd === undefined) {
-    throw new Error("Factory renderer path glyph is missing its active stroke endpoint");
+  const end = glyph.points[glyph.points.length - 1];
+  const beforeEnd = glyph.points[glyph.points.length - 2];
+  if (end === undefined || beforeEnd === undefined) {
+    throw new Error("Factory renderer path glyph is missing its endpoint");
   }
-  const dx = activeEnd.x - beforeEnd.x;
-  const dy = activeEnd.y - beforeEnd.y;
+  const dx = end.x - beforeEnd.x;
+  const dy = end.y - beforeEnd.y;
   const length = Math.hypot(dx, dy);
   const ux = dx / length;
   const uy = dy / length;
   const px = -uy;
   const py = ux;
-  const tipX = cx + activeEnd.x;
-  const tipY = cy + activeEnd.y;
+  const tipX = cx + end.x;
+  const tipY = cy + end.y;
   g.moveTo(tipX, tipY)
     .lineTo(tipX - ux * 6 + px * 4, tipY - uy * 6 + py * 4)
     .lineTo(tipX - ux * 6 - px * 4, tipY - uy * 6 - py * 4)
@@ -286,7 +380,7 @@ function drawMachineGlyph(
 
 /** Draw a placed multi-cell machine: shaped body, semantic glyph, and port notches. */
 function drawMachine(m: PlacedMachine, isBottleneck: boolean, ctx: DrawCtx): void {
-  const { cells } = ctx;
+  const { cells, topology } = ctx;
   const baseStyle = machineVisualStyle(m.def.typeId);
   const style = isBottleneck
     ? { body: 0xe25d52, face: 0xffded9, accent: 0x801f1b }
@@ -338,10 +432,40 @@ function drawMachine(m: PlacedMachine, isBottleneck: boolean, ctx: DrawCtx): voi
 
   // port notches: green = input, red = output.
   for (const wp of worldInPorts(m)) {
-    drawPortNotch(cells, PAD + wp.x * CELL + CELL / 2, PAD + wp.y * CELL + CELL / 2, wp.side, PORT_IN);
+    const connected = topology.machinePorts.some((port) =>
+      port.machineId === m.id &&
+      port.role === "input" &&
+      port.x === wp.x &&
+      port.y === wp.y &&
+      port.side === wp.side &&
+      port.connected
+    );
+    drawPortNotch(
+      cells,
+      PAD + wp.x * CELL + CELL / 2,
+      PAD + wp.y * CELL + CELL / 2,
+      wp.side,
+      PORT_IN,
+      connected,
+    );
   }
   for (const wp of worldOutPorts(m)) {
-    drawPortNotch(cells, PAD + wp.x * CELL + CELL / 2, PAD + wp.y * CELL + CELL / 2, wp.side, PORT_OUT);
+    const connected = topology.machinePorts.some((port) =>
+      port.machineId === m.id &&
+      port.role === "output" &&
+      port.x === wp.x &&
+      port.y === wp.y &&
+      port.side === wp.side &&
+      port.connected
+    );
+    drawPortNotch(
+      cells,
+      PAD + wp.x * CELL + CELL / 2,
+      PAD + wp.y * CELL + CELL / 2,
+      wp.side,
+      PORT_OUT,
+      connected,
+    );
   }
 
   if (minX !== Infinity) {
@@ -351,6 +475,29 @@ function drawMachine(m: PlacedMachine, isBottleneck: boolean, ctx: DrawCtx): voi
       .stroke({ color: style.accent, width: 3 });
     cells.rect(cx - 13, cy - 13, 26, 26).stroke({ color: style.body, width: 2, alpha: 0.6 });
     drawMachineGlyph(cells, m, cx, cy, style.accent);
+  }
+}
+
+function drawTransportFlow(
+  topology: FactoryTransportTopology,
+  width: number,
+  tick: number,
+  flow: Graphics,
+): void {
+  const phase = transportAnimationPhase(tick);
+  for (const edge of topology.edges) {
+    const from = topology.cells[edge.from.y * width + edge.from.x];
+    const to = topology.cells[edge.to.y * width + edge.to.x];
+    if (from === undefined || to === undefined) {
+      throw new Error("Factory renderer transport edge references a missing cell");
+    }
+    const point = factoryTransportFlowPoint(
+      edge,
+      from.kind === "machine",
+      to.kind === "machine",
+      phase,
+    );
+    drawArrow(flow, point.x, point.y, point.dir, BELT_ARROW, 0.1);
   }
 }
 
@@ -372,34 +519,54 @@ export async function createFactoryRenderer(layout: FactoryLayout): Promise<Fact
   await app.init({ width, height, background: BG, antialias: true });
 
   const cells = new Graphics();
+  const flow = new Graphics();
   const tokens = new Graphics();
-  app.stage.addChild(cells, tokens);
+  app.stage.addChild(cells, flow, tokens);
   let destroyed = false;
   let renderedLayout: FactoryLayout | null = null;
   let renderedBottleneck: number | null = null;
+  let renderedTopology: FactoryTransportTopology | null = null;
 
   function render(curr: FactoryLayout, runtime: FactoryRuntime, bottleneckId: number | null): void {
     const want = canvasSize(curr);
     if (app.renderer.width !== want.width || app.renderer.height !== want.height) {
       app.renderer.resize(want.width, want.height);
     }
+    flow.clear();
     tokens.clear();
     if (renderedLayout !== curr || renderedBottleneck !== bottleneckId) {
       renderedLayout = curr;
       renderedBottleneck = bottleneckId;
+      renderedTopology = buildFactoryTransportTopology(curr);
       cells.clear();
-      const ctx: DrawCtx = { cells };
+      const ctx: DrawCtx = { cells, topology: renderedTopology };
+      for (let y = 0; y < curr.height; y++) {
+        for (let x = 0; x < curr.width; x++) drawFloorCell(x, y, cells);
+      }
       for (let y = 0; y < curr.height; y++) {
         for (let x = 0; x < curr.width; x++) {
           const tile = curr.tiles[y * curr.width + x];
-          if (tile === undefined) continue;
-          drawTile(tile, x, y, ctx);
+          const visual = renderedTopology.cells[y * curr.width + x];
+          if (tile === undefined || visual === undefined) continue;
+          drawTransportBase(visual, tile, x, y, cells);
+        }
+      }
+      for (let y = 0; y < curr.height; y++) {
+        for (let x = 0; x < curr.width; x++) {
+          const tile = curr.tiles[y * curr.width + x];
+          const visual = renderedTopology.cells[y * curr.width + x];
+          if (tile === undefined || visual === undefined) continue;
+          drawTileBody(tile, visual, x, y, ctx);
         }
       }
       for (const m of curr.machines) {
         drawMachine(m, bottleneckId !== null && m.id === bottleneckId, ctx);
       }
     }
+    if (renderedTopology === null) {
+      throw new Error("Factory renderer transport topology was not initialized");
+    }
+    drawTransportFlow(renderedTopology, curr.width, runtime.tick, flow);
     for (let unitIndex = 0; unitIndex < runtime.unitCount; unitIndex++) {
       const cx = PAD + (runtime.unitX[unitIndex] ?? 0) * CELL + CELL / 2;
       const cy = PAD + (runtime.unitY[unitIndex] ?? 0) * CELL + CELL / 2;
@@ -423,6 +590,7 @@ export async function createFactoryRenderer(layout: FactoryLayout): Promise<Fact
       destroyed = true;
       app.stage.removeChildren();
       cells.destroy();
+      flow.destroy();
       tokens.destroy();
       app.destroy({ removeView: true });
     },

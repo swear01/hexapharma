@@ -67,10 +67,9 @@ function withCell(
   return { ...map, cell, cureId, sideEffectId, portalTo };
 }
 
-const machine = (path: PathStamp, stroke = path.length): Machine => ({
+const machine = (path: PathStamp): Machine => ({
   typeId: "test-stamp",
   path,
-  stroke,
 });
 const template = (...steps: Machine[]): Template => ({ steps });
 const multiMap = (...maps: EffectMap[]): MultiMap => ({ maps });
@@ -80,11 +79,10 @@ const north = Object.freeze({ x: 0, y: -1 } as const);
 const south = Object.freeze({ x: 0, y: 1 } as const);
 
 describe("path contract validation", () => {
-  it("accepts a non-empty cardinal-unit path and a stroke within its length", () => {
+  it("accepts a non-empty cardinal-unit full path", () => {
     const path = [east, south, west, north] as const;
     expect(() => validatePathStamp(path)).not.toThrow();
-    expect(() => validateMachinePath(machine(path, 1))).not.toThrow();
-    expect(() => validateMachinePath(machine(path, path.length))).not.toThrow();
+    expect(() => validateMachinePath(machine(path))).not.toThrow();
   });
 
   it("rejects an empty path", () => {
@@ -101,16 +99,11 @@ describe("path contract validation", () => {
     expect(() => validatePathStamp([delta] as unknown as PathStamp)).toThrow(/cardinal unit/i);
   });
 
-  it.each([0, -1, 4, 1.5, Number.NaN])("rejects invalid stroke %s", (stroke) => {
-    expect(() => validateMachinePath(machine([east, south, west], stroke))).toThrow(/stroke/i);
-  });
-
-  it("accepts all generated cardinal paths and legal strokes", () => {
+  it("accepts all generated cardinal full paths", () => {
     const delta = fc.constantFrom<CardinalDelta>(east, south, west, north);
     fc.assert(
-      fc.property(fc.array(delta, { minLength: 1, maxLength: 64 }), fc.nat(), (path, n) => {
-        const stroke = (n % path.length) + 1;
-        expect(() => validateMachinePath(machine(path, stroke))).not.toThrow();
+      fc.property(fc.array(delta, { minLength: 1, maxLength: 64 }), (path) => {
+        expect(() => validateMachinePath(machine(path))).not.toThrow();
       }),
     );
   });
@@ -189,18 +182,19 @@ describe("portal destination validation", () => {
 });
 
 describe("path stepping", () => {
-  it("applies the stroke prefix of the fixed path, one cardinal unit at a time", () => {
+  it("applies the entire fixed path, one cardinal unit at a time", () => {
     const map = emptyMap(9, 9, { x: 4, y: 4 });
-    const stamp = machine([east, east, south, west, north], 4);
+    const stamp = machine([east, east, south, west, north]);
     const result = previewStep(multiMap(map), initialState(multiMap(map)), stamp);
 
-    expect(result.next).toEqual({ pos: [{ x: 5, y: 5 }], failed: false });
+    expect(result.next).toEqual({ pos: [{ x: 5, y: 4 }], failed: false });
     expect(result.trails).toEqual([
       [
         { x: 5, y: 4 },
         { x: 6, y: 4 },
         { x: 6, y: 5 },
         { x: 5, y: 5 },
+        { x: 5, y: 4 },
       ],
     ]);
   });
@@ -209,7 +203,7 @@ describe("path stepping", () => {
     const first = emptyMap(9, 9, { x: 1, y: 1 });
     const second = emptyMap(9, 9, { x: 5, y: 6 });
     const maps = multiMap(first, second);
-    const result = applyStep(maps, initialState(maps), machine([east, south], 2));
+    const result = applyStep(maps, initialState(maps), machine([east, south]));
 
     expect(result.pos).toEqual([
       { x: 2, y: 2 },
@@ -223,7 +217,7 @@ describe("path stepping", () => {
     const result = previewStep(
       multiMap(map),
       initialState(multiMap(map)),
-      machine([east, south, east], 3),
+      machine([east, south, east]),
     );
 
     expect(result.next.pos).toEqual([{ x: 3, y: 3 }]);
@@ -235,7 +229,7 @@ describe("path stepping", () => {
     const result = previewStep(
       multiMap(map),
       initialState(multiMap(map)),
-      machine([west, south, east], 3),
+      machine([west, south, east]),
     );
 
     expect(result.next.pos).toEqual([{ x: 1, y: 2 }]);
@@ -246,8 +240,8 @@ describe("path stepping", () => {
     const base = emptyMap(8, 5, { x: 1, y: 2 });
     const map = withCell(base, 3, 2, CellKind.Abyss);
     const maps = multiMap(map);
-    const first = machine([east, east, east], 3);
-    const second = machine([south, south], 2);
+    const first = machine([east, east, east]);
+    const second = machine([south, south]);
     const preview = previewStep(maps, initialState(maps), first);
 
     expect(preview.next).toEqual({ pos: [{ x: 3, y: 2 }], failed: true });
@@ -255,26 +249,26 @@ describe("path stepping", () => {
     expect(applyTemplate(maps, initialState(maps), template(first, second))).toEqual(preview.next);
   });
 
-  it("charges two energy to enter swamp and stops once stroke energy is insufficient", () => {
+  it("charges two energy to enter swamp and stops once path energy is insufficient", () => {
     const base = emptyMap(8, 5, { x: 1, y: 2 });
     const map = withCell(base, 2, 2, CellKind.Swamp);
     const result = previewStep(
       multiMap(map),
       initialState(multiMap(map)),
-      machine([east, east, east], 3),
+      machine([east, east, east]),
     );
 
     expect(result.next.pos).toEqual([{ x: 3, y: 2 }]);
     expect(result.trails).toEqual([[{ x: 2, y: 2 }, { x: 3, y: 2 }]]);
   });
 
-  it("does not enter swamp when the remaining stroke energy is one", () => {
+  it("does not enter swamp when the remaining path energy is one", () => {
     const base = emptyMap(5, 5, { x: 1, y: 2 });
     const map = withCell(base, 2, 2, CellKind.Swamp);
     const result = previewStep(
       multiMap(map),
       initialState(multiMap(map)),
-      machine([east], 1),
+      machine([east]),
     );
 
     expect(result.next.pos).toEqual([{ x: 1, y: 2 }]);
@@ -287,7 +281,7 @@ describe("path stepping", () => {
     const result = previewStep(
       multiMap(map),
       initialState(multiMap(map)),
-      machine([east, east], 2),
+      machine([east, east]),
     );
 
     expect(result.next.pos).toEqual([{ x: 6, y: 1 }]);
@@ -309,7 +303,7 @@ describe("path stepping", () => {
     });
     const maps = multiMap(first, second);
 
-    expect(applyStep(maps, initialState(maps), machine([east], 1)).pos).toEqual([
+    expect(applyStep(maps, initialState(maps), machine([east])).pos).toEqual([
       { x: 4, y: 1 },
       { x: 6, y: 1 },
     ]);
@@ -330,7 +324,7 @@ describe("path stepping", () => {
     });
     map = withCell(map, 5, 1, CellKind.Swamp);
     map = withCell(map, 7, 1, CellKind.Abyss);
-    const stamp = machine([east, east, east, east, east], 5);
+    const stamp = machine([east, east, east, east, east]);
     const out = new Int32Array(7).fill(-99);
     const prevalidatedOut = new Int32Array(3);
 
@@ -349,7 +343,7 @@ describe("path stepping", () => {
     const map = withCell(emptyMap(7, 5, { x: 1, y: 2 }), 2, 2, CellKind.Swamp);
     const maps = multiMap(map);
     const path = [east, east, south] as const;
-    const stamp = machine(path, 3);
+    const stamp = machine(path);
     const state = initialState(maps);
     const before = {
       cell: Uint8Array.from(map.cell),
@@ -368,17 +362,16 @@ describe("path stepping", () => {
     expect(path).toEqual(before.path);
   });
 
-  it("on an open map, generated paths end at the sum of the stroke prefix", () => {
+  it("on an open map, generated paths end at the sum of the complete path", () => {
     const delta = fc.constantFrom<CardinalDelta>(east, south, west, north);
     fc.assert(
-      fc.property(fc.array(delta, { minLength: 1, maxLength: 24 }), fc.nat(), (path, n) => {
-        const stroke = (n % path.length) + 1;
+      fc.property(fc.array(delta, { minLength: 1, maxLength: 24 }), (path) => {
         const map = emptyMap(101, 101, { x: 50, y: 50 });
-        const expected = path.slice(0, stroke).reduce(
+        const expected = path.reduce(
           (position, step) => ({ x: position.x + step.x, y: position.y + step.y }),
           map.start,
         );
-        const result = applyStep(multiMap(map), initialState(multiMap(map)), machine(path, stroke));
+        const result = applyStep(multiMap(map), initialState(multiMap(map)), machine(path));
         expect(result.pos).toEqual([expected]);
       }),
     );
@@ -395,7 +388,7 @@ describe("evaluation and reveal", () => {
     });
     const maps = multiMap(curedMap, sideMap);
 
-    expect(evaluate(maps, initialState(maps), template(machine([east], 1)))).toEqual({
+    expect(evaluate(maps, initialState(maps), template(machine([east])))).toEqual({
       failed: false,
       final: [
         { x: 2, y: 2 },
@@ -411,7 +404,7 @@ describe("evaluation and reveal", () => {
     map = withCell(map, 3, 2, CellKind.Cure, { cureId: 17 });
     const maps = multiMap(map);
 
-    expect(evaluate(maps, initialState(maps), template(machine([east, east], 2)))).toEqual({
+    expect(evaluate(maps, initialState(maps), template(machine([east, east])))).toEqual({
       failed: true,
       final: [{ x: 2, y: 2 }],
       cured: [],
@@ -425,7 +418,7 @@ describe("evaluation and reveal", () => {
     });
     map = withCell(map, 6, 1, CellKind.Abyss);
     const maps = multiMap(map);
-    const revealed = revealAlong(maps, initialState(maps), template(machine([east, east], 2)));
+    const revealed = revealAlong(maps, initialState(maps), template(machine([east, east])));
     const fog = revealed.maps[0]?.fog;
 
     expect(fog?.[indexOf(map, 1, 1)]).toBe(1);

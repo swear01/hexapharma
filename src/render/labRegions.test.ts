@@ -47,15 +47,23 @@ describe("Lab connected region visuals", () => {
     );
   });
 
-  it("joins revealed wall, abyss, swamp, and side-effect biome cells by terrain kind", () => {
-    for (const kind of [CellKind.Wall, CellKind.Abyss, CellKind.Swamp, CellKind.SideEffect]) {
+  it("joins structural terrain regions without requiring discovery", () => {
+    for (const kind of [CellKind.Wall, CellKind.Abyss, CellKind.Swamp]) {
       const level = map();
       level.cell[5] = kind;
       level.cell[6] = kind;
-      level.fog[5] = 1;
-      level.fog[6] = 1;
       expect(revealedRegionEdges(level, 1, 1).right).toBe(false);
     }
+  });
+
+  it("joins side-effect regions only after both cells are discovered", () => {
+    const level = map();
+    level.cell[5] = CellKind.SideEffect;
+    level.cell[6] = CellKind.SideEffect;
+    level.fog[5] = 1;
+    expect(revealedRegionEdges(level, 1, 1).right).toBe(true);
+    level.fog[6] = 1;
+    expect(revealedRegionEdges(level, 1, 1).right).toBe(false);
   });
 
   it("keeps adjacent directed portal entries visually discrete", () => {
@@ -64,8 +72,19 @@ describe("Lab connected region visuals", () => {
     level.cell[6] = CellKind.Portal;
     level.portalTo[5] = 2;
     level.portalTo[6] = 3;
-    level.fog[5] = 1;
-    level.fog[6] = 1;
     expect(revealedRegionEdges(level, 1, 1).right).toBe(true);
+  });
+
+  it("keeps a reverse-looked-up portal exit discrete from empty substrate", () => {
+    const level = map();
+    level.cell[5] = CellKind.Portal;
+    level.portalTo[5] = 10;
+
+    expect(revealedRegionEdges(level, 2, 2)).toEqual({
+      top: true,
+      right: true,
+      bottom: true,
+      left: true,
+    });
   });
 });

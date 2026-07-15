@@ -11,10 +11,10 @@
  *
  * ───────────────────────────── Phase 0 invariants ─────────────────────────────
  * drug-graph:
- *   INV-1  path: machines apply their cardinal-unit path prefix independently on
+ *   INV-1  path: machines apply their complete cardinal-unit path independently on
  *          every map. Wall/OOB cancel one delta; Abyss fails; Swamp costs 2 energy.
  *   INV-2  portal: entering a Portal records entry + same-map exit, then continues.
- *   INV-3  stroke: an integer in [1,path.length], used as both prefix and energy.
+ *   INV-3  every machine always traverses its complete fixed catalog path.
  *   INV-4  evaluate: each map's FINAL position alone determines cure / side-effect;
  *          fully deterministic and reproducible.
  *   INV-5  rearrange-invariance: identical machine sequence + per-unit
@@ -114,11 +114,10 @@ export interface DrugState {
 
 // ─────────────────────────────── machines / paths ───────────────────────────────
 
-/** A fixed chemical path and its active prefix/energy, applied to every map. */
+/** A complete fixed chemical path, applied to every map. */
 export interface Machine {
   readonly typeId: MachineTypeId;
   readonly path: PathStamp;
-  readonly stroke: number;
 }
 
 /** A recipe = an ordered sequence of fixed chemical path steps. */
@@ -323,7 +322,6 @@ export const MAX_REWIND_HISTORY_REPLAY_WORK = 100_000_000;
 export interface FactoryMachineDef {
   readonly typeId: MachineTypeId;
   readonly path: PathStamp;
-  readonly stroke: number;
   readonly cost: number; // processing cost charged per unit produced
   readonly speed: number; // ticks to process one unit (integer >= 1; larger = slower = bottleneck)
 }
@@ -749,8 +747,8 @@ export interface PilotFacilityState {
 }
 
 export interface ProductionFacilityState {
-  readonly layout: FactoryLayout | null;
-  readonly runtime: FactoryRuntime | null;
+  readonly layout: FactoryLayout;
+  readonly runtime: FactoryRuntime;
   readonly waste: number;
 }
 
@@ -761,8 +759,7 @@ export type GameIntent =
   | { readonly kind: "advanceResearchShot" }
   | { readonly kind: "abortResearchShot" }
   | { readonly kind: "setPilotLayout"; readonly layout: FactoryLayout }
-  | { readonly kind: "sendPilotToProduction" }
-  | { readonly kind: "setProductionLayout"; readonly layout: FactoryLayout }
+  | { readonly kind: "buildProductionLayout"; readonly layout: FactoryLayout }
   | { readonly kind: "productionTicks"; readonly ticks: number }
   | { readonly kind: "resetProduction" }
   | { readonly kind: "sellProduct"; readonly productId: number; readonly disease: number }

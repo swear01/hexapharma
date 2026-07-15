@@ -187,31 +187,88 @@ function requireGridCell(cell: GridCell, name: string): void {
   }
 }
 
-export function rasterizeGridLine(start: GridCell, end: GridCell): readonly GridCell[] {
+export function rasterizeGridLine(
+  start: GridCell,
+  end: GridCell,
+  firstAxis: "horizontal" | "vertical" = "horizontal",
+): readonly GridCell[] {
   requireGridCell(start, "start");
   requireGridCell(end, "end");
-  const cells: GridCell[] = [];
+  const cells: GridCell[] = [{ x: start.x, y: start.y }];
   let x = start.x;
   let y = start.y;
-  const dx = Math.abs(end.x - start.x);
-  const dy = Math.abs(end.y - start.y);
-  const stepX = start.x < end.x ? 1 : -1;
-  const stepY = start.y < end.y ? 1 : -1;
-  let error = dx - dy;
-
-  while (true) {
-    cells.push({ x, y });
-    if (x === end.x && y === end.y) return cells;
-    const doubled = error * 2;
-    if (doubled > -dy) {
-      error -= dy;
-      x += stepX;
+  const walkHorizontal = () => {
+    const step = x < end.x ? 1 : -1;
+    while (x !== end.x) {
+      x += step;
+      cells.push({ x, y });
     }
-    if (doubled < dx) {
-      error += dx;
-      y += stepY;
+  };
+  const walkVertical = () => {
+    const step = y < end.y ? 1 : -1;
+    while (y !== end.y) {
+      y += step;
+      cells.push({ x, y });
     }
+  };
+  if (firstAxis === "horizontal") {
+    walkHorizontal();
+    walkVertical();
+  } else {
+    walkVertical();
+    walkHorizontal();
   }
+  return cells;
+}
+
+export type BeltDirection = 0 | 1 | 2 | 3;
+
+export function routeBeltGesture(
+  existing: readonly GridCell[],
+  end: GridCell,
+  initialDirection: BeltDirection,
+): readonly GridCell[] {
+  requireGridCell(end, "end");
+  const start = existing[0];
+  if (start === undefined) return [{ x: end.x, y: end.y }];
+  return rasterizeGridLine(
+    start,
+    end,
+    initialDirection === 1 || initialDirection === 3 ? "vertical" : "horizontal",
+  );
+}
+
+function directionBetween(from: GridCell, to: GridCell): BeltDirection {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  if (dx === 1 && dy === 0) return 0;
+  if (dx === 0 && dy === 1) return 1;
+  if (dx === -1 && dy === 0) return 2;
+  if (dx === 0 && dy === -1) return 3;
+  throw new RangeError("belt gesture cells must be cardinal neighbors");
+}
+
+export function orientBeltGesture(
+  cells: readonly GridCell[],
+  fallback: BeltDirection,
+): readonly BeltDirection[] {
+  if (!Number.isSafeInteger(fallback) || fallback < 0 || fallback > 3) {
+    throw new RangeError("belt gesture fallback direction is invalid");
+  }
+  for (const cell of cells) requireGridCell(cell, "cell");
+  if (cells.length === 0) return [];
+  const directions: BeltDirection[] = [];
+  for (let index = 0; index < cells.length; index++) {
+    const current = cells[index]!;
+    const next = cells[index + 1];
+    if (next !== undefined) {
+      directions.push(directionBetween(current, next));
+      continue;
+    }
+    const previous = cells[index - 1];
+    directions.push(previous === undefined ? fallback : directionBetween(previous, current));
+  }
+  return directions;
 }
 
 export function appendUniqueCells(

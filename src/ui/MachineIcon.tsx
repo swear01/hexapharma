@@ -3,7 +3,6 @@ import type { PathStamp } from "../sim/phase0_interfaces";
 export interface MachineIconProps {
   readonly typeId: string;
   readonly path: PathStamp;
-  readonly stroke?: number;
   readonly title?: string;
   readonly size?: number;
 }
@@ -45,15 +44,12 @@ function pointList(points: readonly Point[]): string {
 export function MachineIcon({
   typeId,
   path,
-  stroke = path.length,
   title,
   size = 24,
 }: MachineIconProps) {
   const labelled = title !== undefined;
   const points = iconPoints(path);
-  const activeCount = Math.max(1, Math.min(stroke, path.length)) + 1;
-  const active = points.slice(0, activeCount);
-  const endpoint = active.at(-1) ?? points[0]!;
+  const endpoint = points.at(-1) ?? points[0]!;
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
@@ -70,11 +66,9 @@ export function MachineIcon({
       role={labelled ? "img" : undefined}
       aria-label={title}
       data-machine-icon={typeId}
-      data-stroke={stroke}
     >
       {labelled && <title>{title}</title>}
-      <polyline points={pointList(points)} opacity="0.25" data-icon-shape="full-path" />
-      <polyline points={pointList(active)} data-icon-shape="active-path" />
+      <polyline points={pointList(points)} data-icon-shape="path" />
       <circle cx={points[0]!.x} cy={points[0]!.y} r="3" fill="currentColor" />
       <circle cx={endpoint.x} cy={endpoint.y} r="4" fill="none" data-icon-endpoint="true" />
     </svg>

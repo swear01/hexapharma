@@ -9,24 +9,25 @@
 | 模組 | 路徑 | 目前 owner | 狀態 |
 |------|------|----------|------|
 | rng / hash | `src/sim/rng/`, `src/sim/hash.ts` | integrator | ✅ 完成（Phase 0 地基） |
-| drug-graph / Research path terrain types | `src/sim/drug-graph/`, `src/sim/phase0_interfaces.ts`（path/terrain API） | integrator（agent 交付） | ✅ 奇形 PathStamp／單層 terrain 語意 |
+| drug-graph / Research path terrain types | `src/sim/drug-graph/`, `src/sim/phase0_interfaces.ts`（path/terrain API） | integrator（agent 交付） | ✅ 完整奇形 PathStamp／單層 terrain 語意 |
 | solver | `src/sim/solver/` | integrator（agent 交付） | ✅ 完成（INV-13） |
 | mapgen | `src/sim/mapgen/` | integrator（agent 交付） | ✅ radial motifs／constructive Research programs／quality metrics |
-| factory-sim | `src/sim/factory-sim/` | integrator（agent 交付） | ✅ fixed PathStamp hot-loop migration |
+| factory-sim | `src/sim/factory-sim/` | integrator（agent 交付） | ✅ fixed PathStamp hot-loop authority |
+| Production construction quote | `src/sim/construction/` | integrator | ✅ paid layout-diff authority |
 | recipe | `src/sim/recipe/` | integrator（agent 交付） | ✅ Factory prototype compilation／outcome analysis；非Research authority |
 | state.ts | `src/sim/state.ts` | integrator（agent 交付） | ✅ 完成（hashFactory / replayFactory，INV-15） |
-| whole-game state | `src/sim/game.ts`, `src/sim/phase0_interfaces.ts` | integrator | ✅ 完成（Research／Pilot／Production 三場域） |
-| whole-game migration tests | `src/sim/game.test.ts`, `src/sim/single-atlas.test.ts`, `src/sim/state.test.ts`, `test/integration/loop.test.ts` | integrator（agent 交付） | ✅ ResearchProgram/no-contract/path API migration |
-| replay work | `src/sim/replay-work.ts` | integrator（agent 交付） | ✅ 完成（三場域 intents/work preflight） |
+| whole-game state | `src/sim/game.ts`, `src/sim/phase0_interfaces.ts` | integrator | ✅ Research／optional Pilot／direct paid Production |
+| whole-game migration tests | `src/sim/game.test.ts`, `src/sim/single-atlas.test.ts`, `src/sim/state.test.ts`, `test/integration/loop.test.ts` | integrator（agent 交付） | ✅ full paths／paid build／replay authority |
+| replay work | `src/sim/replay-work.ts` | integrator（agent 交付） | ✅ Save v7 intents/work preflight |
 | economy | `src/sim/economy/` | integrator（agent 交付） | ✅ 完成（遞減定價 + 實際成本/副作用 + Knowledge + 帳務守恆） |
-| save | `src/sim/save/` | integrator（agent 交付） | ✅ Save v6 ResearchProgram/no-contract migration |
+| save | `src/sim/save/` | integrator（agent 交付） | ✅ Save v7 non-null Production／paid build migration |
 | patent | `src/sim/patent/` | integrator（agent 交付） | ✅ cash+Knowledge、機器／擴廠／actual-trail sensor；無layer progression |
-| render | `src/render/`、`public/assets/lab/` | integrator（agent 交付） | ✅ unmistakable terrain + fixed-path glyph migration |
-| ui shell/workspaces | `src/ui/`（不含 checkpoint storage） | integrator | ✅ 完成（三場域 world-first UI／Blueprint Library） |
-| checkpoint storage | `src/ui/checkpointStorage.ts`, `src/ui/checkpointStorage.test.ts` | integrator（agent 交付） | ✅ Save v6/ResearchProgram migration |
-| blueprint portable format | `src/blueprint/` | integrator（agent 交付） | ✅ v2 kind-specific ResearchProgram/Pilot codec |
-| browser acceptance | `test/e2e/` | integrator（agent 交付） | ✅ 三場域／固定路徑／單Atlas browser acceptance，33 tests |
-| active docs for Research trajectory redesign | `README.md`, `docs/`（`module-ownership.md` 除外） | integrator（agent 交付） | ✅ approved design sync |
+| render | `src/render/`、`public/assets/lab/` | integrator（agent 交付） | ✅ terrain/discovery layering + connected transport topology |
+| ui shell/workspaces | `src/ui/`（不含 checkpoint storage） | integrator | ✅ 三場域 world-first UI／simple chrome／paid build flow |
+| checkpoint storage | `src/ui/checkpointStorage.ts`, `src/ui/checkpointStorage.test.ts` | integrator（agent 交付） | ✅ Save v7/ResearchProgram migration |
+| blueprint portable format | `src/blueprint/` | integrator（agent 交付） | ✅ v3 ResearchProgram／generic FactoryLayout codec |
+| browser acceptance | `test/e2e/` | integrator（agent 交付） | ✅ fixed paths／visibility／paid Production／Blueprint v3／Save v7 acceptance |
+| active docs | `README.md`, `docs/`（`module-ownership.md` 除外） | integrator（agent 交付） | ✅ current behavior sync；runtime完成仍以最終gate為準 |
 
 ## 規則
 

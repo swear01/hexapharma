@@ -67,7 +67,7 @@ test("Blueprint Library persists Pilot layouts independently of save-slot loadin
   await page.getByTestId("blueprint-save-pilot").click();
   await expect(page.getByTestId("blueprint-status")).toContainText(/Saved|portable blueprint/i);
   const card = page.locator(".blueprint-card").filter({ hasText: "Starter plant" });
-  await expect(card).toContainText("Pilot Plant");
+  await expect(card).toContainText("Factory");
   const download = page.waitForEvent("download");
   await card.getByRole("button", { name: "Download" }).click();
   await download;
@@ -85,4 +85,23 @@ test("Blueprint Library persists Pilot layouts independently of save-slot loadin
   await page.reload();
   await page.getByTestId("view-blueprints").click();
   await expect(page.getByText("Starter plant", { exact: true })).toBeVisible();
+});
+
+test("an expanded-floor Blueprint stays readable on a smaller Production floor", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("/?cash=9999&research=9999");
+  await page.getByTestId("view-technology").click();
+  await page.getByTestId("patent-unlock-bench-2").click();
+  await page.getByTestId("view-blueprints").click();
+  await page.getByTestId("blueprint-name").fill("Expanded floor");
+  await page.getByTestId("blueprint-save-production").click();
+  await expect(page.getByTestId("blueprint-status")).toContainText("Saved");
+
+  await page.goto("/");
+  await page.getByTestId("view-blueprints").click();
+  const card = page.locator(".blueprint-card").filter({ hasText: "Expanded floor" });
+  await expect(card.getByRole("button", { name: "Open in Pilot" })).toBeDisabled();
+  await expect(card.getByRole("button", { name: "Build unavailable" })).toBeDisabled();
+  expect(errors).toEqual([]);
 });

@@ -33,7 +33,8 @@ test("production preview loads every lazy UI surface without runtime errors", as
   await expect(page.getByTestId("factory-render-error")).toHaveCount(0);
 
   await page.getByTestId("view-production").click();
-  await expect(page.getByTestId("production-uncommissioned")).toBeVisible();
+  await expect(page.getByTestId("production-facility-workspace").getByTestId("factory-canvas").locator("canvas"))
+    .toBeVisible();
 
   await page.getByTestId("view-market").click();
   await expect(page.getByTestId("shop-table")).toBeVisible();

@@ -1,7 +1,6 @@
 import {
   Application,
   Assets,
-  BlurFilter,
   Container,
   Graphics,
   Sprite,
@@ -9,7 +8,6 @@ import {
   type Texture,
 } from "pixi.js";
 import type { DrugState, EffectMap, MultiMap, Vec2 } from "../sim/phase0_interfaces";
-import { CellKind } from "../sim/phase0_interfaces";
 import {
   LAB_CELL_PIXELS,
   LAB_MIN_ZOOM,
@@ -22,7 +20,7 @@ import {
 } from "./labCamera";
 import { labAssetUrls } from "./labAssets";
 import { revealedRegionEdges } from "./labRegions";
-import { labTerrainVisual, type PortalTerrainVisual, type RevealedTerrainVisual } from "./labTerrain";
+import { labTerrainVisual, type CellTerrainVisual, type PortalTerrainVisual } from "./labTerrain";
 
 const BG = 0x111a1b;
 const TOKEN_COLOR = 0x28a9d6;
@@ -83,10 +81,13 @@ function isRevealed(map: EffectMap, x: number, y: number): boolean {
   return map.fog[y * map.width + x] === 1;
 }
 
-function featureTexture(textures: LabTextures, kind: number): Texture | null {
-  if (kind === CellKind.Wall) return textures.wall;
-  if (kind === CellKind.SideEffect) return textures.sideEffect;
-  if (kind === CellKind.Cure) return textures.cure;
+function featureTexture(
+  textures: LabTextures,
+  kind: CellTerrainVisual["kind"] | PortalTerrainVisual["kind"],
+): Texture | null {
+  if (kind === "wall") return textures.wall;
+  if (kind === "sideEffect") return textures.sideEffect;
+  if (kind === "cure") return textures.cure;
   return null;
 }
 
@@ -139,19 +140,15 @@ function drawPortalMotif(
 ): void {
   const cx = x + cell / 2;
   const cy = y + cell / 2;
-  const markerColor = visual.pairMarker === null
-    ? 0x718096
-    : portalMarkerColor(visual.pairMarker);
+  const markerColor = portalMarkerColor(visual.pairMarker);
   terrain.rect(x, y, cell, cell).fill({ color: visual.baseColor, alpha: 1 });
   terrain.circle(cx, cy, cell * 0.34).fill({ color: 0x050817, alpha: 1 });
   terrain.circle(cx, cy, cell * 0.34).stroke({ color: markerColor, width: Math.max(3, cell * 0.08) });
   terrain.circle(cx, cy, cell * 0.2).stroke({ color: visual.rimColor, width: Math.max(2, cell * 0.045), alpha: 0.9 });
 
   let hash = visual.role === "entry" ? 0x1357 : 0x2468;
-  if (visual.pairMarker !== null) {
-    for (let index = 0; index < visual.pairMarker.length; index++) {
-      hash = ((hash * 33) + visual.pairMarker.charCodeAt(index)) >>> 0;
-    }
+  for (let index = 0; index < visual.pairMarker.length; index++) {
+    hash = ((hash * 33) + visual.pairMarker.charCodeAt(index)) >>> 0;
   }
   const notchCount = 2 + (hash % 4);
   for (let index = 0; index < notchCount; index++) {
@@ -200,7 +197,7 @@ function drawPortalMotif(
 
 function drawTerrainMotif(
   terrain: Graphics,
-  visual: RevealedTerrainVisual | PortalTerrainVisual,
+  visual: CellTerrainVisual | PortalTerrainVisual,
   x: number,
   y: number,
   cell: number,
@@ -259,24 +256,24 @@ function drawVisibleMap(
   textures: LabTextures,
   terrain: Graphics,
   featureSprites: readonly Sprite[],
-  revealMask: Graphics,
+  fogMask: Graphics,
 ): void {
   const cell = LAB_CELL_PIXELS * camera.zoom;
   const bounds = visibleLabCells(camera, LAB_VIEWPORT, map);
   let featureIndex = 0;
+  let drewFog = false;
   for (let y = bounds.y0; y < bounds.y1; y++) {
     for (let x = bounds.x0; x < bounds.x1; x++) {
       const screen = cellScreen(camera, x, y);
       const revealed = isRevealed(map, x, y);
-      if (!revealed) continue;
+      if (!revealed) {
+        fogMask.rect(screen.x, screen.y, cell, cell);
+        drewFog = true;
+      }
 
-      revealMask.rect(screen.x - 2, screen.y - 2, cell + 4, cell + 4).fill(0xffffff);
-
-      const kind = map.cell[y * map.width + x] ?? CellKind.Empty;
       const visual = labTerrainVisual(map, x, y);
-      if (visual.kind === "fog") throw new Error("Lab renderer received fog for a revealed cell");
       drawTerrainMotif(terrain, visual, screen.x, screen.y, cell);
-      const texture = featureTexture(textures, kind);
+      const texture = featureTexture(textures, visual.kind);
       const sprite = texture === null ? undefined : featureSprites[featureIndex++];
       if (sprite !== undefined && texture !== null) {
         sprite.texture = texture;
@@ -284,19 +281,19 @@ function drawVisibleMap(
         sprite.anchor.set(0.5);
         sprite.x = screen.x + cell / 2;
         sprite.y = screen.y + cell / 2;
-        sprite.width = cell * (kind === CellKind.Wall ? 1.08 : 0.88);
-        sprite.height = cell * (kind === CellKind.Wall ? 1.08 : 0.88);
-        sprite.alpha = kind === CellKind.Wall ? 0.48 : 0.88;
-        sprite.rotation = kind === CellKind.Wall
+        sprite.width = cell * (visual.kind === "wall" ? 1.08 : 0.88);
+        sprite.height = cell * (visual.kind === "wall" ? 1.08 : 0.88);
+        sprite.alpha = visual.kind === "wall" ? 0.48 : 0.88;
+        sprite.rotation = visual.kind === "wall"
           ? ((x * 7 + y * 11) & 3) * Math.PI / 2
           : 0;
       }
-      if (kind !== CellKind.Empty) {
+      if (visual.kind !== "empty") {
         const edges = revealedRegionEdges(map, x, y);
         const edgeStyle = {
           color: visual.rimColor,
-          width: Math.max(2, cell * (kind === CellKind.Cure ? 0.07 : 0.045)),
-          alpha: kind === CellKind.Cure ? 0.9 : 0.7,
+          width: Math.max(2, cell * (visual.kind === "cure" ? 0.07 : 0.045)),
+          alpha: visual.kind === "cure" ? 0.9 : 0.7,
         };
         if (edges.top) terrain.moveTo(screen.x, screen.y).lineTo(screen.x + cell, screen.y).stroke(edgeStyle);
         if (edges.right) terrain.moveTo(screen.x + cell, screen.y).lineTo(screen.x + cell, screen.y + cell).stroke(edgeStyle);
@@ -305,6 +302,7 @@ function drawVisibleMap(
       }
     }
   }
+  if (drewFog) fogMask.fill(0xffffff);
 }
 
 function drawToken(
@@ -421,11 +419,12 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
     autoDensity: true,
   });
 
-  const fogBackdrop = TilingSprite.from(textures.fog, {
+  const fogOverlay = TilingSprite.from(textures.fog, {
     width: LAB_VIEWPORT.width,
     height: LAB_VIEWPORT.height,
   });
-  fogBackdrop.tileScale.set(0.42);
+  fogOverlay.tileScale.set(0.42);
+  fogOverlay.alpha = 0.78;
   const substrate = TilingSprite.from(textures.substrate, {
     width: LAB_VIEWPORT.width,
     height: LAB_VIEWPORT.height,
@@ -444,10 +443,8 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
     featureSprites.push(feature);
     featureLayer.addChild(feature);
   }
-  const revealMask = new Graphics();
-  const revealBlur = new BlurFilter({ strength: 6, quality: 2 });
-  revealMask.filters = [revealBlur];
-  substrate.mask = revealMask;
+  const fogMask = new Graphics();
+  fogOverlay.mask = fogMask;
   const token = new Graphics();
   const haloArt = new Sprite(textures.halo);
   haloArt.visible = false;
@@ -457,9 +454,9 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
   const previewTokenArt = new Sprite(textures.drug);
   previewTokenArt.visible = false;
   app.stage.addChild(
-    fogBackdrop,
     substrate,
-    revealMask,
+    fogOverlay,
+    fogMask,
     terrain,
     featureLayer,
     grid,
@@ -486,7 +483,7 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
       tokenArt.visible = false;
       previewTokenArt.visible = false;
       for (const sprite of featureSprites) sprite.visible = false;
-      revealMask.clear();
+      fogMask.clear();
       const map = mm.maps[view.activeMap];
       if (map === undefined) return;
       const cell = LAB_CELL_PIXELS * view.camera.zoom;
@@ -495,10 +492,10 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
         LAB_VIEWPORT.height / 2 - view.camera.y * cell,
       );
       substrate.tileScale.set(0.42 * view.camera.zoom);
-      fogBackdrop.tilePosition.copyFrom(substrate.tilePosition);
-      fogBackdrop.tileScale.copyFrom(substrate.tileScale);
+      fogOverlay.tilePosition.copyFrom(substrate.tilePosition);
+      fogOverlay.tileScale.copyFrom(substrate.tileScale);
       drawLabGrid(map, view.camera, grid);
-      drawVisibleMap(map, view.camera, textures, terrain, featureSprites, revealMask);
+      drawVisibleMap(map, view.camera, textures, terrain, featureSprites, fogMask);
       drawTrail(view.trail, view.camera, route);
       if (view.previewTrail !== undefined) drawTrail(view.previewTrail, view.camera, previewRoute, true);
       const pos = drug.pos[view.activeMap];
@@ -512,17 +509,15 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
       if (destroyed) return;
       destroyed = true;
       app.stage.removeChildren();
-      fogBackdrop.destroy();
-      substrate.mask = null;
+      fogOverlay.mask = null;
+      fogOverlay.destroy();
       substrate.destroy();
       grid.destroy();
       terrain.destroy();
       route.destroy();
       previewRoute.destroy();
       featureLayer.destroy({ children: true });
-      revealMask.filters = null;
-      revealBlur.destroy();
-      revealMask.destroy();
+      fogMask.destroy();
       token.destroy();
       haloArt.destroy();
       tokenArt.destroy();

@@ -42,7 +42,7 @@ import {
 // BFS over free cells, connecting source→m0.in, each m_i.out→m_{i+1}.in, and
 // m_last.out→sink.
 //
-// The effect-determining fixed path lives in each machine's `def.path`/`def.stroke`
+// The effect-determining fixed path lives in each machine's `def.path`
 // and is INDEPENDENT of `footRot` (packing only) — so the shaped packing + belt
 // routing preserve the cure exactly (INV-7). factoryOutcome runs the layout via
 // the fixed-capacity runtime until a unit reaches the sink, then reads its final DrugState into
@@ -83,13 +83,9 @@ function defOf(step: Machine): FactoryMachineDef {
   ) {
     throw new Error(`compileTemplate: machine "${step.typeId}" path does not match the catalog`);
   }
-  if (!Number.isSafeInteger(step.stroke) || step.stroke < 1 || step.stroke > entry.path.length) {
-    throw new Error(`compileTemplate: machine "${step.typeId}" stroke is invalid`);
-  }
   return {
     typeId: step.typeId,
     path: step.path.map((delta) => ({ x: delta.x, y: delta.y })) as Machine["path"],
-    stroke: step.stroke,
     cost: entry.cost,
     speed: entry.speed,
   };
@@ -367,7 +363,6 @@ function machineStep(placed: PlacedMachine): Machine {
   return {
     typeId: placed.def.typeId,
     path: placed.def.path.map((delta) => ({ x: delta.x, y: delta.y })) as Machine["path"],
-    stroke: placed.def.stroke,
   };
 }
 
@@ -671,7 +666,7 @@ export function compileEntitledPrototype(
       throw new Error("compilePrototype: entitlement cannot fit the machine sequence");
     }
     placements.push({ anchor, footRot: 0 });
-    cursorX = anchor.x + maxX + 3;
+    cursorX = anchor.x + maxX + 2;
   }
   const layout = compilePrototype(template, width, height, placements);
   const derived = derivePrototypeTemplate(layout);

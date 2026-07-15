@@ -494,44 +494,8 @@ textarea:focus-visible,
   font-size: 8px;
 }
 
-.research-calibration {
-  position: sticky;
-  z-index: 2;
-  right: 0;
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  padding: 4px;
-  gap: 5px;
-  border-left: 1px solid var(--line-strong);
-  background: rgb(8 13 17 / 98%);
-}
-
-.research-calibration button {
-  min-width: 34px;
-  min-height: 38px;
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius-md);
-  color: var(--steel-200);
-  background: var(--steel-800);
-}
-
-.research-calibration strong {
-  min-width: 36px;
-  color: var(--orange-400);
-  text-align: center;
-}
-
 .research-workspace .lab-map-frame {
   cursor: crosshair;
-}
-
-.facility-clock-state {
-  padding: 0 10px;
-  color: var(--teal-400);
-  font-size: 11px;
-  letter-spacing: .04em;
-  text-transform: uppercase;
 }
 
 .game-drawer {
@@ -1009,15 +973,6 @@ textarea:focus-visible,
   opacity: 0.62;
 }
 
-.panel-kicker {
-  margin-bottom: 5px;
-  color: var(--teal-400);
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-}
-
 .panel-section {
   margin-top: 16px;
   padding-top: 14px;
@@ -1087,13 +1042,6 @@ textarea:focus-visible,
   cursor: not-allowed;
   filter: saturate(0.3);
   opacity: 0.42;
-}
-
-.key-help {
-  margin-top: 16px;
-  color: var(--steel-300);
-  font-size: 11px;
-  line-height: 1.8;
 }
 
 .tool-symbol {
@@ -1228,6 +1176,19 @@ textarea:focus-visible,
 .factory-ghost.is-invalid {
   border-color: var(--red-500);
   background: repeating-linear-gradient(135deg, rgb(238 107 107 / 28%) 0 8px, rgb(238 107 107 / 8%) 8px 16px);
+}
+
+.factory-ghost-cost {
+  position: absolute;
+  z-index: 5;
+  transform: translate(6px, -24px);
+  border: 1px solid rgba(255, 207, 111, 0.72);
+  border-radius: 4px;
+  background: rgba(19, 27, 31, 0.92);
+  color: #ffcf6f;
+  padding: 2px 5px;
+  font: 700 12px/1 ui-monospace, monospace;
+  pointer-events: none;
 }
 
 .zoom-readout {
@@ -2107,10 +2068,6 @@ textarea:focus-visible,
     display: none;
   }
 
-  .facility-pilot .facility-clock-state {
-    display: none;
-  }
-
   .facility-pilot .transport-bar {
     flex-wrap: nowrap;
     width: max-content;
@@ -2163,8 +2120,7 @@ textarea:focus-visible,
   }
 
   .research-atlas-status .lab-focus-label,
-  .research-atlas-status kbd,
-  .research-atlas-status .lab-seed {
+  .research-atlas-status kbd {
     display: none;
   }
 }

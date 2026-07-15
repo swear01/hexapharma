@@ -2,9 +2,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { FactoryLayout, Template } from "../sim/phase0_interfaces";
 import {
   MAX_BLUEPRINT_BYTES,
-  blueprintFromPilotLayout,
+  blueprintFromFactoryLayout,
   blueprintFromProgram,
-  materializePilotLayout,
+  materializeFactoryLayout,
   materializeResearchProgram,
 } from "../blueprint/format";
 import {
@@ -19,8 +19,11 @@ import {
 interface BlueprintLibraryProps {
   readonly researchProgram: Template;
   readonly pilotLayout: FactoryLayout | null;
+  readonly productionLayout: FactoryLayout;
   readonly onLoadResearch: (program: Template) => boolean;
   readonly onLoadPilot: (layout: FactoryLayout) => boolean;
+  readonly onBuildProduction: (layout: FactoryLayout) => boolean;
+  readonly quoteProduction: (layout: FactoryLayout) => number;
 }
 
 function message(error: unknown): string {
@@ -36,11 +39,27 @@ export async function readBlueprintUpload(
   return file.text();
 }
 
+export function factoryBlueprintBuildQuote(
+  production: FactoryLayout,
+  proposed: FactoryLayout,
+  quote: (layout: FactoryLayout) => number,
+): number | null {
+  if (
+    production.width !== proposed.width ||
+    production.height !== proposed.height ||
+    production.tiles.length !== proposed.tiles.length
+  ) return null;
+  return quote(proposed);
+}
+
 export function BlueprintLibrary({
   researchProgram,
   pilotLayout,
+  productionLayout,
   onLoadResearch,
   onLoadPilot,
+  onBuildProduction,
+  quoteProduction,
 }: BlueprintLibraryProps) {
   const [entries, setEntries] = useState<readonly LibraryBlueprint[]>([]);
   const [name, setName] = useState("Untitled layout");
@@ -52,7 +71,7 @@ export function BlueprintLibrary({
     try {
       const next = await listLibraryBlueprints(localStorage);
       setEntries(next);
-      setStatus(next.length === 0 ? "Library is empty." : `${next.length} portable blueprint(s).`);
+      setStatus(next.length === 0 ? "Library is empty." : `${next.length} blueprint(s).`);
     } catch (error) {
       setStatus(`Library error: ${message(error)}`);
     }
@@ -65,8 +84,8 @@ export function BlueprintLibrary({
     if (researchProgram.steps.length === 0) return;
     try {
       const saved = await saveLibraryBlueprint(localStorage, blueprintFromProgram(name, researchProgram));
-      setStatus(`Saved “${saved.blueprint.name}” to the cross-save library.`);
       await refresh();
+      setStatus(`Saved “${saved.blueprint.name}”.`);
     } catch (error) {
       setStatus(`Could not save blueprint: ${message(error)}`);
     }
@@ -74,37 +93,58 @@ export function BlueprintLibrary({
   const capturePilot = useCallback(async () => {
     if (pilotLayout === null) return;
     try {
-      const saved = await saveLibraryBlueprint(localStorage, blueprintFromPilotLayout(name, pilotLayout));
-      setStatus(`Saved “${saved.blueprint.name}” to the cross-save library.`);
+      const saved = await saveLibraryBlueprint(localStorage, blueprintFromFactoryLayout(name, pilotLayout));
       await refresh();
+      setStatus(`Saved “${saved.blueprint.name}”.`);
     } catch (error) {
       setStatus(`Could not save blueprint: ${message(error)}`);
     }
   }, [name, pilotLayout, refresh]);
+  const captureProduction = useCallback(async () => {
+    try {
+      const saved = await saveLibraryBlueprint(
+        localStorage,
+        blueprintFromFactoryLayout(name, productionLayout),
+      );
+      await refresh();
+      setStatus(`Saved “${saved.blueprint.name}”.`);
+    } catch (error) {
+      setStatus(`Could not save blueprint: ${message(error)}`);
+    }
+  }, [name, productionLayout, refresh]);
 
   const importJson = useCallback(async (source: string) => {
     try {
       const imported = await importLibraryBlueprint(localStorage, source);
       setJson("");
-      setStatus(`Imported “${imported.blueprint.name}”.`);
       await refresh();
+      setStatus(`Imported “${imported.blueprint.name}”.`);
     } catch (error) {
       setStatus(`Could not import blueprint: ${message(error)}`);
     }
   }, [refresh]);
 
-  const apply = useCallback((entry: LibraryBlueprint) => {
+  const loadResearch = useCallback((entry: LibraryBlueprint) => {
     try {
-      const accepted = entry.blueprint.kind === "research-program"
-        ? onLoadResearch(materializeResearchProgram(entry.blueprint))
-        : onLoadPilot(materializePilotLayout(entry.blueprint));
+      const accepted = onLoadResearch(materializeResearchProgram(entry.blueprint));
       setStatus(accepted
-        ? `Loaded “${entry.blueprint.name}” into ${entry.blueprint.kind === "research-program" ? "Research" : "Pilot Plant"}.`
+        ? `Loaded “${entry.blueprint.name}” into Research.`
         : `Could not load “${entry.blueprint.name}”.`);
     } catch (error) {
       setStatus(`Could not materialize blueprint: ${message(error)}`);
     }
-  }, [onLoadPilot, onLoadResearch]);
+  }, [onLoadResearch]);
+  const loadFactory = useCallback((entry: LibraryBlueprint, destination: "pilot" | "production") => {
+    try {
+      const layout = materializeFactoryLayout(entry.blueprint);
+      const accepted = destination === "pilot" ? onLoadPilot(layout) : onBuildProduction(layout);
+      setStatus(accepted
+        ? `Loaded “${entry.blueprint.name}” into ${destination === "pilot" ? "Pilot" : "Production"}.`
+        : `Could not load “${entry.blueprint.name}”.`);
+    } catch (error) {
+      setStatus(`Could not materialize blueprint: ${message(error)}`);
+    }
+  }, [onBuildProduction, onLoadPilot]);
 
   const exportEntry = useCallback(async (entry: LibraryBlueprint) => {
     try {
@@ -125,8 +165,8 @@ export function BlueprintLibrary({
   const remove = useCallback(async (entry: LibraryBlueprint) => {
     try {
       await deleteLibraryBlueprint(localStorage, entry.id);
-      setStatus(`Deleted “${entry.blueprint.name}”.`);
       await refresh();
+      setStatus(`Deleted “${entry.blueprint.name}”.`);
     } catch (error) {
       setStatus(`Could not delete blueprint: ${message(error)}`);
     }
@@ -134,24 +174,23 @@ export function BlueprintLibrary({
 
   return (
     <div className="blueprint-library" data-testid="blueprint-library">
-      <div className="panel-kicker">Cross-save · portable v2</div>
-      <h1>Blueprint Library</h1>
-      <p>Programs and layouts persist across save slots.</p>
+      <h1>Blueprints</h1>
 
       <section className="panel-section blueprint-capture">
-        <h2>Capture current floor</h2>
+        <h2>Save</h2>
         <label>
           <span>Name</span>
           <input value={name} maxLength={80} onChange={(event) => setName(event.target.value)} data-testid="blueprint-name" />
         </label>
         <div className="panel-actions">
           <button type="button" disabled={researchProgram.steps.length === 0} onClick={() => void captureResearch()} data-testid="blueprint-save-research">Save Research program</button>
-          <button type="button" disabled={pilotLayout === null} onClick={() => void capturePilot()} data-testid="blueprint-save-pilot">Save Pilot Plant</button>
+          <button type="button" disabled={pilotLayout === null} onClick={() => void capturePilot()} data-testid="blueprint-save-pilot">Save Pilot</button>
+          <button type="button" onClick={() => void captureProduction()} data-testid="blueprint-save-production">Save Production</button>
         </div>
       </section>
 
       <section className="panel-section">
-        <div className="panel-heading"><h2>Portable JSON</h2><span>{entries.length}/64</span></div>
+        <div className="panel-heading"><h2>Import</h2><span>{entries.length}/64</span></div>
         <input
           ref={fileRef}
           type="file"
@@ -174,22 +213,35 @@ export function BlueprintLibrary({
       </section>
 
       <section className="blueprint-list" aria-label="Saved blueprints">
-        {entries.map((entry) => (
-          <article key={entry.id} className="blueprint-card">
+        {entries.map((entry) => {
+          const factoryLayout = entry.blueprint.kind === "factory-layout"
+            ? materializeFactoryLayout(entry.blueprint)
+            : null;
+          const buildQuote = factoryLayout === null
+            ? null
+            : factoryBlueprintBuildQuote(productionLayout, factoryLayout, quoteProduction);
+          return <article key={entry.id} className="blueprint-card">
             <div>
               <strong>{entry.blueprint.name}</strong>
-              <span>{entry.blueprint.kind === "research-program" ? "Research program" : "Pilot Plant"}</span>
+              <span>{entry.blueprint.kind === "research-program" ? "Research" : "Factory"}</span>
               <small>{entry.blueprint.kind === "research-program"
                 ? `${entry.blueprint.program.steps.length} paths`
                 : `${entry.blueprint.layout.width}×${entry.blueprint.layout.height} · ${entry.blueprint.layout.machines.length} machines`}</small>
             </div>
             <div className="panel-actions">
-              <button type="button" onClick={() => apply(entry)}>Load</button>
+              {entry.blueprint.kind === "research-program" ? (
+                <button type="button" onClick={() => loadResearch(entry)}>Load in Research</button>
+              ) : (
+                <>
+                  <button type="button" disabled={buildQuote === null} onClick={() => loadFactory(entry, "pilot")}>Open in Pilot</button>
+                  <button type="button" disabled={buildQuote === null} onClick={() => loadFactory(entry, "production")}>{buildQuote === null ? "Build unavailable" : `Build $${buildQuote}`}</button>
+                </>
+              )}
               <button type="button" onClick={() => void exportEntry(entry)}>Download</button>
               <button type="button" onClick={() => void remove(entry)} aria-label={`Delete ${entry.blueprint.name}`}>×</button>
             </div>
-          </article>
-        ))}
+          </article>;
+        })}
       </section>
       <output className="blueprint-status" role="status" data-testid="blueprint-status">{status}</output>
     </div>

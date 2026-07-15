@@ -72,21 +72,11 @@ function findCureNodes(mm: MultiMap, targets: readonly DiseaseId[]): CureNode[] 
   return nodes;
 }
 
-/**
- * Expand every immutable machine stamp into its legal calibration prefixes in a
- * fixed order. Chemical paths cannot rotate or mirror; calibration only chooses
- * how much of the authored stamp is executed.
- */
 function expandCatalog(catalog: readonly MachineCatalogEntry[]): ConcreteMachine[] {
   const out: ConcreteMachine[] = [];
   for (const entry of catalog) {
     if (!Array.isArray(entry.path) || entry.path.length < 1) continue;
-    for (let stroke = 1; stroke <= entry.path.length; stroke++) {
-      out.push({
-        machine: { typeId: entry.typeId, path: entry.path, stroke },
-        cost: entry.cost,
-      });
-    }
+    out.push({ machine: { typeId: entry.typeId, path: entry.path }, cost: entry.cost });
   }
   return out;
 }
@@ -169,12 +159,12 @@ export const solve: SolveFn = (mm, start, opts) => {
   return null;
 };
 
-/** True when the active prefix bends rather than behaving as a straight shove. */
+/** True when the full fixed path bends rather than behaving as a straight shove. */
 function isShapedStep(machine: Machine): boolean {
-  if (machine.stroke < 2) return false;
+  if (machine.path.length < 2) return false;
   const first = machine.path[0];
   if (first === undefined) return false;
-  for (let index = 1; index < machine.stroke; index++) {
+  for (let index = 1; index < machine.path.length; index++) {
     const delta = machine.path[index];
     if (delta !== undefined && (delta.x !== first.x || delta.y !== first.y)) return true;
   }
@@ -190,8 +180,8 @@ function isShapedStep(machine: Machine): boolean {
  *   difficulty = steps + diversityBonus + shapedPathBonus
  *     steps           = minimal BFS depth (dominant term).
  *     diversityBonus  = (distinct typeIds used) − 1.
- *     shapedPathBonus = 2 if any active machine prefix bends; else 0.
- * A straight-prefix single-machine-type solution stays at difficulty == steps;
+ *     shapedPathBonus = 2 if any full machine path bends; else 0.
+ * A straight single-machine-type solution stays at difficulty == steps;
  * a zero-step solution stays at 0.
  */
 function finalize(

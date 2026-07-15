@@ -9,7 +9,7 @@
       "height": 1024,
       "alpha": false,
       "repeat": true,
-      "role": "Low-contrast cellular world substrate; render only where terrain is revealed."
+      "role": "Always-visible low-contrast cellular world substrate beneath terrain and survey fog."
     },
     "fog": {
       "file": "fog-defocus.webp",
@@ -17,7 +17,7 @@
       "height": 1024,
       "alpha": false,
       "repeat": true,
-      "role": "Opaque microscope defocus for unexplored space; it must cover world details completely."
+      "role": "Survey boundary overlay for undiscovered space; structural terrain renders above it while effect discoveries stay omitted."
     },
     "wall": {
       "file": "wall-crystal.png",

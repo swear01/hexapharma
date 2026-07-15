@@ -80,7 +80,6 @@ interface AppProps {
   readonly lastOutcome: Outcome | null;
   readonly onWorldActivate?: () => void;
   readonly onWorldErase?: () => void;
-  readonly onCalibrationWheel?: (direction: -1 | 1) => void;
 }
 
 export function App({
@@ -95,7 +94,6 @@ export function App({
   lastOutcome,
   onWorldActivate,
   onWorldErase,
-  onCalibrationWheel,
 }: AppProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<LabRenderer | null>(null);
@@ -253,11 +251,6 @@ export function App({
     else if (action === "erase") onWorldErase?.();
   }, [onWorldActivate, onWorldErase]);
   const onWheel = useCallback((event: ReactWheelEvent<HTMLDivElement>) => {
-    if (event.shiftKey && onCalibrationWheel !== undefined) {
-      event.preventDefault();
-      onCalibrationWheel(event.deltaY < 0 ? 1 : -1);
-      return;
-    }
     const map = mm.maps[activeMap];
     if (map === undefined) return;
     event.preventDefault();
@@ -275,7 +268,7 @@ export function App({
       );
       return next;
     });
-  }, [activeMap, camera, mm.maps, onCalibrationWheel]);
+  }, [activeMap, camera, mm.maps]);
 
   useEffect(() => {
     if (!active) return;
@@ -324,7 +317,6 @@ export function App({
           </button>
           <output data-testid="lab-zoom">{Math.round(camera.zoom * 100)}%</output>
           <span data-testid="revealed-count">revealed {revealed}/{total}</span>
-          <span className="lab-seed" data-testid="level-info">seed {level.seed}</span>
           {outcomeText !== null && <strong data-testid="research-atlas-outcome">{outcomeText}</strong>}
         </div>
       </section>

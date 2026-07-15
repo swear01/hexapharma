@@ -52,7 +52,7 @@ function entitledLayout(template: Template): FactoryLayout {
   ).layout;
 }
 
-function commissionTemplate(
+function buildTemplate(
   initial: ReturnType<typeof createGameState>,
   template = recipe(),
   runResearch = false,
@@ -66,8 +66,9 @@ function commissionTemplate(
     }
     if (game.research.shot !== null) throw new Error("test Research shot did not finish");
   }
-  game = applyGameIntent(game, { kind: "setPilotLayout", layout: entitledLayout(template) });
-  return applyGameIntent(game, { kind: "sendPilotToProduction" });
+  const layout = entitledLayout(template);
+  game = applyGameIntent(game, { kind: "setPilotLayout", layout });
+  return applyGameIntent(game, { kind: "buildProductionLayout", layout });
 }
 
 function baseLayout(): FactoryLayout {
@@ -93,15 +94,64 @@ function directSinkFactory(layout: FactoryLayout, period = 1): FactoryLayout {
 }
 
 describe("whole-game deterministic state", () => {
+  it("starts with an editable empty Production floor without a Pilot gate", () => {
+    const game = createGameState(opts, 200, 0);
+
+    expect(game.production.layout).toEqual(baseLayout());
+    expect(game.production.runtime).not.toBeNull();
+    expect(game.production.runtime.tick).toBe(0);
+    expect(applyGameIntent(game, { kind: "productionTicks", ticks: 1 }).production.runtime.tick).toBe(1);
+  });
+
+  it("builds directly in Production and charges the exact construction quote", () => {
+    const initial = createGameState(opts, 200, 0);
+    const proposed = directSinkFactory(baseLayout());
+    const built = applyGameIntent(initial, { kind: "buildProductionLayout", layout: proposed });
+
+    expect(built.production.layout).toEqual(proposed);
+    expect(built.production.layout).not.toBe(proposed);
+    expect(built.economy.cash).toBe(182);
+    expect(built.pilot).toBe(initial.pilot);
+    expect(built.production.runtime.tick).toBe(0);
+  });
+
+  it("rejects unaffordable Production construction atomically", () => {
+    const initial = createGameState(opts, 17, 0);
+    const beforeHash = hashGame(initial);
+
+    expect(() => applyGameIntent(initial, {
+      kind: "buildProductionLayout",
+      layout: directSinkFactory(baseLayout()),
+    })).toThrow(/requires 18 cash/i);
+    expect(hashGame(initial)).toBe(beforeHash);
+  });
+
+  it("keeps every paid Production build in the replay trace", () => {
+    let game = createGameState(opts, 200, 0);
+    const east = { ...baseLayout(), tiles: [...baseLayout().tiles] };
+    east.tiles[0] = { kind: "belt", dir: 0 };
+    const south = { ...baseLayout(), tiles: [...baseLayout().tiles] };
+    south.tiles[0] = { kind: "belt", dir: 1 };
+
+    game = applyGameIntent(game, { kind: "buildProductionLayout", layout: east });
+    game = applyGameIntent(game, { kind: "buildProductionLayout", layout: south });
+
+    expect(game.economy.cash).toBe(196);
+    expect(game.intentTrace.slice(-2).map((intent) => intent.kind)).toEqual([
+      "buildProductionLayout",
+      "buildProductionLayout",
+    ]);
+  });
+
   it("credits inventory from physical Production output, not merely a Research result", () => {
     const level = generate(opts);
     const template = recipe();
     expect(applyTemplate(level.mm, initialState(level.mm), template).pos).not.toEqual(level.start.pos);
 
-    let game = commissionTemplate(createGameState(opts, 200, 0), template);
+    let game = buildTemplate(createGameState(opts, 1_000, 0), template);
     game = applyGameIntent(game, {
-      kind: "setProductionLayout",
-      layout: directSinkFactory(game.production.layout!),
+      kind: "buildProductionLayout",
+      layout: directSinkFactory(game.production.layout),
     });
     game = applyGameIntent(game, { kind: "productionTicks", ticks: 2 });
 
@@ -114,7 +164,7 @@ describe("whole-game deterministic state", () => {
     const expectedCost = template.steps.reduce((total, step) => {
       return total + (DEFAULT_CATALOG.find((entry) => entry.typeId === step.typeId)?.cost ?? 0);
     }, 0);
-    let game = commissionTemplate(createGameState(opts, 500, 0), template);
+    let game = buildTemplate(createGameState(opts, 500, 0), template);
     game = applyGameIntent(game, { kind: "productionTicks", ticks: 200 });
     const product = game.inventory[0]!;
     expect(product.productionCost).toBe(expectedCost);
@@ -136,13 +186,16 @@ describe("whole-game deterministic state", () => {
     );
   });
 
-  it("normalizes adjacent Production ticks and same-facility layout edits", () => {
-    let game = commissionTemplate(createGameState(opts, 500, 0));
-    const first = directSinkFactory(game.production.layout!);
-    const second = directSinkFactory(game.production.layout!, 2);
-    game = applyGameIntent(game, { kind: "setProductionLayout", layout: first });
-    game = applyGameIntent(game, { kind: "setProductionLayout", layout: second });
-    expect(game.intentTrace.at(-1)).toEqual({ kind: "setProductionLayout", layout: second });
+  it("normalizes adjacent Production ticks but retains paid layout edits", () => {
+    let game = buildTemplate(createGameState(opts, 500, 0));
+    const first = directSinkFactory(game.production.layout);
+    const second = directSinkFactory(game.production.layout, 2);
+    game = applyGameIntent(game, { kind: "buildProductionLayout", layout: first });
+    game = applyGameIntent(game, { kind: "buildProductionLayout", layout: second });
+    expect(game.intentTrace.slice(-2).map((intent) => intent.kind)).toEqual([
+      "buildProductionLayout",
+      "buildProductionLayout",
+    ]);
     game = applyGameIntent(game, { kind: "productionTicks", ticks: 1 });
     game = applyGameIntent(game, { kind: "productionTicks", ticks: 2 });
     expect(game.intentTrace.at(-1)).toEqual({ kind: "productionTicks", ticks: 3 });
@@ -150,7 +203,7 @@ describe("whole-game deterministic state", () => {
   });
 
   it("normalizes consecutive same-disease sales into one replayable bulk intent", () => {
-    let game = commissionTemplate(createGameState(opts, 500, 0));
+    let game = buildTemplate(createGameState(opts, 500, 0));
     game = applyGameIntent(game, { kind: "productionTicks", ticks: 200 });
     const first = game.inventory[0]!;
     const second = game.inventory[1]!;
@@ -174,7 +227,7 @@ describe("whole-game deterministic state", () => {
       difficulty: { min: 1, max: 1 },
     };
     const fastRecipe = generate(fastOptions).diseases[0]!.reference;
-    let game = commissionTemplate(createGameState(fastOptions, 500, 0), fastRecipe);
+    let game = buildTemplate(createGameState(fastOptions, 500, 0), fastRecipe);
     game = applyGameIntent(game, { kind: "productionTicks", ticks: MAX_INTENT_TRACE * 4 + 512 });
     const disease = game.inventory[0]!.outcome.cured[0]!;
     const productIds = game.inventory
@@ -188,7 +241,7 @@ describe("whole-game deterministic state", () => {
 
   it("does not regenerate an unchanged level on each Production tick", () => {
     const generateSpy = vi.spyOn(mapgenModule, "generate");
-    let game = commissionTemplate(createGameState(opts, 500, 0));
+    let game = buildTemplate(createGameState(opts, 500, 0));
     const callsBeforeTick = generateSpy.mock.calls.length;
     game = applyGameIntent(game, { kind: "productionTicks", ticks: 1 });
     expect(game.production.runtime?.tick).toBe(1);
@@ -196,40 +249,37 @@ describe("whole-game deterministic state", () => {
     generateSpy.mockRestore();
   });
 
-  it("commissions an independent Pilot layout as an exact owned Production copy", () => {
+  it("uses a Pilot plan as an optional paid Production build without aliasing it", () => {
     const layout = entitledLayout(recipe());
     let game = createGameState(opts, 500, 0);
     expect(game.research.program.steps).toEqual([]);
     game = applyGameIntent(game, { kind: "setPilotLayout", layout });
     const pilot = game.pilot.layout!;
-    game = applyGameIntent(game, { kind: "sendPilotToProduction" });
+    game = applyGameIntent(game, { kind: "buildProductionLayout", layout: pilot });
 
     expect(game.production.layout).toEqual(pilot);
     expect(game.production.layout).not.toBe(pilot);
-    expect(game.production.runtime?.tick).toBe(0);
+    expect(game.production.runtime.tick).toBe(0);
+    expect(game.economy.cash).toBeLessThan(500);
     expect("contract" in game.pilot).toBe(false);
     expect("contract" in game.production).toBe(false);
   });
 
-  it("commissions an init-valid Pilot layout without requiring throughput or a cure", () => {
+  it("keeps free Pilot edits independent from the live Production floor", () => {
     const layout = baseLayout();
     let game = createGameState(opts, 500, 0);
+    const production = game.production;
     game = applyGameIntent(game, { kind: "setPilotLayout", layout });
-    const pilot = game.pilot.layout!;
 
-    game = applyGameIntent(game, { kind: "sendPilotToProduction" });
-
-    expect(game.production.layout).toEqual(pilot);
-    expect(game.production.layout).not.toBe(pilot);
-    expect(game.production.runtime?.tick).toBe(0);
-    expect(game.production.runtime?.deadlocked).toBe(false);
-    expect(game.production.runtime?.producedTotal).toBe(0);
+    expect(game.economy.cash).toBe(500);
+    expect(game.production).toBe(production);
+    expect(game.pilot.layout).toEqual(layout);
   });
 
   it("rejects locked fixed paths and non-entitled physical floors at every boundary", () => {
     const skew = DEFAULT_CATALOG.find((entry) => entry.typeId === "skew")!;
     const lockedProgram = {
-      steps: [{ typeId: skew.typeId, path: skew.path, stroke: skew.path.length }],
+      steps: [{ typeId: skew.typeId, path: skew.path }],
     };
     const locked = entitledLayout(lockedProgram);
     const game = createGameState(opts, 500, 0);
@@ -238,9 +288,9 @@ describe("whole-game deterministic state", () => {
       program: lockedProgram,
     })).toThrow(/locked/i);
     expect(() => applyGameIntent(game, { kind: "setPilotLayout", layout: locked })).toThrow(/locked/i);
-    const commissioned = commissionTemplate(game);
-    expect(() => applyGameIntent(commissioned, {
-      kind: "setProductionLayout",
+    const built = buildTemplate(game);
+    expect(() => applyGameIntent(built, {
+      kind: "buildProductionLayout",
       layout: locked,
     })).toThrow(/locked/i);
 
@@ -251,22 +301,22 @@ describe("whole-game deterministic state", () => {
     ).layout;
     for (const intent of [
       { kind: "setPilotLayout", layout: oversized },
-      { kind: "setProductionLayout", layout: oversized },
+      { kind: "buildProductionLayout", layout: oversized },
     ] as const) {
       expect(() => applyGameIntent(game, intent)).toThrow(/entitled.*24x12/i);
     }
   });
 
   it("expands Pilot and Production while preserving the non-spatial ResearchProgram", () => {
-    let game = commissionTemplate(createGameState(opts, 10_000, 100), recipe(), true);
-    const width = game.production.layout!.width;
+    let game = buildTemplate(createGameState(opts, 10_000, 100), recipe(), true);
+    const width = game.production.layout.width;
     const research = game.research;
     game = applyGameIntent(game, { kind: "unlockPatent", id: "bench-2" });
     expect(game.research).toEqual(research);
     expect("layout" in game.research).toBe(false);
     expect(game.pilot.layout?.width).toBe(width + 2);
-    expect(game.production.layout?.width).toBe(width + 2);
-    expect(game.production.runtime).toBeNull();
+    expect(game.production.layout.width).toBe(width + 2);
+    expect(game.production.runtime.tick).toBe(0);
     expect(() => applyGameIntent(game, {
       kind: "setPilotLayout",
       layout: entitledLayout(recipe()),
@@ -298,9 +348,7 @@ describe("whole-game deterministic state", () => {
     for (const ticks of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
       expect(() => applyGameIntent(empty, { kind: "productionTicks", ticks })).toThrow(/ticks|integer/i);
     }
-    expect(() => applyGameIntent(empty, { kind: "productionTicks", ticks: 1 })).toThrow(
-      /Production.*layout/i,
-    );
+    expect(applyGameIntent(empty, { kind: "productionTicks", ticks: 1 }).production.runtime.tick).toBe(1);
   });
 
   it("rejects tampered machine definitions and invalid source periods", () => {
@@ -316,7 +364,6 @@ describe("whole-game deterministic state", () => {
         def: {
           typeId: push.typeId,
           path: push.path,
-          stroke: push.path.length,
           cost: 0,
           speed: push.speed,
         },
@@ -326,7 +373,7 @@ describe("whole-game deterministic state", () => {
       }],
     };
     const game = createGameState(opts, 200, 0);
-    expect(() => applyGameIntent(game, { kind: "setProductionLayout", layout })).toThrow(/catalog/i);
+    expect(() => applyGameIntent(game, { kind: "buildProductionLayout", layout })).toThrow(/catalog/i);
     const badPeriod = { ...baseLayout(), tiles: [...baseLayout().tiles] };
     (badPeriod.tiles as FactoryLayout["tiles"][number][])[0] = {
       kind: "source",
@@ -334,7 +381,7 @@ describe("whole-game deterministic state", () => {
       period: 0,
     };
     expect(() => applyGameIntent(game, {
-      kind: "setProductionLayout",
+      kind: "buildProductionLayout",
       layout: badPeriod,
     })).toThrow(/period/i);
   });
@@ -348,7 +395,7 @@ describe("whole-game deterministic state", () => {
     } as unknown as FactoryLayout;
     const game = createGameState(opts, 200, 0);
     expect(() => applyGameIntent(game, {
-      kind: "setProductionLayout",
+      kind: "buildProductionLayout",
       layout: oversized,
     })).toThrow(/bounded|dimensions/i);
 
@@ -358,7 +405,6 @@ describe("whole-game deterministic state", () => {
       def: {
         typeId: push.typeId,
         path: push.path,
-        stroke: push.path.length,
         cost: push.cost,
         speed: push.speed,
       },
@@ -367,7 +413,7 @@ describe("whole-game deterministic state", () => {
       shape: DEFAULT_SHAPES.push!,
     });
     expect(() => applyGameIntent(game, {
-      kind: "setProductionLayout",
+      kind: "buildProductionLayout",
       layout: { ...baseLayout(), machines: [placed(0), placed(1)] },
     })).toThrow(/overlap/i);
   });
@@ -395,7 +441,7 @@ describe("whole-game deterministic state", () => {
   });
 
   it("drains every product once and does not mutate the input runtime", () => {
-    const game = commissionTemplate(createGameState(opts, 500, 0));
+    const game = buildTemplate(createGameState(opts, 500, 0));
     const runtime = game.production.runtime!;
     const before = snapshotFactory(runtime);
     const next = applyGameIntent(game, { kind: "productionTicks", ticks: 200 });
@@ -408,7 +454,7 @@ describe("whole-game deterministic state", () => {
   });
 
   it("resets Production without affecting Research or Pilot", () => {
-    let game = commissionTemplate(createGameState(opts, 500, 0));
+    let game = buildTemplate(createGameState(opts, 500, 0));
     const research = game.research;
     const pilot = game.pilot;
     expect(applyGameIntent(game, { kind: "resetProduction" })).toBe(game);
@@ -420,8 +466,25 @@ describe("whole-game deterministic state", () => {
     expect(applyGameIntent(game, { kind: "resetProduction" })).toBe(game);
   });
 
+  it("preserves accumulated waste across layout edits and runtime reset", () => {
+    let game = createGameState(opts, 500, 0);
+    game = applyGameIntent(game, {
+      kind: "buildProductionLayout",
+      layout: directSinkFactory(game.production.layout),
+    });
+    game = applyGameIntent(game, { kind: "productionTicks", ticks: 2 });
+    expect(game.production.waste).toBeGreaterThan(0);
+    const waste = game.production.waste;
+
+    game = applyGameIntent(game, { kind: "buildProductionLayout", layout: baseLayout() });
+    expect(game.production.waste).toBe(waste);
+    game = applyGameIntent(game, { kind: "productionTicks", ticks: 1 });
+    game = applyGameIntent(game, { kind: "resetProduction" });
+    expect(game.production.waste).toBe(waste);
+  });
+
   it("rejects invalid sales atomically", () => {
-    let game = commissionTemplate(createGameState(opts, 500, 0));
+    let game = buildTemplate(createGameState(opts, 500, 0));
     game = applyGameIntent(game, { kind: "productionTicks", ticks: 200 });
     const first = game.inventory[0]!;
     const disease = first.outcome.cured[0]!;
@@ -440,7 +503,7 @@ describe("whole-game deterministic state", () => {
   });
 
   it("enforces inventory and replay bounds", () => {
-    let game = commissionTemplate(createGameState(opts, 500, 0));
+    let game = buildTemplate(createGameState(opts, 500, 0));
     game = applyGameIntent(game, { kind: "productionTicks", ticks: 200 });
     const oversized = {
       ...game,
@@ -463,7 +526,7 @@ describe("whole-game deterministic state", () => {
   });
 
   it("applies machine unlock and both factory expansion patents without changing Atlas authority", () => {
-    let game = commissionTemplate(createGameState(opts, 10_000, 100));
+    let game = buildTemplate(createGameState(opts, 10_000, 100));
     game = applyGameIntent(game, { kind: "unlockPatent", id: "skew-unlock" });
     expect(availableCatalog(game.patents).map((entry) => entry.typeId)).toContain("skew");
     game = applyGameIntent(game, { kind: "unlockPatent", id: "bench-2" });
@@ -478,7 +541,7 @@ describe("whole-game deterministic state", () => {
 
   it("replays and serializes the three-facility trace deterministically", () => {
     const initial = createGameState(opts, 500, 0);
-    const produced = commissionTemplate(initial, recipe(), true);
+    const produced = buildTemplate(initial, recipe(), true);
     const intents = produced.intentTrace;
     const a = replayGame(initial, intents);
     const b = replayGame(initial, intents);
@@ -490,7 +553,7 @@ describe("whole-game deterministic state", () => {
   it("streams the whole-game hash without materializing one giant canonical JSON string", () => {
     const empty = createGameState(opts, 200, 0);
     expect(hashGame(empty)).toBe(hashGame(createGameState(opts, 200, 0)));
-    const produced = commissionTemplate(createGameState(opts, 500, 0));
+    const produced = buildTemplate(createGameState(opts, 500, 0));
     expect(hashGame(produced)).not.toBe(hashGame(empty));
     const source = readFileSync(new URL("./game.ts", import.meta.url), "utf8");
     const hashBody = source.slice(source.indexOf("export function hashGame"));
