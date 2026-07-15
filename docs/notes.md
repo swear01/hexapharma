@@ -22,7 +22,7 @@
 ## Why
 
 - 固定完整奇形路徑讓玩家在 Atlas 上思考形狀與地形，而不是把 Research 做成第二個 Factory editor。
-- 結構 terrain 可見，讓組合有可預期的空間決策；把治療／副作用藏霧下，仍保留探索未知與試錯成本。
+- Wall 始終可見，提供固定的空間骨架；其餘互動物藏在霧下，讓出藥探索保有未知與試錯成本。
 - Pilot 提供免費畫藍圖的便利，但不限制直接 Production 建造；Production 的成本與 runtime 後果才是正式風險。
 - connected topology 讓 factory 一眼可讀，也讓拖曳轉彎、split／merge 與 machine ports 使用一致視覺語言。
 - ResearchProgram 與 FactoryLayout 是兩種可攜知識，因此 Blueprint 必須是兩個明確 payload，而不是互相猜測轉換。

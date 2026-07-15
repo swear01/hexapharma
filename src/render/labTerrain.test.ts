@@ -21,7 +21,7 @@ function map(): EffectMap {
 }
 
 describe("Lab terrain visual language", () => {
-  it("keeps structural terrain readable before any discovery", () => {
+  it("keeps only walls readable before discovery", () => {
     const level = map();
     const terrain = [CellKind.Wall, CellKind.Abyss, CellKind.Swamp, CellKind.Portal] as const;
     for (let index = 0; index < terrain.length; index++) {
@@ -34,6 +34,16 @@ describe("Lab terrain visual language", () => {
       motif: "solid-masonry",
       opaque: true,
     });
+    const empty = labTerrainVisual(level, 4, 0);
+    expect(labTerrainVisual(level, 1, 0)).toEqual(empty);
+    expect(labTerrainVisual(level, 2, 0)).toEqual(empty);
+    expect(labTerrainVisual(level, 3, 0)).toEqual(empty);
+    expect(labTerrainVisual(level, 6, 0)).toEqual(empty);
+
+    level.fog[1] = 1;
+    level.fog[2] = 1;
+    level.fog[3] = 1;
+    level.fog[6] = 1;
     expect(labTerrainVisual(level, 1, 0)).toMatchObject({
       kind: "abyss",
       motif: "void-rim",
@@ -80,28 +90,31 @@ describe("Lab terrain visual language", () => {
     });
   });
 
-  it("keeps portal pairing and direction independent of discovery", () => {
+  it("reveals portal pairing and direction only after discovering each endpoint", () => {
     const level = map();
     const left = 1 * level.width + 1;
     const right = 1 * level.width + 5;
     level.cell[left] = CellKind.Portal;
     level.portalTo[left] = right;
 
-    const hiddenEntry = labTerrainVisual(level, 1, 1);
-    const hiddenExit = labTerrainVisual(level, 5, 1);
-    level.fog[left] = 1;
-    level.fog[right] = 1;
+    const empty = labTerrainVisual(level, 0, 0);
+    expect(labTerrainVisual(level, 1, 1)).toEqual(empty);
+    expect(labTerrainVisual(level, 5, 1)).toEqual(empty);
 
-    expect(labTerrainVisual(level, 1, 1)).toEqual(hiddenEntry);
-    expect(labTerrainVisual(level, 5, 1)).toEqual(hiddenExit);
-    expect(hiddenEntry).toMatchObject({
+    level.fog[left] = 1;
+    const revealedEntry = labTerrainVisual(level, 1, 1);
+    expect(labTerrainVisual(level, 5, 1)).toEqual(empty);
+    level.fog[right] = 1;
+    const revealedExit = labTerrainVisual(level, 5, 1);
+
+    expect(revealedEntry).toMatchObject({
       kind: "portal",
       role: "entry",
       pairMarker: `P${left}-${right}`,
       destination: { x: 5, y: 1 },
       direction: { x: 1, y: 0 },
     });
-    expect(hiddenExit).toMatchObject({
+    expect(revealedExit).toMatchObject({
       kind: "portal",
       role: "exit",
       pairMarker: `P${left}-${right}`,

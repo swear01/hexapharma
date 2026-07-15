@@ -53,7 +53,7 @@ describe("default Lab world options", () => {
     expect(displayed.pos[0]).toEqual(level.mm.maps[0]!.start);
   });
 
-  it("keeps portals active before discovery and breaks an actually traversed portal jump", () => {
+  it("hides an unknown portal from planning and activates it after entry discovery", () => {
     const width = 7;
     const cells = width * width;
     const cell = new Uint8Array(cells);
@@ -77,13 +77,16 @@ describe("default Lab world options", () => {
       path: DEFAULT_CATALOG[0]!.path,
     }] };
 
-    const hidden = new Uint8Array(cells);
-    hidden[3 * width + 4] = 1;
-    expect(researchPlanningTrails(mm, [hidden], start, program)[0]).toEqual([
+    expect(researchPlanningTrails(mm, [new Uint8Array(cells)], start, program)[0]).toEqual([
+      { x: 3, y: 3 }, { x: 4, y: 3 }, { x: 5, y: 3 }, { x: 5, y: 4 },
+    ]);
+    const entryDiscovered = new Uint8Array(cells);
+    entryDiscovered[3 * width + 4] = 1;
+    expect(researchPlanningTrails(mm, [entryDiscovered], start, program)[0]).toEqual([
       { x: 3, y: 3 }, { x: 4, y: 3 }, null,
       { x: 1, y: 1 }, { x: 2, y: 1 }, { x: 2, y: 2 },
     ]);
-    const known = Uint8Array.from(hidden);
+    const known = Uint8Array.from(entryDiscovered);
     known[1 * width + 1] = 1;
     expect(researchPlanningTrails(mm, [known], start, program)[0]).toEqual([
       { x: 3, y: 3 }, { x: 4, y: 3 }, null,
@@ -95,7 +98,7 @@ describe("default Lab world options", () => {
     ]);
   });
 
-  it("uses structural terrain in planning before it is discovered", () => {
+  it("uses walls in planning before they are discovered", () => {
     const width = 7;
     const cells = width * width;
     const cell = new Uint8Array(cells);
@@ -125,17 +128,22 @@ describe("default Lab world options", () => {
     ]);
   });
 
-  it("hides undiscovered effects without hiding structural terrain", () => {
-    const width = 3;
+  it("keeps only walls in the planning map before discovery", () => {
+    const width = 4;
     const cells = width * width;
     const cell = new Uint8Array(cells);
     cell[0] = CellKind.Wall;
-    cell[1] = CellKind.Cure;
-    cell[2] = CellKind.SideEffect;
+    cell[1] = CellKind.Abyss;
+    cell[2] = CellKind.Swamp;
+    cell[3] = CellKind.Portal;
+    cell[4] = CellKind.Cure;
+    cell[5] = CellKind.SideEffect;
     const cureId = new Int16Array(cells).fill(-1);
-    cureId[1] = 4;
+    cureId[4] = 4;
     const sideEffectId = new Int32Array(cells).fill(-1);
-    sideEffectId[2] = 7;
+    sideEffectId[5] = 7;
+    const portalTo = new Int32Array(cells).fill(-1);
+    portalTo[3] = 7;
     const mm: MultiMap = { maps: [{
       width,
       height: width,
@@ -144,7 +152,7 @@ describe("default Lab world options", () => {
       cell,
       cureId,
       sideEffectId,
-      portalTo: new Int32Array(cells).fill(-1),
+      portalTo,
       fog: new Uint8Array(cells),
     }] };
 
@@ -152,8 +160,12 @@ describe("default Lab world options", () => {
     expect(planning.cell[0]).toBe(CellKind.Wall);
     expect(planning.cell[1]).toBe(CellKind.Empty);
     expect(planning.cell[2]).toBe(CellKind.Empty);
-    expect(planning.cureId[1]).toBe(-1);
-    expect(planning.sideEffectId[2]).toBe(-1);
+    expect(planning.cell[3]).toBe(CellKind.Empty);
+    expect(planning.cell[4]).toBe(CellKind.Empty);
+    expect(planning.cell[5]).toBe(CellKind.Empty);
+    expect(planning.portalTo[3]).toBe(-1);
+    expect(planning.cureId[4]).toBe(-1);
+    expect(planning.sideEffectId[5]).toBe(-1);
   });
 
   it("draws only the held candidate as the preview suffix", () => {

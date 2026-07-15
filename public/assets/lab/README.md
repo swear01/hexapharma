@@ -9,22 +9,21 @@ game.
 
 - Deep teal cellular substrate provides scale beneath the runtime's always-visible grid.
 - Solid high-contrast masonry plus protein-crystal detail communicates impassable walls.
-- Abyss, swamp, and paired directional portals are drawn by deterministic runtime geometry,
-  so their void rim, viscous drag marks, and portal destination markers remain unmistakable
-  at every zoom without relying on interchangeable bitmap decoration.
+- Discovered abyss, swamp, and paired directional portals are drawn by deterministic runtime
+  geometry, so their void rim, viscous drag marks, and portal destination markers remain
+  unmistakable at every zoom without relying on interchangeable bitmap decoration.
 - Violet colonies communicate side effects.
 - Gold/cyan receptors communicate therapeutic destinations.
 - The capsule and cyan halo keep the player's current position legible; the runtime draws route history separately.
-- Defocused navy particulate fog marks unsurveyed space without erasing structural terrain.
+- Defocused navy particulate fog marks unsurveyed space while walls remain visible above it.
 
 `manifest.json` is the runtime integration contract. Texture URLs are resolved
 from `/assets/lab/`. The substrate and fog repeat exactly at their outer pixel
 edges. All five sprite overlays are normalized to transparent 512×512 PNGs.
 
-The substrate, grid, wall, abyss, swamp, and both endpoints of a portal pair are
-always visible. Fog is drawn as a survey boundary below those structural motifs.
-Undiscovered side-effect and cure cells use the same render plan as empty substrate;
-their motif and sprite are not drawn until the discovery mask is set.
+The substrate, grid, and wall are always visible. Undiscovered abyss, swamp, portal,
+side-effect, and cure cells use the same render plan as empty substrate; their motifs,
+sprites, and region edges are not drawn until the discovery mask is set.
 
 ## Source and rights
 

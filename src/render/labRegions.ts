@@ -22,12 +22,11 @@ function sameRegion(map: EffectMap, x: number, y: number, nx: number, ny: number
 }
 
 function visibleKind(map: EffectMap, index: number): CellKind {
-  if ((portalExitLookup(map)[index] ?? -1) >= 0) return CellKind.Portal;
+  if ((portalExitLookup(map)[index] ?? -1) >= 0) {
+    return map.fog[index] === 1 ? CellKind.Portal : CellKind.Empty;
+  }
   const kind = map.cell[index] ?? CellKind.Empty;
-  if (
-    map.fog[index] !== 1 &&
-    (kind === CellKind.Cure || kind === CellKind.SideEffect)
-  ) {
+  if (map.fog[index] !== 1 && kind !== CellKind.Wall) {
     return CellKind.Empty;
   }
   return kind as CellKind;

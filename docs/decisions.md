@@ -11,7 +11,7 @@
 | D5 | Atlas 與 Factory 都採正方格與相近肌肉記憶，但 authority、geometry 與 validator 分離。 | 共用手感不能變成共用 layout。 |
 | D6 | Active Research 是單層大型 Atlas；跨層互動暫停。 | 先讓固定路徑、terrain 與探索成本清楚可玩。 |
 | D7 | Research machine 永遠使用 catalog 定義的完整奇形 PathStamp。 | 截短會消解形狀組合的主要謎題；需要新形狀時新增顯式 machine content。 |
-| D8 | 結構地形無需探索即可看見並影響 preview；Cure／SideEffect 仍由霧保護。 | 玩家需要可規劃的障礙與傳送關係，但不能免費知道獎勵與風險結果。 |
+| D8 | 只有 Wall 無需探索即可看見並影響 preview；其餘互動物都由霧保護。 | Wall 提供可規劃的空間骨架，未知危險與傳送關係則保留出藥試錯成本。 |
 | D9 | terrain 是 wall／abyss／swamp／同層 A→B portal；各有 pure traversal 語意。 | renderer 不能把它們當裝飾皮膚。 |
 | D10 | mapgen 使用 seeded radial + motif constructive generation。 | production 不靠 solver rejection；同 seed 必須逐欄位重現。 |
 | D11 | solver 只供 tests/tools。 | 人類試錯與組合固定形狀是核心樂趣。 |
@@ -27,7 +27,7 @@
 ## Current authority summary
 
 - F1 Research、F2 Pilot Plant、F3 Production；M／T／B drawers。
-- Research：ordered complete fixed paths；結構 terrain 可見，發現藏霧下；只有出藥揭露。
+- Research：ordered complete fixed paths；只有 Wall 始終可見，其餘互動物藏霧下；只有出藥揭露。
 - Pilot：free/no-clock optional sandbox。
 - Production：direct paid construction、live runtime、actual inventory/waste/economy。
 - Blueprint：v3 ResearchProgram + generic FactoryLayout，跨存檔。

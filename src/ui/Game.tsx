@@ -61,10 +61,7 @@ export function researchPlanningMap(
       const sideEffectId = Int32Array.from(map.sideEffectId);
       const portalTo = Int32Array.from(map.portalTo);
       for (let index = 0; index < cell.length; index++) {
-        if (
-          known[index] !== 1 &&
-          (cell[index] === CellKind.Cure || cell[index] === CellKind.SideEffect)
-        ) {
+        if (known[index] !== 1 && cell[index] !== CellKind.Wall) {
           cell[index] = CellKind.Empty;
           cureId[index] = -1;
           sideEffectId[index] = -1;

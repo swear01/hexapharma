@@ -6,8 +6,8 @@ HexaPharma 是「程序化藥效 Atlas + 實體工廠」的確定性單人遊戲
 
 1. **Research**
    - 單一大型 Atlas；玩家依序放入 catalog 定義的完整奇形 `PathStamp`。
-   - 結構地形始終可讀：牆、深淵、沼澤與成對傳送門直接影響規劃預覽。
-   - 治療區與副作用區仍藏在霧下；只有出藥後的實際路徑會揭露發現。
+   - 只有牆始終可讀；深淵、沼澤、成對傳送門、治療區與副作用區都藏在霧下。
+   - 未揭露互動物不改變規劃預覽；只有出藥後的實際路徑會揭露內容。
    - Research 不產生工廠 layout，也不是 Pilot 或 Production 的前置條件。
 2. **Pilot Plant**
    - 無時間、無建造費、無 inventory／waste 的 `FactoryLayout` 沙盒。
@@ -21,7 +21,7 @@ HexaPharma 是「程序化藥效 Atlas + 實體工廠」的確定性單人遊戲
 ## Atlas 與地圖生成
 
 - 現行 Research 是單層 Atlas；跨層互動與交換層工具暫不提供。
-- terrain vocabulary 是 wall、abyss、swamp 與同層 A→B portal；治療／副作用是被探索遮罩保護的 discovery layer。
+- Atlas vocabulary 是 wall、abyss、swamp、同層 A→B portal、治療區與副作用區；除 wall 外都受探索遮罩保護。
 - mapgen 使用 seeded radial structure + motifs，constructive 地產生可探索路線；同 seed + 完整設定重現相同 Atlas 與 reference program。
 - solver 只供 tests/tools 驗證與分析，不進遊戲內自動解。
 

@@ -13,7 +13,7 @@
    - 先寫 fixed-path、terrain visibility、paid build atomicity、transport topology 與 codec tests。
 
 2. **Research visibility and path rules**
-   - Wall／Abyss／Swamp／Portal A+B 不受探索遮罩隱藏；Cure／SideEffect 未揭露時中性化。
+   - 只有 Wall 不受探索遮罩隱藏；Abyss／Swamp／Portal A+B／Cure／SideEffect 未揭露時中性化。
    - planning map、renderer、region edges 與 preview 共用同一 visibility rule。
    - 移除所有只走部分 machine path 的 UI、state、trace、Blueprint 與 Save 欄位。
    - 驗證規劃不改 fog，只有 Research shot 的 actual segments 揭露。
@@ -60,4 +60,4 @@
 - 正式內容量、final art/audio polish、帳戶、雲端 Blueprint repository。
 - release candidate 前的跨 build save migration。
 
-平衡可以逐步調整；完整 fixed paths、結構地形可讀、direct paid Production、optional Pilot、connected topology、Blueprint v3、Save v7 與 strict gate 不能後置。
+平衡可以逐步調整；完整 fixed paths、Wall 骨架可讀與其他互動物受霧保護、direct paid Production、optional Pilot、connected topology、Blueprint v3、Save v7 與 strict gate 不能後置。

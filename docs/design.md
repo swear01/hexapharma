@@ -28,11 +28,11 @@ Technology：解鎖機器、探索輔助與場地
 
 Active Research 只有一張單層 Atlas；不提供 layer tabs、跨層座標、跨層傳送或交換層工具。
 
-地形與發現分成兩個資訊層：
+地圖資訊分成兩個探索層：
 
-- **結構地形始終可見**：空地、牆、深淵、沼澤，以及成對且定向的同層傳送門。未揭露區仍有霧的視覺覆層，但不能遮掉結構輪廓、配對與方向。
-- **發現藏在霧下**：治療區與副作用區在揭露前當作普通基底繪製，也不能由 hover、ghost、藍圖載入或 outcome 文案洩漏。
-- 結構地形無論探索狀態都進入 pure planning map，因此固定路徑預覽與真正執行使用同一套 wall／abyss／swamp／portal 規則。
+- **只有牆始終可見**：Wall 的輪廓與阻擋規則不受探索遮罩影響。
+- **其他互動物藏在霧下**：Abyss、Swamp、Portal、治療區與副作用區在揭露前都當作普通基底繪製，也不能由 hover、ghost、藍圖載入、preview 或 outcome 文案洩漏。
+- pure planning map 只保留未揭露區的 Wall；已揭露的互動物才進入固定路徑預覽。真正出藥仍依完整權威地圖執行，因此未知危險保留試錯成本。
 - 只有明示出藥後，實際走過的 path segment 才更新探索遮罩。傳送跳躍不揭露兩點之間不存在的直線。
 
 互動語意：
@@ -195,5 +195,5 @@ Pure TS sim core  → authoritative deterministic transitions
 - TDD：先有能失敗的 behavior/property/E2E test，再改實作。
 - `npm run check`：typecheck、lint、unit/property/integration、headless Playwright 全部通過。
 - `0.0.0.0:53346 --strictPort` 真人 smoke 覆蓋 Research、Pilot、直接 Production 建造、Blueprint、Save/Load/Rewind 與 responsive reachability。
-- residue scan 不得把截短 Research path、遮住結構地形、Pilot 前置 Production、Blueprint 舊 schema 或 Save 舊 schema 當現行真相。
+- residue scan 不得把截短 Research path、遮住 Wall、提前顯示未揭露互動物、Pilot 前置 Production、Blueprint 舊 schema 或 Save 舊 schema 當現行真相。
 - 平衡數值與美術內容量可後續迭代；上述 authority、資料邊界、可見性、付費建造與 strict codec 不可用「之後平衡」延後。

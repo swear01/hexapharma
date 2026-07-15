@@ -105,7 +105,15 @@ export function labTerrainVisual(map: EffectMap, x: number, y: number): LabTerra
   const index = y * map.width + x;
 
   const exitEntry = portalEntryForExit(map, index);
-  if (exitEntry !== null) return portalVisual(map, index, exitEntry, index);
+  if (exitEntry !== null) {
+    return revealed(map, index)
+      ? portalVisual(map, index, exitEntry, index)
+      : EMPTY_TERRAIN_VISUAL;
+  }
+
+  if (!revealed(map, index) && map.cell[index] !== CellKind.Wall) {
+    return EMPTY_TERRAIN_VISUAL;
+  }
 
   switch (map.cell[index]) {
     case CellKind.Wall:
@@ -138,7 +146,6 @@ export function labTerrainVisual(map: EffectMap, x: number, y: number): LabTerra
       return portalVisual(map, index, index, destination);
     }
     case CellKind.SideEffect:
-      if (!revealed(map, index)) return EMPTY_TERRAIN_VISUAL;
       return {
         kind: "sideEffect",
         motif: "side-effect-colony",
@@ -147,7 +154,6 @@ export function labTerrainVisual(map: EffectMap, x: number, y: number): LabTerra
         opaque: true,
       };
     case CellKind.Cure:
-      if (!revealed(map, index)) return EMPTY_TERRAIN_VISUAL;
       return {
         kind: "cure",
         motif: "cure-receptor",

@@ -45,8 +45,8 @@
 F1 只有一張大型單層 Atlas：
 
 - camera 開局聚焦世界中心的 generator start；平常只看見大地圖的一小部分。pan／zoom／Focus不改 authority，也不在執行時 auto-follow。
-- grid/scale、Wall、Abyss、Swamp、Portal A+B、配對與方向在霧下仍可讀。
-- Cure／SideEffect 未揭露前不能有 sprite、region edge、preview差異或 outcome洩漏。
+- grid/scale與Wall在霧下仍可讀。
+- Abyss、Swamp、Portal A+B、Cure與SideEffect未揭露前不能有 motif、sprite、region edge、preview差異或 outcome洩漏。
 - palette 每個 machine 以完整奇形 path silhouette 與 semantic glyph辨識；沒有 path-length control。
 - committed program trail與held candidate trail樣式不同；candidate由目前 endpoint 接續完整 path。
 - LMB commit完整 held path；RMB／Backspace移除最後一個完整 path；Enter Dispense。

@@ -13,8 +13,8 @@
 - Active Research 只有單層座標；跨層位置或交換層操作不得出現在 active program、palette、mapgen、Blueprint 或 Save v7 authority。
 - Wall／OOB、Abyss、Swamp 與 Portal 各有 pure、deterministic、共享於 preview／execution 的語意。
 - 每個 portal entry 恰有一個同層 destination；每個 destination 最多一個 entry。B 不可反向作 A；trail 在 jump 處斷開。
-- 空地、Wall、Abyss、Swamp、Portal entry／exit、配對與方向不受探索遮罩隱藏，未揭露時仍必須可讀並影響 preview。
-- Cure／SideEffect 只有揭露後才能出現在 renderer、planning map、region 邊界、hover、ghost 或 outcome UI；未揭露時等價於普通 substrate。
+- Wall 不受探索遮罩隱藏，未揭露時仍必須可讀並影響 preview。
+- Abyss、Swamp、Portal entry／exit、Cure與SideEffect只有揭露後才能出現在 renderer、planning map、region 邊界、hover、ghost 或 outcome UI；未揭露時等價於普通 substrate。
 - planning、選工具、放置 program step、載入 Blueprint 或移動 camera 都不改 fog。
 - 只有實際完成的 Research path segment 依 sensor radius 揭露；portal 不揭露兩端之間的直線。
 

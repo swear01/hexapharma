@@ -125,7 +125,7 @@ async function syntheticRendererScreenshot(
   centerKind: CellKind = CellKind.Wall,
 ): Promise<Buffer> {
   await page.goto("/assets/lab/manifest.json");
-  await page.evaluate(async ({ fogValue, renderedKind, cureKind, sideEffectKind }) => {
+  await page.evaluate(async ({ fogValue, renderedKind, cureKind, sideEffectKind, portalKind }) => {
     document.body.innerHTML = '<div id="lab-renderer-smoke"></div>';
     document.body.style.margin = "0";
     const moduleUrl = "/src/render/labRenderer.ts";
@@ -142,6 +142,8 @@ async function syntheticRendererScreenshot(
     const sideEffectId = new Int32Array(length).fill(-1);
     if (renderedKind === cureKind) cureId[center] = 0;
     if (renderedKind === sideEffectKind) sideEffectId[center] = 100;
+    const portalTo = new Int32Array(length).fill(-1);
+    if (renderedKind === portalKind) portalTo[center] = center + 2;
     const map = {
       width,
       height,
@@ -150,7 +152,7 @@ async function syntheticRendererScreenshot(
       cell,
       cureId,
       sideEffectId,
-      portalTo: new Int32Array(length).fill(-1),
+      portalTo,
       fog,
     };
     const mm = { maps: [map] };
@@ -167,6 +169,7 @@ async function syntheticRendererScreenshot(
     renderedKind: centerKind,
     cureKind: CellKind.Cure,
     sideEffectKind: CellKind.SideEffect,
+    portalKind: CellKind.Portal,
   });
   const canvas = page.locator("#lab-renderer-smoke canvas");
   await expect(canvas).toBeVisible();
@@ -198,7 +201,11 @@ function terrainResearchFixture(): {
     if (best === null) throw new Error(`seed 15 did not generate terrain kind ${kind}`);
     targets[kind] = best;
   }
-  const initialMap = { ...map, fog: game.fog[0]! };
+  const discovered = Uint8Array.from(game.fog[0]!);
+  for (const target of Object.values(targets)) {
+    discovered[target.y * map.width + target.x] = 1;
+  }
+  const initialMap = { ...map, fog: discovered };
   const visuals = [CellKind.Wall, CellKind.Abyss, CellKind.Swamp, CellKind.Portal].map((kind) => {
     const target = targets[kind]!;
     return labTerrainVisual(initialMap, target.x, target.y);
@@ -206,7 +213,7 @@ function terrainResearchFixture(): {
   return { save: serializeGame(game), targets, visuals };
 }
 
-test("structural terrain regions pan over the large grid without a reveal-all bypass", async ({
+test("Atlas regions pan over the large grid without a reveal-all bypass", async ({
   page,
 }) => {
   const counts = fixtureRegionCounts();
@@ -228,7 +235,7 @@ test("structural terrain regions pan over the large grid without a reveal-all by
   await expect(page.getByTestId("reveal")).toHaveCount(0);
 });
 
-test("survey fog changes empty substrate without changing structural wall pixels", async ({
+test("survey fog changes empty substrate without changing wall pixels", async ({
   page,
 }) => {
   const undiscovered = await syntheticRendererScreenshot(page, false);
@@ -238,6 +245,21 @@ test("survey fog changes empty substrate without changing structural wall pixels
   expect(await patchDifference(page, undiscovered, discovered, { x: -4, y: 0 }))
     .toBeGreaterThan(6);
 });
+
+for (const [kind, label] of [
+  [CellKind.Abyss, "Abyss"],
+  [CellKind.Swamp, "Swamp"],
+  [CellKind.Portal, "Portal"],
+] as const) {
+  test(`survey fog hides ${label} pixels until discovery`, async ({ page }) => {
+    const hiddenEmpty = await syntheticRendererScreenshot(page, false, CellKind.Empty);
+    const hiddenTerrain = await syntheticRendererScreenshot(page, false, kind);
+    const discoveredTerrain = await syntheticRendererScreenshot(page, true, kind);
+
+    expect(await patchDifference(page, hiddenEmpty, hiddenTerrain)).toBeLessThan(2);
+    expect(await patchDifference(page, hiddenTerrain, discoveredTerrain)).toBeGreaterThan(6);
+  });
+}
 
 test("survey fog hides Cure pixels until discovery", async ({ page }) => {
   const hiddenEmpty = await syntheticRendererScreenshot(page, false, CellKind.Empty);
@@ -259,7 +281,7 @@ test("Wall, Abyss, Swamp, and Portal use distinct renderer motifs", async ({
     "portal",
   ]);
   const motifs = fixture.visuals.map((visual) => {
-    if (!("motif" in visual)) throw new Error("a structural terrain motif was unavailable");
+    if (!("motif" in visual)) throw new Error("an Atlas terrain motif was unavailable");
     return visual.motif;
   });
   expect(new Set(motifs).size).toBe(4);

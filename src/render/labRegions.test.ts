@@ -47,12 +47,18 @@ describe("Lab connected region visuals", () => {
     );
   });
 
-  it("joins structural terrain regions without requiring discovery", () => {
-    for (const kind of [CellKind.Wall, CellKind.Abyss, CellKind.Swamp]) {
+  it("joins wall regions before discovery but hides other terrain boundaries", () => {
+    const walls = map();
+    walls.cell[5] = CellKind.Wall;
+    walls.cell[6] = CellKind.Wall;
+    expect(revealedRegionEdges(walls, 1, 1).right).toBe(false);
+
+    for (const kind of [CellKind.Abyss, CellKind.Swamp]) {
       const level = map();
       level.cell[5] = kind;
-      level.cell[6] = kind;
       expect(revealedRegionEdges(level, 1, 1).right).toBe(false);
+      level.fog[5] = 1;
+      expect(revealedRegionEdges(level, 1, 1).right).toBe(true);
     }
   });
 
@@ -72,6 +78,8 @@ describe("Lab connected region visuals", () => {
     level.cell[6] = CellKind.Portal;
     level.portalTo[5] = 2;
     level.portalTo[6] = 3;
+    level.fog[5] = 1;
+    level.fog[6] = 1;
     expect(revealedRegionEdges(level, 1, 1).right).toBe(true);
   });
 
@@ -80,6 +88,13 @@ describe("Lab connected region visuals", () => {
     level.cell[5] = CellKind.Portal;
     level.portalTo[5] = 10;
 
+    expect(revealedRegionEdges(level, 2, 2)).toEqual({
+      top: false,
+      right: false,
+      bottom: true,
+      left: false,
+    });
+    level.fog[10] = 1;
     expect(revealedRegionEdges(level, 2, 2)).toEqual({
       top: true,
       right: true,

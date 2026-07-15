@@ -36,9 +36,9 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 
 使用含Wall、Abyss、Swamp、Portal、Cure與SideEffect的固定seed：
 
-1. 在未揭露區確認Wall、Abyss、Swamp、Portal入口/出口、配對與方向可見；fog視覺仍存在。
-2. Cure與SideEffect在揭露前不得有sprite、colored region、label、hover、preview偏差或outcome洩漏。
-3. 把candidate放過known與unknown區；structural terrain無論fog都以同一規則改變preview。
+1. 在未揭露區確認只有Wall可見；Abyss、Swamp、Portal入口/出口、Cure與SideEffect都顯示為普通霧下基底。
+2. 未揭露互動物不得有motif、sprite、colored region、label、hover、preview偏差或outcome洩漏。
+3. 把candidate放過known與unknown區；只有Wall在未揭露時改變preview，其他互動物揭露後才改變preview。
 4. 只規劃、切machine、undo或載入Blueprint，revealed count不得改變。
 5. Dispense後只actual traversed segments與sensor radius揭露。Wall/OOB取消delta、Swamp消耗較多、Abysssticky fail。
 6. 經Portal A後token到B，trail在jump處斷開；B不能反向觸發，也不能揭露A/B中間直線。

@@ -10,7 +10,7 @@
 
 ### Phase 1 — Research Atlas
 
-完成 Pixi/React 大型 Atlas、camera、fog、terrain/portal 與原創程式化視覺。現行規則是單層、結構地形可見、Cure／SideEffect 隱藏。
+完成 Pixi/React 大型 Atlas、camera、fog、terrain/portal 與原創程式化視覺。現行規則是單層、只有 Wall 始終可見，其餘互動物隱藏至揭露。
 
 ### Phase 2 — Factory sim
 
@@ -31,7 +31,7 @@
 ## Current — direct construction and readable topology
 
 - Research machine 只走完整 catalog path；移除所有部分路徑資料與控制。
-- 結構 terrain 在霧下仍可見並影響 preview；發現維持隱藏。
+- 只有 Wall 在霧下仍可見並影響 preview；Abyss、Swamp、Portal、Cure與SideEffect揭露後才影響 preview。
 - Production 新局即有空 24×12 editor；直接 edit 或套 Factory Blueprint 都按差異付費。
 - Pilot 保持可選、free/no-clock，可按報價建到 Production。
 - transport renderer 使用 sim-derived connected topology；Belt drag 支援四向連續轉角。

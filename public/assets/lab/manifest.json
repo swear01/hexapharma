@@ -1,6 +1,6 @@
 {
   "id": "hexapharma-microscope-atlas-v1",
-  "revision": 2,
+  "revision": 3,
   "baseUrl": "/assets/lab/",
   "assets": {
     "substrate": {
@@ -17,7 +17,7 @@
       "height": 1024,
       "alpha": false,
       "repeat": true,
-      "role": "Survey boundary overlay for undiscovered space; structural terrain renders above it while effect discoveries stay omitted."
+      "role": "Survey boundary overlay for undiscovered space; walls render above it while all other undiscovered Atlas features stay omitted."
     },
     "wall": {
       "file": "wall-crystal.png",
