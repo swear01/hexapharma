@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { EconomyState, PatentState } from "../sim/phase0_interfaces";
 import { DEFAULT_PATENTS, canUnlock, activeEffects } from "../sim/patent";
+import { machineName } from "./machineLabels";
+import { GameModalPortal } from "./GameModalPortal";
 
 interface PatentsProps {
   readonly economy: EconomyState;
@@ -22,19 +24,52 @@ function effectLabel(node: (typeof DEFAULT_PATENTS)[number]): string {
   const e = node.effect;
   switch (e.kind) {
     case "unlockMachine":
-      return `unlock machine "${e.typeId}"`;
+      return `Unlock ${machineName(e.typeId)}`;
     case "expandFactory":
-      return `expand factory +${e.dw}w +${e.dh}h`;
+      return e.dw > 0
+        ? `Add ${e.dw} factory ${e.dw === 1 ? "column" : "columns"}`
+        : `Add ${e.dh} factory ${e.dh === 1 ? "row" : "rows"}`;
     case "revealAid":
-      return `trail scanner +${e.amount}`;
+      return `Research scan radius +${e.amount} ${e.amount === 1 ? "cell" : "cells"}`;
   }
 }
 
-function patentTitle(id: string): string {
-  if (id === "floor-depth") return "Deeper factory floor";
-  if (id === "field-survey") return "Field survey optics";
-  if (id === "settle-unlock") return "Settler path";
-  return id;
+const PATENT_TITLES: Readonly<Record<string, string>> = {
+  "bench-2": "Wider factory floor",
+  "reveal-aid": "Trail scanner",
+  "skew-unlock": "Zigzag still",
+  "dilute-unlock": "Loop vat",
+  "floor-depth": "Deeper factory floor",
+  "field-survey": "Field survey optics",
+  "settle-unlock": "Settler path",
+};
+
+export function patentTitle(id: string): string {
+  const title = PATENT_TITLES[id];
+  if (title === undefined) throw new Error(`Technology node "${id}" needs a player-facing name`);
+  return title;
+}
+
+export function patentCostLabel(node: (typeof DEFAULT_PATENTS)[number]): string {
+  return `${node.cost} cash · ${node.researchCost} Knowledge`;
+}
+
+export function patentEffectSummary(effects: ReturnType<typeof activeEffects>): readonly string[] {
+  const summary: string[] = [];
+  if (effects.factoryDw > 0) {
+    summary.push(`Factory +${effects.factoryDw} ${effects.factoryDw === 1 ? "column" : "columns"}`);
+  }
+  if (effects.factoryDh > 0) {
+    summary.push(`Factory +${effects.factoryDh} ${effects.factoryDh === 1 ? "row" : "rows"}`);
+  }
+  if (effects.revealAid > 0) {
+    summary.push(`Research scan radius +${effects.revealAid} ${effects.revealAid === 1 ? "cell" : "cells"}`);
+  }
+  if (effects.unlockedMachines.length > 0) {
+    const count = effects.unlockedMachines.length;
+    summary.push(`${count} ${count === 1 ? "machine" : "machines"} unlocked`);
+  }
+  return summary;
 }
 
 export function Patents({
@@ -44,6 +79,7 @@ export function Patents({
   onUnlock,
 }: PatentsProps) {
   const eff = activeEffects(DEFAULT_PATENTS, patents);
+  const effectSummary = patentEffectSummary(eff);
   const [pending, setPending] = useState<(typeof DEFAULT_PATENTS)[number] | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const confirmRef = useRef<HTMLButtonElement | null>(null);
@@ -74,11 +110,11 @@ export function Patents({
     <div className="game-view management-view patents-view">
       <header className="management-header">
         <h1>Technology</h1>
-        <div data-testid="patents-effects" className="effects-strip">
-          <span>Facility floors +{eff.factoryDw}w +{eff.factoryDh}h</span>
-          <span>Trail scan +{eff.revealAid}</span>
-          <span>Machines {eff.unlockedMachines.length}</span>
-        </div>
+        {effectSummary.length > 0 && (
+          <div data-testid="patents-effects" className="effects-strip" aria-label="Unlocked benefits">
+            {effectSummary.map((summary) => <span key={summary}>{summary}</span>)}
+          </div>
+        )}
       </header>
 
       <div className="patent-grid" data-testid="patent-grid">
@@ -94,67 +130,73 @@ export function Patents({
                   <span className="patent-emblem">⌬</span>
                   <div><h2>{patentTitle(node.id)}</h2><small>{effectLabel(node)}</small></div>
                 </div>
-                <div className="patent-requirement">Requires: {node.requires.join(", ") || "root"}</div>
-                <div className="patent-cost">{node.cost} cash · {node.researchCost} R&amp;D</div>
-                <div className={`state-chip is-${stateLabel}`} data-testid={`patent-state-${node.id}`}>{stateLabel}</div>
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      if (patentUnlockWarning(node, expansionResetsProduction) === null) {
-                        onUnlock(node.id);
-                      } else {
-                        triggerRef.current = event.currentTarget;
-                        setPending(node);
-                      }
-                    }}
-                    disabled={unlocked || !affordable}
-                    className={affordable ? "primary-action" : "game-control"}
-                    data-testid={`patent-unlock-${node.id}`}
-                  >
-                    {unlocked ? "Owned" : "Unlock"}
-                  </button>
+                {node.requires.length > 0 && (
+                  <div className="patent-requirement">
+                    Requires: {node.requires.map(patentTitle).join(", ")}
+                  </div>
+                )}
+                <div className="patent-cost">{patentCostLabel(node)}</div>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    if (patentUnlockWarning(node, expansionResetsProduction) === null) {
+                      onUnlock(node.id);
+                    } else {
+                      triggerRef.current = event.currentTarget;
+                      setPending(node);
+                    }
+                  }}
+                  disabled={unlocked || !affordable}
+                  className={affordable ? "primary-action" : "game-control"}
+                  data-testid={`patent-unlock-${node.id}`}
+                  aria-label={unlocked ? `${patentTitle(node.id)} owned` : `Unlock ${patentTitle(node.id)}`}
+                >
+                  {unlocked ? "Owned" : "Unlock"}
+                </button>
               </article>
             );
           })}
         </div>
       </div>
       {pending !== null && (
-        <div
-          className="game-modal-backdrop"
-          onPointerDown={(event) => {
-            if (event.target === event.currentTarget) closeConfirmation();
-          }}
-        >
-          <section
-            className="game-modal"
-            role="alertdialog"
-            aria-modal="true"
-            aria-labelledby="patent-confirm-title"
-            aria-describedby="patent-confirm-warning"
-            data-testid="patent-confirm"
+        <GameModalPortal>
+          <div
+            className="game-modal-backdrop"
+            onPointerDown={(event) => {
+              if (event.target === event.currentTarget) closeConfirmation();
+            }}
           >
-            <h2 id="patent-confirm-title">Expand factory?</h2>
-            <p id="patent-confirm-warning">
-              {patentUnlockWarning(pending, expansionResetsProduction)}
-            </p>
-            <div className="modal-actions">
-              <button ref={cancelRef} type="button" onClick={() => closeConfirmation()}>Cancel</button>
-              <button
-                ref={confirmRef}
-                type="button"
-                className="danger-action"
-                data-testid="patent-confirm-unlock"
-                onClick={() => {
-                  const id = pending.id;
-                  closeConfirmation(false);
-                  onUnlock(id);
-                }}
-              >
-                Unlock and reset
-              </button>
-            </div>
-          </section>
-        </div>
+            <section
+              className="game-modal"
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="patent-confirm-title"
+              aria-describedby="patent-confirm-warning"
+              data-testid="patent-confirm"
+            >
+              <h2 id="patent-confirm-title">Expand factory?</h2>
+              <p id="patent-confirm-warning">
+                {patentUnlockWarning(pending, expansionResetsProduction)}
+              </p>
+              <div className="modal-actions">
+                <button ref={cancelRef} type="button" onClick={() => closeConfirmation()}>Cancel</button>
+                <button
+                  ref={confirmRef}
+                  type="button"
+                  className="danger-action"
+                  data-testid="patent-confirm-unlock"
+                  onClick={() => {
+                    const id = pending.id;
+                    closeConfirmation(false);
+                    onUnlock(id);
+                  }}
+                >
+                  Unlock and reset
+                </button>
+              </div>
+            </section>
+          </div>
+        </GameModalPortal>
       )}
     </div>
   );

@@ -116,10 +116,9 @@ export const evaluate: EvaluateFn = (mm, start, template) => {
     if (kind === CellKind.Cure) {
       const diseaseId = map.cureId[cellIndex];
       if (diseaseId !== undefined && diseaseId >= 0) cured.push(diseaseId);
-    } else if (kind === CellKind.SideEffect) {
-      const sideEffectId = map.sideEffectId[cellIndex];
-      if (sideEffectId !== undefined && sideEffectId >= 0) sideEffects.push(sideEffectId);
     }
+    const sideEffectId = map.sideEffectId[cellIndex];
+    if (sideEffectId !== undefined && sideEffectId >= 0) sideEffects.push(sideEffectId);
   }
 
   return { failed: false, final: state.pos, cured, sideEffects };

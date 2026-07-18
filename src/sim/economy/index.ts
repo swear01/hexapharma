@@ -12,13 +12,12 @@
  * Pure & deterministic: INTEGER arithmetic only (no Math.random / Date.now / float).
  *
  * Diminishing rule (exact):
- *   Let p_0 = basePrice and floor = max(1, floor(basePrice / 10)).
- *   p_{k+1} = max(floor, floor(p_k * 9 / 10)).
+ *   Let p_0 = basePrice.
+ *   p_{k+1} = floor(p_k * 9 / 10).
  *   nextUnitPrice(basePrice, alreadySold) = p_{alreadySold}.
  *   I.e. each successive unit of the same disease fetches 90% (integer-floored)
- *   of the previous unit's gross, never dropping below `floor` (a positive 10%
- *   floor of basePrice). alreadySold = 0 returns basePrice exactly. Non-positive
- *   basePrice clamps to a floor of 0 and returns 0.
+ *   of the previous unit's gross until demand reaches zero. alreadySold = 0
+ *   returns basePrice exactly. Non-positive basePrice returns 0.
  */
 import type {
   DiseaseId,
@@ -27,15 +26,9 @@ import type {
   SaleResult,
 } from "../phase0_interfaces";
 
-/** Positive floor: 10% of basePrice (at least 1 when basePrice > 0). */
-function priceFloor(basePrice: number): number {
-  if (basePrice <= 0) return 0;
-  return Math.max(1, Math.floor(basePrice / 10));
-}
-
 /**
  * Gross price the next (alreadySold-th, 0-based) unit of a disease fetches.
- * Monotonically non-increasing in `alreadySold` with a positive floor.
+ * Monotonically non-increasing in `alreadySold` until reaching zero.
  * Deterministic integer geometric decay (×9/10 per prior sale, floored).
  */
 export const nextUnitPrice = (basePrice: number, alreadySold: number): number => {
@@ -46,14 +39,12 @@ export const nextUnitPrice = (basePrice: number, alreadySold: number): number =>
     throw new Error("economy: alreadySold must be a non-negative safe integer");
   }
   if (basePrice <= 0) return 0;
-  const floor = priceFloor(basePrice);
   let price = basePrice;
   for (let k = 0; k < alreadySold; k++) {
-    if (price <= floor) return floor;
+    if (price === 0) return 0;
     const quotient = Math.floor(price / 10);
     const remainder = price % 10;
-    const decayed = quotient * 9 + Math.floor((remainder * 9) / 10);
-    price = decayed < floor ? floor : decayed;
+    price = quotient * 9 + Math.floor((remainder * 9) / 10);
   }
   return price;
 };

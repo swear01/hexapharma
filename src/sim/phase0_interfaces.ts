@@ -16,6 +16,7 @@
  *   INV-2  portal: entering a Portal records entry + same-map exit, then continues.
  *   INV-3  every machine always traverses its complete fixed catalog path.
  *   INV-4  evaluate: each map's FINAL position alone determines cure / side-effect;
+ *          Cure and side-effect fields may overlap on the same final cell.
  *          fully deterministic and reproducible.
  *   INV-5  rearrange-invariance: identical machine sequence + per-unit
  *          processing order ⇒ identical Outcome, regardless of belt layout
@@ -93,7 +94,7 @@ export interface EffectMap {
   readonly cell: Uint8Array;
   /** length width*height; DiseaseId at Cure cells, else -1. */
   readonly cureId: Int16Array;
-  /** length width*height; globally unique SideEffectId at SideEffect cells, else -1. */
+  /** length width*height; globally unique SideEffectId overlay, else -1; may overlap Cure. */
   readonly sideEffectId: Int32Array;
   /** length width*height; same-map destination index at Portal cells, else -1. */
   readonly portalTo: Int32Array;
@@ -130,7 +131,7 @@ export interface Outcome {
   readonly failed: boolean;
   readonly final: readonly Vec2[]; // final position per map
   readonly cured: readonly DiseaseId[]; // diseases whose node a final position landed on
-  readonly sideEffects: readonly SideEffectId[]; // side-effect ids landed on
+  readonly sideEffects: readonly SideEffectId[]; // side-effect overlays landed on
 }
 
 // ─────────────────────────────── drug-graph API ───────────────────────────────
@@ -197,7 +198,7 @@ export interface Solution {
   readonly template: Template;
   /** Search-derived difficulty score (e.g. min solution length + branching pressure). */
   readonly difficulty: number;
-  /** Sum of step costs of the reference solution. */
+  /** Sum of step costs of the returned shortest, lowest-cost solution. */
   readonly cost: number;
 }
 
@@ -222,7 +223,7 @@ export interface GenOptions {
   readonly width: number;
   readonly height: number;
   readonly catalog: readonly MachineCatalogEntry[];
-  readonly diseaseCount: number;
+  readonly diseaseCount: number; // 1..8; several diseases may share one Atlas
   readonly difficulty: { readonly min: number; readonly max: number };
 }
 
@@ -236,7 +237,7 @@ export interface GeneratedLevel {
 /** Constructive generation + per-disease difficulty scoring + pricing. INV-9..12. */
 export type GenerateFn = (opts: GenOptions) => GeneratedLevel;
 
-/** Base price from difficulty (exponential) + reference production cost. INV-12. */
+/** Base price from constructive complexity + reference production cost. INV-12. */
 export type DifficultyToBasePriceFn = (difficulty: number, refCost: number) => number;
 
 // ─────────────────────────────── shared data ───────────────────────────────
@@ -630,9 +631,9 @@ export const DEFAULT_SHAPES: Readonly<Record<MachineTypeId, MachineShape>> = dee
 // ═══════════════════════════════ Phase 3 — economy / patent / save ═══════════════════════════════
 
 // ── economy ──
-// Anti-degeneracy: per-disease revenue DIMINISHES with prior sales (so spamming
-// one drug self-limits), while different diseases sell independently (parallel
-// demand rewards diversifying). All integer/deterministic.
+// Anti-degeneracy: per-disease revenue DIMINISHES to zero with prior sales (so
+// spamming one drug exhausts demand), while different diseases sell independently
+// (parallel demand rewards diversifying). All integer/deterministic.
 
 /** Cumulative units sold for one disease (drives diminishing returns). */
 export interface SoldCount {
@@ -656,8 +657,8 @@ export interface SaleResult {
 
 /**
  * Sell one produced unit. Gross revenue for the Nth unit of a disease is
- * basePrice scaled by a diminishing factor in N (monotonically non-increasing,
- * with a floor); net subtracts productionCost + sideEffectPenalty. Updates cash + sold.
+ * basePrice scaled by a diminishing factor in N (monotonically non-increasing
+ * until zero); net subtracts productionCost + sideEffectPenalty. Updates cash + sold.
  * A failed/uncured unit earns nothing (caller passes a valid cure).
  */
 export type SellUnitFn = (

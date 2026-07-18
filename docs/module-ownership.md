@@ -9,25 +9,26 @@
 | 模組 | 路徑 | 目前 owner | 狀態 |
 |------|------|----------|------|
 | rng / hash | `src/sim/rng/`, `src/sim/hash.ts` | integrator | ✅ 完成（Phase 0 地基） |
-| drug-graph / Research path terrain types | `src/sim/drug-graph/`, `src/sim/phase0_interfaces.ts`（path/terrain API） | integrator（agent 交付） | ✅ 完整奇形 PathStamp／單層 terrain 語意 |
+| drug-graph / Research path terrain types | `src/sim/drug-graph/`, `src/sim/phase0_interfaces.ts`（path/terrain API） | integrator | ✅ Cure／SideEffect overlay authority |
 | solver | `src/sim/solver/` | integrator（agent 交付） | ✅ 完成（INV-13） |
-| mapgen | `src/sim/mapgen/` | integrator（agent 交付） | ✅ radial motifs／constructive Research programs／quality metrics |
+| mapgen | `src/sim/mapgen/`、`tools/balance.ts` | integrator（agent 交付） | ✅ seeded disease diversity／terrain-relevant constructive generation |
 | factory-sim | `src/sim/factory-sim/` | integrator（agent 交付） | ✅ fixed PathStamp hot-loop authority |
 | Production construction quote | `src/sim/construction/` | integrator | ✅ paid layout-diff authority |
 | recipe | `src/sim/recipe/` | integrator（agent 交付） | ✅ Factory prototype compilation／outcome analysis；非Research authority |
 | state.ts | `src/sim/state.ts` | integrator（agent 交付） | ✅ 完成（hashFactory / replayFactory，INV-15） |
-| whole-game state | `src/sim/game.ts`, `src/sim/phase0_interfaces.ts` | integrator | ✅ Research／optional Pilot／direct paid Production |
+| whole-game state | `src/sim/game.ts`, `src/sim/phase0_interfaces.ts` | integrator | ✅ multi-disease bootstrap／progression authority |
 | whole-game migration tests | `src/sim/game.test.ts`, `src/sim/single-atlas.test.ts`, `src/sim/state.test.ts`, `test/integration/loop.test.ts` | integrator（agent 交付） | ✅ full paths／paid build／replay authority |
 | replay work | `src/sim/replay-work.ts` | integrator（agent 交付） | ✅ Save v7 intents/work preflight |
-| economy | `src/sim/economy/` | integrator（agent 交付） | ✅ 完成（遞減定價 + 實際成本/副作用 + Knowledge + 帳務守恆） |
+| economy | `src/sim/economy/` | integrator（agent 交付） | ✅ finite per-disease demand／eventual zero gross |
 | save | `src/sim/save/` | integrator（agent 交付） | ✅ Save v7 non-null Production／paid build migration |
 | patent | `src/sim/patent/` | integrator（agent 交付） | ✅ cash+Knowledge、機器／擴廠／actual-trail sensor；無layer progression |
-| render | `src/render/`、`public/assets/lab/` | integrator（agent 交付） | ✅ terrain/discovery layering + connected transport topology |
-| ui shell/workspaces | `src/ui/`（不含 checkpoint storage） | integrator | ✅ 三場域 world-first UI／simple chrome／paid build flow |
+| render | `src/render/`、`public/assets/lab/` | integrator | ✅ Cure／SideEffect overlay readability |
+| ui shell/workspaces | `src/ui/Game.tsx`、`src/ui/App.tsx`、`src/ui/game.css` | integrator（agent 交付） | ✅ direct Research preview／cost／sequence readability |
+| factory UI | `src/ui/Factory.tsx`、`src/ui/factoryEditor.ts` | integrator | ✅ direct manipulation／paid build flow |
 | checkpoint storage | `src/ui/checkpointStorage.ts`, `src/ui/checkpointStorage.test.ts` | integrator（agent 交付） | ✅ Save v7/ResearchProgram migration |
 | blueprint portable format | `src/blueprint/` | integrator（agent 交付） | ✅ v3 ResearchProgram／generic FactoryLayout codec |
-| browser acceptance | `test/e2e/` | integrator（agent 交付） | ✅ fixed paths／visibility／paid Production／Blueprint v3／Save v7 acceptance |
-| active docs | `README.md`, `docs/`（`module-ownership.md` 除外） | integrator（agent 交付） | ✅ current behavior sync；runtime完成仍以最終gate為準 |
+| browser acceptance | `test/e2e/` | integrator（agent 交付） | ✅ direct interactions／visibility／paid Production／Blueprint v3／Save v7 acceptance |
+| active docs | `README.md`, `docs/`（`module-ownership.md` 除外） | integrator（agent 交付） | ✅ multi-disease／finite-demand／fresh-loop truth sync |
 
 ## 規則
 

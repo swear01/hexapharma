@@ -52,6 +52,7 @@ import { estimateGameReplayWork } from "./replay-work";
 import { quoteProductionBuild } from "./construction";
 
 export const SIDE_EFFECT_PENALTY = 25;
+export const DEFAULT_STARTING_CASH = 1_000;
 
 export type GameIntent = GameIntentContract;
 
@@ -134,8 +135,15 @@ function ownGenOptions(genOptions: GenOptions): GenOptions {
 }
 
 function validateGameMapOptions(genOptions: GenOptions): void {
-  if (genOptions.nMaps !== 1 || genOptions.diseaseCount !== 1) {
+  if (genOptions.nMaps !== 1) {
     throw new Error("game state: current rules require a single Research Atlas");
+  }
+  if (
+    !Number.isSafeInteger(genOptions.diseaseCount) ||
+    genOptions.diseaseCount < 1 ||
+    genOptions.diseaseCount > 8
+  ) {
+    throw new Error("game state: the Research Atlas requires 1..8 diseases");
   }
   const area = genOptions.width * genOptions.height;
   if (
@@ -518,7 +526,7 @@ export function validateFactoryLayout(game: GameState, layout: FactoryLayout): v
   }
 }
 
-const BASE_LAB_VISIBILITY_RADIUS = 3;
+const BASE_LAB_VISIBILITY_RADIUS = 2;
 
 function revealStartRadius(map: MultiMap["maps"][number], radius: number): Uint8Array {
   const fog = new Uint8Array(map.width * map.height);

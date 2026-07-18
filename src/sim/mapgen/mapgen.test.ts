@@ -7,11 +7,19 @@ import type {
   GeneratedLevel,
   MachineCatalogEntry,
   MultiMap,
+  Vec2,
 } from "../phase0_interfaces";
-import { CellKind, DEFAULT_CATALOG } from "../phase0_interfaces";
-import { evaluate } from "../drug-graph";
+import {
+  BASE_GAME_FACTORY_HEIGHT,
+  BASE_GAME_FACTORY_WIDTH,
+  CellKind,
+  DEFAULT_CATALOG,
+} from "../phase0_interfaces";
+import { evaluate, walkValidatedPathInto } from "../drug-graph";
+import { compileEntitledPrototype } from "../recipe";
 import {
   MAX_CONSTRUCTIVE_CANDIDATES,
+  MAX_GENERATION_DISEASES,
   MAX_GENERATION_CATALOG_ENTRIES,
   MAX_GENERATION_DIFFICULTY,
   MAX_MAP_CELLS,
@@ -34,6 +42,29 @@ const options = (seed: number, overrides: Partial<GenOptions> = {}): GenOptions 
   ...canonicalOptions(seed),
   ...overrides,
 });
+
+const oneAtlasOptions = (seed: number, diseaseCount = 4): GenOptions =>
+  options(seed, { nMaps: 1, diseaseCount });
+
+function referenceSignature(level: GeneratedLevel): string {
+  return level.diseases.map((disease) => disease.reference.steps.map((step) => step.typeId).join(",")).join("|");
+}
+
+function withoutRouteTerrain(level: GeneratedLevel): MultiMap {
+  return {
+    maps: level.mm.maps.map((map) => ({
+      ...map,
+      cell: Uint8Array.from(map.cell, (kind) =>
+        kind === CellKind.Wall ||
+        kind === CellKind.Abyss ||
+        kind === CellKind.Swamp ||
+        kind === CellKind.Portal
+          ? CellKind.Empty
+          : kind),
+      portalTo: new Int32Array(map.portalTo.length).fill(-1),
+    })),
+  };
+}
 
 const radius = (map: EffectMap, index: number): number => {
   const x = index % map.width;
@@ -109,6 +140,49 @@ function componentSizes(map: EffectMap, kind: CellKind, cureId?: number): number
   return result.sort((a, b) => b - a);
 }
 
+function cureRegionCells(map: EffectMap, cureId: number): Vec2[] {
+  const cells: Vec2[] = [];
+  for (let index = 0; index < map.cell.length; index++) {
+    if (map.cell[index] !== CellKind.Cure || map.cureId[index] !== cureId) continue;
+    cells.push({ x: index % map.width, y: Math.floor(index / map.width) });
+  }
+  return cells;
+}
+
+function cureSilhouette(cells: readonly Vec2[], node: Vec2): string {
+  const relative = cells.map((cell) => ({ x: cell.x - node.x, y: cell.y - node.y }));
+  const signatures: string[] = [];
+  for (let reflected = 0; reflected <= 1; reflected++) {
+    for (let rotation = 0; rotation < 4; rotation++) {
+      const transformed = relative.map((cell) => {
+        let x = reflected === 1 ? -cell.x : cell.x;
+        let y = cell.y;
+        for (let turn = 0; turn < rotation; turn++) [x, y] = [-y, x];
+        return { x, y };
+      }).sort((left, right) => left.x - right.x || left.y - right.y);
+      signatures.push(transformed.map((cell) => `${cell.x},${cell.y}`).join(";"));
+    }
+  }
+  return signatures.sort()[0]!;
+}
+
+function cureSilhouetteKind(cells: readonly Vec2[]): "straight" | "bent" | "branch" {
+  const indices = new Set(cells.map((cell) => `${cell.x},${cell.y}`));
+  let maxDegree = 0;
+  for (const cell of cells) {
+    let degree = 0;
+    for (const direction of [{ x: 1, y: 0 }, { x: 0, y: 1 }, { x: -1, y: 0 }, { x: 0, y: -1 }]) {
+      if (indices.has(`${cell.x + direction.x},${cell.y + direction.y}`)) degree++;
+    }
+    maxDegree = Math.max(maxDegree, degree);
+  }
+  if (maxDegree >= 3) return "branch";
+  if (new Set(cells.map((cell) => cell.x)).size === 1 || new Set(cells.map((cell) => cell.y)).size === 1) {
+    return "straight";
+  }
+  return "bent";
+}
+
 function assertPortalValidity(map: EffectMap): void {
   expect(map.portalTo).toBeInstanceOf(Int32Array);
   expect(map.portalTo).toHaveLength(map.cell.length);
@@ -139,6 +213,25 @@ function assertReferences(level: GeneratedLevel): void {
     expect(disease.difficulty).toBeLessThanOrEqual(12);
     for (const step of disease.reference.steps) expect(step.path.length).toBeGreaterThan(0);
   }
+}
+
+function generatedReferenceCures(
+  level: GeneratedLevel,
+  reference: GeneratedLevel["diseases"][number]["reference"],
+): boolean {
+  const map = level.mm.maps[0]!;
+  const start = level.start.pos[0]!;
+  const output = new Int32Array(3);
+  let x = start.x;
+  let y = start.y;
+  for (const machine of reference.steps) {
+    walkValidatedPathInto(map, x, y, machine, output, 0);
+    if (output[2] === 1) return false;
+    x = output[0]!;
+    y = output[1]!;
+  }
+  const index = y * map.width + x;
+  return map.cell[index] === CellKind.Cure && map.cureId[index]! >= 0;
 }
 
 describe("mapgen production boundary", () => {
@@ -181,12 +274,19 @@ describe("mapgen option validation", () => {
     ["nMaps", { nMaps: 0 }, /nMaps must be between 1 and 4/],
     ["width", { width: 2 }, /width must be at least 3/],
     ["height", { height: 2 }, /height must be at least 3/],
-    ["disease count", { diseaseCount: 2 }, /diseaseCount/],
+    ["disease count", { diseaseCount: MAX_GENERATION_DISEASES + 1 }, /diseaseCount/],
     ["difficulty min", { difficulty: { min: -1, max: 4 } }, /difficulty/],
     ["difficulty order", { difficulty: { min: 9, max: 4 } }, /difficulty/],
     ["difficulty cap", { difficulty: { min: 4, max: 65 } }, /difficulty.max/],
   ] as const)("rejects invalid %s", (_name, override, message) => {
     expect(() => generate(options(1, override))).toThrow(message);
+  });
+
+  it("supports multiple diseases on one Atlas up to a bounded maximum", () => {
+    const level = generate(oneAtlasOptions(14));
+    expect(level.mm.maps).toHaveLength(1);
+    expect(level.diseases).toHaveLength(4);
+    expect(() => generate(oneAtlasOptions(14, MAX_GENERATION_DISEASES))).not.toThrow();
   });
 
   it("rejects area and catalog bounds before allocating generation state", () => {
@@ -346,11 +446,164 @@ describe("mapgen radial macro terrain", () => {
           expect(map.sideEffectId[index]).toBeGreaterThanOrEqual(0);
           expect(ids.has(map.sideEffectId[index]!)).toBe(false);
           ids.add(map.sideEffectId[index]!);
-        } else {
+        } else if (map.cell[index] !== CellKind.Cure) {
           expect(map.sideEffectId[index]).toBe(-1);
         }
         if (map.cell[index] !== CellKind.Cure) expect(map.cureId[index]).toBe(-1);
       }
+    }
+  });
+});
+
+describe("mapgen seeded disease diversity", () => {
+  it("constructs the late-sweep regression seed within the bounded candidate budget", () => {
+    const level = generate(oneAtlasOptions(864));
+    expect(level.diseases).toHaveLength(4);
+    assertReferences(level);
+  });
+
+  it("constructs the dense eight-disease regression seed within the same budget", () => {
+    const level = generate(oneAtlasOptions(199, 8));
+    expect(level.diseases).toHaveLength(8);
+    assertReferences(level);
+  });
+
+  it("constructs the shipped four-disease Atlas across a broad deterministic seed sample", () => {
+    for (let seed = 1; seed <= 128; seed++) {
+      const level = generate(oneAtlasOptions(seed));
+      expect(level.diseases).toHaveLength(4);
+      assertReferences(level);
+    }
+  }, 15_000);
+
+  it("keeps every normal Cure region outside the fresh start-centered 5×5 reveal", () => {
+    for (let seed = 1; seed <= 500; seed++) {
+      const level = generate(oneAtlasOptions(seed));
+      for (const map of level.mm.maps) {
+        for (let index = 0; index < map.cell.length; index++) {
+          if (map.cell[index] !== CellKind.Cure) continue;
+          const x = index % map.width;
+          const y = Math.floor(index / map.width);
+          expect(Math.max(Math.abs(x - map.start.x), Math.abs(y - map.start.y))).toBeGreaterThan(2);
+        }
+      }
+    }
+  }, 60_000);
+
+  it("distributes seeded Cure regions across varied bent and branching silhouettes", () => {
+    const silhouettes = new Map<string, number>();
+    const bent = new Set<string>();
+    const branches = new Set<string>();
+    let straight = 0;
+    let total = 0;
+    for (let seed = 0; seed < 200; seed++) {
+      const level = generate(oneAtlasOptions(seed));
+      for (const disease of level.diseases) {
+        const map = level.mm.maps[disease.map]!;
+        const cells = cureRegionCells(map, disease.id);
+        const signature = cureSilhouette(cells, disease.node);
+        const kind = cureSilhouetteKind(cells);
+        silhouettes.set(signature, (silhouettes.get(signature) ?? 0) + 1);
+        if (kind === "straight") straight++;
+        else if (kind === "bent") bent.add(signature);
+        else branches.add(signature);
+        total++;
+      }
+    }
+    const largest = Math.max(...silhouettes.values());
+    expect(total).toBe(800);
+    expect(largest).toBeLessThanOrEqual(Math.floor(total * 0.2));
+    expect(straight).toBeLessThanOrEqual(Math.floor(total * 0.2));
+    expect(silhouettes.size).toBeGreaterThanOrEqual(10);
+    expect(bent.size).toBeGreaterThanOrEqual(5);
+    expect(branches.size).toBeGreaterThanOrEqual(4);
+  }, 60_000);
+
+  it("materially varies references and cure nodes between one-Atlas seeds", () => {
+    const references = new Set<string>();
+    const cureSets = new Set<string>();
+    const difficulties = new Set<number>();
+    for (let seed = 1; seed <= 24; seed++) {
+      const level = generate(oneAtlasOptions(seed));
+      references.add(referenceSignature(level));
+      cureSets.add(level.diseases.map((disease) => `${disease.node.x},${disease.node.y}`).join("|"));
+      for (const disease of level.diseases) difficulties.add(disease.difficulty);
+    }
+    expect(references.size).toBeGreaterThanOrEqual(18);
+    expect(cureSets.size).toBeGreaterThanOrEqual(18);
+    expect(difficulties.size).toBeGreaterThanOrEqual(5);
+  });
+
+  it("does not let one seed's reference blueprints cure a broad unrelated sample", () => {
+    const baseline = generate(oneAtlasOptions(1));
+    let crossSeedCures = 0;
+    let comparisons = 0;
+    for (let seed = 2; seed <= 40; seed++) {
+      const level = generate(oneAtlasOptions(seed));
+      for (const disease of baseline.diseases) {
+        comparisons++;
+        if (evaluate(level.mm, level.start, disease.reference).cured.length > 0) crossSeedCures++;
+      }
+    }
+    expect(crossSeedCures).toBeLessThanOrEqual(Math.floor(comparisons / 4));
+  });
+
+  it("bounds the worst individual reference across an all-pairs seed sample", () => {
+    const levels = Array.from({ length: 100 }, (_, index) => generate(oneAtlasOptions(index + 1)));
+    let worstHits = 0;
+    for (let source = 0; source < levels.length; source++) {
+      for (const disease of levels[source]!.diseases) {
+        let hits = 0;
+        for (let target = 0; target < levels.length; target++) {
+          if (target === source) continue;
+          if (generatedReferenceCures(levels[target]!, disease.reference)) hits++;
+        }
+        worstHits = Math.max(worstHits, hits);
+      }
+    }
+    expect(worstHits).toBeLessThanOrEqual(Math.floor((levels.length - 1) * 0.15));
+  }, 60_000);
+
+  it("constructs references whose actual endpoints depend on generated route terrain", () => {
+    for (const seed of [1, 2, 14, 31, 77, 184]) {
+      const level = generate(oneAtlasOptions(seed));
+      const neutral = withoutRouteTerrain(level);
+      for (const disease of level.diseases) {
+        const withTerrain = evaluate(level.mm, level.start, disease.reference);
+        const withoutTerrain = evaluate(neutral, level.start, disease.reference);
+        expect(withTerrain.final[disease.map]).not.toEqual(withoutTerrain.final[disease.map]);
+      }
+    }
+  });
+
+  it("keeps the first disease constructible from the initially available four machines", () => {
+    const initialIds = new Set(DEFAULT_CATALOG.slice(0, 4).map((entry) => entry.typeId));
+    for (const seed of [1, 2, 14, 31, 77, 184]) {
+      const first = generate(oneAtlasOptions(seed)).diseases[0]!;
+      expect(first.reference.steps.every((step) => initialIds.has(step.typeId))).toBe(true);
+    }
+  });
+
+  it("tiers later canonical diseases through the three patent machine entries", () => {
+    for (const seed of [1, 14, 77, 184]) {
+      const level = generate(oneAtlasOptions(seed));
+      for (let disease = 1; disease <= 3; disease++) {
+        const patent = DEFAULT_CATALOG[disease + 3]!;
+        expect(level.diseases[disease]!.reference.steps.some((step) => step.typeId === patent.typeId)).toBe(true);
+      }
+    }
+  });
+
+  it("keeps disease-zero references packable on the entitled 24×12 floor", () => {
+    for (const seed of [212, 231, 274, 414, 559, 727, 732, 733, 737, 833, 842, 968]) {
+      const first = generate(oneAtlasOptions(seed)).diseases[0]!;
+      const compiled = compileEntitledPrototype(
+        first.reference,
+        BASE_GAME_FACTORY_WIDTH,
+        BASE_GAME_FACTORY_HEIGHT,
+      );
+      expect(compiled.layout.width).toBe(BASE_GAME_FACTORY_WIDTH);
+      expect(compiled.layout.height).toBe(BASE_GAME_FACTORY_HEIGHT);
     }
   });
 });
@@ -374,7 +627,7 @@ describe("mapgen constructive programs", () => {
     }
   });
 
-  it("grows each cure into a connected five-to-nine-cell region containing its node", () => {
+  it("grows each cure into a connected five-cell region containing its node", () => {
     for (const seed of [0, 14, 77, 184]) {
       const level = generate(canonicalOptions(seed, 4));
       for (const disease of level.diseases) {
@@ -382,9 +635,53 @@ describe("mapgen constructive programs", () => {
         const nodeIndex = disease.node.y * map.width + disease.node.x;
         expect(map.cell[nodeIndex]).toBe(CellKind.Cure);
         expect(map.cureId[nodeIndex]).toBe(disease.id);
-        expect(componentSizes(map, CellKind.Cure, disease.id)).toEqual([
-          expect.toBeOneOf([5, 6, 7, 8, 9]),
-        ]);
+        expect(componentSizes(map, CellKind.Cure, disease.id)).toEqual([5]);
+      }
+    }
+  });
+
+  it("gives every cure region a clean reference node and contaminated alternate cells", () => {
+    for (const seed of [1, 14, 77, 184]) {
+      const level = generate(oneAtlasOptions(seed));
+      const overlayIds = new Set<number>();
+      for (const disease of level.diseases) {
+        const map = level.mm.maps[disease.map]!;
+        const nodeIndex = disease.node.y * map.width + disease.node.x;
+        expect(map.sideEffectId[nodeIndex]).toBe(-1);
+        const region: number[] = [];
+        for (let index = 0; index < map.cell.length; index++) {
+          if (map.cell[index] === CellKind.Cure && map.cureId[index] === disease.id) region.push(index);
+        }
+        expect(region.some((index) => map.sideEffectId[index] === -1)).toBe(true);
+        expect(region.some((index) => map.sideEffectId[index]! >= 0)).toBe(true);
+        for (const index of region) {
+          const overlay = map.sideEffectId[index]!;
+          if (overlay < 0) continue;
+          expect(overlayIds.has(overlay)).toBe(false);
+          overlayIds.add(overlay);
+        }
+      }
+    }
+  });
+
+  it("reserves noncompeting cure regions for known dense-generation seeds", () => {
+    for (const seed of [52, 247]) {
+      const level = generate(oneAtlasOptions(seed));
+      expect(level.diseases).toHaveLength(4);
+      assertReferences(level);
+    }
+  });
+
+  it("never places a cure on a portal entry or its reserved destination", () => {
+    for (const seed of [1, 2, 14, 31, 77, 184]) {
+      const level = generate(oneAtlasOptions(seed));
+      for (const map of level.mm.maps) {
+        const destinations = new Set(Array.from(map.portalTo).filter((destination) => destination >= 0));
+        for (let index = 0; index < map.cell.length; index++) {
+          if (map.cell[index] !== CellKind.Cure) continue;
+          expect(map.portalTo[index]).toBe(-1);
+          expect(destinations.has(index)).toBe(false);
+        }
       }
     }
   });
@@ -402,6 +699,22 @@ describe("mapgen constructive programs", () => {
     }
   });
 
+  it("keeps the legal exact-difficulty-one contract on a noncanonical Atlas", () => {
+    const level = generate(options(14, {
+      width: 32,
+      height: 32,
+      catalog: [DEFAULT_CATALOG[0]!],
+      difficulty: { min: 1, max: 1 },
+    }));
+    const disease = level.diseases[0]!;
+    expect(disease.difficulty).toBe(1);
+    expect(disease.reference.steps).toHaveLength(1);
+    const outcome = evaluate(level.mm, level.start, disease.reference);
+    expect(outcome.failed).toBe(false);
+    expect(outcome.cured).toContain(disease.id);
+    expect(outcome.final[disease.map]).toEqual(disease.node);
+  });
+
   it("constructs with three distinct catalog shapes even when catalog length is divisible by three", () => {
     const catalog = DEFAULT_CATALOG.slice(0, 3);
     const level = generate(options(14, {
@@ -417,14 +730,10 @@ describe("mapgen constructive programs", () => {
 });
 
 describe("mapgen pricing", () => {
-  const exactPrice = (difficulty: number, refCost: number): bigint => {
-    const exponent = BigInt(difficulty);
-    const numerator = 10n * 17n ** exponent;
-    const denominator = 10n ** exponent;
-    return (2n * numerator + denominator) / (2n * denominator) + 3n * BigInt(refCost);
-  };
+  const exactPrice = (difficulty: number, refCost: number): bigint =>
+    12n + 4n * BigInt(difficulty) + 2n * BigInt(refCost);
 
-  it("uses exact integer 17/10 growth across the entire supported range", () => {
+  it("uses a sane linear difficulty and production-cost price across the supported range", () => {
     for (let difficulty = 0; difficulty <= MAX_GENERATION_DIFFICULTY; difficulty++) {
       for (const refCost of [0, 1, 7, 200, 1_000_000_000]) {
         expect(difficultyToBasePrice(difficulty, refCost)).toBe(Number(exactPrice(difficulty, refCost)));
@@ -432,12 +741,9 @@ describe("mapgen pricing", () => {
     }
   });
 
-  it("keeps the active-range outputs compatible without using floating-point exponentiation", () => {
+  it("keeps active-range unit prices proportional instead of exploding exponentially", () => {
     for (let difficulty = 0; difficulty <= 30; difficulty++) {
-      const exponent = BigInt(difficulty);
-      const numerator = 10n * 17n ** exponent;
-      const denominator = 10n ** exponent;
-      const expected = Number((2n * numerator + denominator) / (2n * denominator) + 21n);
+      const expected = Number(exactPrice(difficulty, 7));
       expect(difficultyToBasePrice(difficulty, 7)).toBe(expected);
     }
     const source = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
@@ -455,8 +761,9 @@ describe("mapgen pricing", () => {
       expect(() => difficultyToBasePrice(1, refCost)).toThrow(/safe integer/);
     }
     expect(() => difficultyToBasePrice(1, -1)).toThrow(/non-negative/);
+    expect(difficultyToBasePrice(10, 30)).toBe(112);
     const difficultyPrice = exactPrice(MAX_GENERATION_DIFFICULTY, 0);
-    const maxRefCost = Number((BigInt(Number.MAX_SAFE_INTEGER) - difficultyPrice) / 3n);
+    const maxRefCost = Number((BigInt(Number.MAX_SAFE_INTEGER) - difficultyPrice) / 2n);
     expect(difficultyToBasePrice(MAX_GENERATION_DIFFICULTY, maxRefCost)).toBe(
       Number(exactPrice(MAX_GENERATION_DIFFICULTY, maxRefCost)),
     );

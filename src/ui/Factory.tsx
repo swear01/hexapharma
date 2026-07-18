@@ -20,6 +20,9 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MachineIcon } from "./MachineIcon";
+import { machineName, machineShortName } from "./machineLabels";
+import { GameModalPortal } from "./GameModalPortal";
+import { outcomeEffectText } from "./effectLabels";
 import type {
   Dir,
   Vec2,
@@ -33,6 +36,7 @@ import type {
   MachineCatalogEntry,
   MachineTypeId,
   GeneratedLevel,
+  MultiMap,
   ThroughputReport,
   Outcome,
 } from "../sim/phase0_interfaces";
@@ -103,6 +107,56 @@ function machineAt(layout: FactoryLayout, x: number, y: number): PlacedMachine |
   return undefined;
 }
 
+export function directGestureMachineAt(
+  layout: FactoryLayout,
+  x: number,
+  y: number,
+  eraseActive: boolean,
+): PlacedMachine | undefined {
+  return eraseActive ? undefined : machineAt(layout, x, y);
+}
+
+export function factoryErasePreviewCells(
+  layout: FactoryLayout,
+  x: number,
+  y: number,
+): readonly Vec2[] {
+  const machine = machineAt(layout, x, y);
+  return machine === undefined ? [{ x, y }] : worldCells(machine);
+}
+
+export function transformPlacedMachine(
+  layout: FactoryLayout,
+  machineId: number,
+  anchor: Vec2,
+  footRot: Rotation,
+): FactoryLayout {
+  const machineIndex = layout.machines.findIndex((machine) => machine.id === machineId);
+  const current = layout.machines[machineIndex];
+  if (current === undefined) return layout;
+  if (
+    current.anchor.x === anchor.x &&
+    current.anchor.y === anchor.y &&
+    current.footRot === footRot
+  ) {
+    return layout;
+  }
+
+  const transformed: PlacedMachine = { ...current, anchor, footRot };
+  for (const cell of worldCells(transformed)) {
+    if (cell.x < 0 || cell.y < 0 || cell.x >= layout.width || cell.y >= layout.height) {
+      return layout;
+    }
+    if (layout.tiles[cell.y * layout.width + cell.x]?.kind !== "empty") return layout;
+    const occupied = machineAt(layout, cell.x, cell.y);
+    if (occupied !== undefined && occupied.id !== machineId) return layout;
+  }
+
+  const machines = layout.machines.slice();
+  machines[machineIndex] = transformed;
+  return { ...layout, machines };
+}
+
 function nextMachineId(layout: FactoryLayout): number {
   let max = -1;
   for (const m of layout.machines) if (m.id > max) max = m.id;
@@ -115,6 +169,10 @@ function entryOf(typeId: MachineTypeId): MachineCatalogEntry {
   const entry = DEFAULT_CATALOG.find((candidate) => candidate.typeId === typeId);
   if (entry === undefined) throw new Error(`Factory: unknown machine type "${typeId}"`);
   return entry;
+}
+
+export function machineTooltip(entry: MachineCatalogEntry): string {
+  return `${machineName(entry.typeId)} · ${entry.speed} ticks/unit · Processing $${entry.cost}/unit`;
 }
 
 function machineDef(typeId: MachineTypeId): FactoryMachineDef {
@@ -185,22 +243,29 @@ interface ClipboardBrush {
   readonly brush: Brush;
   readonly dir: Dir;
   readonly footRot: Rotation;
+  readonly tile: FactoryTile | null;
 }
+
+type CanvasGesture =
+  | {
+      readonly pointerId: number;
+      readonly mode: "paint" | "erase";
+      readonly base: FactoryLayout;
+      readonly cells: readonly GridCell[];
+      readonly last: GridCell;
+    }
+  | {
+      readonly pointerId: number;
+      readonly mode: "move";
+      readonly base: FactoryLayout;
+      readonly cells: readonly GridCell[];
+      readonly last: GridCell;
+      readonly machineId: number;
+      readonly anchorOffset: Vec2;
+      readonly footRot: Rotation;
+    };
 
 const DIR_LABEL: Record<Dir, string> = { 0: "→ E", 1: "↓ S", 2: "← W", 3: "↑ N" };
-
-function machineUiName(typeId: MachineTypeId): string {
-  const names: Record<string, string> = {
-    push: "hook pump",
-    push2: "wave reactor",
-    pull: "return coil",
-    shear: "elbow press",
-    skew: "zigzag still",
-    dilute: "loop vat",
-    settle: "settling spiral",
-  };
-  return names[typeId] ?? typeId;
-}
 
 /** A belt-grid tile for the current brush + direction (machines handled separately). */
 function makeTile(brush: Brush, dir: Dir): FactoryTile | null {
@@ -224,6 +289,58 @@ function makeTile(brush: Brush, dir: Dir): FactoryTile | null {
   }
 }
 
+function cloneFactoryTile(tile: FactoryTile): FactoryTile {
+  switch (tile.kind) {
+    case "empty":
+      return { kind: "empty" };
+    case "belt":
+      return { kind: "belt", dir: tile.dir };
+    case "splitter":
+      return { kind: "splitter", inDir: tile.inDir, outDirs: [...tile.outDirs] };
+    case "merger":
+      return { kind: "merger", inDirs: [...tile.inDirs], outDir: tile.outDir };
+    case "source":
+      return { kind: "source", dir: tile.dir, period: tile.period };
+    case "sink":
+      return { kind: "sink" };
+  }
+}
+
+export function copyFactoryTile(
+  layout: FactoryLayout,
+  x: number,
+  y: number,
+): FactoryTile | null {
+  if (x < 0 || y < 0 || x >= layout.width || y >= layout.height) return null;
+  if (machineAt(layout, x, y) !== undefined) return null;
+  const tile = layout.tiles[y * layout.width + x];
+  return tile === undefined || tile.kind === "empty" ? null : cloneFactoryTile(tile);
+}
+
+export function placeFactoryTile(
+  layout: FactoryLayout,
+  x: number,
+  y: number,
+  tile: FactoryTile,
+): FactoryLayout {
+  if (
+    tile.kind === "empty" ||
+    x < 0 ||
+    y < 0 ||
+    x >= layout.width ||
+    y >= layout.height ||
+    machineAt(layout, x, y) !== undefined
+  ) {
+    return layout;
+  }
+  const index = y * layout.width + x;
+  const current = layout.tiles[index];
+  if (current !== undefined && JSON.stringify(current) === JSON.stringify(tile)) return layout;
+  const tiles = layout.tiles.slice();
+  tiles[index] = cloneFactoryTile(tile);
+  return { ...layout, tiles };
+}
+
 function brushAt(layout: FactoryLayout, cell: GridCell): ClipboardBrush | null {
   const machine = machineAt(layout, cell.x, cell.y);
   if (machine !== undefined) {
@@ -231,10 +348,12 @@ function brushAt(layout: FactoryLayout, cell: GridCell): ClipboardBrush | null {
       brush: { kind: "machine", typeId: machine.def.typeId },
       dir: E,
       footRot: machine.footRot,
+      tile: null,
     };
   }
-  const tile = layout.tiles[cell.y * layout.width + cell.x];
-  if (tile === undefined || tile.kind === "empty") return null;
+  const tile = copyFactoryTile(layout, cell.x, cell.y);
+  if (tile === null) return null;
+  if (tile.kind === "empty") return null;
   const dir = tile.kind === "belt" || tile.kind === "source"
     ? tile.dir
     : tile.kind === "splitter"
@@ -244,6 +363,7 @@ function brushAt(layout: FactoryLayout, cell: GridCell): ClipboardBrush | null {
     brush: { kind: tile.kind },
     dir,
     footRot: 0,
+    tile,
   };
 }
 
@@ -287,14 +407,7 @@ function paint(
 
   const tile = makeTile(brush, dir);
   if (tile === null) return layout;
-  // painting a tile onto a machine cell first removes that machine.
-  const hit = machineAt(layout, x, y);
-  const currentTile = layout.tiles[y * layout.width + x];
-  if (hit === undefined && JSON.stringify(currentTile) === JSON.stringify(tile)) return layout;
-  const machines = hit ? layout.machines.filter((m) => m.id !== hit.id) : layout.machines;
-  const tiles = layout.tiles.slice();
-  tiles[y * layout.width + x] = tile;
-  return { ...layout, tiles, machines };
+  return placeFactoryTile(layout, x, y, tile);
 }
 
 export function paintBeltRoute(
@@ -329,27 +442,64 @@ export function previewProductionBuildCost(
   return quoteProductionBuild(current, proposed);
 }
 
+export function requestFactoryLayoutChange(
+  current: FactoryLayout,
+  proposed: FactoryLayout,
+  onLayoutChange: (layout: FactoryLayout) => boolean,
+): boolean {
+  return proposed !== current && onLayoutChange(proposed);
+}
+
+export function factoryRuntimeMayReset(runtime: FactoryRuntime): boolean {
+  return runtime.tick !== 0 ||
+    runtime.unitCount !== 0 ||
+    runtime.nextUnitId !== 0 ||
+    runtime.producedTotal !== 0 ||
+    runtime.producedEvents.count !== 0 ||
+    runtime.deadlocked ||
+    runtime.splitterCursors.some((cursor) => cursor !== 0);
+}
+
+type FactoryResetCloseOutcome = "cancel" | "accepted" | "rejected";
+
+export function factoryResetPlaybackAfterClose(
+  wasPlaying: boolean,
+  outcome: FactoryResetCloseOutcome,
+  deadlocked: boolean,
+): boolean {
+  return wasPlaying && outcome !== "accepted" && !deadlocked;
+}
+
+type FactoryHotkeyTargetKind = "text" | "control" | "world";
+
+export function factoryHotkeyTargetConsumesKey(
+  targetKind: FactoryHotkeyTargetKind,
+  key: string,
+): boolean {
+  return targetKind === "text" ||
+    (targetKind === "control" && (key === "Enter" || key === " "));
+}
+
 export function facilityMayAnalyzeOutcome(mode: FacilityMode, rateNum: number): boolean {
   return mode === "pilot" && rateNum > 0;
 }
 
+export function facilityOutcomeMap(
+  mode: FacilityMode,
+  planningMap: MultiMap,
+): MultiMap | null {
+  return mode === "pilot" ? planningMap : null;
+}
+
 export function formatFacilityOutcome(outcome: Outcome): string {
-  const result = outcome.failed
-    ? "failed"
-    : outcome.cured.length === 0
-      ? "no cure"
-      : `cures ${outcome.cured.join(", ")}`;
-  const sideEffects = outcome.sideEffects.length === 0
-    ? "no side effects"
-    : `side effects ${outcome.sideEffects.join(", ")}`;
-  const final = outcome.final.map((position) => `(${position.x}, ${position.y})`).join(" / ");
-  return `${result} · ${sideEffects} · final ${final}`;
+  return outcomeEffectText(outcome);
 }
 
 interface FactoryProps {
   readonly active: boolean;
   readonly mode: FacilityMode;
   readonly level: GeneratedLevel;
+  readonly planningMap: MultiMap;
   readonly layout: FactoryLayout | null;
   readonly runtime: FactoryRuntime | null;
   readonly waste: number;
@@ -368,6 +518,7 @@ export function Factory({
   active,
   mode,
   level,
+  planningMap,
   layout: authoritativeLayout,
   runtime,
   waste,
@@ -392,6 +543,7 @@ export function Factory({
     initialFacilityLayout(authoritativeLayout, entitledWidth, entitledHeight)
   );
   const [playing, setPlaying] = useState<boolean>(false);
+  const [resetPending, setResetPending] = useState(false);
   const playingRef = useRef(playing);
   playingRef.current = playing;
 
@@ -414,13 +566,11 @@ export function Factory({
   const pendingViewportFocusRef = useRef(true);
   const pendingCommittedKeysRef = useRef<string[]>([]);
   const clipboardRef = useRef<ClipboardBrush | null>(null);
-  const gestureRef = useRef<{
-    readonly pointerId: number;
-    readonly mode: "paint" | "erase";
-    readonly base: FactoryLayout;
-    readonly cells: readonly GridCell[];
-    readonly last: GridCell;
-  } | null>(null);
+  const resetTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const resetConfirmRef = useRef<HTMLButtonElement | null>(null);
+  const resetCancelRef = useRef<HTMLButtonElement | null>(null);
+  const resetWasPlayingRef = useRef(false);
+  const gestureRef = useRef<CanvasGesture | null>(null);
   const panGestureRef = useRef<{
     readonly pointerId: number;
     readonly clientX: number;
@@ -428,15 +578,7 @@ export function Factory({
     readonly startX: number;
     readonly startY: number;
   } | null>(null);
-  const touchGestureRef = useRef<{
-    readonly pointerId: number;
-    readonly clientX: number;
-    readonly clientY: number;
-    readonly startX: number;
-    readonly startY: number;
-    readonly cell: GridCell | null;
-    moved: boolean;
-  } | null>(null);
+  const activeTouchPointerRef = useRef<number | null>(null);
 
   // keep the latest layout/level in refs so the play timer reads fresh values.
   const layoutRef = useRef(layout);
@@ -467,22 +609,24 @@ export function Factory({
     readonly outcome: Outcome | null;
     readonly error: string | null;
   }>(() => {
+    const outcomeMap = facilityOutcomeMap(mode, planningMap);
     if (
       authoritativeLayout === null ||
       throughput === null ||
+      outcomeMap === null ||
       !facilityMayAnalyzeOutcome(mode, throughput.rateNum)
     ) {
       return { outcome: null, error: null };
     }
     try {
-      return { outcome: factoryOutcome(layout, mm, start), error: null };
+      return { outcome: factoryOutcome(layout, outcomeMap, start), error: null };
     } catch (error) {
       return {
         outcome: null,
         error: `Sample unavailable: ${error instanceof Error ? error.message : String(error)}`,
       };
     }
-  }, [authoritativeLayout, layout, mm, mode, start, throughput]);
+  }, [authoritativeLayout, layout, mode, planningMap, start, throughput]);
   const analysisError = [throughputAnalysis.error, sampleAnalysis.error]
     .filter((entry): entry is string => entry !== null)
     .join(" ");
@@ -506,10 +650,9 @@ export function Factory({
 
   const commitLayout = useCallback(
     (next: FactoryLayout) => {
+      if (!requestFactoryLayoutChange(layoutRef.current, next, onLayoutChange)) return false;
       playingRef.current = false;
       setPlaying(false);
-      if (next === layoutRef.current) return false;
-      if (!onLayoutChange(next)) return false;
       pendingCommittedKeysRef.current.push(JSON.stringify(next));
       layoutRef.current = next;
       setLayout(next);
@@ -654,11 +797,58 @@ export function Factory({
     onAdvance?.(1);
   }, [onAdvance]);
 
-  const reset = useCallback(() => {
+  const openResetConfirmation = useCallback(() => {
+    resetWasPlayingRef.current = playingRef.current;
+    if (playingRef.current) {
+      playingRef.current = false;
+      setPlaying(false);
+    }
+    setResetPending(true);
+  }, []);
+
+  const closeResetConfirmation = useCallback((
+    restoreFocus = true,
+    outcome: FactoryResetCloseOutcome = "cancel",
+  ) => {
+    const resume = factoryResetPlaybackAfterClose(
+      resetWasPlayingRef.current,
+      outcome,
+      stateRef.current.deadlocked,
+    );
+    resetWasPlayingRef.current = false;
+    setResetPending(false);
+    if (resume) {
+      playingRef.current = true;
+      setPlaying(true);
+    }
+    if (restoreFocus) window.requestAnimationFrame(() => resetTriggerRef.current?.focus());
+  }, []);
+
+  useEffect(() => {
+    if (!resetPending) return;
+    resetConfirmRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        closeResetConfirmation();
+      } else if (event.key === "Tab") {
+        event.preventDefault();
+        if (document.activeElement === resetConfirmRef.current) resetCancelRef.current?.focus();
+        else resetConfirmRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [closeResetConfirmation, resetPending]);
+
+  const confirmReset = useCallback(() => {
+    const accepted = onReset?.() === true;
+    closeResetConfirmation(false, accepted ? "accepted" : "rejected");
+    if (!accepted) return;
     playingRef.current = false;
     setPlaying(false);
-    onReset?.();
-  }, [onReset]);
+  }, [closeResetConfirmation, onReset]);
 
   const updateCamera = useCallback((change: (current: Camera) => Camera) => {
     setCamera((current) => {
@@ -729,15 +919,54 @@ export function Factory({
     if (event.pointerType === "touch" && event.button === 0) {
       event.preventDefault();
       event.currentTarget.setPointerCapture(event.pointerId);
-      touchGestureRef.current = {
-        pointerId: event.pointerId,
-        clientX: event.clientX,
-        clientY: event.clientY,
-        startX: camera.x,
-        startY: camera.y,
-        cell: pointerCell(event.clientX, event.clientY),
-        moved: false,
-      };
+      if (
+        activeTouchPointerRef.current !== null &&
+        activeTouchPointerRef.current !== event.pointerId
+      ) {
+        gestureRef.current = null;
+        activeTouchPointerRef.current = event.pointerId;
+        panGestureRef.current = {
+          pointerId: event.pointerId,
+          clientX: event.clientX,
+          clientY: event.clientY,
+          startX: camera.x,
+          startY: camera.y,
+        };
+        return;
+      }
+      activeTouchPointerRef.current = event.pointerId;
+      const cell = pointerCell(event.clientX, event.clientY);
+      setHoverCell(cell);
+      if (cell === null) {
+        panGestureRef.current = {
+          pointerId: event.pointerId,
+          clientX: event.clientX,
+          clientY: event.clientY,
+          startX: camera.x,
+          startY: camera.y,
+        };
+        return;
+      }
+      const base = layoutRef.current;
+      const machine = directGestureMachineAt(base, cell.x, cell.y, brush.kind === "erase");
+      gestureRef.current = machine === undefined
+        ? {
+            pointerId: event.pointerId,
+            mode: "paint",
+            base,
+            cells: [cell],
+            last: cell,
+          }
+        : {
+            pointerId: event.pointerId,
+            mode: "move",
+            base,
+            cells: [cell],
+            last: cell,
+            machineId: machine.id,
+            anchorOffset: { x: machine.anchor.x - cell.x, y: machine.anchor.y - cell.y },
+            footRot: machine.footRot,
+          };
       return;
     }
     if (event.button === 1 || (event.button === 0 && event.shiftKey)) {
@@ -758,30 +987,31 @@ export function Factory({
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
     setHoverCell(cell);
-    gestureRef.current = {
-      pointerId: event.pointerId,
-      mode: event.button === 2 ? "erase" : "paint",
-      base: layoutRef.current,
-      cells: [cell],
-      last: cell,
-    };
-  }, [camera.x, camera.y, pointerCell]);
+    const base = layoutRef.current;
+    const machine = event.button === 0
+      ? directGestureMachineAt(base, cell.x, cell.y, brush.kind === "erase")
+      : undefined;
+    gestureRef.current = machine === undefined
+      ? {
+          pointerId: event.pointerId,
+          mode: event.button === 2 ? "erase" : "paint",
+          base,
+          cells: [cell],
+          last: cell,
+        }
+      : {
+          pointerId: event.pointerId,
+          mode: "move",
+          base,
+          cells: [cell],
+          last: cell,
+          machineId: machine.id,
+          anchorOffset: { x: machine.anchor.x - cell.x, y: machine.anchor.y - cell.y },
+          footRot: machine.footRot,
+        };
+  }, [brush.kind, camera.x, camera.y, pointerCell]);
 
   const onCanvasPointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    const touchGesture = touchGestureRef.current;
-    if (touchGesture?.pointerId === event.pointerId) {
-      const dx = event.clientX - touchGesture.clientX;
-      const dy = event.clientY - touchGesture.clientY;
-      if (touchGesture.moved || Math.hypot(dx, dy) >= 6) {
-        touchGesture.moved = true;
-        updateCamera((current) => panCamera(
-          { x: touchGesture.startX, y: touchGesture.startY, zoom: current.zoom },
-          { x: dx, y: dy },
-        ));
-      }
-      setHoverCell(pointerCell(event.clientX, event.clientY));
-      return;
-    }
     const panGesture = panGestureRef.current;
     if (panGesture?.pointerId === event.pointerId) {
       updateCamera((current) => panCamera(
@@ -794,6 +1024,10 @@ export function Factory({
     setHoverCell(cell);
     const gesture = gestureRef.current;
     if (cell === null || gesture?.pointerId !== event.pointerId) return;
+    if (gesture.mode === "move") {
+      gestureRef.current = { ...gesture, last: cell };
+      return;
+    }
     const cells = gesture.mode === "paint" && brush.kind === "belt"
       ? routeBeltGesture(gesture.cells, cell, brushDir)
       : appendUniqueCells(gesture.cells, rasterizeGridLine(gesture.last, cell));
@@ -805,20 +1039,8 @@ export function Factory({
   }, [brush.kind, brushDir, pointerCell, updateCamera]);
 
   const finishCanvasGesture = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    const touchGesture = touchGestureRef.current;
-    if (touchGesture?.pointerId === event.pointerId) {
-      touchGestureRef.current = null;
-      if (!touchGesture.moved && touchGesture.cell !== null) {
-        commitLayout(paint(
-          layoutRef.current,
-          touchGesture.cell.x,
-          touchGesture.cell.y,
-          brush,
-          brushDir,
-          footRot,
-        ));
-      }
-      return;
+    if (event.pointerType === "touch" && activeTouchPointerRef.current === event.pointerId) {
+      activeTouchPointerRef.current = null;
     }
     const panGesture = panGestureRef.current;
     if (panGesture?.pointerId === event.pointerId) {
@@ -828,6 +1050,18 @@ export function Factory({
     const gesture = gestureRef.current;
     if (gesture?.pointerId !== event.pointerId) return;
     gestureRef.current = null;
+    if (gesture.mode === "move") {
+      commitLayout(transformPlacedMachine(
+        gesture.base,
+        gesture.machineId,
+        {
+          x: gesture.last.x + gesture.anchorOffset.x,
+          y: gesture.last.y + gesture.anchorOffset.y,
+        },
+        gesture.footRot,
+      ));
+      return;
+    }
     const activeBrush: Brush = gesture.mode === "erase" ? { kind: "erase" } : brush;
     let next = activeBrush.kind === "belt"
       ? paintBeltRoute(gesture.base, gesture.cells, brushDir)
@@ -870,7 +1104,9 @@ export function Factory({
     const copied = brushAt(layoutRef.current, hoverCell);
     if (copied === null) return;
     clipboardRef.current = copied;
-    setClipboardLabel(copied.brush.kind === "machine" ? copied.brush.typeId : copied.brush.kind);
+    setClipboardLabel(copied.brush.kind === "machine"
+      ? machineShortName(copied.brush.typeId)
+      : copied.brush.kind);
     if (cut) {
       commitLayout(paint(layoutRef.current, hoverCell.x, hoverCell.y, { kind: "erase" }, E, 0));
     }
@@ -879,15 +1115,35 @@ export function Factory({
   const pasteHovered = useCallback(() => {
     const copied = clipboardRef.current;
     if (copied === null || hoverCell === null) return;
-    commitLayout(paint(
-      layoutRef.current,
-      hoverCell.x,
-      hoverCell.y,
-      copied.brush,
-      copied.dir,
-      copied.footRot,
-    ));
+    commitLayout(copied.tile === null
+      ? paint(
+          layoutRef.current,
+          hoverCell.x,
+          hoverCell.y,
+          copied.brush,
+          copied.dir,
+          copied.footRot,
+        )
+      : placeFactoryTile(layoutRef.current, hoverCell.x, hoverCell.y, copied.tile));
   }, [commitLayout, hoverCell]);
+
+  const rotateHoveredMachine = useCallback(() => {
+    if (hoverCell === null) return false;
+    const current = layoutRef.current;
+    const machine = machineAt(current, hoverCell.x, hoverCell.y);
+    if (machine === undefined) return false;
+    commitLayout(transformPlacedMachine(
+      current,
+      machine.id,
+      machine.anchor,
+      ((machine.footRot + 1) & 3) as Rotation,
+    ));
+    return true;
+  }, [commitLayout, hoverCell]);
+
+  const rotateHoveredOrActive = useCallback(() => {
+    if (!rotateHoveredMachine()) rotateActiveBrush();
+  }, [rotateActiveBrush, rotateHoveredMachine]);
 
   useEffect(() => {
     if (!active) return;
@@ -900,15 +1156,18 @@ export function Factory({
       { kind: "erase" },
     ];
     const onKeyDown = (event: KeyboardEvent) => {
+      if (document.querySelector('[role="alertdialog"][aria-modal="true"]') !== null) return;
       const target = event.target;
-      if (
-        target instanceof HTMLInputElement ||
+      const textTarget = target instanceof HTMLInputElement ||
         target instanceof HTMLSelectElement ||
         target instanceof HTMLTextAreaElement ||
-        (target instanceof HTMLElement && target.isContentEditable)
-      ) {
-        return;
-      }
+        (target instanceof HTMLElement && target.isContentEditable);
+      const controlTarget = target instanceof Element &&
+        target.closest("button, a, [role]") !== null;
+      const targetKind: FactoryHotkeyTargetKind = textTarget
+        ? "text"
+        : controlTarget ? "control" : "world";
+      if (factoryHotkeyTargetConsumesKey(targetKind, event.key)) return;
       const lower = event.key.toLowerCase();
       if ((event.ctrlKey || event.metaKey) && lower === "z") {
         event.preventDefault();
@@ -939,7 +1198,7 @@ export function Factory({
         }
       } else if (lower === "r") {
         event.preventDefault();
-        rotateActiveBrush();
+        rotateHoveredOrActive();
       } else if (lower === "q") {
         event.preventDefault();
         pickHovered();
@@ -957,36 +1216,68 @@ export function Factory({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [active, catalog, copyHovered, mode, pasteHovered, pickHovered, playing, redoLayout, rotateActiveBrush, state.deadlocked, stepOnce, undoLayout]);
+  }, [active, catalog, copyHovered, mode, pasteHovered, pickHovered, playing, redoLayout, rotateHoveredOrActive, state.deadlocked, stepOnce, undoLayout]);
 
   const brushIsMachine = brush.kind === "machine";
-  const brushLabel = brush.kind === "machine" ? `machine: ${machineUiName(brush.typeId)}` : brush.kind;
+  const brushLabel = brush.kind === "machine" ? machineName(brush.typeId) : brush.kind;
   const rate = throughput === null
     ? "unavailable"
     : throughput.rateDen === 0 ? "0" : `${throughput.rateNum}/${throughput.rateDen}`;
   const sampleSummary = sampleAnalysis.outcome === null
     ? "not runnable"
     : formatFacilityOutcome(sampleAnalysis.outcome);
+  const resetAvailable = mode === "production" && onReset !== undefined && factoryRuntimeMayReset(state);
   const hoveredMachine = hoverCell === null ? undefined : machineAt(layout, hoverCell.x, hoverCell.y);
   const hoveredTile = hoverCell === null
     ? undefined
     : layout.tiles[hoverCell.y * layout.width + hoverCell.x];
   const hoverKind = hoveredMachine === undefined
     ? hoveredTile?.kind ?? "outside"
-    : `machine:${machineUiName(hoveredMachine.def.typeId)}`;
+    : machineName(hoveredMachine.def.typeId);
   const activeGesture = gestureRef.current;
+  const moveGesture = activeGesture?.mode === "move" ? activeGesture : null;
+  const moveMachine = moveGesture?.base.machines.find(
+    (machine) => machine.id === moveGesture.machineId,
+  );
+  const moveAnchor = moveGesture === null
+    ? null
+    : {
+        x: moveGesture.last.x + moveGesture.anchorOffset.x,
+        y: moveGesture.last.y + moveGesture.anchorOffset.y,
+      };
+  const moveBase = moveGesture?.base ?? null;
+  const moveCandidate = moveBase === null || moveMachine === undefined || moveAnchor === null
+    ? null
+    : transformPlacedMachine(moveBase, moveMachine.id, moveAnchor, moveMachine.footRot);
   const beltGestureCandidate = activeGesture?.mode === "paint" && brush.kind === "belt"
     ? paintBeltRoute(activeGesture.base, activeGesture.cells, brushDir)
     : null;
-  const hoverCandidate = beltGestureCandidate ?? (hoverCell === null
+  const idleDirectMachine = activeGesture === null && hoverCell !== null
+    ? directGestureMachineAt(layout, hoverCell.x, hoverCell.y, brush.kind === "erase")
+    : undefined;
+  const hoverCandidate = moveCandidate ?? beltGestureCandidate ?? (idleDirectMachine !== undefined
+    ? layout
+    : hoverCell === null
     ? layout
     : paint(layout, hoverCell.x, hoverCell.y, brush, brushDir, footRot));
-  const hoverPlacementValid = hoverCell === null || brush.kind === "erase"
-    ? true
-    : hoverCandidate !== layout;
+  const moveUnchanged = moveMachine !== undefined && moveAnchor !== null &&
+    moveMachine.anchor.x === moveAnchor.x && moveMachine.anchor.y === moveAnchor.y;
+  const hoverPlacementValid = moveBase !== null
+    ? moveUnchanged || moveCandidate !== moveBase
+    : idleDirectMachine !== undefined || hoverCell === null || brush.kind === "erase" || hoverCandidate !== layout;
   const hoverBuildCost = previewProductionBuildCost(mode, layout, hoverCandidate);
-  const ghostCells = beltGestureCandidate !== null && activeGesture !== null
+  const erasePreviewCells = hoverCell !== null &&
+    (brush.kind === "erase" || activeGesture?.mode === "erase")
+    ? factoryErasePreviewCells(layout, hoverCell.x, hoverCell.y)
+    : null;
+  const ghostCells = moveMachine !== undefined && moveAnchor !== null
+    ? worldCells({ ...moveMachine, anchor: moveAnchor })
+    : beltGestureCandidate !== null && activeGesture !== null
     ? activeGesture.cells
+    : erasePreviewCells !== null
+    ? erasePreviewCells
+    : idleDirectMachine !== undefined
+    ? worldCells(idleDirectMachine)
     : hoverCell === null
     ? []
     : brush.kind === "machine"
@@ -1026,10 +1317,18 @@ export function Factory({
           <div className="transport-bar" aria-label={`${facilityName} controls`}>
             {mode === "production" && (
               <>
-                <button type="button" onClick={() => setPlaying(true)} disabled={playing || state.deadlocked} className={playing ? "is-active" : ""} data-testid="factory-play">▶</button>
-                <button type="button" onClick={() => setPlaying(false)} disabled={!playing} data-testid="factory-pause">Ⅱ</button>
-                <button type="button" onClick={stepOnce} disabled={playing} data-testid="factory-step">▶|</button>
-                <button type="button" onClick={reset} data-testid="factory-reset">↺</button>
+                <button type="button" onClick={() => setPlaying(true)} disabled={playing || state.deadlocked} className={playing ? "is-active" : ""} data-testid="factory-play" aria-label="Play Production" title="Play (Space)">▶</button>
+                <button type="button" onClick={() => setPlaying(false)} disabled={!playing} data-testid="factory-pause" aria-label="Pause Production" title="Pause (Space)">Ⅱ</button>
+                <button type="button" onClick={stepOnce} disabled={playing} data-testid="factory-step" aria-label="Step Production one tick" title="Step one tick (.)">▶|</button>
+                <button
+                  ref={resetTriggerRef}
+                  type="button"
+                  onClick={openResetConfirmation}
+                  disabled={!resetAvailable}
+                  data-testid="factory-reset"
+                  aria-label="Reset Production"
+                  title="Reset Production"
+                >↺</button>
               </>
             )}
             {onCommand !== undefined && commandLabel !== undefined && (
@@ -1058,7 +1357,7 @@ export function Factory({
             onPointerCancel={(event) => {
               if (gestureRef.current?.pointerId === event.pointerId) gestureRef.current = null;
               if (panGestureRef.current?.pointerId === event.pointerId) panGestureRef.current = null;
-              if (touchGestureRef.current?.pointerId === event.pointerId) touchGestureRef.current = null;
+              if (activeTouchPointerRef.current === event.pointerId) activeTouchPointerRef.current = null;
             }}
             onWheel={onCanvasWheel}
             onContextMenu={(event) => event.preventDefault()}
@@ -1068,7 +1367,7 @@ export function Factory({
               {ghostCells.map((cell) => (
                 <div
                   key={`${cell.x},${cell.y}`}
-                  className={`factory-ghost${gestureRef.current?.mode === "erase" ? " is-erase" : ""}${hoverPlacementValid ? "" : " is-invalid"}`}
+                  className={`factory-ghost${gestureRef.current?.mode === "erase" || brush.kind === "erase" ? " is-erase" : ""}${hoverPlacementValid ? "" : " is-invalid"}`}
                   style={{ left: PAD + cell.x * CELL, top: PAD + cell.y * CELL }}
                 />
               ))}
@@ -1104,12 +1403,12 @@ export function Factory({
                   className={`tool-slot${brush.kind === "machine" && brush.typeId === entry.typeId ? " is-selected" : ""}${unlocked ? "" : " is-locked"}`}
                   aria-pressed={brush.kind === "machine" && brush.typeId === entry.typeId}
                   data-testid={`brush-machine-${entry.typeId}`}
-                  title={`${machineUiName(entry.typeId)} · ${entry.speed} ticks/unit`}
+                  title={machineTooltip(entry)}
                 >
                   <span className="tool-symbol">
                     <MachineIcon typeId={entry.typeId} path={entry.path} size={26} />
                   </span>
-                  <span className="tool-name">{machineUiName(entry.typeId)}</span>
+                  <span className="tool-name">{machineShortName(entry.typeId)}</span>
                   {shortcutIndex >= 0 && shortcutIndex < 4 && (
                     <span className="hotkey">{(shortcutIndex + 7) % 10}</span>
                   )}
@@ -1117,6 +1416,7 @@ export function Factory({
               );
             })}
           </div>
+          <span className="toolbelt-more" data-testid="toolbelt-more" aria-hidden="true">›</span>
         </section>
 
         <aside className="inspector factory-inspector" data-testid="factory-inspector">
@@ -1127,7 +1427,7 @@ export function Factory({
               <div><span>Total sink outcomes</span><strong data-testid="factory-produced">{state.producedTotal}</strong></div>
               <div><span>Waste</span><strong data-testid="factory-waste">{waste}</strong></div>
               <div><span>Throughput</span><strong><span data-testid="factory-rate">{rate}</span>/tick</strong></div>
-              <div><span>Bottleneck</span><strong data-testid="factory-bottleneck">{throughput === null ? "unavailable" : throughput.bottleneck === null ? "none" : `#${throughput.bottleneck} (${throughput.bottleneckType})`}</strong></div>
+              <div><span>Bottleneck</span><strong data-testid="factory-bottleneck">{throughput === null ? "unavailable" : throughput.bottleneck === null ? "none" : machineName(throughput.bottleneckType!)}</strong></div>
             </div>
           ) : (
             <div className="factory-metrics facility-mode-summary" role="status">
@@ -1136,14 +1436,14 @@ export function Factory({
               <div><span>Machines</span><strong>{layout.machines.length}</strong></div>
               <div><span>Sample</span><strong data-testid="facility-sample-outcome">{sampleSummary}</strong></div>
               {mode === "pilot" && <div><span>Throughput</span><strong data-testid="pilot-rate">{rate}/tick</strong></div>}
-              {mode === "pilot" && <div><span>Bottleneck</span><strong data-testid="pilot-bottleneck">{throughput === null ? "unavailable" : throughput.bottleneck === null ? "none" : `#${throughput.bottleneck} (${throughput.bottleneckType})`}</strong></div>}
+              {mode === "pilot" && <div><span>Bottleneck</span><strong data-testid="pilot-bottleneck">{throughput === null ? "unavailable" : throughput.bottleneck === null ? "none" : machineName(throughput.bottleneckType!)}</strong></div>}
             </div>
           )}
 
           <div className="panel-section hover-inspector">
             <div className="panel-heading"><h2>Cursor</h2><span className="hotkey">Q pick</span></div>
             <div data-testid="factory-hover-cell">{hoverCell === null ? "outside" : `${hoverCell.x}, ${hoverCell.y}`}</div>
-            <strong data-testid="factory-hover-kind">{hoverKind}</strong>
+            <strong data-testid="factory-hover-kind">{hoverCell === null ? "" : hoverKind}</strong>
           </div>
 
           <div className="panel-section">
@@ -1152,7 +1452,7 @@ export function Factory({
               {brushIsMachine ? `Footprint ${footRot * 90}°` : `Direction ${DIR_LABEL[brushDir]}`}
             </div>
             <div className="panel-actions">
-              <button type="button" onClick={rotateActiveBrush} className="game-control" data-testid="brush-rotate">R · Rotate</button>
+              <button type="button" onClick={rotateHoveredOrActive} className="game-control" data-testid="brush-rotate">R · Rotate</button>
             </div>
             {brushIsMachine && <p>{entryOf(brush.typeId).speed} ticks</p>}
           </div>
@@ -1171,7 +1471,42 @@ export function Factory({
             </div>
           </div>
         </aside>
+        <span className="inspector-more" data-testid="inspector-more" aria-hidden="true">⌄</span>
       </div>
+      {resetPending && (
+        <GameModalPortal>
+          <div
+            className="game-modal-backdrop"
+            onPointerDown={(event) => {
+              if (event.target === event.currentTarget) closeResetConfirmation();
+            }}
+          >
+            <section
+              className="game-modal"
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="factory-reset-title"
+              aria-describedby="factory-reset-warning factory-reset-preserved"
+              data-testid="factory-reset-confirm"
+            >
+              <h2 id="factory-reset-title">Reset Production?</h2>
+              <p id="factory-reset-warning">Runtime and in-flight units will be cleared.</p>
+              <p id="factory-reset-preserved">Inventory and waste will stay.</p>
+              <div className="modal-actions">
+                <button ref={resetCancelRef} type="button" onClick={() => closeResetConfirmation()}>Cancel</button>
+                <button
+                  ref={resetConfirmRef}
+                  type="button"
+                  className="danger-action"
+                  onClick={confirmReset}
+                >
+                  Reset runtime
+                </button>
+              </div>
+            </section>
+          </div>
+        </GameModalPortal>
+      )}
     </div>
   );
 }

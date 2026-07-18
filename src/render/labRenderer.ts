@@ -21,6 +21,7 @@ import {
 import { labAssetUrls } from "./labAssets";
 import { revealedRegionEdges } from "./labRegions";
 import { labTerrainVisual, type CellTerrainVisual, type PortalTerrainVisual } from "./labTerrain";
+import { STATIC_PIXI_OPTIONS, renderStaticFrame } from "./staticPixi";
 
 const BG = 0x111a1b;
 const TOKEN_COLOR = 0x28a9d6;
@@ -91,6 +92,22 @@ function featureTexture(
   return null;
 }
 
+export interface LabFeatureStyle {
+  readonly scale: number;
+  readonly alpha: number;
+  readonly tint: number;
+  readonly targetRing: boolean;
+}
+
+export function labFeatureStyle(
+  kind: CellTerrainVisual["kind"] | PortalTerrainVisual["kind"],
+  rimColor: number,
+): LabFeatureStyle {
+  if (kind === "wall") return { scale: 1.08, alpha: 0.48, tint: 0xffffff, targetRing: false };
+  if (kind === "cure") return { scale: 1.02, alpha: 1, tint: rimColor, targetRing: true };
+  return { scale: 0.88, alpha: 0.88, tint: 0xffffff, targetRing: false };
+}
+
 function drawGridKind(
   grid: Graphics,
   kind: LabGridLineKind,
@@ -140,15 +157,16 @@ function drawPortalMotif(
 ): void {
   const cx = x + cell / 2;
   const cy = y + cell / 2;
-  const markerColor = portalMarkerColor(visual.pairMarker);
+  const marker = visual.pairMarker ?? `unpaired-${visual.role}`;
+  const markerColor = portalMarkerColor(marker);
   terrain.rect(x, y, cell, cell).fill({ color: visual.baseColor, alpha: 1 });
   terrain.circle(cx, cy, cell * 0.34).fill({ color: 0x050817, alpha: 1 });
   terrain.circle(cx, cy, cell * 0.34).stroke({ color: markerColor, width: Math.max(3, cell * 0.08) });
   terrain.circle(cx, cy, cell * 0.2).stroke({ color: visual.rimColor, width: Math.max(2, cell * 0.045), alpha: 0.9 });
 
   let hash = visual.role === "entry" ? 0x1357 : 0x2468;
-  for (let index = 0; index < visual.pairMarker.length; index++) {
-    hash = ((hash * 33) + visual.pairMarker.charCodeAt(index)) >>> 0;
+  for (let index = 0; index < marker.length; index++) {
+    hash = ((hash * 33) + marker.charCodeAt(index)) >>> 0;
   }
   const notchCount = 2 + (hash % 4);
   for (let index = 0; index < notchCount; index++) {
@@ -256,6 +274,7 @@ function drawVisibleMap(
   textures: LabTextures,
   terrain: Graphics,
   featureSprites: readonly Sprite[],
+  featureOverlay: Graphics,
   fogMask: Graphics,
 ): void {
   const cell = LAB_CELL_PIXELS * camera.zoom;
@@ -276,17 +295,33 @@ function drawVisibleMap(
       const texture = featureTexture(textures, visual.kind);
       const sprite = texture === null ? undefined : featureSprites[featureIndex++];
       if (sprite !== undefined && texture !== null) {
+        const style = labFeatureStyle(visual.kind, visual.rimColor);
         sprite.texture = texture;
         sprite.visible = true;
         sprite.anchor.set(0.5);
         sprite.x = screen.x + cell / 2;
         sprite.y = screen.y + cell / 2;
-        sprite.width = cell * (visual.kind === "wall" ? 1.08 : 0.88);
-        sprite.height = cell * (visual.kind === "wall" ? 1.08 : 0.88);
-        sprite.alpha = visual.kind === "wall" ? 0.48 : 0.88;
+        sprite.width = cell * style.scale;
+        sprite.height = cell * style.scale;
+        sprite.alpha = style.alpha;
+        sprite.tint = style.tint;
         sprite.rotation = visual.kind === "wall"
           ? ((x * 7 + y * 11) & 3) * Math.PI / 2
           : 0;
+        if (style.targetRing) {
+          const cx = screen.x + cell / 2;
+          const cy = screen.y + cell / 2;
+          featureOverlay.circle(cx, cy, cell * 0.37)
+            .stroke({ color: 0xffffff, width: Math.max(2, cell * 0.04), alpha: 0.9 });
+          featureOverlay.circle(cx, cy, cell * 0.3)
+            .stroke({ color: visual.rimColor, width: Math.max(3, cell * 0.065), alpha: 1 });
+        }
+      }
+      if (visual.kind !== "portal" && visual.sideEffectOverlay) {
+        featureOverlay.circle(screen.x + cell * 0.78, screen.y + cell * 0.22, cell * 0.12)
+          .fill({ color: 0xd6a6ed, alpha: 0.98 });
+        featureOverlay.circle(screen.x + cell * 0.78, screen.y + cell * 0.22, cell * 0.17)
+          .stroke({ color: 0x6d3f83, width: Math.max(2, cell * 0.04), alpha: 0.98 });
       }
       if (visual.kind !== "empty") {
         const edges = revealedRegionEdges(map, x, y);
@@ -384,6 +419,22 @@ function drawTrail(
   });
 }
 
+export interface LabPreviewTargetBadge {
+  readonly dx: number;
+  readonly dy: number;
+  readonly radius: number;
+  readonly strokeWidth: number;
+}
+
+export function labPreviewTargetBadge(cell: number): LabPreviewTargetBadge {
+  return {
+    dx: cell * 0.3,
+    dy: cell * -0.3,
+    radius: Math.max(4, cell * 0.13),
+    strokeWidth: Math.max(2, cell * 0.045),
+  };
+}
+
 function drawPreviewToken(
   pos: Vec2,
   camera: LabCamera,
@@ -395,8 +446,19 @@ function drawPreviewToken(
   const screen = cellScreen(camera, pos.x, pos.y);
   const cx = screen.x + cell / 2;
   const cy = screen.y + cell / 2;
-  token.circle(cx, cy, cell * 0.38).fill({ color: failed ? 0xee6b6b : 0xffb968, alpha: 0.18 });
-  token.circle(cx, cy, cell * 0.34).stroke({ color: failed ? 0xee6b6b : 0xffb968, width: 3, alpha: 0.96 });
+  const color = failed ? 0xee6b6b : 0xffb968;
+  token.circle(cx, cy, cell * 0.38).fill({ color, alpha: 0.18 });
+  token.circle(cx, cy, cell * 0.34).stroke({ color, width: 3, alpha: 0.96 });
+  const badge = labPreviewTargetBadge(cell);
+  const badgeX = cx + badge.dx;
+  const badgeY = cy + badge.dy;
+  const arm = badge.radius * 0.48;
+  token.circle(badgeX, badgeY, badge.radius)
+    .fill({ color: 0x111a1b, alpha: 0.96 })
+    .stroke({ color, width: badge.strokeWidth, alpha: 1 });
+  token.moveTo(badgeX - arm, badgeY).lineTo(badgeX + arm, badgeY)
+    .moveTo(badgeX, badgeY - arm).lineTo(badgeX, badgeY + arm)
+    .stroke({ color, width: badge.strokeWidth, alpha: 1 });
   art.visible = true;
   art.anchor.set(0.5);
   art.x = cx;
@@ -411,6 +473,7 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
   const textures = await loadLabTextures();
   const app = new Application();
   await app.init({
+    ...STATIC_PIXI_OPTIONS,
     width: LAB_VIEWPORT.width,
     height: LAB_VIEWPORT.height,
     background: BG,
@@ -436,6 +499,7 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
   const route = new Graphics();
   const previewRoute = new Graphics();
   const featureLayer = new Container();
+  const featureOverlay = new Graphics();
   const featureSprites: Sprite[] = [];
   for (let i = 0; i < MAX_VISIBLE_CELLS; i++) {
     const feature = new Sprite(textures.wall);
@@ -459,6 +523,7 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
     fogMask,
     terrain,
     featureLayer,
+    featureOverlay,
     grid,
     route,
     previewRoute,
@@ -475,6 +540,7 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
     render: (mm, drug, view) => {
       grid.clear();
       terrain.clear();
+      featureOverlay.clear();
       route.clear();
       previewRoute.clear();
       token.clear();
@@ -495,7 +561,7 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
       fogOverlay.tilePosition.copyFrom(substrate.tilePosition);
       fogOverlay.tileScale.copyFrom(substrate.tileScale);
       drawLabGrid(map, view.camera, grid);
-      drawVisibleMap(map, view.camera, textures, terrain, featureSprites, fogMask);
+      drawVisibleMap(map, view.camera, textures, terrain, featureSprites, featureOverlay, fogMask);
       drawTrail(view.trail, view.camera, route);
       if (view.previewTrail !== undefined) drawTrail(view.previewTrail, view.camera, previewRoute, true);
       const pos = drug.pos[view.activeMap];
@@ -504,6 +570,7 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
       if (previewPos !== undefined) {
         drawPreviewToken(previewPos, view.camera, previewToken, previewTokenArt, view.previewDrug?.failed ?? false);
       }
+      renderStaticFrame(app);
     },
     destroy: () => {
       if (destroyed) return;
@@ -517,6 +584,7 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
       route.destroy();
       previewRoute.destroy();
       featureLayer.destroy({ children: true });
+      featureOverlay.destroy();
       fogMask.destroy();
       token.destroy();
       haloArt.destroy();

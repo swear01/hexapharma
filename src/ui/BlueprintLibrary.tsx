@@ -15,6 +15,7 @@ import {
   saveLibraryBlueprint,
   type LibraryBlueprint,
 } from "../blueprint/storage";
+import { GameModalPortal } from "./GameModalPortal";
 
 interface BlueprintLibraryProps {
   readonly researchProgram: Template;
@@ -65,7 +66,33 @@ export function BlueprintLibrary({
   const [name, setName] = useState("Untitled layout");
   const [json, setJson] = useState("");
   const [status, setStatus] = useState("Loading library…");
+  const [pendingDelete, setPendingDelete] = useState<LibraryBlueprint | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const deleteTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const deleteConfirmRef = useRef<HTMLButtonElement | null>(null);
+  const deleteCancelRef = useRef<HTMLButtonElement | null>(null);
+
+  const closeDeleteConfirmation = useCallback((restoreFocus = true) => {
+    setPendingDelete(null);
+    if (restoreFocus) window.requestAnimationFrame(() => deleteTriggerRef.current?.focus());
+  }, []);
+  useEffect(() => {
+    if (pendingDelete === null) return;
+    deleteConfirmRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        closeDeleteConfirmation();
+      } else if (event.key === "Tab") {
+        event.preventDefault();
+        if (document.activeElement === deleteConfirmRef.current) deleteCancelRef.current?.focus();
+        else deleteConfirmRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [closeDeleteConfirmation, pendingDelete]);
 
   const refresh = useCallback(async () => {
     try {
@@ -238,12 +265,60 @@ export function BlueprintLibrary({
                 </>
               )}
               <button type="button" onClick={() => void exportEntry(entry)}>Download</button>
-              <button type="button" onClick={() => void remove(entry)} aria-label={`Delete ${entry.blueprint.name}`}>×</button>
+              <button
+                type="button"
+                onClick={(event) => {
+                  deleteTriggerRef.current = event.currentTarget;
+                  setPendingDelete(entry);
+                }}
+                aria-label={`Delete ${entry.blueprint.name}`}
+              >×</button>
             </div>
           </article>;
         })}
       </section>
       <output className="blueprint-status" role="status" data-testid="blueprint-status">{status}</output>
+      {pendingDelete !== null && (
+        <GameModalPortal>
+          <div
+            className="game-modal-backdrop"
+            onPointerDown={(event) => {
+              if (event.target === event.currentTarget) closeDeleteConfirmation();
+            }}
+          >
+            <section
+              className="game-modal"
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="blueprint-delete-title"
+              aria-describedby="blueprint-delete-warning"
+              data-testid="blueprint-delete-confirm"
+            >
+              <h2 id="blueprint-delete-title">Delete blueprint?</h2>
+              <p id="blueprint-delete-warning">
+                Permanently remove “{pendingDelete.blueprint.name}” from the cross-save Library.
+              </p>
+              <div className="modal-actions">
+                <button
+                  ref={deleteCancelRef}
+                  type="button"
+                  onClick={() => closeDeleteConfirmation()}
+                >Cancel</button>
+                <button
+                  ref={deleteConfirmRef}
+                  type="button"
+                  className="danger-action"
+                  onClick={() => {
+                    const entry = pendingDelete;
+                    closeDeleteConfirmation(false);
+                    void remove(entry);
+                  }}
+                >Delete blueprint</button>
+              </div>
+            </section>
+          </div>
+        </GameModalPortal>
+      )}
     </div>
   );
 }

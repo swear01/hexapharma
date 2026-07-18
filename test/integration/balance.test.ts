@@ -2,11 +2,11 @@
  * Balance invariants (design §5 difficulty→price, §8 anti-degeneracy).
  *
  * These tests validate the economy/mapgen balance, not any single module's
- * contract: difficulties stay in band, price rises with difficulty, and
+ * contract: difficulties stay in band, the normalized price contribution rises with difficulty, and
  * spamming one drug is never the optimal play (diminishing returns make a
  * diversified portfolio out-earn single-disease spam).
  *
- * Kept FAST: small maps + a modest seed count (the solver BFS is (W·H)^N).
+ * Kept fast with a modest seed count on the active one-Atlas dimensions.
  */
 import { describe, it, expect } from "vitest";
 import fc from "fast-check";
@@ -16,15 +16,15 @@ import { nextUnitPrice, sellUnit } from "../../src/sim/economy/index";
 
 const BAND = { min: 2, max: 8 } as const;
 
-/** Small, fast generation options — keeps the (W·H)^N solver BFS tractable. */
+/** Representative one-Atlas generation options with a narrower test difficulty band. */
 function opts(seed: number): GenOptions {
   return {
     seed,
-    nMaps: 2,
-    width: 32,
-    height: 32,
+    nMaps: 1,
+    width: 63,
+    height: 63,
     catalog: DEFAULT_CATALOG,
-    diseaseCount: 2,
+    diseaseCount: 4,
     difficulty: BAND,
   };
 }
@@ -52,6 +52,20 @@ describe("balance: difficulty band (INV-11)", () => {
   });
 });
 
+describe("balance: generated-content diversity", () => {
+  it("varies whole reference sets and cure sets across the representative seeds", () => {
+    const levels = sweep(SEEDS).map(({ level }) => level);
+    const referenceSets = new Set(levels.map((level) => level.diseases.map((disease) =>
+      disease.reference.steps.map((step) => step.typeId).join(","),
+    ).join("|")));
+    const cureSets = new Set(levels.map((level) => level.diseases.map((disease) =>
+      `${disease.map}:${disease.node.x},${disease.node.y}`,
+    ).join("|")));
+    expect(referenceSets.size).toBeGreaterThanOrEqual(Math.ceil(SEEDS.length * 0.75));
+    expect(cureSets.size).toBeGreaterThanOrEqual(Math.ceil(SEEDS.length * 0.75));
+  });
+});
+
 describe("balance: price rises with difficulty (§5, INV-12)", () => {
   it("difficultyToBasePrice is monotonic non-decreasing in difficulty (property)", () => {
     fc.assert(
@@ -68,12 +82,18 @@ describe("balance: price rises with difficulty (§5, INV-12)", () => {
     );
   });
 
-  it("across generated levels, median basePrice of harder diseases ≥ that of easier ones", () => {
+  it("keeps the generated difficulty contribution monotonic after reference cost", () => {
     const byDiff = new Map<number, number[]>();
     for (const { level } of sweep(SEEDS)) {
       for (const d of level.diseases) {
+        const referenceCost = d.reference.steps.reduce((total, step) => {
+          const entry = DEFAULT_CATALOG.find((candidate) => candidate.typeId === step.typeId);
+          if (entry === undefined) throw new Error(`missing generated machine ${step.typeId}`);
+          return total + entry.cost;
+        }, 0);
+        expect(d.basePrice).toBe(difficultyToBasePrice(d.difficulty, referenceCost));
         const arr = byDiff.get(d.difficulty) ?? [];
-        arr.push(d.basePrice);
+        arr.push(d.basePrice - referenceCost * 2);
         byDiff.set(d.difficulty, arr);
       }
     }
@@ -83,7 +103,6 @@ describe("balance: price rises with difficulty (§5, INV-12)", () => {
       return s.length % 2 === 1 ? s[m]! : (s[m - 1]! + s[m]!) / 2;
     };
     const diffs = [...byDiff.keys()].sort((a, b) => a - b);
-    // Need at least two distinct difficulty levels to compare.
     expect(diffs.length).toBeGreaterThanOrEqual(2);
     let prev = -Infinity;
     for (const d of diffs) {

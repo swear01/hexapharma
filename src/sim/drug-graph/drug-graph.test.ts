@@ -379,6 +379,21 @@ describe("path stepping", () => {
 });
 
 describe("evaluation and reveal", () => {
+  it("reports a side-effect overlay on a Cure cell", () => {
+    const map = withCell(emptyMap(5, 5, { x: 1, y: 2 }), 2, 2, CellKind.Cure, {
+      cureId: 17,
+      sideEffectId: 29,
+    });
+    const maps = multiMap(map);
+
+    expect(evaluate(maps, initialState(maps), template(machine([east])))).toEqual({
+      failed: false,
+      final: [{ x: 2, y: 2 }],
+      cured: [17],
+      sideEffects: [29],
+    });
+  });
+
   it("evaluates only final Cure and SideEffect cells", () => {
     const curedMap = withCell(emptyMap(5, 5, { x: 1, y: 2 }), 2, 2, CellKind.Cure, {
       cureId: 17,

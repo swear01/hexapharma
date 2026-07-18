@@ -16,6 +16,7 @@ export interface CellTerrainVisual {
   readonly baseColor: number;
   readonly rimColor: number;
   readonly opaque: true;
+  readonly sideEffectOverlay: boolean;
 }
 
 export interface PortalTerrainVisual {
@@ -25,8 +26,8 @@ export interface PortalTerrainVisual {
   readonly baseColor: number;
   readonly rimColor: number;
   readonly opaque: true;
-  readonly pairMarker: string;
-  readonly destination: Vec2;
+  readonly pairMarker: string | null;
+  readonly destination: Vec2 | null;
   readonly direction: Vec2 | null;
 }
 
@@ -38,7 +39,23 @@ const EMPTY_TERRAIN_VISUAL: CellTerrainVisual = {
   baseColor: 0xdce4dc,
   rimColor: 0xa4b6b2,
   opaque: true,
+  sideEffectOverlay: false,
 };
+
+const CURE_PALETTE = [
+  { baseColor: 0x1d7c5b, rimColor: 0x75f0b8 },
+  { baseColor: 0x245b8f, rimColor: 0x83cfff },
+  { baseColor: 0x8a5a22, rimColor: 0xffd27d },
+  { baseColor: 0x7d3f70, rimColor: 0xf2a7dd },
+  { baseColor: 0x3f7480, rimColor: 0x9ce8ed },
+  { baseColor: 0x6e6f2d, rimColor: 0xdde779 },
+  { baseColor: 0x75452c, rimColor: 0xf2a477 },
+  { baseColor: 0x514f8c, rimColor: 0xbab5ff },
+] as const;
+
+function cureColors(id: number): (typeof CURE_PALETTE)[number] {
+  return CURE_PALETTE[(id >= 0 ? id : 0) % CURE_PALETTE.length] ?? CURE_PALETTE[0];
+}
 
 const portalExitLookupCache = new WeakMap<Int32Array, Int32Array>();
 
@@ -56,6 +73,7 @@ function portalVisual(
     throw new Error(`Lab portal ${entryIndex} has an invalid same-layer destination`);
   }
   const role = index === entryIndex ? "entry" : "exit";
+  const pairKnown = revealed(map, entryIndex) && revealed(map, destinationIndex);
   const destination: Vec2 = {
     x: destinationIndex % map.width,
     y: Math.floor(destinationIndex / map.width),
@@ -63,7 +81,7 @@ function portalVisual(
   let direction: Vec2 | null = null;
   const fromX = entryIndex % map.width;
   const fromY = Math.floor(entryIndex / map.width);
-  if (destination.x !== fromX || destination.y !== fromY) {
+  if (pairKnown && (destination.x !== fromX || destination.y !== fromY)) {
     direction = { x: Math.sign(destination.x - fromX), y: Math.sign(destination.y - fromY) };
   }
   return {
@@ -73,8 +91,8 @@ function portalVisual(
     baseColor: 0x17235e,
     rimColor: 0x67e8f9,
     opaque: true,
-    pairMarker: `P${entryIndex}-${destinationIndex}`,
-    destination,
+    pairMarker: pairKnown ? `P${entryIndex}-${destinationIndex}` : null,
+    destination: pairKnown ? destination : null,
     direction,
   };
 }
@@ -123,6 +141,7 @@ export function labTerrainVisual(map: EffectMap, x: number, y: number): LabTerra
         baseColor: 0x1b2528,
         rimColor: 0xf4d58d,
         opaque: true,
+        sideEffectOverlay: false,
       };
     case CellKind.Abyss:
       return {
@@ -131,6 +150,7 @@ export function labTerrainVisual(map: EffectMap, x: number, y: number): LabTerra
         baseColor: 0x020406,
         rimColor: 0x8eb8cc,
         opaque: true,
+        sideEffectOverlay: false,
       };
     case CellKind.Swamp:
       return {
@@ -139,6 +159,7 @@ export function labTerrainVisual(map: EffectMap, x: number, y: number): LabTerra
         baseColor: 0x315f37,
         rimColor: 0xb5d56a,
         opaque: true,
+        sideEffectOverlay: false,
       };
     case CellKind.Portal: {
       const destination = map.portalTo[index];
@@ -152,15 +173,19 @@ export function labTerrainVisual(map: EffectMap, x: number, y: number): LabTerra
         baseColor: 0x6d3f83,
         rimColor: 0xd6a6ed,
         opaque: true,
+        sideEffectOverlay: false,
       };
-    case CellKind.Cure:
+    case CellKind.Cure: {
+      const colors = cureColors(map.cureId[index] ?? -1);
       return {
         kind: "cure",
         motif: "cure-receptor",
-        baseColor: 0x1d7c5b,
-        rimColor: 0x75f0b8,
+        baseColor: colors.baseColor,
+        rimColor: colors.rimColor,
         opaque: true,
+        sideEffectOverlay: (map.sideEffectId[index] ?? -1) >= 0,
       };
+    }
     default:
       return EMPTY_TERRAIN_VISUAL;
   }

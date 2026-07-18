@@ -1,14 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
   defaultGenOptions,
+  parseNewGameSeed,
+  playerFacingIntentError,
   researchCandidateTrails,
   researchDisplayDrug,
   researchKeyboardAction,
   researchPlanningMap,
   researchPlanningTrails,
+  researchProgramCost,
   researchTrailsForProgram,
   transientSaveMessage,
 } from "./Game";
+import { researchOutcomeText } from "./App";
 import { CellKind, DEFAULT_CATALOG, type MultiMap } from "../sim/phase0_interfaces";
 import { MAX_GAME_MAP_CELLS, MAX_GAME_MAP_DIMENSION } from "../sim/phase0_interfaces";
 import { generate } from "../sim/mapgen";
@@ -20,14 +24,41 @@ describe("default Lab world options", () => {
       nMaps: 1,
       width: 63,
       height: 63,
-      diseaseCount: 1,
+      diseaseCount: 4,
     });
+    expect(defaultGenOptions(14).catalog).toEqual(DEFAULT_CATALOG);
   });
 
   it("authorizes the 63×63 world without opening the full public mapgen bound", () => {
     expect(MAX_GAME_MAP_DIMENSION).toBe(64);
     expect(MAX_GAME_MAP_CELLS).toBe(4_096);
     expect(63 * 63).toBeLessThanOrEqual(MAX_GAME_MAP_CELLS);
+  });
+
+  it("accepts only canonical unsigned 32-bit New Game seeds", () => {
+    expect(parseNewGameSeed("0")).toBe(0);
+    expect(parseNewGameSeed("4294967295")).toBe(0xffff_ffff);
+    expect(parseNewGameSeed("")).toBeNull();
+    expect(parseNewGameSeed("01")).toBeNull();
+    expect(parseNewGameSeed("-1")).toBeNull();
+    expect(parseNewGameSeed("4294967296")).toBeNull();
+    expect(parseNewGameSeed("1.5")).toBeNull();
+  });
+
+  it("translates technical intent details into player-facing errors", () => {
+    expect(playerFacingIntentError(new Error('game intent: machine "skew" is locked')))
+      .toBe("Zigzag still is locked. Unlock it in Technology.");
+    expect(playerFacingIntentError(new Error('game intent: machine "dilute" definition does not match catalog')))
+      .toBe("Loop vat has incompatible layout data.");
+    expect(playerFacingIntentError(new Error("game intent: machine 7 footprint overlaps another machine")))
+      .toBe("Machine footprint overlaps another machine.");
+    expect(playerFacingIntentError(new Error("game intent: product 19 is duplicated, unavailable, or not a cure")))
+      .toBe("That product is no longer available to ship.");
+    expect(playerFacingIntentError(new Error("game intent: Research shot requires 42 cash")))
+      .toBe("Need $42 to Dispense.");
+    expect(playerFacingIntentError(new Error("game intent: Production construction requires 42 cash")))
+      .toBe("Need $42 to build in Production.");
+    expect(playerFacingIntentError(new Error("another failure"))).toBe("another failure");
   });
 
   it("never exposes cross-layer phase exchange", () => {
@@ -53,7 +84,7 @@ describe("default Lab world options", () => {
     expect(displayed.pos[0]).toEqual(level.mm.maps[0]!.start);
   });
 
-  it("hides an unknown portal from planning and activates it after entry discovery", () => {
+  it("keeps a portal out of planning until both endpoints are discovered", () => {
     const width = 7;
     const cells = width * width;
     const cell = new Uint8Array(cells);
@@ -83,8 +114,7 @@ describe("default Lab world options", () => {
     const entryDiscovered = new Uint8Array(cells);
     entryDiscovered[3 * width + 4] = 1;
     expect(researchPlanningTrails(mm, [entryDiscovered], start, program)[0]).toEqual([
-      { x: 3, y: 3 }, { x: 4, y: 3 }, null,
-      { x: 1, y: 1 }, { x: 2, y: 1 }, { x: 2, y: 2 },
+      { x: 3, y: 3 }, { x: 4, y: 3 }, { x: 5, y: 3 }, { x: 5, y: 4 },
     ]);
     const known = Uint8Array.from(entryDiscovered);
     known[1 * width + 1] = 1;
@@ -181,9 +211,37 @@ describe("default Lab world options", () => {
     expect(researchKeyboardAction("x")).toBeNull();
   });
 
+  it("quotes each complete stamp and the full shot before dispensing", () => {
+    const push = DEFAULT_CATALOG.find((entry) => entry.typeId === "push")!;
+    const shear = DEFAULT_CATALOG.find((entry) => entry.typeId === "shear")!;
+
+    expect(researchProgramCost({ steps: [] })).toBe(0);
+    expect(researchProgramCost({ steps: [push, shear, push] })).toBe(
+      push.cost + shear.cost + push.cost,
+    );
+  });
+
+  it("reports side effects only as part of a resolved shot outcome", () => {
+    expect(researchOutcomeText(null, null)).toBeNull();
+    expect(researchOutcomeText(null, 1)).toBe("Step 2");
+    expect(researchOutcomeText({
+      failed: false,
+      final: [{ x: 7, y: 4 }],
+      cured: [0],
+      sideEffects: [101, 102],
+    }, null)).toBe("Cure Disease 1 · 2 side effects");
+    expect(researchOutcomeText({
+      failed: false,
+      final: [{ x: 7, y: 4 }],
+      cured: [],
+      sideEffects: [],
+    }, null)).toBe("No cure · No side effects");
+  });
+
   it("auto-dismisses successful save notices but keeps recovery errors visible", () => {
     expect(transientSaveMessage("Saved slot 1.")).toBe(true);
     expect(transientSaveMessage("Loaded slot 1.")).toBe(true);
+    expect(transientSaveMessage("Started seed 15.")).toBe(true);
     expect(transientSaveMessage("Could not load slot 1: invalid save")).toBe(false);
     expect(transientSaveMessage("Save v5 is unsupported")).toBe(false);
   });

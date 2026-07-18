@@ -13,6 +13,13 @@ import { serializeGame } from "../../src/sim/save";
 import { CellKind, type Vec2 } from "../../src/sim/phase0_interfaces";
 import { defaultGenOptions } from "../../src/ui/Game";
 
+async function confirmLoad(page: Page): Promise<void> {
+  await page.getByTestId("load").click();
+  const dialog = page.getByRole("alertdialog", { name: "Load saved game?" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Load saved game" }).click();
+}
+
 const REGION_SEED = 14;
 const START_CELL = { x: 31, y: 31 } as const;
 const REGION_FOCUS = { x: 8, y: 8 } as const;
@@ -290,7 +297,7 @@ test("Wall, Abyss, Swamp, and Portal use distinct renderer motifs", async ({
   await page.goto("/");
   await page.evaluate((save) => localStorage.setItem("hexapharma.save.slot.0", save), fixture.save);
   await page.reload();
-  await page.getByTestId("load").click();
+  await confirmLoad(page);
   const frame = page.getByTestId("lab-map-frame");
   await expect(frame.locator("canvas")).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId("lab-render-error")).toHaveCount(0);

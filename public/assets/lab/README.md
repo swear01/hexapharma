@@ -13,7 +13,7 @@ game.
   geometry, so their void rim, viscous drag marks, and portal destination markers remain
   unmistakable at every zoom without relying on interchangeable bitmap decoration.
 - Violet colonies communicate side effects.
-- Gold/cyan receptors communicate therapeutic destinations.
+- Gold/cyan receptors plus runtime high-contrast target rings communicate discovered therapeutic destinations.
 - The capsule and cyan halo keep the player's current position legible; the runtime draws route history separately.
 - Defocused navy particulate fog marks unsurveyed space while walls remain visible above it.
 

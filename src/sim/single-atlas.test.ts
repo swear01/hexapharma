@@ -45,6 +45,16 @@ describe("single Research Atlas authority", () => {
     }, 200, 0)).toThrow(/single Research Atlas/i);
   });
 
+  it("supports several independent diseases on the one active Atlas", () => {
+    const game = createGameState({
+      ...singleAtlasOptions,
+      diseaseCount: 3,
+    }, 800, 0);
+
+    expect(game.genOptions.nMaps).toBe(1);
+    expect(game.genOptions.diseaseCount).toBe(3);
+  });
+
   it("has no layer or map-depth patents", () => {
     expect(DEFAULT_PATENTS.map((node) => node.id)).not.toEqual(
       expect.arrayContaining(["new-map", "new-map-4", "deep-map-4"]),

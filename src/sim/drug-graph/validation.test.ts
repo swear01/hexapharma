@@ -56,3 +56,79 @@ describe("directed portal authority", () => {
     expect(() => validateEffectMap(level)).toThrow(/portal destination.*unique/i);
   });
 });
+
+describe("effect map authority", () => {
+  it.each([
+    ["cell", (level: EffectMap) => ({ ...level, cell: new Int16Array(level.cell.length) as unknown as Uint8Array })],
+    ["cureId", (level: EffectMap) => ({ ...level, cureId: new Int32Array(level.cureId.length) as unknown as Int16Array })],
+    ["sideEffectId", (level: EffectMap) => ({ ...level, sideEffectId: new Int16Array(level.sideEffectId.length) as unknown as Int32Array })],
+    ["portalTo", (level: EffectMap) => ({ ...level, portalTo: new Int16Array(level.portalTo.length) as unknown as Int32Array })],
+    ["fog", (level: EffectMap) => ({ ...level, fog: new Int16Array(level.fog.length) as unknown as Uint8Array })],
+  ] as const)("requires %s to use its exact typed-array authority", (field, change) => {
+    expect(() => validateEffectMap(change(map()))).toThrow(new RegExp(field, "i"));
+  });
+
+  it.each(["cell", "cureId", "sideEffectId", "portalTo", "fog"] as const)(
+    "requires %s length to equal the map area",
+    (field) => {
+      const level = map();
+      const shortened = level[field].slice(0, -1);
+      expect(() => validateEffectMap({ ...level, [field]: shortened })).toThrow(
+        new RegExp(`${field}.*width\\*height`, "i"),
+      );
+    },
+  );
+
+  it("requires origin and start to be in-bounds integer coordinates", () => {
+    const level = map();
+    for (const invalid of [
+      { ...level, origin: { x: 1.5, y: 1 } },
+      { ...level, origin: { x: level.width, y: 1 } },
+      { ...level, start: { x: 1, y: -1 } },
+      { ...level, start: { x: Number.MAX_SAFE_INTEGER + 1, y: 1 } },
+    ]) {
+      expect(() => validateEffectMap(invalid)).toThrow(/origin|start/i);
+    }
+  });
+
+  it("rejects unknown cell codes and non-binary fog", () => {
+    const invalidCell = map();
+    invalidCell.cell[0] = 255;
+    expect(() => validateEffectMap(invalidCell)).toThrow(/cell.*kind/i);
+
+    const invalidFog = map();
+    invalidFog.fog[0] = 2;
+    expect(() => validateEffectMap(invalidFog)).toThrow(/fog.*0 or 1/i);
+  });
+
+  it("requires Cure and SideEffect metadata while preserving their overlap", () => {
+    const missingCure = map();
+    missingCure.cell[0] = CellKind.Cure;
+    expect(() => validateEffectMap(missingCure)).toThrow(/Cure.*cureId/i);
+
+    const strayCure = map();
+    strayCure.cureId[0] = 3;
+    expect(() => validateEffectMap(strayCure)).toThrow(/non-Cure.*cureId/i);
+
+    const missingSideEffect = map();
+    missingSideEffect.cell[0] = CellKind.SideEffect;
+    expect(() => validateEffectMap(missingSideEffect)).toThrow(/SideEffect.*sideEffectId/i);
+
+    const straySideEffect = map();
+    straySideEffect.sideEffectId[0] = 4;
+    expect(() => validateEffectMap(straySideEffect)).toThrow(/sideEffectId.*Cure|SideEffect/i);
+
+    const invalidNegativeIds = map();
+    invalidNegativeIds.cureId[0] = -2;
+    expect(() => validateEffectMap(invalidNegativeIds)).toThrow(/cureId.*-1/i);
+    invalidNegativeIds.cureId[0] = -1;
+    invalidNegativeIds.sideEffectId[0] = -2;
+    expect(() => validateEffectMap(invalidNegativeIds)).toThrow(/sideEffectId.*-1/i);
+
+    const overlap = map();
+    overlap.cell[0] = CellKind.Cure;
+    overlap.cureId[0] = 3;
+    overlap.sideEffectId[0] = 4;
+    expect(() => validateEffectMap(overlap)).not.toThrow();
+  });
+});

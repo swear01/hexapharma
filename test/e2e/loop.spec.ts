@@ -1,5 +1,9 @@
 import { expect, test } from "@playwright/test";
-import { applyGameIntent, createGameState } from "../../src/sim/game";
+import {
+  DEFAULT_STARTING_CASH,
+  applyGameIntent,
+  createGameState,
+} from "../../src/sim/game";
 import { generate } from "../../src/sim/mapgen";
 import { compileEntitledPrototype } from "../../src/sim/recipe";
 import { serializeGame } from "../../src/sim/save";
@@ -7,6 +11,13 @@ import { defaultGenOptions } from "../../src/ui/Game";
 import { BASE_GAME_FACTORY_HEIGHT, BASE_GAME_FACTORY_WIDTH } from "../../src/sim/phase0_interfaces";
 
 test.setTimeout(60_000);
+
+async function confirmLoad(page: import("@playwright/test").Page): Promise<void> {
+  await page.getByTestId("load").click();
+  const dialog = page.getByRole("alertdialog", { name: "Load saved game?" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Load saved game" }).click();
+}
 
 function preparedFacilitiesSave(seed = 14): string {
   const options = defaultGenOptions(seed);
@@ -16,7 +27,7 @@ function preparedFacilitiesSave(seed = 14): string {
     BASE_GAME_FACTORY_WIDTH,
     BASE_GAME_FACTORY_HEIGHT,
   ).layout;
-  let game = createGameState(options, 10_000, 100);
+  let game = createGameState(options, DEFAULT_STARTING_CASH, 0);
   game = applyGameIntent(game, { kind: "setResearchProgram", program });
   game = applyGameIntent(game, { kind: "setPilotLayout", layout });
   return serializeGame(game);
@@ -26,7 +37,7 @@ async function loadPrepared(page: import("@playwright/test").Page, seed = 14): P
   await page.goto("/");
   await page.evaluate((save) => localStorage.setItem("hexapharma.save.slot.0", save), preparedFacilitiesSave(seed));
   await page.reload();
-  await page.getByTestId("load").click();
+  await confirmLoad(page);
 }
 
 test("full loop: paid Research → independent Pilot → timed Production → Market → Technology", async ({
@@ -46,7 +57,7 @@ test("full loop: paid Research → independent Pilot → timed Production → Ma
   await expect(page.getByTestId("factory-produced")).not.toHaveText("0", { timeout: 10_000 });
   await page.getByTestId("factory-pause").click();
   await page.getByTestId("view-market").click();
-  const sell = page.getByRole("button", { name: /ship one/i }).first();
+  const sell = page.getByRole("button", { name: /ship best/i }).first();
   await expect(sell).toBeEnabled();
   const cashBeforeSale = Number(await page.getByTestId("cash").textContent());
   await sell.click();
@@ -54,7 +65,7 @@ test("full loop: paid Research → independent Pilot → timed Production → Ma
     .toBeGreaterThan(cashBeforeSale);
   await page.getByTestId("view-technology").click();
   await expect(page.getByTestId("technology-drawer")).toBeVisible();
-  await expect(page.getByTestId("research")).not.toHaveText("100");
+  await expect(page.getByTestId("research")).toHaveText("1");
 });
 
 test("Blueprint Library persists Pilot layouts independently of save-slot loading", async ({ page }) => {
@@ -79,12 +90,38 @@ test("Blueprint Library persists Pilot layouts independently of save-slot loadin
     localStorage.removeItem("hexapharma.save.checkpoint.0");
     localStorage.setItem("hexapharma.save.slot.0", save);
   }, preparedFacilitiesSave(15));
-  await page.getByTestId("load").click();
+  await confirmLoad(page);
   await expect(page.getByTestId("seed")).toHaveText("15");
   await expect(page.getByText("Starter plant", { exact: true })).toBeVisible();
   await page.reload();
   await page.getByTestId("view-blueprints").click();
   await expect(page.getByText("Starter plant", { exact: true })).toBeVisible();
+});
+
+test("deleting a cross-save Blueprint requires an explicit cancelable confirmation", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.getByTestId("view-blueprints").click();
+  await page.getByTestId("blueprint-name").fill("Keep me");
+  await page.getByTestId("blueprint-save-production").click();
+  const card = page.locator(".blueprint-card").filter({ hasText: "Keep me" });
+  await expect(card).toBeVisible();
+
+  await card.getByRole("button", { name: "Delete Keep me" }).click();
+  const confirmation = page.getByTestId("blueprint-delete-confirm");
+  await expect(confirmation).toBeVisible();
+  await expect(confirmation.getByRole("button", { name: "Delete blueprint" })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(confirmation.getByRole("button", { name: "Cancel" })).toBeFocused();
+  await expect(confirmation).toContainText(/permanently remove.*cross-save library/i);
+  await confirmation.getByRole("button", { name: "Cancel" }).click();
+  await expect(card).toBeVisible();
+  await expect(card.getByRole("button", { name: "Delete Keep me" })).toBeFocused();
+
+  await card.getByRole("button", { name: "Delete Keep me" }).click();
+  await confirmation.getByRole("button", { name: "Delete blueprint" }).click();
+  await expect(card).toHaveCount(0);
+  await expect(page.getByTestId("blueprint-status")).toContainText("Deleted");
 });
 
 test("an expanded-floor Blueprint stays readable on a smaller Production floor", async ({ page }) => {

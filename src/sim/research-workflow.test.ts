@@ -62,6 +62,22 @@ function emptyPilotLayout(): FactoryLayout {
 }
 
 describe("ResearchProgram workflow", () => {
+  it("starts in a centered 5x5 clearing and the first available stamp reveals new ground", () => {
+    const entry = DEFAULT_CATALOG[0]!;
+    let game = createGameState(options, 500, 0);
+    const before = game.fog[0]!.reduce((sum, value) => sum + value, 0);
+    expect(before).toBe(25);
+
+    game = dispatch(game, {
+      kind: "setResearchProgram",
+      program: { steps: [{ typeId: entry.typeId, path: entry.path }] },
+    });
+    game = dispatch(game, { kind: "beginResearchShot" });
+    game = dispatch(game, { kind: "advanceResearchShot" });
+
+    expect(game.fog[0]!.reduce((sum, value) => sum + value, 0)).toBeGreaterThan(before);
+  });
+
   it("stores a program rather than a physical factory floor", () => {
     const { program } = reference();
     const initial = createGameState(options, 500, 0);

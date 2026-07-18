@@ -14,13 +14,15 @@ Market / Technology / Blueprints
 ```
 
 - F1／F2／F3 分別開啟 Research、Pilot Plant、Production；M／T／B 開啟抽屜。
-- Atlas 的牆、深淵、沼澤與成對傳送門即使尚未探索也可見，且會影響路徑預覽；治療區與副作用區仍藏在霧下。
-- Research 機器只使用 catalog 定義的完整路徑；不能截短。不同怪異形狀的組合就是探索謎題。
+- 新局在 Atlas 中心揭露 5×5；只有牆可穿霧看見。深淵、沼澤、成對傳送門、治療區與副作用區都要實際出藥揭露。
+- 預設同一張 Atlas 有 4 種獨立疾病。Research 機器只使用 catalog 定義的完整路徑；不能截短。選好機器後必須點 candidate endpoint 才加入，空白地圖點擊不會改 program。
+- ordered route strip 顯示每步與總出藥費，可逐步移除；出藥時 camera 跟隨藥物，結果同時回報已知 cure 與 side effects。
 - Production 新局即有空白 24×12 場地，不要求先使用 Pilot。傳送帶 $2、分流／合流 $8、來源 $12、出口 $6、機器是每單位處理成本的 10 倍；拆除不退款。
 - Pilot Plant 免費且沒有時間，只是可選的設計空間。完成後可按標示價格建到 Production。
 - 傳送帶依真實連線顯示端點、直線、轉角、T 字與十字，拖曳轉彎會逐格設定正確方向。
 - Blueprint v3 有 `research-program` 與通用 `factory-layout`；工廠藍圖可免費開到 Pilot，或付費建到 Production，Library 跨存檔保存。
 - Save v7 僅保證同 content build 內正確；舊開發版存檔直接拒絕，不做 migration。
+- 正常新局有 $1000，必須能從人工 Research 經付費建廠走到第一次出售。每種疾病的需求獨立並逐次按 `floor(9/10)` 衰減至 0；Market 優先出售乾淨、低成本且仍有利潤的實體產品。
 
 詳細操作見 [玩家指南](docs/player-guide.md)，設計與正確性規格見 [docs/design.md](docs/design.md) 與 [docs/invariants.md](docs/invariants.md)。
 
@@ -34,7 +36,7 @@ Pixi renderer     → read-only drawing
 Pure TS sim core  → deterministic path/mapgen/tick/economy/save/replay
 ```
 
-`src/sim/**` 禁止 Pixi／React／DOM。mapgen 與 sim 不用 `Math.random()` 或 wall-clock；Production 熱迴圈使用固定容量資料結構。solver 只供 tests/tools，絕不進遊戲內自動解。
+`src/sim/**` 禁止 Pixi／React／DOM。mapgen 先由 seed 建地形，再在地形上 constructive 地建立彼此不同的疾病與解；不保留跨 seed 通用的安全走廊。mapgen 與 sim 不用 `Math.random()` 或 wall-clock；Production 熱迴圈使用固定容量資料結構。solver 只供 tests/tools 的 minimum-solution／平衡檢查，絕不進遊戲內自動解。
 
 ## 啟動
 

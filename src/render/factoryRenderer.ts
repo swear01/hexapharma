@@ -31,6 +31,7 @@ import {
   type FactoryTransportEdge,
   type FactoryTransportTopology,
 } from "./factoryTransportTopology";
+import { STATIC_PIXI_OPTIONS, renderStaticFrame } from "./staticPixi";
 
 // ───────────────────────────── layout constants ─────────────────────────────
 
@@ -516,7 +517,7 @@ export interface FactoryRenderer {
 export async function createFactoryRenderer(layout: FactoryLayout): Promise<FactoryRenderer> {
   const { width, height } = canvasSize(layout);
   const app = new Application();
-  await app.init({ width, height, background: BG, antialias: true });
+  await app.init({ ...STATIC_PIXI_OPTIONS, width, height, background: BG, antialias: true });
 
   const cells = new Graphics();
   const flow = new Graphics();
@@ -580,6 +581,7 @@ export async function createFactoryRenderer(layout: FactoryLayout): Promise<Fact
         tokens.circle(cx, cy, r + 4).stroke({ color: TOKEN_PROC, width: 2 });
       }
     }
+    renderStaticFrame(app);
   }
 
   return {

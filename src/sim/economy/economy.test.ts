@@ -14,22 +14,41 @@ describe("nextUnitPrice — diminishing returns", () => {
     );
   });
 
-  it("is monotonically non-increasing in alreadySold and floored positive", () => {
+  it("is monotonically non-increasing in alreadySold and never negative", () => {
     fc.assert(
       fc.property(
         fc.integer({ min: 1, max: 1_000_000 }),
         fc.integer({ min: 0, max: 200 }),
         (base, n) => {
-          const floor = Math.max(1, Math.floor(base / 10));
           let prev = nextUnitPrice(base, 0);
           for (let k = 1; k <= n; k++) {
             const cur = nextUnitPrice(base, k);
             expect(cur).toBeLessThanOrEqual(prev);
-            expect(cur).toBeGreaterThanOrEqual(floor);
+            expect(cur).toBeGreaterThanOrEqual(0);
             prev = cur;
           }
         },
       ),
+    );
+  });
+
+  it("eventually reaches zero gross demand and stays there", () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 1, max: Number.MAX_SAFE_INTEGER }), (base) => {
+        expect(nextUnitPrice(base, 512)).toBe(0);
+        expect(nextUnitPrice(base, 513)).toBe(0);
+      }),
+    );
+  });
+
+  it("has finite cumulative gross revenue for repeated sales of one disease", () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 1, max: 1_000_000 }), (base) => {
+        let total = 0;
+        for (let sold = 0; sold <= 512; sold++) total += nextUnitPrice(base, sold);
+        expect(total).toBeLessThanOrEqual(base * 10);
+        expect(nextUnitPrice(base, 512)).toBe(0);
+      }),
     );
   });
 
@@ -160,6 +179,17 @@ describe("sellUnit — cash conservation", () => {
 });
 
 describe("sellUnit — per-disease independence (parallel demand)", () => {
+  it("keeps fresh-disease demand intact after another disease reaches zero", () => {
+    const exhausted: EconomyState = {
+      cash: 0,
+      research: 512,
+      sold: [{ disease: 0, count: 512 }],
+    };
+
+    expect(sellUnit(exhausted, 0, 100, 0, 0).revenue).toBe(0);
+    expect(sellUnit(exhausted, 1, 100, 0, 0).revenue).toBe(100);
+  });
+
   it("lets a different disease sell when another counter is saturated", () => {
     const econ: EconomyState = {
       cash: 0,

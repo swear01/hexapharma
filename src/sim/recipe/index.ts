@@ -873,10 +873,9 @@ function outcomeOf(mm: MultiMap, drug: DrugState): Outcome {
     if (kind === CellKind.Cure) {
       const id = map.cureId[idx];
       if (id !== undefined && id >= 0) cured.push(id);
-    } else if (kind === CellKind.SideEffect) {
-      const id = map.sideEffectId[idx];
-      if (id !== undefined && id >= 0) sideEffects.push(id);
     }
+    const sideEffectId = map.sideEffectId[idx];
+    if (sideEffectId !== undefined && sideEffectId >= 0) sideEffects.push(sideEffectId);
   }
   return { failed: false, final: finalPos, cured, sideEffects };
 }

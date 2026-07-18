@@ -90,6 +90,38 @@ describe("Lab terrain visual language", () => {
     });
   });
 
+  it("marks a revealed Cure with a side-effect overlay as contaminated", () => {
+    const level = map();
+    level.cell[1] = CellKind.Cure;
+    level.cureId[1] = 4;
+    level.sideEffectId[1] = 9;
+
+    const empty = labTerrainVisual(level, 0, 0);
+    expect(labTerrainVisual(level, 1, 0)).toEqual(empty);
+    level.fog[1] = 1;
+    expect(labTerrainVisual(level, 1, 0)).toMatchObject({
+      kind: "cure",
+      sideEffectOverlay: true,
+    });
+  });
+
+  it("gives different revealed diseases distinct Cure region colors", () => {
+    const level = map();
+    level.cell[1] = CellKind.Cure;
+    level.cell[2] = CellKind.Cure;
+    level.cureId[1] = 0;
+    level.cureId[2] = 1;
+    level.fog[1] = 1;
+    level.fog[2] = 1;
+
+    const first = labTerrainVisual(level, 1, 0);
+    const second = labTerrainVisual(level, 2, 0);
+    expect(first.kind).toBe("cure");
+    expect(second.kind).toBe("cure");
+    expect(first.baseColor).not.toBe(second.baseColor);
+    expect(first.rimColor).not.toBe(second.rimColor);
+  });
+
   it("reveals portal pairing and direction only after discovering each endpoint", () => {
     const level = map();
     const left = 1 * level.width + 1;
@@ -102,9 +134,17 @@ describe("Lab terrain visual language", () => {
     expect(labTerrainVisual(level, 5, 1)).toEqual(empty);
 
     level.fog[left] = 1;
-    const revealedEntry = labTerrainVisual(level, 1, 1);
+    const unpairedEntry = labTerrainVisual(level, 1, 1);
+    expect(unpairedEntry).toMatchObject({
+      kind: "portal",
+      role: "entry",
+      pairMarker: null,
+      destination: null,
+      direction: null,
+    });
     expect(labTerrainVisual(level, 5, 1)).toEqual(empty);
     level.fog[right] = 1;
+    const revealedEntry = labTerrainVisual(level, 1, 1);
     const revealedExit = labTerrainVisual(level, 5, 1);
 
     expect(revealedEntry).toMatchObject({

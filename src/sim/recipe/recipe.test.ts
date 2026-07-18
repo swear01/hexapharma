@@ -106,6 +106,22 @@ const samples: readonly Template[] = [
 ];
 
 describe("compileTemplate and factoryOutcome", () => {
+  it("preserves a side-effect overlay on a produced Cure", () => {
+    const map = emptyMap(41, { x: 20, y: 20 });
+    const value = template(machine("push"));
+    const final = applyTemplate(multimaps(map), initialState(multimaps(map)), value).pos[0]!;
+    const index = final.y * map.width + final.x;
+    map.cell[index] = CellKind.Cure;
+    map.cureId[index] = 7;
+    map.sideEffectId[index] = 91;
+    const mm = multimaps(map);
+
+    expect(factoryOutcome(compileTemplate(value), mm, initialState(mm))).toMatchObject({
+      cured: [7],
+      sideEffects: [91],
+    });
+  });
+
   it("waits for a product across a legal long routing path", () => {
     const mm = multimaps(emptyMap(41, { x: 20, y: 20 }));
     expect(factoryOutcome(serpentineLayout(20), mm, initialState(mm))).toEqual({

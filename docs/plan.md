@@ -1,63 +1,68 @@
 # Plan
 
-## Current milestone — readable Research + direct paid Production
+## Current milestone — viable fresh loop and replayable Atlas
 
-這是 breaking TDD redesign。舊 build 的測試數量、截圖與 smoke 不作本次完成證據；每個最終 commit 都必須重新跑 gate。
+這是 structural TDD pass，不是單純調平衡。舊 build 的測試數量、截圖、準備資金存檔與 reference-generated layout 都不能作完成證據；每個最終 commit 重新跑 gate，並另外完成人類 fresh-save loop。
 
 ### TDD implementation order
 
-1. **Freeze target interfaces and RED tests**
-   - `Machine` 無可變路徑長度；Research step 一律完整 fixed `PathStamp`。
-   - Production layout/runtime non-null；唯一 layout edit intent 是 `buildProductionLayout`。
-   - Blueprint v3 `research-program {typeId}` + generic `factory-layout`；Save v7 拒絕舊 schema。
-   - 先寫 fixed-path、terrain visibility、paid build atomicity、transport topology 與 codec tests。
+1. **Freeze gameplay contracts and RED tests**
+   - 單一大型 Atlas 正常生成 4 種獨立疾病，generator 支援 1–8 種。
+   - fresh fog 恰為 start-centered 5×5；只有 Wall 穿霧可見。
+   - Cure／SideEffect 是可重疊欄位，Outcome 可同時含 cure 與 side effect。
+   - 正常 starting cash 是 $1000；無注資 fresh run 必須可達 first sale。
+   - 先寫 seed diversity、terrain relevance、solver region-minima、endpoint commit、finite demand、profitable Market與fresh-start integration tests。
 
-2. **Research visibility and path rules**
-   - 只有 Wall 不受探索遮罩隱藏；Abyss／Swamp／Portal A+B／Cure／SideEffect 未揭露時中性化。
-   - planning map、renderer、region edges 與 preview 共用同一 visibility rule。
-   - 移除所有只走部分 machine path 的 UI、state、trace、Blueprint 與 Save 欄位。
-   - 驗證規劃不改 fog，只有 Research shot 的 actual segments 揭露。
+2. **Terrain-first seeded mapgen**
+   - 先依 seed 生成 radial/motif terrain、swamp/abyss/portal，再在權威 terrain traversal 上 constructive 地找reference。
+   - 移除 protected reference corridor；正常尺寸reference的actual endpoint必須反映terrain，而不是空白圖答案。
+   - 每個疾病有不同reference signature、endpoint與不重疊cure region；跨seed不可由單一Blueprint通殺。
+   - constructed endpoint是乾淨Cure；同區部分其他Cure cells加SideEffect overlay。
+   - default 4 disease references依initial、`skew`、`dilute`、`settle`逐tier可用catalog；第一個目標只需initial machines。
+   - 同seed + 完整GenOptions仍逐欄位相等。
 
-3. **Production construction authority**
-   - 新局建立空 24×12 Production editor，不需要 Pilot。
-   - `quoteProductionBuild`：belt 2、split／merge 8、source 12、sink 6、machine `10 × cost`；拆除不退款。
-   - layout edit 現金不足時原子拒絕；成功時扣費、own layout、reset runtime、preserve waste。
-   - paid build trace 不合併；replay/hash/save 重現每次 cash 變化。
+3. **Solver and balance truth**
+   - solver goal是整個Cure region，不只第一個cell；回報minimum steps與minimum cost。
+   - balance sweep驗reference quality、疾病／seed diversity、terrain relevance、clean/contaminated coverage與fresh-loop affordability。
+   - solver只留tests/tools；runtime、UI與generator rejection loop禁止依賴solver。
 
-4. **Pilot and Blueprint flow**
-   - Pilot 維持 free/no-clock optional sandbox。
-   - Pilot 可用 `Build $N` 走同一 paid Production intent；Production 也可直接編輯。
-   - Factory Blueprint 可由 Pilot 或 Production capture，免費開 Pilot 或付費建 Production。
-   - Library v3 quota、dedupe、upload/download 與 cross-save lifecycle 全部 strict。
+4. **Research direct interaction and feedback**
+   - selected machine只產生從目前endpoint接續的完整candidate ghost。
+   - 只有點中candidate endpoint才append；blank map click不改program。
+   - ordered route strip顯示step、machine、單步cost、總shot cost；未出藥時可移除任意完整step並重算後續。
+   - shot期間camera跟隨dose；完成結果同時顯示已知Cure與SideEffect。
+   - 保持complete fixed PathStamp、no partial path、planning不揭霧、actual segments才揭霧。
 
-5. **Connected factory rendering**
-   - topology 以 tile accept／emit sides 與 rotated machine ports 建 edge。
-   - renderer 覆蓋 isolated／endpoint／straight／corner／tee／cross、split／merge、source／sink 與 port connectivity。
-   - transport 在 grid 上方連到格邊；動畫只依 runtime tick。
-   - Belt drag 產生四向連續路線並逐格朝下一格，支援單手勢轉角。
+5. **Bootstrap, economy and Market**
+   - default cash改為$1000，保證人工Research後仍能直接或經optional Pilot支付第一條有效Production line。
+   - base price固定為`12 + 4 × difficulty + 2 × referenceCost`。
+   - 每疾病gross由base開始，每售一件next=`floor(previous × 9 / 10)`直到0；移除永久正值floor。
+   - Cure與SideEffect overlap完整流入physical inventory與sale penalty。
+   - Market stable order是side effects少、production cost低、inventory ID早；`Ship best`／`Ship profitable`只出售正net產品。
+   - Pilot維持free/no-clock/optional；Production維持direct/paid，不能重加頁面前置。
 
-6. **Simple UI and documentation**
-   - 刪除常駐設計註解、形容詞副標、重複教學與流程式文案。
-   - 保留短 labels、icons、hotkeys、必要 metrics、error 與 destructive confirmation。
-   - 詳細玩法集中在 [player-guide.md](player-guide.md)；更新 design、invariants、playtest、structure 與 README。
+6. **Integration, docs and repeated audit**
+   - focused unit/property → typecheck/lint → integration/E2E → full `npm run check`。
+   - residue scan：partial path、blank-click append、非Wall穿霧、universal corridor、default one disease、互斥effects、$200 start、permanent price floor與fixture-only full loop都不得留作active truth。
+   - 更新README、design、overview、notes、decisions、invariants、structure、UI contract、player guide、roadmap與playtest。
+   - 重建Research／effects／Market screenshots，做至少一輪邏輯、視覺與文件audit。
 
-7. **Integration and repeated audit**
-   - focused unit/property tests → typecheck/lint → relevant E2E → full `npm run check`。
-   - residue scan：不得留有截短 Research path、terrain 被 fog 完全遮住、Production 需 Pilot、舊 Blueprint／Save schema的 active truth。
-   - 重建 Research、Pilot、Production、connected belts 與 compact screenshot baselines。
-   - 用 `0.0.0.0:53346 --strictPort` 真人走 Research、直接 Production、Pilot→Build、Blueprint、Save/Load/Rewind。
-   - 再做至少一輪邏輯、視覺與文件 audit，修完才 commit + push。
+7. **Human fun validation on 53346**
+   - 清Save與Blueprint Library；不用`?cash`／`?research`、hidden reference、solver、compiler、預製Blueprint或注入Knowledge。
+   - 人工完成Research → affordable build → Production → first profitable sale，再嘗試理解下一疾病。
+   - 記錄首次理解、嘗試數、first cure／sale時間、最低cash、layout重做、困惑點與是否願意繼續。
+   - automated correctness不能代替這份human evidence；任何無資訊、破產或不可達first sale都是blocker。
 
 ## Completion rule
 
-- 唯一自動標準：當前 commit 的 `npm run check` 全通過。
-- 唯一真人標準：依 [playtest.md](playtest.md) 在 53346 完整 smoke，沒有 blocker 或未記錄的 fallback。
-- 文件不記錄會迅速過期的 test count；提交訊息與執行回報保存該次實際數字。
+- 自動 correctness：當前 commit 的`npm run check`全通過，balance/fresh-start checks沒有universal solution、region-minima或affordability退化。
+- 真人玩法：依[playtest.md](playtest.md)在`0.0.0.0:53346 --strictPort`完成無fixture fresh loop，沒有blocker或未記錄fallback。
+- 文件不記錄會迅速過期的test count；提交訊息與執行回報保存該次實際數字。
 
 ## Deliberately deferred
 
-- radial bands、motif weights、terrain density、Research cost/reveal radius、machine speed/cost、difficulty/price、unlock pacing 等主觀平衡。
-- 正式內容量、final art/audio polish、帳戶、雲端 Blueprint repository。
-- release candidate 前的跨 build save migration。
+- 在上述structural contracts成立後，依真人資料調motif密度、terrain比例、cost/speed、linear price係數、unlock pacing與正式內容量。
+- final art/audio polish、帳戶、雲端Blueprint repository。
+- release candidate前的跨build save migration。
 
-平衡可以逐步調整；完整 fixed paths、Wall 骨架可讀與其他互動物受霧保護、direct paid Production、optional Pilot、connected topology、Blueprint v3、Save v7 與 strict gate 不能後置。
+平衡可逐步調整；fresh-loop可達性、seed／disease解法差異、finite demand、overlap effects、完整PathStamp、Wall-only穿霧、direct paid Production、optional Pilot、Blueprint v3、Save v7與strict gate不能後置。

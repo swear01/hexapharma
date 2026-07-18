@@ -96,10 +96,32 @@ describe("fixed-path solver", () => {
     expectCures(mm, start, solution!, [42]);
   });
 
+  it("chooses the lowest-cost solution among all shortest complete paths", () => {
+    const mm = maps(cure(emptyMap(5, 3, { x: 1, y: 1 }), 2, 1, 7));
+    const solution = solve(mm, initialState(mm), options([
+      entry("expensive", [E], 10),
+      entry("cheap", [E], 1),
+    ], 1, [7]));
+
+    expect(solution?.template.steps.map((step) => step.typeId)).toEqual(["cheap"]);
+    expect(solution?.cost).toBe(1);
+  });
+
   it("returns a zero-step solution when the start is already cured", () => {
     const mm = maps(cure(emptyMap(5, 5, { x: 2, y: 2 }), 2, 2, 7));
     const solution = solve(mm, initialState(mm), options(EAST, 4, [7]));
     expect(solution).toMatchObject({ difficulty: 0, cost: 0, template: { steps: [] } });
+  });
+
+  it("solves for any cell in a multi-cell Cure region", () => {
+    let map = cure(emptyMap(7, 4, { x: 0, y: 2 }), 5, 0, 7);
+    map = cure(map, 2, 2, 7);
+    const mm = maps(map);
+
+    const solution = solve(mm, initialState(mm), options(EAST, 3, [7]));
+
+    expect(solution?.template.steps).toHaveLength(2);
+    expectCures(mm, initialState(mm), solution!, [7]);
   });
 
   it("searches only complete fixed paths without rotating or truncating the stamp", () => {

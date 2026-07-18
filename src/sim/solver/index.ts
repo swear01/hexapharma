@@ -6,7 +6,6 @@ import type {
   MachineCatalogEntry,
   Template,
   DiseaseId,
-  MapIndex,
   Solution,
   SolveFn,
 } from "../phase0_interfaces";
@@ -16,13 +15,6 @@ import { hashInts } from "../hash";
 
 // Dev/test-only search. NEVER wire into an in-game auto-solver (D14). INV-13.
 
-/** A target's cure node: which map it lives on and at which cell. */
-interface CureNode {
-  readonly target: DiseaseId;
-  readonly map: MapIndex;
-  readonly pos: Vec2;
-}
-
 /** A concrete machine paired with the catalog cost it should bill. */
 interface ConcreteMachine {
   readonly machine: Machine;
@@ -30,46 +22,25 @@ interface ConcreteMachine {
 }
 
 /**
- * Locate every target's cure node by scanning all maps for the Cure cell whose
- * cureId matches. Returns null if any target has no cure node, or if two targets
- * resolve to the SAME map at DIFFERENT cells (a single drug holds one position
- * per map, so that joint goal is unsatisfiable — see the cross-map constraint).
+ * Confirm that every requested disease has at least one Cure cell. Cure regions
+ * may contain several cells; goal checks accept any cell carrying the target id.
  */
-function findCureNodes(mm: MultiMap, targets: readonly DiseaseId[]): CureNode[] | null {
-  const nodes: CureNode[] = [];
+function hasCureRegions(mm: MultiMap, targets: readonly DiseaseId[]): boolean {
   for (const target of targets) {
-    let found: CureNode | null = null;
-    for (let mi = 0; mi < mm.maps.length; mi++) {
-      const map = mm.maps[mi];
+    let found = false;
+    for (let mapIndex = 0; mapIndex < mm.maps.length && !found; mapIndex++) {
+      const map = mm.maps[mapIndex];
       if (map === undefined) continue;
-      const cell = map.cell;
-      const cureId = map.cureId;
-      for (let i = 0; i < cell.length; i++) {
-        if (cell[i] === CellKind.Cure && cureId[i] === target) {
-          const x = i % map.width;
-          const y = (i - x) / map.width;
-          found = { target, map: mi, pos: { x, y } };
+      for (let index = 0; index < map.cell.length; index++) {
+        if (map.cell[index] === CellKind.Cure && map.cureId[index] === target) {
+          found = true;
           break;
         }
       }
-      if (found !== null) break;
     }
-    if (found === null) return null; // target has no cure node anywhere
-    nodes.push(found);
+    if (!found) return false;
   }
-
-  // Two distinct targets on the same map at different cells ⇒ no single-drug solution.
-  for (let i = 0; i < nodes.length; i++) {
-    for (let j = i + 1; j < nodes.length; j++) {
-      const a = nodes[i];
-      const b = nodes[j];
-      if (a === undefined || b === undefined) continue;
-      if (a.map === b.map && (a.pos.x !== b.pos.x || a.pos.y !== b.pos.y)) {
-        return null;
-      }
-    }
-  }
-  return nodes;
+  return true;
 }
 
 function expandCatalog(catalog: readonly MachineCatalogEntry[]): ConcreteMachine[] {
@@ -98,12 +69,22 @@ function positionKey(pos: readonly Vec2[]): string {
   return `${h}:${pos.map((p) => `${p.x},${p.y}`).join("|")}`;
 }
 
-/** True once every target's map position equals its cure node and the drug is alive. */
-function isGoal(s: DrugState, nodes: readonly CureNode[]): boolean {
+/** True once every target is present at one of the drug's final map positions. */
+function isGoal(mm: MultiMap, s: DrugState, targets: readonly DiseaseId[]): boolean {
   if (s.failed) return false;
-  for (const node of nodes) {
-    const p = s.pos[node.map];
-    if (p === undefined || p.x !== node.pos.x || p.y !== node.pos.y) return false;
+  for (const target of targets) {
+    let cured = false;
+    for (let mapIndex = 0; mapIndex < mm.maps.length; mapIndex++) {
+      const map = mm.maps[mapIndex];
+      const position = s.pos[mapIndex];
+      if (map === undefined || position === undefined) continue;
+      const index = position.y * map.width + position.x;
+      if (map.cell[index] === CellKind.Cure && map.cureId[index] === target) {
+        cured = true;
+        break;
+      }
+    }
+    if (!cured) return false;
   }
   return true;
 }
@@ -112,46 +93,56 @@ interface QueueNode {
   readonly state: DrugState;
   /** Concrete machines applied so far, in order. */
   readonly path: readonly ConcreteMachine[];
+  readonly cost: number;
 }
 
 export const solve: SolveFn = (mm, start, opts) => {
-  const nodes = findCureNodes(mm, opts.targets);
-  if (nodes === null) return null;
+  if (!hasCureRegions(mm, opts.targets)) return null;
 
   const machines = expandCatalog(opts.catalog);
 
   // The start may already be the goal (zero-step solution).
-  if (isGoal(start, nodes)) {
+  if (isGoal(mm, start, opts.targets)) {
     return finalize(mm, start, [], opts.targets);
   }
 
   if (opts.maxDepth <= 0) return null;
 
-  // BFS over DrugState; FIFO + fixed expansion order ⇒ identical Solution each run.
-  // Visited is keyed by position signature, so the search is bounded by the number
-  // of reachable position-tuples (~(W·H)^N), not by branching^depth.
+  // BFS over DrugState. Each depth keeps the cheapest path per position and the
+  // cheapest goal, with fixed expansion order breaking equal-cost ties.
   const visited = new Set<string>();
   visited.add(positionKey(start.pos));
 
-  let frontier: QueueNode[] = [{ state: start, path: [] }];
+  let frontier: QueueNode[] = [{ state: start, path: [], cost: 0 }];
   let depth = 0;
 
   while (frontier.length > 0 && depth < opts.maxDepth) {
     const next: QueueNode[] = [];
+    const nextIndexByKey = new Map<string, number>();
+    let bestGoal: QueueNode | null = null;
     for (const cur of frontier) {
       for (const cm of machines) {
         const child = applyStep(mm, cur.state, cm.machine);
         if (child.failed) continue; // never expand a spoiled drug
         const key = positionKey(child.pos);
         if (visited.has(key)) continue;
-        visited.add(key);
         const path = [...cur.path, cm];
-        if (isGoal(child, nodes)) {
-          return finalize(mm, start, path, opts.targets);
+        const candidate: QueueNode = { state: child, path, cost: cur.cost + cm.cost };
+        if (isGoal(mm, child, opts.targets)) {
+          if (bestGoal === null || candidate.cost < bestGoal.cost) bestGoal = candidate;
+          continue;
         }
-        next.push({ state: child, path });
+        const nextIndex = nextIndexByKey.get(key);
+        if (nextIndex === undefined) {
+          nextIndexByKey.set(key, next.length);
+          next.push(candidate);
+        } else if (candidate.cost < next[nextIndex]!.cost) {
+          next[nextIndex] = candidate;
+        }
       }
     }
+    if (bestGoal !== null) return finalize(mm, start, bestGoal.path, opts.targets);
+    for (const node of next) visited.add(positionKey(node.state.pos));
     frontier = next;
     depth++;
   }
@@ -176,7 +167,7 @@ function isShapedStep(machine: Machine): boolean {
  * INV-13 (the returned template cures all targets and never fails). cost is the
  * summed catalog cost of the chosen machines.
  *
- * difficulty is a deterministic composite of the single chosen (first-BFS) path:
+ * difficulty is a deterministic composite of the shortest, lowest-cost path:
  *   difficulty = steps + diversityBonus + shapedPathBonus
  *     steps           = minimal BFS depth (dominant term).
  *     diversityBonus  = (distinct typeIds used) − 1.

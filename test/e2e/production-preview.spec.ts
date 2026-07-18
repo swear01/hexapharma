@@ -15,6 +15,13 @@ const maximumGameMapCheckpoint = JSON.stringify({
   history: [],
 });
 
+async function confirmLoad(page: import("@playwright/test").Page): Promise<void> {
+  await page.getByTestId("load").click();
+  const dialog = page.getByRole("alertdialog", { name: "Load saved game?" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Load saved game" }).click();
+}
+
 test("production preview loads every lazy UI surface without runtime errors", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -60,7 +67,7 @@ test("production preview renders the maximum Game-authorized map dimensions", as
     localStorage.setItem("hexapharma.save.checkpoint.0", checkpoint);
   }, maximumGameMapCheckpoint);
   await page.reload();
-  await page.getByTestId("load").click();
+  await confirmLoad(page);
   const canvas = page.locator("[data-testid='lab-canvas'] canvas");
   await expect(canvas).toBeVisible();
   await expect(page.getByTestId("lab-render-error")).toHaveCount(0);
@@ -78,7 +85,7 @@ test("the maximum Game map stays inside the Atlas content width", async ({ page 
     localStorage.setItem("hexapharma.save.checkpoint.0", checkpoint);
   }, maximumGameMapCheckpoint);
   await page.reload();
-  await page.getByTestId("load").click();
+  await confirmLoad(page);
   const canvas = page.locator("[data-testid='lab-canvas'] canvas");
   await expect(canvas).toBeVisible();
   const canvasBox = await canvas.boundingBox();
