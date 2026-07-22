@@ -12,7 +12,7 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 ```
 
 - 本機：`http://127.0.0.1:53346/`
-- 遠端：`http://<Oracle 公網 IP>:53346/`
+- 遠端：<http://138.2.52.9:53346/>
 - 確認process實際listen `0.0.0.0:53346`；port被占用應直接失敗，不得靜默換port。
 - 開無cache新頁，清除本origin的舊開發版save與Blueprint Library；本階段不測跨build migration。
 

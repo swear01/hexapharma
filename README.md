@@ -46,7 +46,7 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 ```
 
 - 同機器：<http://127.0.0.1:53346/>
-- 遠端：`http://<Oracle 公網 IP>:53346/`
+- 遠端：<http://138.2.52.9:53346/>
 - Oracle Cloud 只開放 53346；`--strictPort` 禁止靜默換 port。
 
 真人驗證清單見 [docs/playtest.md](docs/playtest.md)。
