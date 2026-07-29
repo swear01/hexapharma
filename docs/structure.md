@@ -5,7 +5,9 @@
 | Path | Responsibility |
 |---|---|
 | `AGENTS.md` | 專案硬規則、唯一 gate、真人 port、文件 lifecycle。 |
+| `.github/workflows/check.yml` | push/PR 到 `main` 時執行 `npm run check`（tsc、eslint、vitest、e2e）。 |
 | `docs/` | canonical design、invariants、player guide、plan 與 playtest。 |
+| `src/json-guards.ts` | 共用 JSON object guard；Save v7 與 checkpoint slot envelope 共用。 |
 | `src/sim/phase0_interfaces.ts` | 完整 `PathStamp` machine、terrain/portal、三場域 state、non-null Production、Game intents。 |
 | `src/sim/drug-graph/` | strict EffectMap validation、fixed path traversal、single-layer terrain/portal、preview/execution authority。 |
 | `src/sim/mapgen/` | terrain-first seeded radial + motif Atlas、1–8疾病、paired portals、clean/contaminated Cure regions、diverse tiered reference ResearchPrograms、linear prices。 |
@@ -31,7 +33,6 @@
 | `src/ui/Factory.tsx` | Pilot/Production shared editor、Belt drag、build cost preview、diagnostics/transport controls。 |
 | `src/ui/Game.tsx` | F1 Research route strip/costs、F2 optional Pilot、F3 direct Production、$1000 bootstrap、New Game、drawers、paid intents與save shell。 |
 | `src/ui/machineLabels.ts`, `effectLabels.ts` | 玩家可讀的machine／一基底disease／outcome文字；不暴露internal IDs或座標。 |
-| `src/ui/GameModalPortal.tsx` | 把嵌套destructive confirmations放到shell最上層，避免窄屏nav擷取pointer。 |
 | `src/ui/Shop.tsx` | clean/cheap stable product ranking、positive-net single/bulk shipping與finite-demand顯示。 |
 | `src/ui/BlueprintLibrary.tsx` | capture Research/Pilot/Production、open Factory in Pilot或paid Production、strict import/export。 |
 | `src/ui/checkpointStorage.ts` | Save v7 compact checkpoint、lineage、rewind/recovery。 |

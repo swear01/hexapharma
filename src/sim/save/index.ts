@@ -49,6 +49,7 @@ import {
   validateFactoryLayout,
   validateGameState,
 } from "../game";
+import { isJsonObject } from "../../json-guards";
 import { estimateGameReplayWork } from "../replay-work";
 
 // HexaPharma save/load (Phase 3).
@@ -120,12 +121,8 @@ function canonical(value: unknown): string {
 
 // ── validation helpers (no silent defaults: throw a clear SaveError) ──
 
-function isObject(v: unknown): v is Record<string, unknown> {
-  return v !== null && typeof v === "object" && !Array.isArray(v);
-}
-
 function reqObject(v: unknown, path: string): Record<string, unknown> {
-  if (!isObject(v)) throw new SaveError(`${path}: expected object, got ${describe(v)}`);
+  if (!isJsonObject(v)) throw new SaveError(`${path}: expected object, got ${describe(v)}`);
   return v;
 }
 

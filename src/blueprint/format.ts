@@ -15,6 +15,7 @@ import {
   type Rotation,
   type Template,
 } from "../sim/phase0_interfaces";
+import { fnv1a32Hex } from "../sim/hash";
 
 export const BLUEPRINT_FORMAT = "hexapharma-blueprint" as const;
 export const BLUEPRINT_VERSION = 3 as const;
@@ -35,12 +36,7 @@ function contentFingerprint(): string {
     shapes: Object.entries(DEFAULT_SHAPES).sort(([left], [right]) =>
       left < right ? -1 : left > right ? 1 : 0),
   });
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < payload.length; index++) {
-    hash ^= payload.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `fnv1a32:${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return fnv1a32Hex(payload);
 }
 
 export const BLUEPRINT_CONTENT_FINGERPRINT = contentFingerprint();

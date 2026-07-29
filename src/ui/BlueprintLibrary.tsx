@@ -15,7 +15,7 @@ import {
   saveLibraryBlueprint,
   type LibraryBlueprint,
 } from "../blueprint/storage";
-import { GameModalPortal } from "./GameModalPortal";
+import { createPortal } from "react-dom";
 
 interface BlueprintLibraryProps {
   readonly researchProgram: Template;
@@ -278,46 +278,45 @@ export function BlueprintLibrary({
         })}
       </section>
       <output className="blueprint-status" role="status" data-testid="blueprint-status">{status}</output>
-      {pendingDelete !== null && (
-        <GameModalPortal>
-          <div
-            className="game-modal-backdrop"
-            onPointerDown={(event) => {
-              if (event.target === event.currentTarget) closeDeleteConfirmation();
-            }}
+      {pendingDelete !== null && createPortal(
+        <div
+          className="game-modal-backdrop"
+          onPointerDown={(event) => {
+            if (event.target === event.currentTarget) closeDeleteConfirmation();
+          }}
+        >
+          <section
+            className="game-modal"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="blueprint-delete-title"
+            aria-describedby="blueprint-delete-warning"
+            data-testid="blueprint-delete-confirm"
           >
-            <section
-              className="game-modal"
-              role="alertdialog"
-              aria-modal="true"
-              aria-labelledby="blueprint-delete-title"
-              aria-describedby="blueprint-delete-warning"
-              data-testid="blueprint-delete-confirm"
-            >
-              <h2 id="blueprint-delete-title">Delete blueprint?</h2>
-              <p id="blueprint-delete-warning">
-                Permanently remove “{pendingDelete.blueprint.name}” from the cross-save Library.
-              </p>
-              <div className="modal-actions">
-                <button
-                  ref={deleteCancelRef}
-                  type="button"
-                  onClick={() => closeDeleteConfirmation()}
-                >Cancel</button>
-                <button
-                  ref={deleteConfirmRef}
-                  type="button"
-                  className="danger-action"
-                  onClick={() => {
-                    const entry = pendingDelete;
-                    closeDeleteConfirmation(false);
-                    void remove(entry);
-                  }}
-                >Delete blueprint</button>
-              </div>
-            </section>
-          </div>
-        </GameModalPortal>
+            <h2 id="blueprint-delete-title">Delete blueprint?</h2>
+            <p id="blueprint-delete-warning">
+              Permanently remove “{pendingDelete.blueprint.name}” from the cross-save Library.
+            </p>
+            <div className="modal-actions">
+              <button
+                ref={deleteCancelRef}
+                type="button"
+                onClick={() => closeDeleteConfirmation()}
+              >Cancel</button>
+              <button
+                ref={deleteConfirmRef}
+                type="button"
+                className="danger-action"
+                onClick={() => {
+                  const entry = pendingDelete;
+                  closeDeleteConfirmation(false);
+                  void remove(entry);
+                }}
+              >Delete blueprint</button>
+            </div>
+          </section>
+        </div>,
+        document.body,
       )}
     </div>
   );

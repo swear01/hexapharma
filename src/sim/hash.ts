@@ -26,3 +26,16 @@ export function hashInts(values: Iterable<number>): number {
   for (const v of values) h = hashU32(h, v | 0);
   return h >>> 0;
 }
+
+export function hashString(value: string): number {
+  let h = hashInit();
+  for (let index = 0; index < value.length; index++) {
+    h ^= value.charCodeAt(index);
+    h = Math.imul(h, FNV_PRIME);
+  }
+  return h >>> 0;
+}
+
+export function fnv1a32Hex(value: string): string {
+  return `fnv1a32:${hashString(value).toString(16).padStart(8, "0")}`;
+}

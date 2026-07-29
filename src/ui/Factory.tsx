@@ -20,8 +20,8 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MachineIcon } from "./MachineIcon";
+import { createPortal } from "react-dom";
 import { machineName, machineShortName } from "./machineLabels";
-import { GameModalPortal } from "./GameModalPortal";
 import { outcomeEffectText } from "./effectLabels";
 import type {
   Dir,
@@ -1473,39 +1473,38 @@ export function Factory({
         </aside>
         <span className="inspector-more" data-testid="inspector-more" aria-hidden="true">⌄</span>
       </div>
-      {resetPending && (
-        <GameModalPortal>
-          <div
-            className="game-modal-backdrop"
-            onPointerDown={(event) => {
-              if (event.target === event.currentTarget) closeResetConfirmation();
-            }}
+      {resetPending && createPortal(
+        <div
+          className="game-modal-backdrop"
+          onPointerDown={(event) => {
+            if (event.target === event.currentTarget) closeResetConfirmation();
+          }}
+        >
+          <section
+            className="game-modal"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="factory-reset-title"
+            aria-describedby="factory-reset-warning factory-reset-preserved"
+            data-testid="factory-reset-confirm"
           >
-            <section
-              className="game-modal"
-              role="alertdialog"
-              aria-modal="true"
-              aria-labelledby="factory-reset-title"
-              aria-describedby="factory-reset-warning factory-reset-preserved"
-              data-testid="factory-reset-confirm"
-            >
-              <h2 id="factory-reset-title">Reset Production?</h2>
-              <p id="factory-reset-warning">Runtime and in-flight units will be cleared.</p>
-              <p id="factory-reset-preserved">Inventory and waste will stay.</p>
-              <div className="modal-actions">
-                <button ref={resetCancelRef} type="button" onClick={() => closeResetConfirmation()}>Cancel</button>
-                <button
-                  ref={resetConfirmRef}
-                  type="button"
-                  className="danger-action"
-                  onClick={confirmReset}
-                >
-                  Reset runtime
-                </button>
-              </div>
-            </section>
-          </div>
-        </GameModalPortal>
+            <h2 id="factory-reset-title">Reset Production?</h2>
+            <p id="factory-reset-warning">Runtime and in-flight units will be cleared.</p>
+            <p id="factory-reset-preserved">Inventory and waste will stay.</p>
+            <div className="modal-actions">
+              <button ref={resetCancelRef} type="button" onClick={() => closeResetConfirmation()}>Cancel</button>
+              <button
+                ref={resetConfirmRef}
+                type="button"
+                className="danger-action"
+                onClick={confirmReset}
+              >
+                Reset runtime
+              </button>
+            </div>
+          </section>
+        </div>,
+        document.body,
       )}
     </div>
   );

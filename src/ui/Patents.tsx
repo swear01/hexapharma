@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { EconomyState, PatentState } from "../sim/phase0_interfaces";
 import { DEFAULT_PATENTS, canUnlock, activeEffects } from "../sim/patent";
+import { createPortal } from "react-dom";
 import { machineName } from "./machineLabels";
-import { GameModalPortal } from "./GameModalPortal";
 
 interface PatentsProps {
   readonly economy: EconomyState;
@@ -158,45 +158,44 @@ export function Patents({
           })}
         </div>
       </div>
-      {pending !== null && (
-        <GameModalPortal>
-          <div
-            className="game-modal-backdrop"
-            onPointerDown={(event) => {
-              if (event.target === event.currentTarget) closeConfirmation();
-            }}
+      {pending !== null && createPortal(
+        <div
+          className="game-modal-backdrop"
+          onPointerDown={(event) => {
+            if (event.target === event.currentTarget) closeConfirmation();
+          }}
+        >
+          <section
+            className="game-modal"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="patent-confirm-title"
+            aria-describedby="patent-confirm-warning"
+            data-testid="patent-confirm"
           >
-            <section
-              className="game-modal"
-              role="alertdialog"
-              aria-modal="true"
-              aria-labelledby="patent-confirm-title"
-              aria-describedby="patent-confirm-warning"
-              data-testid="patent-confirm"
-            >
-              <h2 id="patent-confirm-title">Expand factory?</h2>
-              <p id="patent-confirm-warning">
-                {patentUnlockWarning(pending, expansionResetsProduction)}
-              </p>
-              <div className="modal-actions">
-                <button ref={cancelRef} type="button" onClick={() => closeConfirmation()}>Cancel</button>
-                <button
-                  ref={confirmRef}
-                  type="button"
-                  className="danger-action"
-                  data-testid="patent-confirm-unlock"
-                  onClick={() => {
-                    const id = pending.id;
-                    closeConfirmation(false);
-                    onUnlock(id);
-                  }}
-                >
-                  Unlock and reset
-                </button>
-              </div>
-            </section>
-          </div>
-        </GameModalPortal>
+            <h2 id="patent-confirm-title">Expand factory?</h2>
+            <p id="patent-confirm-warning">
+              {patentUnlockWarning(pending, expansionResetsProduction)}
+            </p>
+            <div className="modal-actions">
+              <button ref={cancelRef} type="button" onClick={() => closeConfirmation()}>Cancel</button>
+              <button
+                ref={confirmRef}
+                type="button"
+                className="danger-action"
+                data-testid="patent-confirm-unlock"
+                onClick={() => {
+                  const id = pending.id;
+                  closeConfirmation(false);
+                  onUnlock(id);
+                }}
+              >
+                Unlock and reset
+              </button>
+            </div>
+          </section>
+        </div>,
+        document.body,
       )}
     </div>
   );

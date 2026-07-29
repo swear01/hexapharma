@@ -21,7 +21,6 @@ import {
 import { labAssetUrls } from "./labAssets";
 import { revealedRegionEdges } from "./labRegions";
 import { labTerrainVisual, type CellTerrainVisual, type PortalTerrainVisual } from "./labTerrain";
-import { STATIC_PIXI_OPTIONS, renderStaticFrame } from "./staticPixi";
 
 const BG = 0x111a1b;
 const TOKEN_COLOR = 0x28a9d6;
@@ -473,7 +472,7 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
   const textures = await loadLabTextures();
   const app = new Application();
   await app.init({
-    ...STATIC_PIXI_OPTIONS,
+    autoStart: false,
     width: LAB_VIEWPORT.width,
     height: LAB_VIEWPORT.height,
     background: BG,
@@ -570,7 +569,7 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
       if (previewPos !== undefined) {
         drawPreviewToken(previewPos, view.camera, previewToken, previewTokenArt, view.previewDrug?.failed ?? false);
       }
-      renderStaticFrame(app);
+      app.render();
     },
     destroy: () => {
       if (destroyed) return;

@@ -57,7 +57,7 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 npm run check
 ```
 
-唯一自動驗收閘：`tsc --noEmit && eslint . && vitest run && playwright test`。自動 E2E 使用 throwaway port，不碰真人測試用的 53346。
+唯一自動驗收閘：`tsc --noEmit && eslint . && vitest run && playwright test`。自動 E2E 使用 throwaway port，不碰真人測試用的 53346。`main` 的 push/PR 由 GitHub Actions（`.github/workflows/check.yml`）執行同一 gate。
 
 ## 文件
 

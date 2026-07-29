@@ -5,6 +5,7 @@ import {
   type GameIntent,
   type GameState,
 } from "../sim/phase0_interfaces";
+import { asJsonRecord } from "../json-guards";
 import {
   deserializeGame,
   deserializeGameAuthority,
@@ -62,13 +63,6 @@ function message(error: unknown): string {
 
 function slotLabel(slot: number): string {
   return `Slot ${slot + 1}`;
-}
-
-function asRecord(value: unknown, path: string): Record<string, unknown> {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error(`${path}: expected object`);
-  }
-  return value as Record<string, unknown>;
 }
 
 function sameState(a: GameState, b: GameState): boolean {
@@ -263,7 +257,7 @@ function decodeCheckpoint(raw: string): SlotWrite {
   } catch (error) {
     throw new Error(`malformed checkpoint JSON (${message(error)})`, { cause: error });
   }
-  const envelope = asRecord(parsed, "checkpoint");
+  const envelope = asJsonRecord(parsed, "checkpoint");
   if (envelope.version !== CHECKPOINT_VERSION) {
     throw new Error(`checkpoint version ${String(envelope.version)} is not supported`);
   }
