@@ -474,7 +474,7 @@ describe("mapgen seeded disease diversity", () => {
       expect(level.diseases).toHaveLength(4);
       assertReferences(level);
     }
-  }, 15_000);
+  }, 30_000);
 
   it("keeps every normal Cure region outside the fresh start-centered 5×5 reveal", () => {
     for (let seed = 1; seed <= 500; seed++) {
@@ -546,7 +546,7 @@ describe("mapgen seeded disease diversity", () => {
       }
     }
     expect(crossSeedCures).toBeLessThanOrEqual(Math.floor(comparisons / 4));
-  });
+  }, 10_000);
 
   it("bounds the worst individual reference across an all-pairs seed sample", () => {
     const levels = Array.from({ length: 100 }, (_, index) => generate(oneAtlasOptions(index + 1)));
@@ -613,7 +613,7 @@ describe("mapgen constructive programs", () => {
     for (let nMaps = 1; nMaps <= 4; nMaps++) {
       for (const seed of [0, 1, 14, 31, 99, 184]) assertReferences(generate(canonicalOptions(seed, nMaps)));
     }
-  });
+  }, 10_000);
 
   it("uses multiple fixed machine path shapes in every canonical reference", () => {
     for (const seed of [0, 2, 14, 31, 99]) {

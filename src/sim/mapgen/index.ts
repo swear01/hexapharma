@@ -14,7 +14,7 @@ import type {
   Vec2,
 } from "../phase0_interfaces";
 import { CellKind, MAX_TEMPLATE_STEPS } from "../phase0_interfaces";
-import { evaluate, initialState, walkValidatedPathInto } from "../drug-graph";
+import { initialState, walkValidatedPathInto } from "../drug-graph";
 import { makeRng } from "../rng";
 
 export const MAX_MAP_CELLS = 65_536;
@@ -885,16 +885,29 @@ function paintTerrain(
   let placed = 0;
   for (let motifIndex = 0; motifIndex < Math.min(2, placements.length) && placed < target; motifIndex++) {
     const motif = placements[motifIndex]!;
-    const candidates = band.indices
-      .filter((cellIndex) => availableForTerrain(map, cellIndex))
-      .map((cellIndex) => {
-        const x = cellIndex % map.width;
-        const y = Math.floor(cellIndex / map.width);
-        return { cellIndex, distance: motifDistance(motif, x, y) };
-      })
-      .sort((a, b) => a.distance - b.distance || a.cellIndex - b.cellIndex);
-    for (const candidate of candidates.slice(0, 3)) {
-      if (!availableForTerrain(map, candidate.cellIndex) || placed >= target) continue;
+    const closest: { cellIndex: number; distance: number }[] = [];
+    for (const cellIndex of band.indices) {
+      if (!availableForTerrain(map, cellIndex)) continue;
+      const candidate = {
+        cellIndex,
+        distance: motifDistance(motif, cellIndex % map.width, Math.floor(cellIndex / map.width)),
+      };
+      let position = closest.length;
+      while (
+        position > 0 &&
+        (
+          candidate.distance < closest[position - 1]!.distance ||
+          (
+            candidate.distance === closest[position - 1]!.distance &&
+            candidate.cellIndex < closest[position - 1]!.cellIndex
+          )
+        )
+      ) position--;
+      closest.splice(position, 0, candidate);
+      if (closest.length > 3) closest.pop();
+    }
+    for (const candidate of closest) {
+      if (placed >= target) break;
       map.cell[candidate.cellIndex] = kind;
       placed++;
     }
@@ -1176,13 +1189,19 @@ export const generate: GenerateFn = (opts) => {
   const mm = freezeMaps(maps);
   const start = initialState(mm);
   const diseases: DiseaseSpec[] = built.map((disease) => {
-    const outcome = evaluate(mm, start, disease.reference);
-    if (outcome.failed || !outcome.cured.includes(disease.id)) {
+    const outcome = simulateReference(mm, start, disease.reference);
+    const endpoint = outcome.final[disease.map];
+    const map = mm.maps[disease.map]!;
+    if (
+      outcome.failed ||
+      endpoint === undefined ||
+      map.cureId[idx(map.width, endpoint.x, endpoint.y)] !== disease.id
+    ) {
       throw new Error(`mapgen invariant violation: reference does not cure disease ${disease.id}`);
     }
     if (
-      outcome.final[disease.map]?.x !== disease.node.x ||
-      outcome.final[disease.map]?.y !== disease.node.y
+      endpoint.x !== disease.node.x ||
+      endpoint.y !== disease.node.y
     ) {
       throw new Error(`mapgen invariant violation: disease ${disease.id} endpoint drifted`);
     }

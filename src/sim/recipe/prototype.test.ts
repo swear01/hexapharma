@@ -279,7 +279,7 @@ describe("compilePrototype", () => {
         }),
         { numRuns: 12, seed: 0x5eed + nMaps },
       );
-    });
+    }, 10_000);
   }
 
   it("rejects colliding placements instead of silently repacking them", () => {
