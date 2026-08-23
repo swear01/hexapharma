@@ -21,6 +21,10 @@ export const LAB_SCHEMATIC_STYLE = Object.freeze({
   cure: 0xb8e06c,
   sideEffect: 0xde5fb1,
   failure: 0xef6862,
+  fogGrid: 0x1f313d,
+  wallDetail: 0x637078,
+  abyssDetail: 0x24343d,
+  sideEffectOutline: 0x51223f,
 });
 
 export interface LabRenderView {
@@ -189,12 +193,12 @@ function drawTerrainMotif(
     for (let row = 1; row <= 2; row++) {
       const lineY = y + (cell * row) / 3;
       terrain.moveTo(x, lineY).lineTo(x + cell, lineY)
-        .stroke({ color: 0x637078, width: Math.max(1, cell * 0.035), alpha: 0.72 });
+        .stroke({ color: LAB_SCHEMATIC_STYLE.wallDetail, width: Math.max(1, cell * 0.035), alpha: 0.72 });
     }
     terrain.moveTo(x + cell * 0.5, y).lineTo(x + cell * 0.5, y + cell / 3)
       .moveTo(x + cell * 0.25, y + cell / 3).lineTo(x + cell * 0.25, y + (cell * 2) / 3)
       .moveTo(x + cell * 0.7, y + (cell * 2) / 3).lineTo(x + cell * 0.7, y + cell)
-      .stroke({ color: 0x637078, width: Math.max(1, cell * 0.035), alpha: 0.72 });
+      .stroke({ color: LAB_SCHEMATIC_STYLE.wallDetail, width: Math.max(1, cell * 0.035), alpha: 0.72 });
     return;
   }
   if (visual.kind === "abyss") {
@@ -203,7 +207,7 @@ function drawTerrainMotif(
     terrain.circle(x + cell / 2, y + cell / 2, cell * 0.4)
       .stroke({ color: visual.rimColor, width: Math.max(3, cell * 0.075), alpha: 0.95 });
     terrain.circle(x + cell / 2, y + cell / 2, cell * 0.27)
-      .stroke({ color: 0x24343d, width: Math.max(2, cell * 0.04), alpha: 0.8 });
+      .stroke({ color: LAB_SCHEMATIC_STYLE.abyssDetail, width: Math.max(2, cell * 0.04), alpha: 0.8 });
     terrain.circle(x + cell / 2, y + cell / 2, cell * 0.1)
       .fill({ color: LAB_SCHEMATIC_STYLE.flow, alpha: 0.28 });
     return;
@@ -268,7 +272,7 @@ function drawVisibleMap(
       terrain.rect(screen.x, screen.y, cell, cell)
         .fill({ color: revealed ? LAB_SCHEMATIC_STYLE.field : LAB_SCHEMATIC_STYLE.void });
       if (!revealed) terrain.rect(screen.x + 2, screen.y + 2, cell - 4, cell - 4)
-        .stroke({ color: 0x1f313d, width: 1, alpha: 0.32 });
+        .stroke({ color: LAB_SCHEMATIC_STYLE.fogGrid, width: 1, alpha: 0.32 });
 
       const visual = labTerrainVisual(map, x, y);
       drawTerrainMotif(terrain, visual, screen.x, screen.y, cell);
@@ -282,7 +286,7 @@ function drawVisibleMap(
         featureOverlay.circle(screen.x + cell * 0.78, screen.y + cell * 0.22, cell * 0.12)
           .fill({ color: LAB_SCHEMATIC_STYLE.sideEffect, alpha: 0.98 });
         featureOverlay.circle(screen.x + cell * 0.78, screen.y + cell * 0.22, cell * 0.17)
-          .stroke({ color: 0x51223f, width: Math.max(2, cell * 0.04), alpha: 0.98 });
+          .stroke({ color: LAB_SCHEMATIC_STYLE.sideEffectOutline, width: Math.max(2, cell * 0.04), alpha: 0.98 });
       }
       if (visual.kind !== "empty") {
         const edges = revealedRegionEdges(map, x, y);

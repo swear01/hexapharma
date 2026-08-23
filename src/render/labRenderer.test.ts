@@ -12,6 +12,10 @@ describe("Orbital wet-lab schematic", () => {
       cure: 0xb8e06c,
       sideEffect: 0xde5fb1,
       failure: 0xef6862,
+      fogGrid: 0x1f313d,
+      wallDetail: 0x637078,
+      abyssDetail: 0x24343d,
+      sideEffectOutline: 0x51223f,
     });
   });
 });

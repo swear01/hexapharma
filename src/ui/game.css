@@ -23,6 +23,8 @@
   --lime-500: #9fd45b;
   --magenta-500: #dc64b5;
   --failure-500: #ec6666;
+  --failure-border: rgb(236 102 102 / 50%);
+  --failure-surface: #241317;
   --teal-500: var(--cyan-500);
   --teal-400: var(--cyan-400);
   --teal-700: var(--cyan-700);
@@ -249,7 +251,7 @@ textarea:focus-visible,
 .hud-button:hover:not(:disabled) {
   border-color: var(--teal-500);
   color: var(--teal-400);
-  background: rgb(39 200 180 / 12%);
+  background: rgb(53 213 209 / 12%);
 }
 
 .hud-button.is-warning {
@@ -305,7 +307,7 @@ textarea:focus-visible,
 }
 
 .nav-button.is-active {
-  border-color: rgb(39 200 180 / 55%);
+  border-color: rgb(53 213 209 / 55%);
   color: var(--teal-400);
   background: rgb(53 213 209 / 10%);
   box-shadow: inset 3px 0 0 var(--teal-400);
@@ -895,8 +897,8 @@ textarea:focus-visible,
   justify-items: center;
   padding: 32px;
   background:
-    linear-gradient(rgb(39 200 180 / 7%) 1px, transparent 1px),
-    linear-gradient(90deg, rgb(39 200 180 / 7%) 1px, transparent 1px),
+    linear-gradient(rgb(53 213 209 / 7%) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(53 213 209 / 7%) 1px, transparent 1px),
     var(--steel-950);
   background-size: 42px 42px;
   text-align: center;
@@ -1105,9 +1107,9 @@ textarea:focus-visible,
 
 .transport-bar button:hover,
 .transport-bar button.is-active {
-  border-color: rgb(39 200 180 / 50%);
+  border-color: rgb(53 213 209 / 50%);
   color: var(--teal-400);
-  background: rgb(39 200 180 / 12%);
+  background: rgb(53 213 209 / 12%);
 }
 
 .transport-bar.research-atlas-status {
@@ -1133,9 +1135,9 @@ textarea:focus-visible,
 }
 
 .game-alert {
-  border-color: rgb(238 107 107 / 50%);
+  border-color: var(--failure-border);
   border-left-color: var(--red-500);
-  background: #241317;
+  background: var(--failure-surface);
 }
 
 .game-toast.is-success {
@@ -1590,7 +1592,7 @@ textarea:focus-visible,
   border: 2px solid var(--teal-500);
   border-radius: var(--radius-sm);
   color: var(--teal-400);
-  background: rgb(39 200 180 / 10%);
+  background: rgb(53 213 209 / 10%);
   font-weight: 900;
 }
 
@@ -1621,12 +1623,11 @@ textarea:focus-visible,
   font-variant-numeric: tabular-nums;
 }
 
-[data-testid^="shop-clean-"] {
+.market-value-clean {
   color: var(--green-500) !important;
 }
 
-[data-testid^="shop-tainted-"],
-[data-testid^="shop-side-effect-penalty-"] {
+.market-value-tainted {
   color: var(--magenta-500) !important;
 }
 

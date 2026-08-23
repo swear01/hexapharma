@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { FactoryLayout, GameState, GenOptions, Template } from "../phase0_interfaces";
 import {
@@ -528,6 +529,16 @@ describe("deserializeGame schema validation", () => {
 });
 
 describe("deserializeGame semantic authority", () => {
+  it("shares the map generator disease limit for the discovered formula ledger", () => {
+    const source = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
+    const parser = source.slice(
+      source.indexOf("function parseResearchFacility"),
+      source.indexOf("function parsePilotFacility"),
+    );
+    expect(parser).toContain("MAX_GENERATION_DISEASES");
+    expect(parser).not.toMatch(/discoveredFormulas\.length > \d/);
+  });
+
   it("rejects tampered catalog, Research paths, obsolete strokes, and factory authority", () => {
     for (const facility of ["pilot", "production"] as const) {
       for (const [field, value] of [["cost", -999], ["speed", 0]] as const) {

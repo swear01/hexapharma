@@ -138,9 +138,10 @@ export function BlueprintLibrary({
   const loadFactory = useCallback((entry: LibraryBlueprint, destination: "pilot" | "production") => {
     try {
       const layout = materializeFactoryLayout(entry.blueprint);
+      const destinationLabel = destination === "pilot" ? "Production Plan" : "Production";
       const accepted = destination === "pilot" ? onLoadPilot(layout) : onBuildProduction(layout);
       setStatus(accepted
-        ? `Loaded “${entry.blueprint.name}” into ${destination === "pilot" ? "Production Plan" : "Production"}.`
+        ? `Loaded “${entry.blueprint.name}” into ${destinationLabel}.`
         : `Could not load “${entry.blueprint.name}”.`);
     } catch (error) {
       setStatus(`Could not materialize blueprint: ${message(error)}`);

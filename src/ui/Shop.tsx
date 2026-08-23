@@ -189,10 +189,10 @@ export function Shop({ level, economy, inventory, onSell }: ShopProps) {
                   <div><span>Base</span><strong>{disease.basePrice}</strong></div>
                   <div><span>Sold</span><strong data-testid={`shop-sold-${disease.id}`}>{sold}</strong></div>
                   <div><span>Next gross</span><strong data-testid={`shop-next-${disease.id}`}>{next}</strong></div>
-                  <div><span>Clean stock</span><strong data-testid={`shop-clean-${disease.id}`}>{clean}</strong></div>
-                  <div><span>Tainted stock</span><strong data-testid={`shop-tainted-${disease.id}`}>{tainted}</strong></div>
+                  <div><span>Clean stock</span><strong className="market-value-clean" data-testid={`shop-clean-${disease.id}`}>{clean}</strong></div>
+                  <div><span>Tainted stock</span><strong className="market-value-tainted" data-testid={`shop-tainted-${disease.id}`}>{tainted}</strong></div>
                   <div><span>Best production cost</span><strong data-testid={`shop-production-cost-${disease.id}`}>{quote?.productionCost ?? "—"}</strong></div>
-                  <div><span>Best effect penalty</span><strong data-testid={`shop-side-effect-penalty-${disease.id}`}>{quote === null ? "—" : `$${quote.sideEffectPenaltyEach} × ${quote.sideEffectCount} = $${quote.sideEffectPenalty}`}</strong></div>
+                  <div><span>Best effect penalty</span><strong className="market-value-tainted" data-testid={`shop-side-effect-penalty-${disease.id}`}>{quote === null ? "—" : `$${quote.sideEffectPenaltyEach} × ${quote.sideEffectCount} = $${quote.sideEffectPenalty}`}</strong></div>
                   <div><span>Best net</span><strong data-testid={`shop-net-${disease.id}`}>{quote?.net ?? "—"}</strong></div>
                 </div>
                 <div className="market-actions">

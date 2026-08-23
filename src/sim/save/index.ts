@@ -38,7 +38,11 @@ import {
   MAX_REWIND_HISTORY_TRACE_ENTRIES,
 } from "../phase0_interfaces";
 import { restoreFactory, snapshotFactory } from "../factory-sim";
-import { MAX_GENERATION_CATALOG_ENTRIES, generate } from "../mapgen";
+import {
+  MAX_GENERATION_CATALOG_ENTRIES,
+  MAX_GENERATION_DISEASES,
+  generate,
+} from "../mapgen";
 import { DEFAULT_PATENTS } from "../patent";
 import {
   MAX_INTENT_TRACE,
@@ -756,7 +760,7 @@ function parseResearchFacility(v: unknown, expectedMaps: number): GameState["res
   const path = "research";
   const o = reqExactObject(v, path, ["program", "shot", "lastOutcome", "discoveredFormulas"]);
   const discoveredFormulas = reqArray(o.discoveredFormulas, `${path}.discoveredFormulas`);
-  if (discoveredFormulas.length > 8) {
+  if (discoveredFormulas.length > MAX_GENERATION_DISEASES) {
     throw new SaveError(`${path}.discoveredFormulas: exceeds generated disease limit`);
   }
   const shotObject = o.shot === null
