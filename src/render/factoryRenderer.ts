@@ -44,13 +44,12 @@ export const FACTORY_SCHEMATIC_STYLE = Object.freeze({
   deck: 0x18242b,
   chassis: 0x28343b,
   structure: 0xe7e1d2,
-  steel: 0x718089,
   flow: 0x48d7e5,
   selection: 0xf3b45d,
   cure: 0xb8e06c,
-  sideEffect: 0xde5fb1,
   failure: 0xef6862,
 });
+export const FACTORY_MACHINE_SHADOW_ALPHA = 0.28;
 
 const BG = FACTORY_SCHEMATIC_STYLE.void;
 const GRID_LINE = 0x35454e;
@@ -421,7 +420,7 @@ function drawMachine(m: PlacedMachine, isBottleneck: boolean, ctx: DrawCtx): voi
     const x1 = px + CELL - (rightConnected ? 0 : 3);
     const y1 = py + CELL - (bottomConnected ? 0 : 3);
     cells.rect(x0 + 3, y0 + 4, x1 - x0, y1 - y0)
-      .fill({ color: FACTORY_SCHEMATIC_STYLE.void, alpha: 0.72 });
+      .fill({ color: FACTORY_SCHEMATIC_STYLE.void, alpha: FACTORY_MACHINE_SHADOW_ALPHA });
     cells.rect(x0, y0, x1 - x0, y1 - y0).fill({ color: style.body });
     if (!topConnected) cells.moveTo(x0, y0).lineTo(x1, y0);
     if (!rightConnected) cells.moveTo(x1, y0).lineTo(x1, y1);

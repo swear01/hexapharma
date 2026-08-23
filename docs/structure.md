@@ -29,7 +29,7 @@
 | `src/render/labRenderer.ts` | vector-only Orbital Wet-Lab Atlas、下一個full-path candidate、executed trail、terrain、overlap features與fog layer；event-driven單幀重繪。 |
 | `src/render/factoryTransportTopology.ts` | sim-derived accept/emit edges、cell shape classification、machine port connectivity。 |
 | `src/render/factoryRenderer.ts` | Production Plan／Production Orbital Wet-Lab schematic、connected transport與tick animation；event-driven單幀重繪。 |
-| `src/ui/App.tsx` | Research Atlas wrapper、candidate endpoint hit-testing、shot-follow camera、已知Cure輪播、combined outcome與progress。 |
+| `src/ui/App.tsx` | Research Atlas wrapper、candidate endpoint hit-testing、手動camera focus、已知Cure輪播與resolved outcome。 |
 | `src/ui/Factory.tsx` | Production Plan／Production shared editor、Belt drag、Commission cost preview、diagnostics/transport controls。 |
 | `src/ui/Game.tsx` | F1 stepwise Research／assay sector／formula ribbon、F2 optional Production Plan、F3 direct Production、contract HUD、$1000 bootstrap、New Game、drawers、paid intents與save shell。 |
 | `src/ui/machineLabels.ts`, `effectLabels.ts` | 玩家可讀的machine／一基底disease／outcome文字；不暴露internal IDs或座標。 |

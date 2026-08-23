@@ -12,9 +12,17 @@ test("a default run starts with a viable budget and four independent disease mar
 });
 
 test("the complete HUD stays reachable across narrow widths", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 844 });
+  await page.goto("/");
+  const contractColumns = await page.getByTestId("shipping-contract").evaluate((element) =>
+    getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/),
+  );
+  expect(contractColumns).toHaveLength(2);
+
   for (const width of [390, 430, 560, 651]) {
     await page.setViewportSize({ width, height: 844 });
     await page.goto("/?cash=999712&research=100000");
+    await expect(page.getByTestId("shipping-contract")).toHaveCSS("display", "grid");
 
     for (const element of await page.locator(".resource-chip, .system-strip > *").all()) {
       const box = await element.boundingBox();

@@ -50,6 +50,7 @@ test("full loop: paid Research → Formula → Production Plan → Production �
   await loadPrepared(page);
   await expect(page.getByTestId("research-atlas-outcome")).toBeVisible();
   await expect(page.getByTestId("formula-ribbon")).toContainText("Disease 1");
+  await expect(page.getByTestId("formula-ribbon").locator(".formula-ribbon-cost")).toContainText("assay");
   await expect(page.getByTestId("shipping-contract")).toContainText("0 / 3");
 
   await page.getByTestId("view-pilot").click();

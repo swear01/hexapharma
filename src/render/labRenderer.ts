@@ -51,19 +51,13 @@ function isRevealed(map: EffectMap, x: number, y: number): boolean {
 }
 
 export interface LabFeatureStyle {
-  readonly scale: number;
-  readonly alpha: number;
-  readonly tint: number;
   readonly targetRing: boolean;
 }
 
 export function labFeatureStyle(
   kind: CellTerrainVisual["kind"] | PortalTerrainVisual["kind"],
-  rimColor: number,
 ): LabFeatureStyle {
-  if (kind === "wall") return { scale: 1.08, alpha: 0.48, tint: LAB_SCHEMATIC_STYLE.structure, targetRing: false };
-  if (kind === "cure") return { scale: 1.02, alpha: 1, tint: rimColor, targetRing: true };
-  return { scale: 0.88, alpha: 0.88, tint: LAB_SCHEMATIC_STYLE.sideEffect, targetRing: false };
+  return { targetRing: kind === "cure" };
 }
 
 function drawGridKind(
@@ -278,7 +272,7 @@ function drawVisibleMap(
 
       const visual = labTerrainVisual(map, x, y);
       drawTerrainMotif(terrain, visual, screen.x, screen.y, cell);
-      if (labFeatureStyle(visual.kind, visual.rimColor).targetRing) {
+      if (labFeatureStyle(visual.kind).targetRing) {
         const cx = screen.x + cell / 2;
         const cy = screen.y + cell / 2;
         featureOverlay.circle(cx, cy, cell * 0.37)

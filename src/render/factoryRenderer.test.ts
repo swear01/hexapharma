@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { PlacedMachine } from "../sim/phase0_interfaces";
 import { DEFAULT_CATALOG, DEFAULT_SHAPES, SHAPE_1x1 } from "../sim/phase0_interfaces";
 import {
+  FACTORY_MACHINE_SHADOW_ALPHA,
   FACTORY_SCHEMATIC_STYLE,
   factoryTransportArmGeometry,
   factoryTransportFlowPoint,
@@ -17,13 +18,15 @@ describe("factory orbital wet-lab schematic", () => {
       deck: 0x18242b,
       chassis: 0x28343b,
       structure: 0xe7e1d2,
-      steel: 0x718089,
       flow: 0x48d7e5,
       selection: 0xf3b45d,
       cure: 0xb8e06c,
-      sideEffect: 0xde5fb1,
       failure: 0xef6862,
     });
+  });
+
+  it("keeps machine shadows subordinate to the chassis", () => {
+    expect(FACTORY_MACHINE_SHADOW_ALPHA).toBe(0.28);
   });
 });
 

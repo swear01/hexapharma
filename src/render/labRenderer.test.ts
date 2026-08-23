@@ -17,13 +17,12 @@ describe("Orbital wet-lab schematic", () => {
 });
 
 describe("Lab feature emphasis", () => {
-  it("renders a revealed Cure as a full-strength tinted target", () => {
-    const cure = labFeatureStyle("cure", 0x8ae8ff);
-    const sideEffect = labFeatureStyle("sideEffect", 0xd6a6ed);
+  it("requests a target ring only for a revealed Cure", () => {
+    const cure = labFeatureStyle("cure");
+    const sideEffect = labFeatureStyle("sideEffect");
 
-    expect(cure).toMatchObject({ alpha: 1, tint: 0x8ae8ff, targetRing: true });
-    expect(cure.scale).toBeGreaterThan(sideEffect.scale);
-    expect(sideEffect.targetRing).toBe(false);
+    expect(cure).toEqual({ targetRing: true });
+    expect(sideEffect).toEqual({ targetRing: false });
   });
 
   it("keeps an add-path badge legible on the preview endpoint", () => {

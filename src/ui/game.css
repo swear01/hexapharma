@@ -198,6 +198,8 @@ textarea:focus-visible,
 }
 
 .contract-chip {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   min-width: 148px;
   border-color: rgb(159 212 91 / 48%);
   background: var(--steel-900);
@@ -416,7 +418,7 @@ textarea:focus-visible,
   background: var(--steel-900);
 }
 
-.formula-ribbon > span:nth-last-child(2) {
+.formula-ribbon-cost {
   color: var(--orange-400);
 }
 
@@ -2117,7 +2119,6 @@ textarea:focus-visible,
   }
 
   .contract-chip {
-    grid-template-columns: minmax(0, 1fr) auto;
     flex-grow: 1.4;
   }
 

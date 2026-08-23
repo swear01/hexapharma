@@ -240,20 +240,19 @@ describe("default Lab world options", () => {
   });
 
   it("reports side effects only as part of a resolved shot outcome", () => {
-    expect(researchOutcomeText(null, null)).toBeNull();
-    expect(researchOutcomeText(null, 1)).toBe("Step 2");
+    expect(researchOutcomeText(null)).toBeNull();
     expect(researchOutcomeText({
       failed: false,
       final: [{ x: 7, y: 4 }],
       cured: [0],
       sideEffects: [101, 102],
-    }, null)).toBe("Cure Disease 1 · 2 side effects");
+    })).toBe("Cure Disease 1 · 2 side effects");
     expect(researchOutcomeText({
       failed: false,
       final: [{ x: 7, y: 4 }],
       cured: [],
       sideEffects: [],
-    }, null)).toBe("No cure · No side effects");
+    })).toBe("No cure · No side effects");
   });
 
   it("auto-dismisses successful save notices but keeps recovery errors visible", () => {

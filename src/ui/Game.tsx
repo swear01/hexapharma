@@ -352,7 +352,7 @@ function FormulaRibbon({ formula }: { readonly formula: DiscoveredFormula }) {
           </li>
         ))}
       </ol>
-      <span>${formula.researchCost} assay</span>
+      <span className="formula-ribbon-cost">${formula.researchCost} assay</span>
       <span>{formula.outcome.sideEffects.length === 0 ? "Clean" : `${formula.outcome.sideEffects.length} side effects`}</span>
     </aside>
   );
@@ -969,7 +969,6 @@ export function Game() {
                 trails={researchTrails}
                 previewTrails={planningPreview?.trails}
                 previewDrug={planningPreview?.drug}
-                shotStep={null}
                 lastOutcome={game.research.lastOutcome}
                 onWorldActivate={researchAction}
                 onWorldErase={abortResearch}
