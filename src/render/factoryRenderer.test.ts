@@ -14,7 +14,7 @@ import {
 describe("factory orbital wet-lab schematic", () => {
   it("shares the atlas semantic colors on a dark industrial deck", () => {
     expect(FACTORY_SCHEMATIC_STYLE).toEqual({
-      void: 0x050a12,
+      background: 0x050a12,
       deck: 0x18242b,
       chassis: 0x28343b,
       structure: 0xe7e1d2,

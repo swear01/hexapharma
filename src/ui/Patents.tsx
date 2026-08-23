@@ -3,6 +3,7 @@ import type { EconomyState, PatentState, ShippingContractProgress } from "../sim
 import { requiredShippingContractForPatent } from "../sim/game";
 import { DEFAULT_PATENTS, canUnlock, activeEffects } from "../sim/patent";
 import { createPortal } from "react-dom";
+import { diseaseName } from "./effectLabels";
 import { machineName } from "./machineLabels";
 
 interface PatentsProps {
@@ -63,10 +64,10 @@ export function patentContractRequirement(
   const disease = requiredShippingContractForPatent(patentId);
   if (disease === null) return null;
   const contract = contracts.find((candidate) => candidate.disease === disease);
-  if (contract === undefined) return `Disease ${disease + 1} contract unavailable`;
+  if (contract === undefined) return `${diseaseName(disease)} contract unavailable`;
   return contract.completed
     ? null
-    : `Complete Disease ${disease + 1} contract (${contract.sold}/${contract.quota})`;
+    : `Complete ${diseaseName(disease)} contract (${contract.sold}/${contract.quota})`;
 }
 
 export function patentEffectSummary(effects: ReturnType<typeof activeEffects>): readonly string[] {
