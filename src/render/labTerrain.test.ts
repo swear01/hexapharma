@@ -122,6 +122,29 @@ describe("Lab terrain visual language", () => {
     expect(first.rimColor).not.toBe(second.rimColor);
   });
 
+  it("keeps structures and discoveries inside the schematic semantic palette", () => {
+    const level = map();
+    level.cell[0] = CellKind.Wall;
+    level.cell[1] = CellKind.Cure;
+    level.cureId[1] = 0;
+    level.cell[2] = CellKind.SideEffect;
+    level.fog[1] = 1;
+    level.fog[2] = 1;
+
+    expect(labTerrainVisual(level, 0, 0)).toMatchObject({
+      baseColor: 0x242e34,
+      rimColor: 0xe7e1d2,
+    });
+    expect(labTerrainVisual(level, 1, 0)).toMatchObject({
+      baseColor: 0x314326,
+      rimColor: 0xb8e06c,
+    });
+    expect(labTerrainVisual(level, 2, 0)).toMatchObject({
+      baseColor: 0x51223f,
+      rimColor: 0xde5fb1,
+    });
+  });
+
   it("reveals portal pairing and direction only after discovering each endpoint", () => {
     const level = map();
     const left = 1 * level.width + 1;

@@ -4,25 +4,25 @@
 
 ## 摘要
 
-HexaPharma 是單人 2D 工廠解謎遊戲。玩家在遠大於 viewport 的程序化 **Research Atlas** 上，串接 catalog 定義的完整奇形 Machine `PathStamp`，出藥並探索治療區與副作用區；也可在免費的 **Pilot Plant** 設計工廠；最後在 **Production** 直接付費建造並承擔持續生產、庫存、廢料與經濟結果。正常新局在同一張 Atlas 上生成 4 種獨立疾病，讓探索、產品品質與有限需求形成反覆循環，而不是一條藍圖永久通殺。
+HexaPharma 是單人 2D 工廠解謎遊戲。玩家在遠大於 viewport 的程序化 **Research Atlas** 上開始 assay，每次選一台 catalog 定義的完整奇形 Machine `PathStamp`，立即付費、執行、揭露，再依新資訊決定下一步；也可在免費的 **Production Plan** 設計工廠，最後 **Commission** 到 **Production**，承擔持續生產、庫存、廢料與經濟結果。正常新局在同一張 Atlas 上生成 4 種獨立疾病，讓探索、配方發現、產品品質、出貨合約與有限需求形成反覆循環，而不是一條藍圖永久通殺。
 
-三個場域彼此解耦：Research 提供地圖知識，Pilot 提供免費設計空間，Production 提供有成本與時間的正式工廠。任一場域都不是另一場域的強制前置。
+三個場域彼此解耦：Research 提供地圖知識與已發現配方，Production Plan 提供免費設計空間，Production 提供有成本與時間的正式工廠。任一場域都不是另一場域的強制前置。內部 `pilot` state／intent 名稱可暫時保留，但不是玩家文案。
 
 # 1. 遊戲設計
 
 ## 1.1 核心循環
 
 ```text
-Research Atlas：選完整奇形路徑 → 串成 ResearchProgram → 付費出藥 → 揭露發現
-Pilot Plant：免費配置 FactoryLayout、觀察即時診斷、保存藍圖（可選）
-Production：直接建造或套用藍圖 → 付建造費 → 連續生產 → Market
-Technology：解鎖機器、探索輔助與場地
+Research Atlas：開始 assay → 選一個完整 PathStamp → 付費執行並揭露 → 依結果再決定 → Cure／Failure
+Production Plan：免費配置 FactoryLayout、觀察即時診斷、保存藍圖（可選）
+Production：直接建造，或把 Plan Commission 到正式產線 → 連續生產 → Market
+Market／Technology：完成出貨合約 → 解鎖機器 patents、探索輔助與場地
 ```
 
-- **Research** 擁有單一 Atlas、探索遮罩、`ResearchProgram` 與執行狀態；不持有工廠 layout。
-- **Pilot Plant** 擁有可為空的 sandbox `FactoryLayout`；沒有 clock、建造費、inventory 或 waste。
+- **Research** 擁有單一 Atlas、探索遮罩、目前 session 已實際執行的 ordered program、shot 與 `DiscoveredFormula[]`；不持有工廠 layout。
+- **Production Plan** 擁有可為空的 sandbox `FactoryLayout`；沒有 clock、建造費、inventory 或 waste。
 - **Production** 新局即擁有空白 24×12 `FactoryLayout` 與 runtime；玩家可直接編輯。
-- Blueprint Library 在 GameState／save slot 之外，保存可攜的 ResearchProgram 或 FactoryLayout。
+- Blueprint Library 在 GameState／save slot 之外。目前 UI 只建立／套用 FactoryLayout；codec仍可保存與驗證既有ordered `research-program`文件，但card只可import／download／delete，不能提交session、揭霧、產生outcome或建立formula。
 - 正常新局以 $1000 開始；不用 query override、隱藏 reference、預製 Blueprint 或注入 Knowledge，就必須付得起一次有效 Research、對應建廠與第一件產品出售。
 
 ## 1.2 單層 Atlas、霧與地形
@@ -43,21 +43,25 @@ Active Research 只有一張單層 Atlas；不提供 layer tabs、跨層座標�
 - **Swamp**：該步消耗 2 energy；一般可進入格消耗 1。
 - **Portal A→B**：從入口立即到同圖的配對出口，剩餘 path 從 B 繼續。B 不可反向當入口；trail 必須在跳躍處斷開。
 
-Atlas 起點位於 generator 宣告的世界中心附近；新局只揭露以起點為中心的 5×5 方格。camera 開局聚焦起點，地圖只顯示 viewport 覆蓋的一小部分。一般 pan／zoom 不改 authority；規劃時contextual focus明示Next並移到橙色candidate endpoint，只有shot執行中明示Dose並移到實際藥物。resolved outcome可繼續顯示，但一回到規劃就必須讓Next focus指向下一個candidate，不能被舊Dose狀態綁住。出藥期間camera自動跟隨當前藥物，結束後仍可自由移動；建築重新啟用不能因stale outcome再次強制聚焦。Cure sites HUD只顯示已揭露位置的數量並可輪播已知Cure，不能讓玩家誤以為是已成功治療數，也不能以總數、disabled state、輪播順序或camera洩漏未知Cure。
+Atlas 起點位於 generator 宣告的世界中心附近；新局只揭露以起點為中心的 5×5 方格。camera 開局聚焦起點，地圖只顯示 viewport 覆蓋的一小部分。一般 pan／zoom 不改 authority；contextual focus固定明示Next並移到橙色candidate endpoint。每個stamp在單一intent中立即resolve，UI不呈現timed Dose phase或自動camera follow；resolved outcome可保留，但建築重新啟用不能因stale outcome強制聚焦。Cure sites HUD只顯示已揭露位置的數量並可輪播已知Cure，不能讓玩家誤以為是已成功治療數，也不能以總數、disabled state、輪播順序或camera洩漏未知Cure。
+
+每次 assay 的 mission readout 只提供目標相對起點的寬廣 sector：local、東／西／南／北或對角方向。它不公開目標座標、距離、reference path、region 大小或霧下內容；sector 是方向線索，不是導航答案。
 
 Cure 與 SideEffect 是同一格上的獨立效果欄位，不是互斥 cell kind。已揭露Cure使用明顯receptor與target ring；constructed reference 精確命中的 cure endpoint 必須乾淨；同一治療區的部分其他格可同時帶有副作用，讓玩家在「碰到療效」與「命中乾淨位置」之間繼續最佳化。
 
-## 1.3 ResearchProgram 與完整 PathStamp
+## 1.3 Reveal–decide Research session 與完整 PathStamp
 
 Research 不使用 FactoryLayout、source／belt／sink、線性 route descriptor 或 DOM recipe timeline。
 
 - 每種 Research machine 由 catalog 定義一條**完整**、可凹折、回繞或不規則的 `PathStamp`。
-- 選擇機器只建立從目前 endpoint 接續的完整 candidate ghost；玩家必須點擊 candidate endpoint 才加入整條 path。點空白地圖只處理 world interaction，不得 append program。沒有長度滑桿、截短按鈕或只走部分 path 的資料欄位。
-- `ResearchProgram.steps[]` 只保存 `{typeId, path}` 的 canonical machine authority；下一步從前一步的實際 endpoint 繼續。
-- 畫面上的 ordered route strip 依序顯示 step、機器、單步費用與總出藥費；未出藥時可移除任意完整 step，移除後由 authority 重算後續 endpoint。
-- 玩家用不同完整形狀安排先後順序，處理牆、深淵、沼澤與傳送門。UI 不 auto-route、不修路、不呼叫 solver。
-- 規劃只顯示由當前可知資訊算出的路徑。執行與 preview 共用 pure traversal；renderer 不自行近似或重建另一條路。
-- 出藥時原子扣 `max(1, Σ machine cost)`；中止或失敗不退款。每個完成 segment 以基礎 radius 1 揭露，Technology 只能增加這個實際 segment 的感測半徑。結果列同時顯示 cure 與已揭露的 side effects；不能只報 Cure 而隱藏同一終點的已知污染。
+- 第一次`advanceResearchShot`在同一個原子 intent 內從 Atlas start 建立 step 0／cost 0 的 session、清掉前一輪 program／outcome，再立即執行所選machine；UI不先提交一個空 session。
+- 玩家一次只選擇**下一台**可用 machine。candidate ghost 從目前實際 drug state 接續完整 path；點 blank world 只處理 camera，不提交 action。沒有 batch route、可編輯待執行 queue、長度滑桿或部分 path 欄位。
+- `advanceResearchShot` 接受一個 canonical 完整 `Machine`，可原子開始或延續session。authority 立即扣除該 machine 的 catalog 費用、執行完整 stamp、揭露實際 trails、evaluate 並把這個已執行 step append 到 session program；下一個決定只能根據更新後的 fog、drug、累積 cost 與 outcome 作出。
+- no-cure 讓 session 保持 active，`lastOutcome` 立即可見；Failure 或任一 Cure 結束 session。`abortResearchShot` 清除 active program／shot／outcome，但不退款，也不回滾已執行步驟造成的 fog reveal。
+- UI 只預覽由當前 fog-masked knowledge 算出的下一個 stamp。執行與 preview 共用 pure traversal；renderer 不自行近似、auto-route、修路或呼叫 solver。
+- session program 是**已實際執行**的 ordered stamps，不是待提交的 batch。每步 cost 在該步提交時原子扣除，累積 cost 只是已付金額的讀數。
+- 每個完成 segment 以基礎 radius 1 揭露，Technology 只能增加這個實際 segment 的感測半徑。結果同時顯示 cure 與已揭露的 side effects；不能只報 Cure 而隱藏同一終點的已知污染。
+- 成功 Cure 自動建立該疾病的不可變 `DiscoveredFormula {disease, program, researchCost, outcome}`。每種疾病最多一份；再次治癒會以最新完整 session 覆寫並移到 latest。formula ribbon 顯示 ordered steps、累積 assay cost 與副作用，但不自動建造或驗證 Production layout。
 
 ## 1.4 程序地圖
 
@@ -72,18 +76,18 @@ Research 不使用 FactoryLayout、source／belt／sink、線性 route descripto
 
 radial band、motif 權重、地形比例、治療區密度與獎勵 pacing 是後續平衡項；確定性與 constructive validity 不是。
 
-## 1.5 Pilot Plant
+## 1.5 Production Plan
 
-- Pilot 是獨立 F2 world page，使用與 Production 相同的 Factory editor 與幾何規則。
+- Production Plan 是獨立 F2 world page，使用與 Production 相同的 Factory editor 與幾何規則；內部 `PilotFacilityState`／`setPilotLayout` 名稱暫不改變玩家語意。
 - 建造、旋轉、移動、刪除、undo／redo、copy／paste 都免費；沒有時間、耗材、inventory 或 waste。
 - source、belt、machine、splitter、merger、sink 可以組成任意合法 layout；不要求 Research 結果或特定產品。
-- 即時 diagnostics 可顯示 throughput、bottleneck、deadlock 或分析錯誤；sample outcome 只能依 Research fog 遮罩後的 planning map 計算，不能用免費 Pilot 洩漏未發現的 cure、side effect、portal pairing 或權威終點。
-- Pilot 的 layout 可保存為通用 Factory Blueprint，或按 `Build $N` 依 Production 當前 layout 的差異付費建造。
-- 玩家可以完全跳過 Pilot，直接在 Production 建造。
+- 即時 diagnostics 可顯示 throughput、bottleneck、deadlock 或分析錯誤；sample outcome 只能依 Research fog 遮罩後的 planning map 計算，不能用免費 Production Plan 洩漏未發現的 cure、side effect、portal pairing 或權威終點。
+- Plan 的 layout 可保存為通用 Factory Blueprint，或按 `Commission $N` 依 Production 當前 layout 的差異付費建造。
+- 玩家可以完全跳過 Production Plan，直接在 Production 建造。
 
 ## 1.6 Production 與建造經濟
 
-新局立即建立空白 24×12 Production layout 及其 runtime；不顯示封鎖頁，也沒有 Pilot 前置條件。預設 $1000 bootstrap budget 是 fresh-loop contract：玩家在正常 Research 支出後，仍能以直接建造或 Pilot 藍圖支付第一條有效產線，不能靠注入資金才到達第一次出售。
+新局立即建立空白 24×12 Production layout 及其 runtime；不顯示封鎖頁，也沒有 Production Plan 前置條件。預設 $1000 bootstrap budget 是 fresh-loop contract：玩家在正常 Research 支出後，仍能以直接建造或 Commission Plan 藍圖支付第一條有效產線，不能靠注入資金才到達第一次出售。
 
 每次提交 layout edit 都以 `quoteProductionBuild(current, proposed)` 計算差異：
 
@@ -122,6 +126,8 @@ Production 是唯一持續推進 factory tick 的場域。source、transport、m
 - 某疾病第 0 件的 gross 是 base price；每次出售後下一件是 `floor(previous × 9 / 10)`，持續衰減到 0，沒有永久正值底價。net 再扣實際 production cost 與每個 side effect 的 $25 penalty。
 - Market 對同一疾病先排 side effect 較少、再排 production cost 較低、最後排 inventory ID 較早的產品。`Ship best` 掃描此順序並賣第一件正 net產品；`Ship profitable` 依同一順序掃描全部庫存、略過不賺錢的候選，只讓實際選中的產品消耗後續demand，不得因較前面的昂貴產品而封鎖後面的正net產品，也不得自動虧本出售。
 - 每件成功出售增加1 Knowledge。Market card必須把最佳庫存的Next gross、production cost、每effect $25 penalty與net直接列出；Clean／Tainted是庫存件數。Ship disabled時顯示「沒有治療庫存」或「沒有正net庫存」的原因；只有authority接受出售後才顯示Knowledge成功回饋。
+- 每種疾病另有 shipping contract，quota 固定為 3 件；HUD 顯示首個未完成疾病的 `sold / 3`，全部完成後顯示最後一份 completed contract。合約只由 accepted sales 推進，不另行消耗庫存。
+- machine patent gates 依疾病順序綁定：Disease 1 contract 完成後才可取得 Skew，Disease 2 才可取得 Dilute，Disease 3 才可取得 Settle；cash、Knowledge 與既有 patent prerequisites 仍同時適用。其他 patents 不受 shipping contract gate 影響。
 - Technology 可解鎖 factory machines、場地、Research PathStamps、motifs 或實際路徑的感測半徑；不能以跨層互動作現行進程。
 - 會重生 Atlas 或清除 Production authority 的解鎖，必須顯示受影響資料並要求確認。
 
@@ -133,13 +139,15 @@ Blueprint 與 save slot 完全分離，Library 使用 `hexapharma.blueprint-libr
 
 - payload 保存 ordered `program.steps[] = {typeId}`。
 - path、cost、speed 由 fingerprint-compatible `DEFAULT_CATALOG` 還原。
-- 不保存 FactoryLayout、fog、seed、發現、outcome、economy 或 runtime。
+- codec 與 Library 仍接受既有文件，以便strict validation、import、download與delete；Library card只顯示內容，不提供capture或`Load in Research`。
+- 它不能成為active route：UI／GameIntent不得把它套入session，也不得藉此批次提交stamps。
+- 不保存 FactoryLayout、fog、seed、發現、outcome、formula、economy 或 runtime，也不能直接改 `DiscoveredFormula[]`。
 
 ### `factory-layout`
 
-- 通用於 Pilot 與 Production，保存 dimensions、非 empty routing tiles，以及 machines `{id,typeId,anchor,footRot}`。
+- 通用於 Production Plan 與 Production，保存 dimensions、非 empty routing tiles，以及 machines `{id,typeId,anchor,footRot}`。
 - fixed chemical path、cost、speed、shape 與 ports 由 local catalog／shape content 還原。
-- 可由 Pilot 或 Production capture；套用時可免費開到 Pilot，或依當前 Production 差異報價後付費建造。
+- 可由 Production Plan 或 Production capture；套用時可免費開到 Plan，或依當前 Production 差異報價後 Commission。
 - 不保存來源場域、ResearchProgram、diagnostics、Production runtime、inventory、waste 或 economy。
 
 ### Codec
@@ -149,7 +157,7 @@ Blueprint 與 save slot 完全分離，Library 使用 `hexapharma.blueprint-libr
 - decoder strict、bounded；unknown／missing／cross-kind fields、bad checksum/version/fingerprint、unknown type、duplicate tile/ID、collision、bounds 或 quota 都顯式拒絕。
 - 舊 Blueprint 文件不猜測升級、不 partial import。
 - Library 上限 64 entries；單 document 1,048,576 bytes；整體 4,000,000 bytes。相同 canonical checksum 去重。
-- 刪除是cross-save Library的永久操作；先以可取消確認列出entry名稱，確認後才移除，不改三個場域。
+- 刪除是cross-save Library的永久操作；先以可取消確認列出entry名稱，確認後才移除，不改三個場域。只有`factory-layout` card提供開到Plan／Commission；`research-program` card只提供download／delete。
 
 ## 1.10 UI 與直接操作
 
@@ -157,21 +165,24 @@ Blueprint 與 save slot 完全分離，Library 使用 `hexapharma.blueprint-libr
 - 遊戲畫面不放設計註解、形容詞式副標或常駐教學段落。錯誤與危險確認仍必須清楚可見。
 - 正常 HUD 提供 New Game seed 入口；確認後只建立新的目前 GameState，不刪 save checkpoints 或跨局 Blueprint Library。所有 modal 開啟時必須凍結背景指令與建築快捷鍵。
 - touch 單指在 Factory 格內執行目前工具，可畫連續 Belt 或直接搬機；兩指才是 pan。點選既有 machine 後，畫面 Rotate 與鍵盤 `R` 都要旋轉該 footprint。
-- F1 Research、F2 Pilot Plant、F3 Production；M／T／B 是可關閉 drawers。
+- F1 Research、F2 Production Plan、F3 Production；M／T／B 是可關閉 drawers。把 Plan 送進正式產線的玩家動詞固定為 `Commission`。
 - Research 與 Factory 共用 pick／place／erase／pan／zoom 的肌肉記憶，但維持不同 authority 與 validators。
-- Research 的 place target 是完整 candidate 的 endpoint，不是任意 canvas click；route strip 是 program 的可讀／可刪投影，不是第二份 route authority。
+- Research 的 place target 是下一個完整 candidate 的 endpoint，不是任意 canvas click；session readout 只投影已執行 program，不是可重排或批次送出的第二份 route authority。
+- Atlas 與 Factory 在本版都維持正方格；兩者 geometry、payload 與 validator 分離。本 PR 不做 six-neighbor hex migration。
+- 視覺語言固定為嚴格俯視的 **Orbital Wet-Lab Schematic**：black-blue void、graphite deck／field、bone-white／steel chassis。cyan 只表示 active flow，amber 表示 selection／candidate，lime 表示 cure，magenta 表示 side effect，red 表示 failure；其他結構保持中性。
+- 世界使用 Pixi `Graphics` 的 vector runtime 與固定小型硬陰影，不使用 3D 透視、glass blur、過量 glow／gradient／rounding，也不依賴 generated lab bitmap 或 runtime asset manifest。
 - 詳細按鍵、建造費與驗證步驟集中在 [player-guide.md](player-guide.md)；畫面只提供短 label、icon、hotkey 與 tooltip。
 - 完整視覺與互動規格見 [ui-interaction.md](ui-interaction.md)。
 
-## 1.11 Save v7
+## 1.11 Save v9
 
-- full envelope 是 `{version:7, game}`；Research 保存 program／shot／lastOutcome／fog，Pilot 保存 nullable layout，Production 永遠保存 non-null layout／cold runtime／waste。
-- compact authority 是 `{version:7, authority:{origin,intentTrace,replayTicks,stateHash}}`；reader 先作 raw-work preflight，再 semantic replay 並比對 canonical trace 與 hash。
-- slots／rewind 同樣使用 v7 authority，逐欄位重建 fixed path、FactoryLayout 與 cold runtime，不共享可變資料。
+- full envelope 是 `{version:9, game}`；Research 保存 program／shot／lastOutcome／discoveredFormulas／fog，內部 pilot 保存 nullable Plan layout，Production 永遠保存 non-null layout／cold runtime／waste，economy 的 sales 可重建 shipping contract progress。
+- compact authority 是 `{version:9, authority:{origin,intentTrace,replayTicks,stateHash}}`；reader 先作 raw-work preflight，再 semantic replay並比對 canonical trace 與 hash。
+- slots／rewind 同樣使用 v9 authority，逐欄位重建 fixed path、formula、FactoryLayout 與 cold runtime，不共享可變資料。
 - Load在saved head與current game不同時先以可取消確認列出會覆蓋目前遊戲；Rewind先確認會永久移除最新saved checkpoint並以較舊state取代current game。Cancel不改storage或GameState。
 - `buildProductionLayout` 是 Production edit intent；每次付費建造都保留在 trace，不能合併掉其經濟語意。
 - decoder 對 unknown／missing fields、unsafe integers、非法 path／layout／runtime、oversize 與 replay forgery 顯式失敗；舊開發版顯式拒絕。
-- checkpointStorage 外層 lineage envelope 仍是獨立 version 2；內層 head/history 是 Save v7，兩者不可混為同一 schema。
+- checkpointStorage 外層 lineage envelope 仍是獨立 version 2；內層 head/history 是 Save v9，兩者不可混為同一 schema。
 - 早期開發不承諾跨 build migration，詳見 [development-policy.md](development-policy.md)。
 
 # 2. 技術架構
@@ -195,10 +206,10 @@ Pure TS sim core  → authoritative deterministic transitions
 - `mapgen`：terrain-first seeded radial + motif Atlas、多疾病／重疊效果區、diverse constructive references。
 - `construction`：Production layout 差異報價。
 - `factory-geom`／`factory-sim`：footprint、ports、routing、tick、throughput、cold snapshot。
-- `game`：三場域、Research shot、paid Production build、inventory／economy。
+- `game`：三場域、stepwise Research session、formula、shipping contracts、paid Production build、inventory／economy。
 - `blueprint`：Blueprint v3 strict codec 與跨存檔 Library。
-- `save`／`replay-work`：Save v7、raw-work preflight、replay/hash。
-- `render`：Atlas layer rendering 與 connected factory topology。
+- `save`／`replay-work`：Save v9、raw-work preflight、replay/hash。
+- `render`：vector-only Orbital Wet-Lab Atlas 與 connected factory topology。
 - `ui`：world-first shell、shared Factory editor、drawers/checkpoints。
 
 ## 2.3 Ownership 與確定性
@@ -213,7 +224,7 @@ Pure TS sim core  → authoritative deterministic transitions
 
 - TDD：先有能失敗的 behavior/property/E2E test，再改實作。
 - `npm run check`：typecheck、lint、unit/property/integration、headless Playwright 全部通過。
-- `0.0.0.0:53346 --strictPort` 真人 smoke 必須從真正 fresh save 開始，不注入 cash／Knowledge、不讀 mapgen reference、不用 reference compiler 或預製 Blueprint，人工完成 Research → affordable build → Production → first profitable sale；另覆蓋 optional Pilot、Blueprint、Save/Load/Rewind 與 responsive reachability。
+- `0.0.0.0:53346 --strictPort` 真人 smoke 必須從真正 fresh save 開始，不注入 cash／Knowledge、不讀 mapgen reference、不用 reference compiler 或預製 Blueprint，人工完成 stepwise Research → formula → affordable build／Commission → Production → first profitable sale；另覆蓋 optional Production Plan、shipping contracts、patent gates、Blueprint、Save/Load/Rewind 與 responsive reachability。
 - 自動 gate 證明 correctness，不宣稱樂趣。真人 fresh-loop 要另外記錄首次理解、嘗試次數、剩餘現金、第一次出售時間、困惑點與主觀是否願意再解下一種疾病。
-- residue scan 不得把截短 Research path、blank-click append、遮住 Wall、提前顯示未揭露互動物、protected universal reference、單一預設疾病、永久 demand floor、Pilot 前置 Production、Blueprint 舊 schema 或 Save 舊 schema 當現行真相。
+- residue scan 不得把 batch route submission、截短 Research path、blank-click append、遮住 Wall、提前顯示未揭露互動物、protected universal reference、單一預設疾病、永久 demand floor、Production Plan 前置 Production、generated bitmap manifest、Blueprint 舊 schema 或 Save 舊 schema 當現行真相。
 - 平衡數值與美術內容量可後續迭代；fresh-loop 可達性、seed／疾病解法差異、有限 demand、效果 overlap、上述 authority、資料邊界、可見性、付費建造與 strict codec 不可用「之後平衡」延後。

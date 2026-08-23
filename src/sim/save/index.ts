@@ -63,7 +63,7 @@ import { estimateGameReplayWork } from "../replay-work";
 // blob field-by-field and rebuilding a structurally-equal GameState — never
 // defaulting silently on missing/wrong fields.
 
-export const SAVE_VERSION = 7;
+export const SAVE_VERSION = 9;
 export const MAX_SLOT_STATES = 20;
 export const MAX_SAVE_CHARACTERS = 5_000_000;
 
@@ -522,15 +522,14 @@ function parseGameIntent(v: unknown, index: number, tracePath = "intentTrace"): 
     case "buildProductionLayout":
       requireExactKeys(o, ["kind", "layout"], path);
       return { kind, layout: parseFactory(o.layout, `${path}.layout`) };
-    case "setResearchProgram":
-      requireExactKeys(o, ["kind", "program"], path);
-      return { kind, program: parseTemplate(o.program, `${path}.program`) };
     case "beginResearchShot":
-    case "advanceResearchShot":
     case "abortResearchShot":
     case "resetProduction":
       requireExactKeys(o, ["kind"], path);
       return { kind };
+    case "advanceResearchShot":
+      requireExactKeys(o, ["kind", "machine"], path);
+      return { kind, machine: parseMachine(o.machine, `${path}.machine`) };
     case "productionTicks":
       requireExactKeys(o, ["kind", "ticks"], path);
       return { kind, ticks: reqInt(o.ticks, `${path}.ticks`) };
@@ -755,7 +754,11 @@ function parseRng(v: unknown): RngState {
 
 function parseResearchFacility(v: unknown, expectedMaps: number): GameState["research"] {
   const path = "research";
-  const o = reqExactObject(v, path, ["program", "shot", "lastOutcome"]);
+  const o = reqExactObject(v, path, ["program", "shot", "lastOutcome", "discoveredFormulas"]);
+  const discoveredFormulas = reqArray(o.discoveredFormulas, `${path}.discoveredFormulas`);
+  if (discoveredFormulas.length > 8) {
+    throw new SaveError(`${path}.discoveredFormulas: exceeds generated disease limit`);
+  }
   const shotObject = o.shot === null
     ? null
     : reqExactObject(o.shot, `${path}.shot`, ["step", "drug", "cost"]);
@@ -771,6 +774,21 @@ function parseResearchFacility(v: unknown, expectedMaps: number): GameState["res
     lastOutcome: o.lastOutcome === null
       ? null
       : parseOutcome(o.lastOutcome, `${path}.lastOutcome`, expectedMaps),
+    discoveredFormulas: discoveredFormulas.map((value, index) => {
+      const formulaPath = `${path}.discoveredFormulas[${index}]`;
+      const formula = reqExactObject(value, formulaPath, [
+        "disease",
+        "program",
+        "researchCost",
+        "outcome",
+      ]);
+      return {
+        disease: reqInt(formula.disease, `${formulaPath}.disease`),
+        program: parseTemplate(formula.program, `${formulaPath}.program`),
+        researchCost: reqInt(formula.researchCost, `${formulaPath}.researchCost`),
+        outcome: parseOutcome(formula.outcome, `${formulaPath}.outcome`, expectedMaps),
+      };
+    }),
   };
 }
 
@@ -861,8 +879,8 @@ function parseAuthorityEnvelope(serialized: string): unknown {
   }
   const envelope = reqObject(parsed, "authority save");
   const version = reqInt(envelope.version, "authority save.version");
-  if (version === 5 || version === 6) {
-    throw new SaveError(`authority save: legacy version ${version} is not supported by Save v7`);
+  if (version === 5 || version === 6 || version === 7 || version === 8) {
+    throw new SaveError(`authority save: legacy version ${version} is not supported by Save v9`);
   }
   if (version !== SAVE_VERSION) {
     throw new SaveError(
@@ -990,8 +1008,8 @@ export const deserializeGame: DeserializeGameFn = (s) => {
   const env = reqObject(parsed, "save");
   if (!("version" in env)) throw new SaveError("save: missing version tag");
   const version = reqInt(env.version, "save.version");
-  if (version === 5 || version === 6) {
-    throw new SaveError(`save: legacy version ${version} is not supported by Save v7`);
+  if (version === 5 || version === 6 || version === 7 || version === 8) {
+    throw new SaveError(`save: legacy version ${version} is not supported by Save v9`);
   }
   if (version !== SAVE_VERSION) {
     throw new SaveError(`save: incompatible version ${version} (expected ${SAVE_VERSION})`);
@@ -1202,8 +1220,8 @@ export const deserializeSlots = (s: string): GameState[] => {
   const env = reqObject(parsed, "slots");
   if (!("version" in env)) throw new SaveError("slots: missing version tag");
   const version = reqInt(env.version, "slots.version");
-  if (version === 5 || version === 6) {
-    throw new SaveError(`slots: legacy version ${version} is not supported by Save v7`);
+  if (version === 5 || version === 6 || version === 7 || version === 8) {
+    throw new SaveError(`slots: legacy version ${version} is not supported by Save v9`);
   }
   if (version !== SAVE_VERSION) {
     throw new SaveError(`slots: incompatible version ${version} (expected ${SAVE_VERSION})`);

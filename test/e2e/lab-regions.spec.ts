@@ -131,7 +131,8 @@ async function syntheticRendererScreenshot(
   discovered: boolean,
   centerKind: CellKind = CellKind.Wall,
 ): Promise<Buffer> {
-  await page.goto("/assets/lab/manifest.json");
+  await page.goto("/", { waitUntil: "networkidle" });
+  await expect(page.getByTestId("lab-canvas").locator("canvas")).toBeVisible();
   await page.evaluate(async ({ fogValue, renderedKind, cureKind, sideEffectKind, portalKind }) => {
     document.body.innerHTML = '<div id="lab-renderer-smoke"></div>';
     document.body.style.margin = "0";

@@ -78,8 +78,28 @@ function clipboardPayloadSave(): string {
 }
 
 function machineGallerySave(): string {
-  let game = createGameState(defaultGenOptions(14), 1_000_000, 100_000);
-  for (const id of ["bench-2", "skew-unlock", "dilute-unlock", "settle-unlock"]) {
+  const options = defaultGenOptions(14);
+  const level = generate(options);
+  let game = createGameState(options, 1_000_000, 100_000);
+  game = applyGameIntent(game, { kind: "unlockPatent", id: "bench-2" });
+  for (const [disease, id] of [
+    [0, "skew-unlock"],
+    [1, "dilute-unlock"],
+    [2, "settle-unlock"],
+  ] as const) {
+    const layout = compileEntitledPrototype(
+      level.diseases[disease]!.reference,
+      game.production.layout.width,
+      game.production.layout.height,
+    ).layout;
+    game = applyGameIntent(game, { kind: "buildProductionLayout", layout });
+    game = applyGameIntent(game, { kind: "productionTicks", ticks: 400 });
+    const productIds = game.inventory
+      .filter((product) => product.outcome.cured.includes(disease))
+      .slice(0, 3)
+      .map((product) => product.inventoryId);
+    if (productIds.length !== 3) throw new Error(`machine gallery could not complete Disease ${disease + 1}`);
+    game = applyGameIntent(game, { kind: "sellProducts", productIds, disease });
     game = applyGameIntent(game, { kind: "unlockPatent", id });
   }
   const anchors = [
@@ -182,7 +202,7 @@ async function expectPilotMachineAboveToolbelt(page: import("@playwright/test").
 
 test("the shell exposes exactly three facility pages and drawer utilities", async ({ page }) => {
   await page.goto("/");
-  await expect(page).toHaveTitle("HexaPharma — Research · Pilot · Production");
+  await expect(page).toHaveTitle("HexaPharma — Research · Plan · Production");
   await expect(page.getByTestId("view-research")).toBeVisible();
   await expect(page.getByTestId("view-pilot")).toBeVisible();
   await expect(page.getByTestId("view-production")).toBeVisible();
@@ -553,9 +573,9 @@ test("focused Factory tool controls still allow R, number, and Q world hotkeys",
 
 test("Pilot builds without a Research contract and Production is an exact copy", async ({ page }) => {
   await loadLegacySave(page, pilotSave());
-  await expect(page.getByTestId("research-program-count")).toHaveText("0 placed");
+  await expect(page.getByTestId("research-program-count")).toHaveText("0 tested");
   await page.getByTestId("view-pilot").click();
-  await expect(page.getByRole("heading", { name: "Pilot Plant" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Production Plan" })).toBeVisible();
   await expect(page.getByTestId("factory-play")).toHaveCount(0);
   await expect(page.getByTestId("pilot-command")).toBeEnabled();
   await page.getByTestId("pilot-command").click();
@@ -626,7 +646,7 @@ test("compact Pilot controls remain reachable above the construction hotbar", as
   expect(bar.x).toBeGreaterThanOrEqual(stage.x);
   expect(bar.x + bar.width).toBeLessThanOrEqual(stage.x + stage.width);
   await expect(page.locator(".facility-pilot .facility-clock-state")).toBeHidden();
-  await expect(page.getByTestId("pilot-command")).toHaveText(/^Build \$\d+$/);
+  await expect(page.getByTestId("pilot-command")).toHaveText(/^Commission \$\d+$/);
   const toolbelt = page.getByTestId("pilot-facility-workspace").getByTestId("factory-toolbelt");
   expect(await toolbelt.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
   await expect(page.getByTestId("pilot-facility-workspace").getByTestId("toolbelt-more"))

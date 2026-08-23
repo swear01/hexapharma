@@ -7,22 +7,25 @@
 ## 現行玩法
 
 ```text
-Research：在大型單層 Atlas 上串接固定、完整、奇形的機器路徑；出藥後才揭露發現
-Pilot Plant：免費、無時間的工廠配置沙盒
+Research：開始 assay，逐次選擇完整奇形機器；每步立即付費、執行、揭露，再決定下一步
+Production Plan：免費、無時間的工廠配置沙盒；確認後 Commission 到正式產線
 Production：新局即可直接建造；每次變更付費並承擔持續生產的結果
 Market / Technology / Blueprints
 ```
 
-- F1／F2／F3 分別開啟 Research、Pilot Plant、Production；M／T／B 開啟抽屜。
+- F1／F2／F3 分別開啟 Research、Production Plan、Production；M／T／B 開啟抽屜。
 - 新局在 Atlas 中心揭露 5×5；只有牆可穿霧看見。深淵、沼澤、成對傳送門、治療區與副作用區都要實際出藥揭露。
-- 預設同一張 Atlas 有 4 種獨立疾病。Research 機器只使用 catalog 定義的完整路徑；不能截短。選好機器後必須點 candidate endpoint 才加入，空白地圖點擊不會改 program。
-- ordered route strip 顯示每步與總出藥費，可逐步移除；出藥時 camera 跟隨藥物，結果同時回報已知 cure 與 side effects。
-- Production 新局即有空白 24×12 場地，不要求先使用 Pilot。傳送帶 $2、分流／合流 $8、來源 $12、出口 $6、機器是每單位處理成本的 10 倍；拆除不退款。
-- Pilot Plant 免費且沒有時間，只是可選的設計空間。完成後可按標示價格建到 Production。
+- 預設同一張 Atlas 有 4 種獨立疾病。assay 只透露目標的寬廣方位區段，不公開座標或距離。
+- Research 機器只使用 catalog 定義的完整路徑，不能截短。每次選定一台機器，就原子扣除該 stamp 費用、依權威地圖走完整路徑、揭露實際 trail 並立即顯示 outcome；玩家再根據新資訊決定下一台。沒有預先提交整批 route。
+- Failure 或 Cure 結束本次 session；Abort 不退款且不回滾先前揭霧。成功 Cure 會自動保存該疾病最新的 `DiscoveredFormula`，並在畫面顯示已執行步驟、累積 assay 成本與副作用。
+- Production 新局即有空白 24×12 場地，不要求先使用 Production Plan。傳送帶 $2、分流／合流 $8、來源 $12、出口 $6、機器是每單位處理成本的 10 倍；拆除不退款。
+- Production Plan 免費且沒有時間，只是可選的設計空間。完成後可按 `Commission $N` 建到 Production；內部 state／intent 名稱暫仍使用 `pilot`。
 - 傳送帶依真實連線顯示端點、直線、轉角、T 字與十字，拖曳轉彎會逐格設定正確方向。
-- Blueprint v3 有 `research-program` 與通用 `factory-layout`；工廠藍圖可免費開到 Pilot，或付費建到 Production，Library 跨存檔保存。
-- Save v7 僅保證同 content build 內正確；舊開發版存檔直接拒絕，不做 migration。
+- Blueprint v3 codec 仍能驗證、匯入、下載或刪除既有 `research-program` 文件，但目前 UI 不建立或套用 Research Blueprint，避免繞過逐步付費、揭霧與 outcome。可建立／套用的通用 `factory-layout` 能免費開到 Production Plan，或付費 Commission 到 Production；Library 跨存檔保存。
+- 每種疾病都有出貨合約，quota 固定為 3；依序完成 Disease 1／2／3 的合約，才可分別取得 Skew／Dilute／Settle 的 machine patent。
+- Save v9 僅保證同 content build 內正確；舊開發版存檔直接拒絕，不做 migration。
 - 正常新局有 $1000，必須能從人工 Research 經付費建廠走到第一次出售。每種疾病的需求獨立並逐次按 `floor(9/10)` 衰減至 0；Market 優先出售乾淨、低成本且仍有利潤的實體產品。
+- Atlas 與 Factory 仍是互相獨立的正方格 authority。本版視覺是嚴格俯視的 **Orbital Wet-Lab Schematic**：black-blue void、graphite deck、bone-white／steel structure；cyan、amber、lime、magenta、red 只表示 flow、selection、cure、side effect、failure。世界圖形由 Pixi vector runtime 繪製，沒有生成 bitmap／runtime manifest contract。
 
 詳細操作見 [玩家指南](docs/player-guide.md)，設計與正確性規格見 [docs/design.md](docs/design.md) 與 [docs/invariants.md](docs/invariants.md)。
 

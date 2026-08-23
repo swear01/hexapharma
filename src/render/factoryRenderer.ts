@@ -39,24 +39,37 @@ const PAD = 12; // outer padding
 
 // ───────────────────────────── palette ─────────────────────────────
 
-const BG = 0xf4f7fa;
-const GRID_LINE = 0xc2ccd6;
-const EMPTY_COLOR = 0xe8edf2;
-const BELT_COLOR = 0x596675;
-const BELT_RAIL = 0x2f3945;
-const BELT_ARROW = 0xdce5ec;
-const SPLIT_COLOR = 0xe7e0fb;
-const SPLIT_MARK = 0x7a52d6;
-const MERGE_COLOR = 0xfde7cf;
-const MERGE_MARK = 0xd9892a;
-const SOURCE_COLOR = 0x2bb673;
-const SINK_COLOR = 0x9b5de5;
-const PORT_IN = 0x18a558; // green notch — input port
-const PORT_OUT = 0xe23b3b; // red notch — output port
-const TOKEN_COLOR = 0x1d6fe0;
-const TOKEN_FAILED = 0x111111;
-const TOKEN_RING = 0xffffff;
-const TOKEN_PROC = 0xffb020;
+export const FACTORY_SCHEMATIC_STYLE = Object.freeze({
+  void: 0x050a12,
+  deck: 0x18242b,
+  chassis: 0x28343b,
+  structure: 0xe7e1d2,
+  steel: 0x718089,
+  flow: 0x48d7e5,
+  selection: 0xf3b45d,
+  cure: 0xb8e06c,
+  sideEffect: 0xde5fb1,
+  failure: 0xef6862,
+});
+
+const BG = FACTORY_SCHEMATIC_STYLE.void;
+const GRID_LINE = 0x35454e;
+const EMPTY_COLOR = FACTORY_SCHEMATIC_STYLE.deck;
+const BELT_COLOR = 0x40515a;
+const BELT_RAIL = 0x101920;
+const BELT_ARROW = FACTORY_SCHEMATIC_STYLE.flow;
+const SPLIT_COLOR = FACTORY_SCHEMATIC_STYLE.chassis;
+const SPLIT_MARK = FACTORY_SCHEMATIC_STYLE.flow;
+const MERGE_COLOR = 0x303a3f;
+const MERGE_MARK = FACTORY_SCHEMATIC_STYLE.flow;
+const SOURCE_COLOR = 0x173d45;
+const SINK_COLOR = 0x2b3d27;
+const PORT_IN = FACTORY_SCHEMATIC_STYLE.flow;
+const PORT_OUT = FACTORY_SCHEMATIC_STYLE.structure;
+const TOKEN_COLOR = FACTORY_SCHEMATIC_STYLE.flow;
+const TOKEN_FAILED = FACTORY_SCHEMATIC_STYLE.failure;
+const TOKEN_RING = FACTORY_SCHEMATIC_STYLE.structure;
+const TOKEN_PROC = FACTORY_SCHEMATIC_STYLE.selection;
 
 const DIR_DX: readonly number[] = [1, 0, -1, 0];
 const DIR_DY: readonly number[] = [0, 1, 0, -1];
@@ -123,21 +136,25 @@ export interface MachineVisualStyle {
 export function machineVisualStyle(typeId: string): MachineVisualStyle {
   switch (typeId) {
     case "push":
-      return { body: 0x5576d2, face: 0xdce6ff, accent: 0x1d377f };
+      return { body: 0x2a373f, face: 0xbcc6c9, accent: FACTORY_SCHEMATIC_STYLE.flow };
     case "push2":
-      return { body: 0x3655ae, face: 0xcbd9ff, accent: 0x14295f };
+      return { body: 0x24323a, face: 0xc9d1d1, accent: FACTORY_SCHEMATIC_STYLE.flow };
     case "pull":
-      return { body: 0x7b5ab4, face: 0xeadfff, accent: 0x3c226a };
+      return { body: 0x303840, face: 0xd2d3cd, accent: FACTORY_SCHEMATIC_STYLE.flow };
     case "shear":
-      return { body: 0xd47836, face: 0xffe3c5, accent: 0x713610 };
+      return { body: 0x34383a, face: 0xd8d3c5, accent: FACTORY_SCHEMATIC_STYLE.flow };
     case "skew":
-      return { body: 0x258d9a, face: 0xcdf6f4, accent: 0x0d4d58 };
+      return { body: 0x25363c, face: 0xc7d5d4, accent: FACTORY_SCHEMATIC_STYLE.flow };
     case "dilute":
-      return { body: 0x3a9b70, face: 0xd1f2df, accent: 0x15553a };
+      return { body: 0x293a38, face: 0xcbd8d0, accent: FACTORY_SCHEMATIC_STYLE.flow };
     case "settle":
-      return { body: 0xbb4f83, face: 0xffddeb, accent: 0x6e2148 };
+      return { body: 0x34333a, face: 0xd4ccd3, accent: FACTORY_SCHEMATIC_STYLE.flow };
     default:
-      return { body: 0x607080, face: 0xe2e8ed, accent: 0x26323d };
+      return {
+        body: FACTORY_SCHEMATIC_STYLE.chassis,
+        face: FACTORY_SCHEMATIC_STYLE.structure,
+        accent: FACTORY_SCHEMATIC_STYLE.flow,
+      };
   }
 }
 
@@ -284,17 +301,17 @@ function drawTileBody(
     }
     case "source": {
       cells.rect(px + 3, py + 3, CELL - 6, CELL - 6).fill({ color: SOURCE_COLOR })
-        .stroke({ color: 0x13633e, width: 3 });
+        .stroke({ color: FACTORY_SCHEMATIC_STYLE.flow, width: 3 });
       cells.circle(cx - (DIR_DX[tile.dir] ?? 0) * 5, cy - (DIR_DY[tile.dir] ?? 0) * 5, CELL * 0.24)
-        .stroke({ color: 0xffffff, width: 3 });
-      drawArrow(cells, cx, cy, tile.dir, 0xffffff, 0.17);
+        .stroke({ color: FACTORY_SCHEMATIC_STYLE.structure, width: 3 });
+      drawArrow(cells, cx, cy, tile.dir, FACTORY_SCHEMATIC_STYLE.flow, 0.17);
       break;
     }
     case "sink": {
       cells.rect(px + 3, py + 3, CELL - 6, CELL - 6).fill({ color: SINK_COLOR })
-        .stroke({ color: 0x56318d, width: 3 });
-      cells.circle(cx, cy, CELL * 0.27).stroke({ color: 0xffffff, width: 3 });
-      cells.circle(cx, cy, CELL * 0.11).fill({ color: 0xffffff });
+        .stroke({ color: FACTORY_SCHEMATIC_STYLE.cure, width: 3 });
+      cells.circle(cx, cy, CELL * 0.27).stroke({ color: FACTORY_SCHEMATIC_STYLE.structure, width: 3 });
+      cells.circle(cx, cy, CELL * 0.11).fill({ color: FACTORY_SCHEMATIC_STYLE.cure });
       break;
     }
   }
@@ -383,7 +400,7 @@ function drawMachine(m: PlacedMachine, isBottleneck: boolean, ctx: DrawCtx): voi
   const { cells, topology } = ctx;
   const baseStyle = machineVisualStyle(m.def.typeId);
   const style = isBottleneck
-    ? { body: 0xe25d52, face: 0xffded9, accent: 0x801f1b }
+    ? { body: 0x3b352a, face: 0xddd1b9, accent: FACTORY_SCHEMATIC_STYLE.selection }
     : baseStyle;
   const occupiedCells = worldCells(m);
   const occupied = new Set(occupiedCells.map((cell) => `${cell.x},${cell.y}`));
@@ -403,7 +420,8 @@ function drawMachine(m: PlacedMachine, isBottleneck: boolean, ctx: DrawCtx): voi
     const y0 = py + (topConnected ? 0 : 3);
     const x1 = px + CELL - (rightConnected ? 0 : 3);
     const y1 = py + CELL - (bottomConnected ? 0 : 3);
-    cells.rect(x0 + 3, y0 + 4, x1 - x0, y1 - y0).fill({ color: 0x17212a, alpha: 0.28 });
+    cells.rect(x0 + 3, y0 + 4, x1 - x0, y1 - y0)
+      .fill({ color: FACTORY_SCHEMATIC_STYLE.void, alpha: 0.72 });
     cells.rect(x0, y0, x1 - x0, y1 - y0).fill({ color: style.body });
     if (!topConnected) cells.moveTo(x0, y0).lineTo(x1, y0);
     if (!rightConnected) cells.moveTo(x1, y0).lineTo(x1, y1);
@@ -430,7 +448,6 @@ function drawMachine(m: PlacedMachine, isBottleneck: boolean, ctx: DrawCtx): voi
       .stroke({ color: style.face, width: 6, alpha: 0.46 });
   }
 
-  // port notches: green = input, red = output.
   for (const wp of worldInPorts(m)) {
     const connected = topology.machinePorts.some((port) =>
       port.machineId === m.id &&

@@ -304,7 +304,7 @@ export function App({
   }, [knownCures, mm.maps]);
 
   useEffect(() => {
-    if (shotStep === null && lastOutcome === null) return;
+    if (shotStep === null) return;
     const position = drug.pos[activeMap];
     const map = mm.maps[activeMap];
     if (position === undefined || map === undefined) return;
@@ -318,7 +318,7 @@ export function App({
       }, LAB_VIEWPORT, map);
       return next;
     });
-  }, [activeMap, drug.pos, lastOutcome, mm.maps, shotStep]);
+  }, [activeMap, drug.pos, mm.maps, shotStep]);
 
   const panRef = useRef<{
     readonly pointerId: number;
@@ -336,6 +336,7 @@ export function App({
   const onPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0 && event.button !== 1 && event.button !== 2) return;
     event.preventDefault();
+    event.currentTarget.focus();
     event.currentTarget.setPointerCapture(event.pointerId);
     panRef.current = {
       pointerId: event.pointerId,
@@ -455,7 +456,8 @@ export function App({
           data-camera-y={camera.y}
           data-camera-zoom={camera.zoom}
           data-placement-target={endpointHovered}
-          title={endpointHovered ? "Place next path" : "Drag map"}
+          tabIndex={-1}
+          title={endpointHovered ? "Test cartridge" : "Drag map"}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerLeave={() => {

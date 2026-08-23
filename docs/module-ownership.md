@@ -16,19 +16,20 @@
 | Production construction quote | `src/sim/construction/` | integrator | ✅ paid layout-diff authority |
 | recipe | `src/sim/recipe/` | integrator（agent 交付） | ✅ Factory prototype compilation／outcome analysis；非Research authority |
 | state.ts | `src/sim/state.ts` | integrator（agent 交付） | ✅ 完成（hashFactory / replayFactory，INV-15） |
-| whole-game state | `src/sim/game.ts`, `src/sim/phase0_interfaces.ts` | integrator | ✅ multi-disease bootstrap／progression authority |
-| whole-game migration tests | `src/sim/game.test.ts`, `src/sim/single-atlas.test.ts`, `src/sim/state.test.ts`, `test/integration/loop.test.ts` | integrator（agent 交付） | ✅ full paths／paid build／replay authority |
-| replay work | `src/sim/replay-work.ts` | integrator（agent 交付） | ✅ Save v7 intents/work preflight |
+| whole-game state | `src/sim/game.ts`, `src/sim/phase0_interfaces.ts` | integrator（agent 交付） | ✅ stepwise Research／Formula／shipping contract authority |
+| whole-game migration tests | `src/sim/game.test.ts`, `src/sim/single-atlas.test.ts`, `src/sim/state.test.ts`, `test/integration/loop.test.ts` | integrator（agent 交付） | ✅ stepwise Research／paid build／replay authority |
+| replay work | `src/sim/replay-work.ts` | integrator（agent 交付） | ✅ Save v9 intents/work preflight |
 | economy | `src/sim/economy/` | integrator（agent 交付） | ✅ finite per-disease demand／eventual zero gross |
-| save | `src/sim/save/` | integrator（agent 交付） | ✅ Save v7 non-null Production／paid build migration |
+| save | `src/sim/save/` | integrator（agent 交付） | ✅ Save v9／Formula authority schema |
 | patent | `src/sim/patent/` | integrator（agent 交付） | ✅ cash+Knowledge、機器／擴廠／actual-trail sensor；無layer progression |
-| render | `src/render/`、`public/assets/lab/` | integrator | ✅ Cure／SideEffect overlay readability |
-| ui shell/workspaces | `src/ui/Game.tsx`、`src/ui/App.tsx`、`src/ui/game.css` | integrator（agent 交付） | ✅ direct Research preview／cost／sequence readability |
+| render | `src/render/` | integrator（agent 交付） | ✅ vector-only Orbital Wet-Lab Atlas／Factory |
+| ui shell/workspaces | `src/ui/Game.tsx`、`src/ui/App.tsx` | integrator | ✅ Formula／contract／Production Plan integration |
+| UI chrome | `src/ui/game.css` | integrator（agent 交付） | ✅ Orbital Wet-Lab stylesheet |
 | factory UI | `src/ui/Factory.tsx`、`src/ui/factoryEditor.ts` | integrator | ✅ direct manipulation／paid build flow |
-| checkpoint storage | `src/ui/checkpointStorage.ts`, `src/ui/checkpointStorage.test.ts` | integrator（agent 交付） | ✅ Save v7/ResearchProgram migration |
+| checkpoint storage | `src/ui/checkpointStorage.ts`, `src/ui/checkpointStorage.test.ts` | integrator（agent 交付） | ✅ Save v9 stepwise Research checkpoints |
 | blueprint portable format | `src/blueprint/` | integrator（agent 交付） | ✅ v3 ResearchProgram／generic FactoryLayout codec |
-| browser acceptance | `test/e2e/` | integrator（agent 交付） | ✅ direct interactions／visibility／paid Production／Blueprint v3／Save v7 acceptance |
-| active docs | `README.md`, `docs/`（`module-ownership.md` 除外） | integrator（agent 交付） | ✅ multi-disease／finite-demand／fresh-loop truth sync |
+| browser acceptance | `test/e2e/` | integrator（agent 交付） | ✅ stepwise Research／contracts／paid Production／Blueprint v3／Save v9 acceptance |
+| active docs | `README.md`, `docs/` | integrator | ✅ Orbital Wet-Lab vertical-slice truth sync |
 
 ## 規則
 
@@ -36,4 +37,4 @@
 - `render/` 是最高衝突面（共享可變 scene graph）；同一時間只排一個 agent，不平行。
 - sim 子系統彼此純、介面隔離 → 可安全平行。
 - 跨模組整合、跑完整 `npm run check`、解衝突由 **integrator** session 負責。
-- **環境註記**：目前 agent **worktree 隔離不可用**（無 WorktreeCreate hook），所有本輪變更仍在 shared/uncommitted 主工作樹；平行只用於檔案不相交（disjoint files）的任務，重疊檔案由 integrator 序列化並在最後跑閘。這是當前執行模式，不推翻未來可用 hook 時的一任務一 worktree 政策。
+- **環境註記**：本輪在 `~/.agent-worktrees/` 的獨立 task worktree 整合；subagent 共用該 worktree，所以仍以不相交檔案平行、公共介面由 integrator 序列化，最後統一跑閘。

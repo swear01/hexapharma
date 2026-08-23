@@ -1307,7 +1307,7 @@ export function Factory({
     </button>
   );
 
-  const facilityName = mode === "pilot" ? "Pilot Plant" : "Production";
+  const facilityName = mode === "pilot" ? "Production Plan" : "Production";
 
   return (
     <div className={`game-view factory-workspace facility-${mode}`} data-testid={`${mode}-facility-workspace`}>

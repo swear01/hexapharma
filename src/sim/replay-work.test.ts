@@ -7,7 +7,6 @@ import {
   type FactoryLayout,
   type GameIntent,
   type GenOptions,
-  type Template,
 } from "./phase0_interfaces";
 import { MAX_INTENT_TRACE } from "./game";
 import { generate } from "./mapgen";
@@ -36,16 +35,6 @@ function emptyLayout(width: number, height: number, source = false): FactoryLayo
   return { width, height, tiles, machines: [] };
 }
 
-function program(stepCount: number): Template {
-  const entry = DEFAULT_CATALOG[0]!;
-  return {
-    steps: Array.from({ length: stepCount }, () => ({
-      typeId: entry.typeId,
-      path: entry.path,
-    })),
-  };
-}
-
 describe("game replay work", () => {
   it("accepts one to four Atlas layers and rejects invalid map authority", () => {
     for (let nMaps = 1; nMaps <= 4; nMaps++) {
@@ -55,18 +44,16 @@ describe("game replay work", () => {
     expect(() => estimateGameReplayWork({ ...options, nMaps: 5 }, [])).toThrow(/map dimensions/i);
   });
 
-  it("charges ResearchProgram validation and only completed path steps", () => {
+  it("charges only executed Research stamps", () => {
     const mapCells = options.nMaps * options.width * options.height;
-    const value = program(3);
+    const machine = DEFAULT_CATALOG[0]!;
     expect(estimateGameReplayWork(options, [
-      { kind: "setResearchProgram", program: value },
       { kind: "beginResearchShot" },
-      { kind: "advanceResearchShot" },
+      { kind: "advanceResearchShot", machine },
       { kind: "abortResearchShot" },
     ])).toBe(
       mapCells * 32 +
-      mapCells * 7 +
-      mapCells * 7 +
+      1 +
       mapCells * 5 +
       1
     );
@@ -80,17 +67,18 @@ describe("game replay work", () => {
     ])).toBe(mapCells * 32 + area * 20 + area);
   });
 
-  it("bounds an adversarial Research trace using program step count", () => {
+  it("bounds an adversarial Research step trace", () => {
     const maximumMaps = { ...options, nMaps: 4, diseaseCount: 4 };
-    const trace: GameIntent[] = [{ kind: "setResearchProgram", program: program(256) }];
+    const machine = DEFAULT_CATALOG[0]!;
+    const trace: GameIntent[] = [{ kind: "beginResearchShot" }];
     for (let index = 1; index < MAX_INTENT_TRACE; index++) {
       trace.push(index % 3 === 0
         ? { kind: "beginResearchShot" }
         : index % 3 === 1
-          ? { kind: "advanceResearchShot" }
+          ? { kind: "advanceResearchShot", machine }
           : { kind: "abortResearchShot" });
     }
-    expect(estimateGameReplayWork(maximumMaps, trace)).toBeGreaterThan(50_000_000);
+    expect(estimateGameReplayWork(maximumMaps, trace)).toBeGreaterThan(25_000_000);
   });
 
   it("prices Production area, carrier capacity, and arbitration exactly", () => {
@@ -124,10 +112,9 @@ describe("game replay work", () => {
     const cold = area * 20;
 
     expect(estimateGameReplayWork(options, [
-      { kind: "setResearchProgram", program: program(2) },
       { kind: "setPilotLayout", layout },
       { kind: "buildProductionLayout", layout },
-    ])).toBe(mapCells * 32 + mapCells * 6 + cold + cold);
+    ])).toBe(mapCells * 32 + cold + cold);
   });
 
   it("keeps Pilot and Production profiles independent", () => {
@@ -140,13 +127,12 @@ describe("game replay work", () => {
 
     expect(estimateGameReplayWork(options, [
       { kind: "buildProductionLayout", layout: production },
-      { kind: "setResearchProgram", program: program(1) },
       { kind: "setPilotLayout", layout: pilot },
       { kind: "abortResearchShot" },
       { kind: "productionTicks", ticks: 10 },
       { kind: "resetProduction" },
     ])).toBe(
-      mapCells * 32 + productionCold + mapCells * 5 + pilotCold + 1 +
+      mapCells * 32 + productionCold + pilotCold + 1 +
       productionCold + productionPerTick * 10 + productionCold
     );
   });
@@ -158,12 +144,11 @@ describe("game replay work", () => {
     const expandedCold = 6 * 3 * 20;
 
     expect(estimateGameReplayWork(options, [
-      { kind: "setResearchProgram", program: program(1) },
       { kind: "setPilotLayout", layout },
       { kind: "buildProductionLayout", layout },
       { kind: "unlockPatent", id: "bench-2" },
     ])).toBe(
-      mapCells * 32 + mapCells * 5 + 2 * currentCold + 262_144 + 2 * expandedCold
+      mapCells * 32 + 2 * currentCold + 262_144 + 2 * expandedCold
     );
   });
 
@@ -192,7 +177,6 @@ describe("game replay work", () => {
   it("charges floor-depth as a factory expansion without resetting Research", () => {
     const layout = emptyLayout(4, 3);
     const trace: readonly GameIntent[] = [
-      { kind: "setResearchProgram", program: program(1) },
       { kind: "setPilotLayout", layout },
       { kind: "buildProductionLayout", layout },
       { kind: "unlockPatent", id: "floor-depth" },

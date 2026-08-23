@@ -17,17 +17,28 @@ async function confirmLoad(page: import("@playwright/test").Page): Promise<void>
   await dialog.getByRole("button", { name: "Load saved game" }).click();
 }
 
-function productionCheckpoint(): string {
+function productionCheckpoint(completeFirstContract = false): string {
   const options = defaultGenOptions(14);
+  const disease = generate(options).diseases[0]!;
   const layout = compileEntitledPrototype(
-    generate(options).diseases[0]!.reference,
+    disease.reference,
     BASE_GAME_FACTORY_WIDTH,
     BASE_GAME_FACTORY_HEIGHT,
   ).layout;
   let game = createGameState(options, 9_999, 9_999);
   game = applyGameIntent(game, { kind: "setPilotLayout", layout });
   game = applyGameIntent(game, { kind: "buildProductionLayout", layout });
-  game = applyGameIntent(game, { kind: "productionTicks", ticks: 1 });
+  game = applyGameIntent(game, { kind: "productionTicks", ticks: completeFirstContract ? 400 : 1 });
+  if (completeFirstContract) {
+    game = applyGameIntent(game, {
+      kind: "sellProducts",
+      productIds: game.inventory
+        .filter((product) => product.outcome.cured.includes(disease.id))
+        .slice(0, 3)
+        .map((product) => product.inventoryId),
+      disease: disease.id,
+    });
+  }
   return JSON.stringify({ version: 2, head: serializeGameAuthority(game), history: [] });
 }
 
@@ -67,7 +78,7 @@ async function clickFirstCandidateEndpoint(page: import("@playwright/test").Page
   );
 }
 
-test("reveal aid spends both resources and expands the next Dispense sensor", async ({ page }) => {
+test("reveal aid spends both resources and expands the next tested cartridge sensor", async ({ page }) => {
   await page.goto("/?cash=9999&research=9999");
   const revealed = page.getByTestId("revealed-count");
   const before = revealedOf(await revealed.textContent());
@@ -81,16 +92,25 @@ test("reveal aid spends both resources and expands the next Dispense sensor", as
   await page.getByTestId("view-research").click();
   expect(revealedOf(await revealed.textContent())).toBe(before);
   await clickFirstCandidateEndpoint(page);
-  await expect(page.getByTestId("research-command")).toBeEnabled();
-  await page.getByTestId("research-command").click();
-  await expect(page.getByTestId("research-command")).toBeEnabled({ timeout: 5_000 });
   await expect.poll(async () => revealedOf(await revealed.textContent())).toBeGreaterThan(before);
 });
 
-test("machine patents add the same fixed path to Research and Pilot palettes", async ({ page }) => {
+test("machine patents add the same fixed path to Research and Production Plan palettes", async ({ page }) => {
   await page.goto("/?cash=9999&research=9999");
   await expect(page.getByTestId("research-machine-skew")).toHaveCount(0);
   await page.getByTestId("view-technology").click();
+  await expect(page.getByTestId("patent-row-skew-unlock"))
+    .toContainText("Complete Disease 1 contract (0/3)");
+  await expect(page.getByTestId("patent-unlock-skew-unlock")).toBeDisabled();
+
+  await page.evaluate((checkpoint) => {
+    localStorage.setItem("hexapharma.save.checkpoint.0", checkpoint);
+  }, productionCheckpoint(true));
+  await page.reload();
+  await confirmLoad(page);
+  await page.getByTestId("view-technology").click();
+  await expect(page.getByTestId("patent-row-skew-unlock"))
+    .not.toContainText("Complete Disease 1 contract");
   await expect(page.getByTestId("patent-unlock-skew-unlock")).toBeEnabled();
   await page.getByTestId("patent-unlock-skew-unlock").click();
   await expect(page.getByTestId("patent-unlock-skew-unlock")).toHaveText("Owned");
@@ -100,18 +120,18 @@ test("machine patents add the same fixed path to Research and Pilot palettes", a
   await expect(page.getByTestId("brush-machine-skew")).toBeEnabled();
 });
 
-test("factory and machine prerequisites unlock without introducing map layers", async ({ page }) => {
+test("factory prerequisites do not bypass contract gates or introduce map layers", async ({ page }) => {
   await page.goto("/?cash=9999&research=9999");
   await expect(page.locator("[data-testid^='lab-layer-']")).toHaveCount(0);
   await expect(page.getByTestId("map-count")).toHaveCount(0);
   await page.getByTestId("view-technology").click();
   await expect(page.getByTestId("patent-unlock-dilute-unlock")).toBeDisabled();
   await page.getByTestId("patent-unlock-bench-2").click();
-  await expect(page.getByTestId("patent-unlock-dilute-unlock")).toBeEnabled();
-  await page.getByTestId("patent-unlock-dilute-unlock").click();
-  await expect(page.getByTestId("patent-unlock-dilute-unlock")).toHaveText("Owned");
-  await expect(page.getByTestId("cash")).toHaveText(String(9999 - 120 - 180));
-  await expect(page.getByTestId("research")).toHaveText(String(9999 - 2 - 3));
+  await expect(page.getByTestId("patent-row-dilute-unlock"))
+    .toContainText("Complete Disease 2 contract (0/3)");
+  await expect(page.getByTestId("patent-unlock-dilute-unlock")).toBeDisabled();
+  await expect(page.getByTestId("cash")).toHaveText(String(9999 - 120));
+  await expect(page.getByTestId("research")).toHaveText(String(9999 - 2));
   await expect(page.getByTestId("patents-table")).not.toContainText(/unlock map|layer [b-d]/i);
   await page.getByTestId("view-research").click();
   await expect(page.locator("[data-testid^='lab-layer-']")).toHaveCount(0);

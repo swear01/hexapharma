@@ -46,7 +46,7 @@ test("the complete HUD stays reachable across narrow widths", async ({ page }) =
         .map((part) => part.textContent));
     expect(clippedResourceParts, `resource labels and values must remain readable at ${width}px`)
       .toEqual([]);
-    for (const testId of ["research-undo", "research-command", "lab-focus", "research-cures"]) {
+    for (const testId of ["research-command", "lab-focus", "research-cures"]) {
       const target = await page.getByTestId(testId).boundingBox();
       if (target === null) throw new Error(`${testId} has no bounds at ${width}px`);
       expect(target.height, `${testId} must remain touch-sized at ${width}px`)
@@ -61,10 +61,10 @@ test("the complete HUD stays reachable across narrow widths", async ({ page }) =
   }
 });
 
-test("facility hotkeys switch three world pages while utility hotkeys open drawers", async ({ page }) => {
+test("facility hotkeys connect Research, Production Plan, and Production while utility hotkeys open drawers", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByTestId("view-research").locator(".nav-label")).toHaveText("Research");
-  await expect(page.getByTestId("view-pilot").locator(".nav-label")).toHaveText("Pilot");
+  await expect(page.getByTestId("view-pilot").locator(".nav-label")).toHaveText("Plan");
   await expect(page.getByTestId("view-production").locator(".nav-label")).toHaveText("Production");
   const clippedLabels = await page.locator(".nav-label").evaluateAll((labels) =>
     labels
@@ -75,6 +75,8 @@ test("facility hotkeys switch three world pages while utility hotkeys open drawe
   await expect(page.getByTestId("view-research")).toHaveAttribute("aria-current", "page");
   await page.keyboard.press("F2");
   await expect(page.getByTestId("view-pilot")).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("heading", { name: "Production Plan" })).toBeVisible();
+  await expect(page.getByTestId("pilot-command")).toContainText("Commission");
   await page.keyboard.press("F3");
   await expect(page.getByTestId("view-production")).toHaveAttribute("aria-current", "page");
   await page.keyboard.press("F1");

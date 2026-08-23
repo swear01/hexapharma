@@ -165,7 +165,6 @@ export function estimateGameReplayWork(
 ): number {
   const mapCells = requireMapCells(origin);
   let total = cappedMultiply(mapCells, 32);
-  let researchSteps = 0;
   let pilot: FactoryWorkProfile | null = null;
   let production = profile(
     BASE_GAME_FACTORY_WIDTH,
@@ -179,19 +178,11 @@ export function estimateGameReplayWork(
   for (const intent of intents) {
     let intentWork = 0;
     switch (intent.kind) {
-      case "setResearchProgram":
-        researchSteps = intent.program.steps.length;
-        intentWork = mapTraversalWork(mapCells, researchSteps);
-        break;
       case "beginResearchShot":
-        intentWork = researchSteps === 0
-          ? 1
-          : mapTraversalWork(mapCells, researchSteps);
+        intentWork = 1;
         break;
       case "advanceResearchShot":
-        intentWork = researchSteps === 0
-          ? 1
-          : mapTraversalWork(mapCells, 1);
+        intentWork = mapTraversalWork(mapCells, 1);
         break;
       case "abortResearchShot":
         intentWork = 1;

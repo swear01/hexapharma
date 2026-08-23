@@ -15,11 +15,15 @@ import { snapshotFactory } from "./factory-sim";
 import {
   MAX_INTENT_TRACE,
   MAX_REPLAY_TICKS,
+  SHIPPING_CONTRACT_QUOTA,
+  activeShippingContract,
   applyGameIntent,
   availableCatalog,
   createGameState,
   hashGame,
+  requiredShippingContractForPatent,
   replayGame,
+  shippingContracts,
 } from "./game";
 import { generate } from "./mapgen";
 import * as mapgenModule from "./mapgen";
@@ -59,10 +63,9 @@ function buildTemplate(
 ): ReturnType<typeof createGameState> {
   let game = initial;
   if (runResearch) {
-    game = applyGameIntent(game, { kind: "setResearchProgram", program: template });
     game = applyGameIntent(game, { kind: "beginResearchShot" });
-    for (let guard = 0; game.research.shot !== null && guard < 300; guard++) {
-      game = applyGameIntent(game, { kind: "advanceResearchShot" });
+    for (const machine of template.steps) {
+      game = applyGameIntent(game, { kind: "advanceResearchShot", machine });
     }
     if (game.research.shot !== null) throw new Error("test Research shot did not finish");
   }
@@ -91,6 +94,26 @@ function directSinkFactory(layout: FactoryLayout, period = 1): FactoryLayout {
   tiles[0] = { kind: "source", dir: 0, period };
   tiles[1] = { kind: "sink" };
   return { width: layout.width, height: layout.height, tiles, machines: [] };
+}
+
+function shipContract(
+  game: ReturnType<typeof createGameState>,
+  disease: number,
+  program: Template,
+): ReturnType<typeof createGameState> {
+  const layout = compileEntitledPrototype(
+    program,
+    game.production.layout.width,
+    game.production.layout.height,
+  ).layout;
+  let next = applyGameIntent(game, { kind: "buildProductionLayout", layout });
+  next = applyGameIntent(next, { kind: "productionTicks", ticks: 400 });
+  const productIds = next.inventory
+    .filter((product) => product.outcome.cured.includes(disease))
+    .slice(0, SHIPPING_CONTRACT_QUOTA)
+    .map((product) => product.inventoryId);
+  expect(productIds).toHaveLength(SHIPPING_CONTRACT_QUOTA);
+  return applyGameIntent(next, { kind: "sellProducts", productIds, disease });
 }
 
 describe("whole-game deterministic state", () => {
@@ -184,6 +207,76 @@ describe("whole-game deterministic state", () => {
       cashBefore + diseaseSpec.basePrice - product.productionCost
         - product.outcome.sideEffects.length * 25,
     );
+  });
+
+  it("derives sequential disease shipping contracts from sold counters", () => {
+    const twoDiseaseOptions: GenOptions = { ...opts, diseaseCount: 2 };
+    const diseaseSpecs = generate(twoDiseaseOptions).diseases;
+    const firstDisease = diseaseSpecs[0]!.id;
+    const secondDisease = diseaseSpecs[1]!.id;
+    let game = buildTemplate(
+      createGameState(twoDiseaseOptions, 1_000, 0),
+      diseaseSpecs[0]!.reference,
+    );
+
+    expect(activeShippingContract(game)).toEqual({
+      disease: firstDisease,
+      sold: 0,
+      quota: SHIPPING_CONTRACT_QUOTA,
+      completed: false,
+    });
+
+    game = applyGameIntent(game, { kind: "productionTicks", ticks: 300 });
+    const productIds = game.inventory
+      .filter((product) => product.outcome.cured.includes(firstDisease))
+      .slice(0, SHIPPING_CONTRACT_QUOTA)
+      .map((product) => product.inventoryId);
+    expect(productIds).toHaveLength(SHIPPING_CONTRACT_QUOTA);
+    game = applyGameIntent(game, { kind: "sellProducts", productIds, disease: firstDisease });
+
+    expect(shippingContracts(game)[0]).toEqual({
+      disease: firstDisease,
+      sold: SHIPPING_CONTRACT_QUOTA,
+      quota: SHIPPING_CONTRACT_QUOTA,
+      completed: true,
+    });
+    expect(activeShippingContract(game)).toEqual({
+      disease: secondDisease,
+      sold: 0,
+      quota: SHIPPING_CONTRACT_QUOTA,
+      completed: false,
+    });
+  });
+
+  it("gates each machine patent behind the preceding disease contract", () => {
+    const contractOptions: GenOptions = { ...opts, diseaseCount: 3 };
+    const diseases = generate(contractOptions).diseases;
+    let game = createGameState(contractOptions, 10_000, 100);
+
+    game = applyGameIntent(game, { kind: "unlockPatent", id: "bench-2" });
+    expect(() => applyGameIntent(game, { kind: "unlockPatent", id: "skew-unlock" }))
+      .toThrow(/contract.*disease 0/i);
+    game = shipContract(game, diseases[0]!.id, diseases[0]!.reference);
+    game = applyGameIntent(game, { kind: "unlockPatent", id: "skew-unlock" });
+
+    expect(() => applyGameIntent(game, { kind: "unlockPatent", id: "dilute-unlock" }))
+      .toThrow(/contract.*disease 1/i);
+    game = shipContract(game, diseases[1]!.id, diseases[1]!.reference);
+    game = applyGameIntent(game, { kind: "unlockPatent", id: "dilute-unlock" });
+
+    expect(() => applyGameIntent(game, { kind: "unlockPatent", id: "settle-unlock" }))
+      .toThrow(/contract.*disease 2/i);
+    game = shipContract(game, diseases[2]!.id, diseases[2]!.reference);
+    game = applyGameIntent(game, { kind: "unlockPatent", id: "settle-unlock" });
+
+    expect(game.patents.unlocked).toContain("settle-unlock");
+  });
+
+  it("exposes machine patent shipping requirements without duplicating the gate rule", () => {
+    expect(requiredShippingContractForPatent("skew-unlock")).toBe(0);
+    expect(requiredShippingContractForPatent("dilute-unlock")).toBe(1);
+    expect(requiredShippingContractForPatent("settle-unlock")).toBe(2);
+    expect(requiredShippingContractForPatent("bench-2")).toBeNull();
   });
 
   it("normalizes adjacent Production ticks but retains paid layout edits", () => {
@@ -283,9 +376,10 @@ describe("whole-game deterministic state", () => {
     };
     const locked = entitledLayout(lockedProgram);
     const game = createGameState(opts, 500, 0);
-    expect(() => applyGameIntent(game, {
-      kind: "setResearchProgram",
-      program: lockedProgram,
+    const session = applyGameIntent(game, { kind: "beginResearchShot" });
+    expect(() => applyGameIntent(session, {
+      kind: "advanceResearchShot",
+      machine: lockedProgram.steps[0]!,
     })).toThrow(/locked/i);
     expect(() => applyGameIntent(game, { kind: "setPilotLayout", layout: locked })).toThrow(/locked/i);
     const built = buildTemplate(game);
@@ -324,9 +418,7 @@ describe("whole-game deterministic state", () => {
   });
 
   it("expands facilities without interrupting or rewriting an active Research shot", () => {
-    const program = recipe();
     let game = createGameState(opts, 10_000, 100);
-    game = applyGameIntent(game, { kind: "setResearchProgram", program });
     game = applyGameIntent(game, { kind: "beginResearchShot" });
     const research = game.research;
     expect(research.shot).not.toBeNull();
@@ -527,6 +619,7 @@ describe("whole-game deterministic state", () => {
 
   it("applies machine unlock and both factory expansion patents without changing Atlas authority", () => {
     let game = buildTemplate(createGameState(opts, 10_000, 100));
+    game = shipContract(game, 0, recipe());
     game = applyGameIntent(game, { kind: "unlockPatent", id: "skew-unlock" });
     expect(availableCatalog(game.patents).map((entry) => entry.typeId)).toContain("skew");
     game = applyGameIntent(game, { kind: "unlockPatent", id: "bench-2" });
