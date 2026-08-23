@@ -16,6 +16,7 @@ describe("factory orbital wet-lab schematic", () => {
     expect(FACTORY_SCHEMATIC_STYLE).toEqual({
       background: 0x050a12,
       deck: 0x18242b,
+      shadow: 0x000000,
       gridLine: 0x35454e,
       belt: 0x40515a,
       beltRail: 0x101920,
@@ -52,6 +53,7 @@ describe("factory orbital wet-lab schematic", () => {
   });
 
   it("keeps machine shadows subordinate to the chassis", () => {
+    expect(FACTORY_SCHEMATIC_STYLE.shadow).not.toBe(FACTORY_SCHEMATIC_STYLE.background);
     expect(FACTORY_MACHINE_SHADOW_ALPHA).toBe(0.28);
   });
 });

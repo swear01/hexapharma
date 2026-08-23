@@ -42,6 +42,7 @@ const PAD = 12; // outer padding
 
 export const FACTORY_SCHEMATIC_STYLE = Object.freeze({
   ...SHARED_SCHEMATIC_STYLE,
+  shadow: 0x000000,
   gridLine: 0x35454e,
   belt: 0x40515a,
   beltRail: 0x101920,
@@ -447,7 +448,7 @@ function drawMachine(m: PlacedMachine, isBottleneck: boolean, ctx: DrawCtx): voi
     const x1 = px + CELL - (rightConnected ? 0 : 3);
     const y1 = py + CELL - (bottomConnected ? 0 : 3);
     cells.rect(x0 + 3, y0 + 4, x1 - x0, y1 - y0)
-      .fill({ color: FACTORY_SCHEMATIC_STYLE.background, alpha: FACTORY_MACHINE_SHADOW_ALPHA });
+      .fill({ color: FACTORY_SCHEMATIC_STYLE.shadow, alpha: FACTORY_MACHINE_SHADOW_ALPHA });
     cells.rect(x0, y0, x1 - x0, y1 - y0).fill({ color: style.body });
     if (!topConnected) cells.moveTo(x0, y0).lineTo(x1, y0);
     if (!rightConnected) cells.moveTo(x1, y0).lineTo(x1, y1);
