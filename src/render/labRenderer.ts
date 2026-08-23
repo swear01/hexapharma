@@ -11,16 +11,12 @@ import {
 } from "./labCamera";
 import { revealedRegionEdges } from "./labRegions";
 import { labTerrainVisual, type CellTerrainVisual, type PortalTerrainVisual } from "./labTerrain";
+import { SHARED_SCHEMATIC_STYLE } from "./schematicStyle";
 
 export const LAB_SCHEMATIC_STYLE = Object.freeze({
-  void: 0x050a12,
-  field: 0x18242b,
-  structure: 0xe7e1d2,
-  flow: 0x48d7e5,
+  ...SHARED_SCHEMATIC_STYLE,
   candidate: 0xf3b45d,
-  cure: 0xb8e06c,
   sideEffect: 0xde5fb1,
-  failure: 0xef6862,
   fogGrid: 0x1f313d,
   wallDetail: 0x637078,
   abyssDetail: 0x24343d,
@@ -121,7 +117,7 @@ function drawPortalMotif(
   const marker = visual.pairMarker ?? `unpaired-${visual.role}`;
   const markerColor = portalMarkerColor(marker);
   terrain.rect(x, y, cell, cell).fill({ color: visual.baseColor, alpha: 1 });
-  terrain.circle(cx, cy, cell * 0.34).fill({ color: LAB_SCHEMATIC_STYLE.void, alpha: 1 });
+  terrain.circle(cx, cy, cell * 0.34).fill({ color: LAB_SCHEMATIC_STYLE.background, alpha: 1 });
   terrain.circle(cx, cy, cell * 0.34).stroke({ color: markerColor, width: Math.max(3, cell * 0.08) });
   terrain.circle(cx, cy, cell * 0.2).stroke({ color: visual.rimColor, width: Math.max(2, cell * 0.045), alpha: 0.9 });
 
@@ -203,7 +199,7 @@ function drawTerrainMotif(
   }
   if (visual.kind === "abyss") {
     terrain.rect(x, y, cell, cell).fill({ color: visual.baseColor, alpha: 1 });
-    terrain.circle(x + cell / 2, y + cell / 2, cell * 0.37).fill({ color: LAB_SCHEMATIC_STYLE.void, alpha: 1 });
+    terrain.circle(x + cell / 2, y + cell / 2, cell * 0.37).fill({ color: LAB_SCHEMATIC_STYLE.background, alpha: 1 });
     terrain.circle(x + cell / 2, y + cell / 2, cell * 0.4)
       .stroke({ color: visual.rimColor, width: Math.max(3, cell * 0.075), alpha: 0.95 });
     terrain.circle(x + cell / 2, y + cell / 2, cell * 0.27)
@@ -270,7 +266,7 @@ function drawVisibleMap(
       const screen = cellScreen(camera, x, y);
       const revealed = isRevealed(map, x, y);
       terrain.rect(screen.x, screen.y, cell, cell)
-        .fill({ color: revealed ? LAB_SCHEMATIC_STYLE.field : LAB_SCHEMATIC_STYLE.void });
+        .fill({ color: revealed ? LAB_SCHEMATIC_STYLE.deck : LAB_SCHEMATIC_STYLE.background });
       if (!revealed) terrain.rect(screen.x + 2, screen.y + 2, cell - 4, cell - 4)
         .stroke({ color: LAB_SCHEMATIC_STYLE.fogGrid, width: 1, alpha: 0.32 });
 
@@ -316,7 +312,7 @@ function drawToken(
   const cy = screen.y + cell / 2;
   const color = failed ? LAB_SCHEMATIC_STYLE.failure : LAB_SCHEMATIC_STYLE.flow;
   token.circle(cx, cy, cell * 0.42).stroke({ color, width: 2, alpha: 0.28 });
-  token.circle(cx, cy, cell * 0.31).fill({ color: LAB_SCHEMATIC_STYLE.void, alpha: 0.96 })
+  token.circle(cx, cy, cell * 0.31).fill({ color: LAB_SCHEMATIC_STYLE.background, alpha: 0.96 })
     .stroke({ color: LAB_SCHEMATIC_STYLE.structure, width: Math.max(2, cell * 0.045), alpha: 0.96 });
   token.roundRect(cx - cell * 0.11, cy - cell * 0.22, cell * 0.22, cell * 0.44, cell * 0.11)
     .fill({ color, alpha: failed ? 0.35 : 0.9 })
@@ -408,7 +404,7 @@ function drawPreviewToken(
   const badgeY = cy + badge.dy;
   const arm = badge.radius * 0.48;
   token.circle(badgeX, badgeY, badge.radius)
-    .fill({ color: LAB_SCHEMATIC_STYLE.void, alpha: 0.96 })
+    .fill({ color: LAB_SCHEMATIC_STYLE.background, alpha: 0.96 })
     .stroke({ color, width: badge.strokeWidth, alpha: 1 });
   token.moveTo(badgeX - arm, badgeY).lineTo(badgeX + arm, badgeY)
     .moveTo(badgeX, badgeY - arm).lineTo(badgeX, badgeY + arm)
@@ -424,7 +420,7 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
     autoStart: false,
     width: LAB_VIEWPORT.width,
     height: LAB_VIEWPORT.height,
-    background: LAB_SCHEMATIC_STYLE.void,
+    background: LAB_SCHEMATIC_STYLE.background,
     antialias: true,
     resolution: window.devicePixelRatio,
     autoDensity: true,

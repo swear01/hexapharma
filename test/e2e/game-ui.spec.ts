@@ -11,6 +11,24 @@ test("a default run starts with a viable budget and four independent disease mar
   await expect(page.getByText(/complexity|difficulty/i)).toHaveCount(0);
 });
 
+test("an active game control stays amber while hovered", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => {
+    const control = document.createElement("button");
+    control.className = "game-control is-active";
+    control.textContent = "Active control";
+    control.style.position = "fixed";
+    control.style.top = "100px";
+    control.style.left = "100px";
+    control.style.zIndex = "999";
+    document.body.append(control);
+  });
+  const control = page.locator(".game-control.is-active");
+  await control.hover();
+  await expect(control).toHaveCSS("border-color", "rgb(221, 160, 68)");
+  await expect(control).toHaveCSS("color", "rgb(242, 184, 93)");
+});
+
 test("the complete HUD stays reachable across narrow widths", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 844 });
   await page.goto("/");

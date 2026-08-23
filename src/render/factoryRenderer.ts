@@ -31,6 +31,7 @@ import {
   type FactoryTransportEdge,
   type FactoryTransportTopology,
 } from "./factoryTransportTopology";
+import { SHARED_SCHEMATIC_STYLE } from "./schematicStyle";
 
 // ───────────────────────────── layout constants ─────────────────────────────
 
@@ -40,8 +41,7 @@ const PAD = 12; // outer padding
 // ───────────────────────────── palette ─────────────────────────────
 
 export const FACTORY_SCHEMATIC_STYLE = Object.freeze({
-  background: 0x050a12,
-  deck: 0x18242b,
+  ...SHARED_SCHEMATIC_STYLE,
   gridLine: 0x35454e,
   belt: 0x40515a,
   beltRail: 0x101920,
@@ -49,15 +49,11 @@ export const FACTORY_SCHEMATIC_STYLE = Object.freeze({
   source: 0x173d45,
   sink: 0x2b3d27,
   chassis: 0x28343b,
-  structure: 0xe7e1d2,
-  flow: 0x48d7e5,
   selection: 0xf3b45d,
-  cure: 0xb8e06c,
-  failure: 0xef6862,
   portFrame: 0x19242d,
   portDisconnected: 0x7b858d,
-  portInput: 0x48d7e5,
-  portOutput: 0xe7e1d2,
+  portInput: SHARED_SCHEMATIC_STYLE.flow,
+  portOutput: SHARED_SCHEMATIC_STYLE.structure,
   pushBody: 0x2a373f,
   pushFace: 0xbcc6c9,
   push2Body: 0x24323a,

@@ -958,7 +958,7 @@ textarea:focus-visible,
   flex: 0 0 auto;
   max-width: none;
   max-height: none;
-  outline: 1px solid rgb(194 206 211 / 16%);
+  outline: 1px solid var(--line-soft);
   box-shadow: var(--shadow-deep);
   image-rendering: crisp-edges;
 }
@@ -1293,7 +1293,7 @@ textarea:focus-visible,
   color: var(--teal-400);
 }
 
-.game-control.is-active {
+.game-control:not(:disabled).is-active {
   border-color: var(--orange-500);
   color: var(--orange-400);
   box-shadow: inset 3px 0 0 var(--orange-500);

@@ -1,5 +1,6 @@
 import type { EffectMap, Vec2 } from "../sim/phase0_interfaces";
 import { CellKind } from "../sim/phase0_interfaces";
+import { SHARED_SCHEMATIC_STYLE } from "./schematicStyle";
 
 export type LabTerrainMotif =
   | "substrate"
@@ -36,14 +37,14 @@ export type LabTerrainVisual = CellTerrainVisual | PortalTerrainVisual;
 const EMPTY_TERRAIN_VISUAL: CellTerrainVisual = {
   kind: "empty",
   motif: "substrate",
-  baseColor: 0x18242b,
+  baseColor: SHARED_SCHEMATIC_STYLE.deck,
   rimColor: 0x41515a,
   opaque: true,
   sideEffectOverlay: false,
 };
 
 const CURE_PALETTE = [
-  { baseColor: 0x314326, rimColor: 0xb8e06c },
+  { baseColor: 0x314326, rimColor: SHARED_SCHEMATIC_STYLE.cure },
   { baseColor: 0x354a2a, rimColor: 0xc5e983 },
   { baseColor: 0x3d4928, rimColor: 0xd0e86f },
   { baseColor: 0x2d482e, rimColor: 0xa8dc78 },
@@ -89,7 +90,7 @@ function portalVisual(
     motif: "paired-directional",
     role,
     baseColor: 0x102331,
-    rimColor: 0x48d7e5,
+    rimColor: SHARED_SCHEMATIC_STYLE.flow,
     opaque: true,
     pairMarker: pairKnown ? `P${entryIndex}-${destinationIndex}` : null,
     destination: pairKnown ? destination : null,
@@ -139,7 +140,7 @@ export function labTerrainVisual(map: EffectMap, x: number, y: number): LabTerra
         kind: "wall",
         motif: "solid-masonry",
         baseColor: 0x242e34,
-        rimColor: 0xe7e1d2,
+        rimColor: SHARED_SCHEMATIC_STYLE.structure,
         opaque: true,
         sideEffectOverlay: false,
       };
