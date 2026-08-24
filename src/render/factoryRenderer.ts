@@ -152,30 +152,28 @@ export function factoryTransportFlowPoint(
 export interface MachineVisualStyle {
   readonly body: number;
   readonly face: number;
-  readonly accent: number;
 }
 
 export function machineVisualStyle(typeId: string): MachineVisualStyle {
   switch (typeId) {
     case "push":
-      return { body: FACTORY_SCHEMATIC_STYLE.pushBody, face: FACTORY_SCHEMATIC_STYLE.pushFace, accent: FACTORY_SCHEMATIC_STYLE.flow };
+      return { body: FACTORY_SCHEMATIC_STYLE.pushBody, face: FACTORY_SCHEMATIC_STYLE.pushFace };
     case "push2":
-      return { body: FACTORY_SCHEMATIC_STYLE.push2Body, face: FACTORY_SCHEMATIC_STYLE.push2Face, accent: FACTORY_SCHEMATIC_STYLE.flow };
+      return { body: FACTORY_SCHEMATIC_STYLE.push2Body, face: FACTORY_SCHEMATIC_STYLE.push2Face };
     case "pull":
-      return { body: FACTORY_SCHEMATIC_STYLE.pullBody, face: FACTORY_SCHEMATIC_STYLE.pullFace, accent: FACTORY_SCHEMATIC_STYLE.flow };
+      return { body: FACTORY_SCHEMATIC_STYLE.pullBody, face: FACTORY_SCHEMATIC_STYLE.pullFace };
     case "shear":
-      return { body: FACTORY_SCHEMATIC_STYLE.shearBody, face: FACTORY_SCHEMATIC_STYLE.shearFace, accent: FACTORY_SCHEMATIC_STYLE.flow };
+      return { body: FACTORY_SCHEMATIC_STYLE.shearBody, face: FACTORY_SCHEMATIC_STYLE.shearFace };
     case "skew":
-      return { body: FACTORY_SCHEMATIC_STYLE.skewBody, face: FACTORY_SCHEMATIC_STYLE.skewFace, accent: FACTORY_SCHEMATIC_STYLE.flow };
+      return { body: FACTORY_SCHEMATIC_STYLE.skewBody, face: FACTORY_SCHEMATIC_STYLE.skewFace };
     case "dilute":
-      return { body: FACTORY_SCHEMATIC_STYLE.diluteBody, face: FACTORY_SCHEMATIC_STYLE.diluteFace, accent: FACTORY_SCHEMATIC_STYLE.flow };
+      return { body: FACTORY_SCHEMATIC_STYLE.diluteBody, face: FACTORY_SCHEMATIC_STYLE.diluteFace };
     case "settle":
-      return { body: FACTORY_SCHEMATIC_STYLE.settleBody, face: FACTORY_SCHEMATIC_STYLE.settleFace, accent: FACTORY_SCHEMATIC_STYLE.flow };
+      return { body: FACTORY_SCHEMATIC_STYLE.settleBody, face: FACTORY_SCHEMATIC_STYLE.settleFace };
     default:
       return {
         body: FACTORY_SCHEMATIC_STYLE.chassis,
         face: FACTORY_SCHEMATIC_STYLE.structure,
-        accent: FACTORY_SCHEMATIC_STYLE.flow,
       };
   }
 }
@@ -426,9 +424,9 @@ function drawMachine(m: PlacedMachine, isBottleneck: boolean, ctx: DrawCtx): voi
     ? {
         body: FACTORY_SCHEMATIC_STYLE.bottleneckBody,
         face: FACTORY_SCHEMATIC_STYLE.bottleneckFace,
-        accent: FACTORY_SCHEMATIC_STYLE.selection,
       }
     : baseStyle;
+  const accent = isBottleneck ? FACTORY_SCHEMATIC_STYLE.selection : FACTORY_SCHEMATIC_STYLE.flow;
   const occupiedCells = worldCells(m);
   const occupied = new Set(occupiedCells.map((cell) => `${cell.x},${cell.y}`));
 
@@ -454,7 +452,7 @@ function drawMachine(m: PlacedMachine, isBottleneck: boolean, ctx: DrawCtx): voi
     if (!rightConnected) cells.moveTo(x1, y0).lineTo(x1, y1);
     if (!bottomConnected) cells.moveTo(x1, y1).lineTo(x0, y1);
     if (!leftConnected) cells.moveTo(x0, y1).lineTo(x0, y0);
-    cells.stroke({ color: style.accent, width: isBottleneck ? 4 : 3 });
+    cells.stroke({ color: accent, width: isBottleneck ? 4 : 3 });
     cells.circle(px + CELL / 2, py + CELL / 2, 2.5).fill({ color: style.face, alpha: 0.58 });
     if (wc.x < minX) minX = wc.x;
     if (wc.y < minY) minY = wc.y;
@@ -516,9 +514,9 @@ function drawMachine(m: PlacedMachine, isBottleneck: boolean, ctx: DrawCtx): voi
     const cx = PAD + ((minX + maxX + 1) * CELL) / 2;
     const cy = PAD + ((minY + maxY + 1) * CELL) / 2;
     cells.rect(cx - 19, cy - 19, 38, 38).fill({ color: style.face })
-      .stroke({ color: style.accent, width: 3 });
+      .stroke({ color: accent, width: 3 });
     cells.rect(cx - 13, cy - 13, 26, 26).stroke({ color: style.body, width: 2, alpha: 0.6 });
-    drawMachineGlyph(cells, m, cx, cy, style.accent);
+    drawMachineGlyph(cells, m, cx, cy, accent);
   }
 }
 

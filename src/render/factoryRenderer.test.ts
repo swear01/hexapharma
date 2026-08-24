@@ -61,16 +61,15 @@ describe("factory orbital wet-lab schematic", () => {
 describe("factory machine visual language", () => {
   it("gives every machine family a distinct bounded chassis palette", () => {
     const styles = DEFAULT_CATALOG.map((entry) => machineVisualStyle(entry.typeId));
-    const signatures = styles.map((style) => `${style.body}:${style.face}:${style.accent}`);
+    const signatures = styles.map((style) => `${style.body}:${style.face}`);
 
     expect(new Set(signatures).size).toBe(DEFAULT_CATALOG.length);
     for (const style of styles) {
+      expect(style).not.toHaveProperty("accent");
       expect(style.body).toBeGreaterThanOrEqual(0);
       expect(style.body).toBeLessThanOrEqual(0xffffff);
       expect(style.face).toBeGreaterThanOrEqual(0);
       expect(style.face).toBeLessThanOrEqual(0xffffff);
-      expect(style.accent).toBeGreaterThanOrEqual(0);
-      expect(style.accent).toBeLessThanOrEqual(0xffffff);
     }
   });
 
