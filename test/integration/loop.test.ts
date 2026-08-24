@@ -127,13 +127,9 @@ describe("integration: Atlas → program → factory plus economy, patent, and s
       BASE_GAME_FACTORY_WIDTH,
       BASE_GAME_FACTORY_HEIGHT,
     ).layout;
-    g = applyGameIntent(g, {
-      kind: "setResearchProgram",
-      program: template,
-    });
     g = applyGameIntent(g, { kind: "beginResearchShot" });
-    while (g.research.shot !== null) {
-      g = applyGameIntent(g, { kind: "advanceResearchShot" });
+    for (const machine of template.steps) {
+      g = applyGameIntent(g, { kind: "advanceResearchShot", machine });
     }
     g = applyGameIntent(g, { kind: "setPilotLayout", layout });
     expect(g.research.lastOutcome).not.toBeNull();
@@ -143,15 +139,19 @@ describe("integration: Atlas → program → factory plus economy, patent, and s
     expect(g.production.layout).toEqual(g.pilot.layout);
     expect(g.production.layout).not.toBe(g.pilot.layout);
     g = applyGameIntent(g, { kind: "productionTicks", ticks: 200 });
-    const product = g.inventory[0]!;
+    const disease = g.inventory[0]!.outcome.cured[0]!;
+    const productIds = g.inventory
+      .filter((product) => product.outcome.cured.includes(disease))
+      .slice(0, 3)
+      .map((product) => product.inventoryId);
+    expect(productIds).toHaveLength(3);
     g = applyGameIntent(g, {
-      kind: "sellProduct",
-      productId: product.inventoryId,
-      disease: product.outcome.cured[0]!,
+      kind: "sellProducts",
+      productIds,
+      disease,
     });
     g = applyGameIntent(g, { kind: "unlockPatent", id: "bench-2" });
     g = applyGameIntent(g, { kind: "unlockPatent", id: "skew-unlock" });
-    g = applyGameIntent(g, { kind: "unlockPatent", id: "dilute-unlock" });
     expect(deserializeGame(serializeGame(g))).toEqual(g);
   });
 

@@ -61,12 +61,8 @@ export function researchPreviewEndpointHit(
   return dx * dx + dy * dy <= 0.55 * 0.55;
 }
 
-export function researchOutcomeText(
-  lastOutcome: Outcome | null,
-  shotStep: number | null,
-): string | null {
-  if (lastOutcome === null) return shotStep === null ? null : `Step ${shotStep + 1}`;
-  return outcomeEffectText(lastOutcome);
+export function researchOutcomeText(lastOutcome: Outcome | null): string | null {
+  return lastOutcome === null ? null : outcomeEffectText(lastOutcome);
 }
 
 export interface ResearchFocusTarget {
@@ -78,10 +74,9 @@ export function researchFocusTarget(
   drug: DrugState,
   previewDrug: DrugState | undefined,
   mapIndex: number,
-  focusDose: boolean,
 ): ResearchFocusTarget {
   const candidate = previewDrug?.pos[mapIndex];
-  if (!focusDose && candidate !== undefined) {
+  if (candidate !== undefined) {
     return { label: "Next", position: candidate };
   }
   return { label: "Dose", position: drug.pos[mapIndex] };
@@ -160,7 +155,6 @@ interface AppProps {
   readonly trails: readonly (readonly (Vec2 | null)[])[];
   readonly previewTrails?: readonly (readonly (Vec2 | null)[])[];
   readonly previewDrug?: DrugState;
-  readonly shotStep: number | null;
   readonly lastOutcome: Outcome | null;
   readonly onWorldActivate?: () => void;
   readonly onWorldErase?: () => void;
@@ -174,7 +168,6 @@ export function App({
   trails,
   previewTrails,
   previewDrug,
-  shotStep,
   lastOutcome,
   onWorldActivate,
   onWorldErase,
@@ -223,7 +216,6 @@ export function App({
     drug,
     previewDrug,
     activeMap,
-    shotStep !== null,
   );
   const focusDescription = focusTarget.label === "Next" ? "next endpoint" : "dose";
 
@@ -303,23 +295,6 @@ export function App({
     });
   }, [knownCures, mm.maps]);
 
-  useEffect(() => {
-    if (shotStep === null && lastOutcome === null) return;
-    const position = drug.pos[activeMap];
-    const map = mm.maps[activeMap];
-    if (position === undefined || map === undefined) return;
-    setCameras((current) => {
-      const next = [...current];
-      const previous = current[activeMap] ?? focusLabCamera(position);
-      next[activeMap] = clampLabCamera({
-        x: position.x + 0.5,
-        y: position.y + 0.5,
-        zoom: previous.zoom,
-      }, LAB_VIEWPORT, map);
-      return next;
-    });
-  }, [activeMap, drug.pos, lastOutcome, mm.maps, shotStep]);
-
   const panRef = useRef<{
     readonly pointerId: number;
     readonly button: number;
@@ -336,6 +311,7 @@ export function App({
   const onPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0 && event.button !== 1 && event.button !== 2) return;
     event.preventDefault();
+    event.currentTarget.focus();
     event.currentTarget.setPointerCapture(event.pointerId);
     panRef.current = {
       pointerId: event.pointerId,
@@ -442,7 +418,7 @@ export function App({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [active, focusResearch]);
 
-  const outcomeText = researchOutcomeText(lastOutcome, shotStep);
+  const outcomeText = researchOutcomeText(lastOutcome);
 
   return (
     <div className="game-view lab-workspace research-atlas" data-testid="research-atlas">
@@ -455,7 +431,8 @@ export function App({
           data-camera-y={camera.y}
           data-camera-zoom={camera.zoom}
           data-placement-target={endpointHovered}
-          title={endpointHovered ? "Place next path" : "Drag map"}
+          tabIndex={-1}
+          title={endpointHovered ? "Test cartridge" : "Drag map"}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerLeave={() => {

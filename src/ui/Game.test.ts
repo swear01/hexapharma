@@ -4,11 +4,13 @@ import {
   parseNewGameSeed,
   playerFacingIntentError,
   researchCandidateTrails,
+  researchAssaySector,
   researchDisplayDrug,
   researchKeyboardAction,
   researchPlanningMap,
   researchPlanningTrails,
   researchProgramCost,
+  researchTestBlockReason,
   researchTrailsForProgram,
   transientSaveMessage,
 } from "./Game";
@@ -18,6 +20,13 @@ import { MAX_GAME_MAP_CELLS, MAX_GAME_MAP_DIMENSION } from "../sim/phase0_interf
 import { generate } from "../sim/mapgen";
 
 describe("default Lab world options", () => {
+  it("gives Research one broad target sector without leaking a coordinate or distance", () => {
+    expect(researchAssaySector({ x: 10, y: 10 }, { x: 24, y: 13 })).toBe("east");
+    expect(researchAssaySector({ x: 10, y: 10 }, { x: 14, y: 21 })).toBe("south-east");
+    expect(researchAssaySector({ x: 10, y: 10 }, { x: 3, y: 3 })).toBe("north-west");
+    expect(researchAssaySector({ x: 10, y: 10 }, { x: 10, y: 10 })).toBe("local");
+  });
+
   it("starts a new run on one large odd-sized map", () => {
     expect(defaultGenOptions(14)).toMatchObject({
       seed: 14,
@@ -54,11 +63,20 @@ describe("default Lab world options", () => {
       .toBe("Machine footprint overlaps another machine.");
     expect(playerFacingIntentError(new Error("game intent: product 19 is duplicated, unavailable, or not a cure")))
       .toBe("That product is no longer available to ship.");
-    expect(playerFacingIntentError(new Error("game intent: Research shot requires 42 cash")))
-      .toBe("Need $42 to Dispense.");
+    expect(playerFacingIntentError(new Error("game intent: Research stamp requires 42 cash")))
+      .toBe("Need $42 to test that cartridge.");
     expect(playerFacingIntentError(new Error("game intent: Production construction requires 42 cash")))
       .toBe("Need $42 to build in Production.");
     expect(playerFacingIntentError(new Error("another failure"))).toBe("another failure");
+  });
+
+  it("blocks a cartridge before opening an assay that cannot advance", () => {
+    const machine = DEFAULT_CATALOG[0]!;
+    expect(researchTestBlockReason(machine.cost - 1, 0, true, machine))
+      .toBe(`Need $${machine.cost} to test that cartridge.`);
+    expect(researchTestBlockReason(machine.cost, 256, true, machine)).toMatch(/end this assay/i);
+    expect(researchTestBlockReason(machine.cost, 256, false, machine)).toBeNull();
+    expect(researchTestBlockReason(machine.cost, 0, true, machine)).toBeNull();
   });
 
   it("never exposes cross-layer phase exchange", () => {
@@ -205,9 +223,9 @@ describe("default Lab world options", () => {
     )).toEqual([[{ x: 4, y: 3 }, { x: 4, y: 4 }]]);
   });
 
-  it("maps Enter to Dispense instead of committing another stamp", () => {
-    expect(researchKeyboardAction("Enter")).toBe("dispense");
-    expect(researchKeyboardAction("Backspace")).toBe("erase");
+  it("maps Enter to the next cartridge and Backspace to ending the active assay", () => {
+    expect(researchKeyboardAction("Enter")).toBe("apply");
+    expect(researchKeyboardAction("Backspace")).toBe("abort");
     expect(researchKeyboardAction("x")).toBeNull();
   });
 
@@ -222,20 +240,19 @@ describe("default Lab world options", () => {
   });
 
   it("reports side effects only as part of a resolved shot outcome", () => {
-    expect(researchOutcomeText(null, null)).toBeNull();
-    expect(researchOutcomeText(null, 1)).toBe("Step 2");
+    expect(researchOutcomeText(null)).toBeNull();
     expect(researchOutcomeText({
       failed: false,
       final: [{ x: 7, y: 4 }],
       cured: [0],
       sideEffects: [101, 102],
-    }, null)).toBe("Cure Disease 1 · 2 side effects");
+    })).toBe("Cure Disease 1 · 2 side effects");
     expect(researchOutcomeText({
       failed: false,
       final: [{ x: 7, y: 4 }],
       cured: [],
       sideEffects: [],
-    }, null)).toBe("No cure · No side effects");
+    })).toBe("No cure · No side effects");
   });
 
   it("auto-dismisses successful save notices but keeps recovery errors visible", () => {

@@ -48,10 +48,10 @@ function completedResearchSave(): string {
   const options = defaultGenOptions(14);
   const program = generate(options).diseases[0]!.reference;
   let game = createGameState(options, 10_000, 100);
-  game = applyGameIntent(game, { kind: "setResearchProgram", program });
   game = applyGameIntent(game, { kind: "beginResearchShot" });
-  while (game.research.shot !== null) {
-    game = applyGameIntent(game, { kind: "advanceResearchShot" });
+  for (const machine of program.steps) {
+    game = applyGameIntent(game, { kind: "advanceResearchShot", machine });
+    if (game.research.shot === null) break;
   }
   return serializeGame(game);
 }
@@ -63,40 +63,42 @@ test("loading a finished Research shot preserves fog and its independent outcome
   await page.evaluate((save) => localStorage.setItem("hexapharma.save.slot.0", save), completedResearchSave());
   await page.reload();
   await confirmLoad(page);
-  await expect(page.getByTestId("research-program-count")).not.toHaveText("0 placed");
+  await expect(page.getByTestId("research-program-count")).not.toHaveText("0 tested");
   await expect(page.getByTestId("research-atlas-outcome")).toBeVisible();
-  await expect(page.getByTestId("research-command")).toHaveText("Dispense");
+  await expect(page.getByTestId("research-command")).toHaveText("Test cartridge");
   await expect(page.getByRole("button", { name: /send.*pilot|transfer/i })).toHaveCount(0);
   await page.getByTestId("view-pilot").click();
   await expect(page.getByTestId("pilot-command")).toBeDisabled();
   expect(errors).toEqual([]);
 });
 
-test("Research planning cannot reveal fog or spend cash before Dispense", async ({ page }) => {
+test("Research selection is free and each tested cartridge immediately spends and reveals", async ({ page }) => {
   await page.goto("/");
   const revealed = page.getByTestId("revealed-count");
   const cash = page.getByTestId("cash");
   const fogBefore = await revealed.textContent();
   const cashBefore = await cash.textContent();
   await expect(page.getByTestId("lab-canvas")).toBeVisible({ timeout: 15_000 });
-  await clickCandidateEndpoint(page, 1);
-  await clickCandidateEndpoint(page, 2);
-  await expect(page.getByTestId("research-program-count")).toHaveText("2 placed");
+  await page.getByTestId("research-machine-push").click();
   await expect(revealed).toHaveText(fogBefore ?? "");
   await expect(cash).toHaveText(cashBefore ?? "");
+  await clickCandidateEndpoint(page, 1);
+  await expect(page.getByTestId("research-program-count")).toHaveText("1 tested");
+  await expect(revealed).not.toHaveText(fogBefore ?? "");
+  await expect(cash).not.toHaveText(cashBefore ?? "");
 });
 
-test("aborting a dispensed shot does not refund its paid cost", async ({ page }) => {
+test("ending an active assay does not refund tested cartridges", async ({ page }) => {
   await page.goto("/?cash=200");
   await expect(page.getByTestId("lab-canvas")).toBeVisible({ timeout: 15_000 });
   for (let step = 0; step < 4; step++) {
     await clickCandidateEndpoint(page, step + 1);
   }
-  await page.getByTestId("research-command").click();
   await expect(page.getByTestId("cash")).toHaveText("192");
   await page.getByTestId("research-abort").click();
   await expect(page.getByTestId("cash")).toHaveText("192");
   await expect(page.getByTestId("research-command")).toBeEnabled();
+  await expect(page.getByTestId("research-program-count")).toHaveText("0 tested");
 });
 
 test("a corrupt old-build save is reported instead of silently migrated", async ({ page }) => {

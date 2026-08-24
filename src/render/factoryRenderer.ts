@@ -31,6 +31,7 @@ import {
   type FactoryTransportEdge,
   type FactoryTransportTopology,
 } from "./factoryTransportTopology";
+import { SHARED_SCHEMATIC_STYLE } from "./schematicStyle";
 
 // ───────────────────────────── layout constants ─────────────────────────────
 
@@ -39,24 +40,58 @@ const PAD = 12; // outer padding
 
 // ───────────────────────────── palette ─────────────────────────────
 
-const BG = 0xf4f7fa;
-const GRID_LINE = 0xc2ccd6;
-const EMPTY_COLOR = 0xe8edf2;
-const BELT_COLOR = 0x596675;
-const BELT_RAIL = 0x2f3945;
-const BELT_ARROW = 0xdce5ec;
-const SPLIT_COLOR = 0xe7e0fb;
-const SPLIT_MARK = 0x7a52d6;
-const MERGE_COLOR = 0xfde7cf;
-const MERGE_MARK = 0xd9892a;
-const SOURCE_COLOR = 0x2bb673;
-const SINK_COLOR = 0x9b5de5;
-const PORT_IN = 0x18a558; // green notch — input port
-const PORT_OUT = 0xe23b3b; // red notch — output port
-const TOKEN_COLOR = 0x1d6fe0;
-const TOKEN_FAILED = 0x111111;
-const TOKEN_RING = 0xffffff;
-const TOKEN_PROC = 0xffb020;
+export const FACTORY_SCHEMATIC_STYLE = Object.freeze({
+  ...SHARED_SCHEMATIC_STYLE,
+  shadow: 0x000000,
+  gridLine: 0x35454e,
+  belt: 0x40515a,
+  beltRail: 0x101920,
+  merge: 0x303a3f,
+  source: 0x173d45,
+  sink: 0x2b3d27,
+  chassis: 0x28343b,
+  selection: 0xf3b45d,
+  portFrame: 0x19242d,
+  portDisconnected: 0x7b858d,
+  portInput: SHARED_SCHEMATIC_STYLE.flow,
+  portOutput: SHARED_SCHEMATIC_STYLE.structure,
+  pushBody: 0x2a373f,
+  pushFace: 0xbcc6c9,
+  push2Body: 0x24323a,
+  push2Face: 0xc9d1d1,
+  pullBody: 0x303840,
+  pullFace: 0xd2d3cd,
+  shearBody: 0x34383a,
+  shearFace: 0xd8d3c5,
+  skewBody: 0x25363c,
+  skewFace: 0xc7d5d4,
+  diluteBody: 0x293a38,
+  diluteFace: 0xcbd8d0,
+  settleBody: 0x34333a,
+  settleFace: 0xd4ccd3,
+  bottleneckBody: 0x3b352a,
+  bottleneckFace: 0xddd1b9,
+});
+export const FACTORY_MACHINE_SHADOW_ALPHA = 0.28;
+
+const BG = FACTORY_SCHEMATIC_STYLE.background;
+const GRID_LINE = FACTORY_SCHEMATIC_STYLE.gridLine;
+const EMPTY_COLOR = FACTORY_SCHEMATIC_STYLE.deck;
+const BELT_COLOR = FACTORY_SCHEMATIC_STYLE.belt;
+const BELT_RAIL = FACTORY_SCHEMATIC_STYLE.beltRail;
+const BELT_ARROW = FACTORY_SCHEMATIC_STYLE.flow;
+const SPLIT_COLOR = FACTORY_SCHEMATIC_STYLE.chassis;
+const SPLIT_MARK = FACTORY_SCHEMATIC_STYLE.flow;
+const MERGE_COLOR = FACTORY_SCHEMATIC_STYLE.merge;
+const MERGE_MARK = FACTORY_SCHEMATIC_STYLE.flow;
+const SOURCE_COLOR = FACTORY_SCHEMATIC_STYLE.source;
+const SINK_COLOR = FACTORY_SCHEMATIC_STYLE.sink;
+const PORT_IN = FACTORY_SCHEMATIC_STYLE.portInput;
+const PORT_OUT = FACTORY_SCHEMATIC_STYLE.portOutput;
+const TOKEN_COLOR = FACTORY_SCHEMATIC_STYLE.flow;
+const TOKEN_FAILED = FACTORY_SCHEMATIC_STYLE.failure;
+const TOKEN_RING = FACTORY_SCHEMATIC_STYLE.structure;
+const TOKEN_PROC = FACTORY_SCHEMATIC_STYLE.selection;
 
 const DIR_DX: readonly number[] = [1, 0, -1, 0];
 const DIR_DY: readonly number[] = [0, 1, 0, -1];
@@ -117,27 +152,29 @@ export function factoryTransportFlowPoint(
 export interface MachineVisualStyle {
   readonly body: number;
   readonly face: number;
-  readonly accent: number;
 }
 
 export function machineVisualStyle(typeId: string): MachineVisualStyle {
   switch (typeId) {
     case "push":
-      return { body: 0x5576d2, face: 0xdce6ff, accent: 0x1d377f };
+      return { body: FACTORY_SCHEMATIC_STYLE.pushBody, face: FACTORY_SCHEMATIC_STYLE.pushFace };
     case "push2":
-      return { body: 0x3655ae, face: 0xcbd9ff, accent: 0x14295f };
+      return { body: FACTORY_SCHEMATIC_STYLE.push2Body, face: FACTORY_SCHEMATIC_STYLE.push2Face };
     case "pull":
-      return { body: 0x7b5ab4, face: 0xeadfff, accent: 0x3c226a };
+      return { body: FACTORY_SCHEMATIC_STYLE.pullBody, face: FACTORY_SCHEMATIC_STYLE.pullFace };
     case "shear":
-      return { body: 0xd47836, face: 0xffe3c5, accent: 0x713610 };
+      return { body: FACTORY_SCHEMATIC_STYLE.shearBody, face: FACTORY_SCHEMATIC_STYLE.shearFace };
     case "skew":
-      return { body: 0x258d9a, face: 0xcdf6f4, accent: 0x0d4d58 };
+      return { body: FACTORY_SCHEMATIC_STYLE.skewBody, face: FACTORY_SCHEMATIC_STYLE.skewFace };
     case "dilute":
-      return { body: 0x3a9b70, face: 0xd1f2df, accent: 0x15553a };
+      return { body: FACTORY_SCHEMATIC_STYLE.diluteBody, face: FACTORY_SCHEMATIC_STYLE.diluteFace };
     case "settle":
-      return { body: 0xbb4f83, face: 0xffddeb, accent: 0x6e2148 };
+      return { body: FACTORY_SCHEMATIC_STYLE.settleBody, face: FACTORY_SCHEMATIC_STYLE.settleFace };
     default:
-      return { body: 0x607080, face: 0xe2e8ed, accent: 0x26323d };
+      return {
+        body: FACTORY_SCHEMATIC_STYLE.chassis,
+        face: FACTORY_SCHEMATIC_STYLE.structure,
+      };
   }
 }
 
@@ -183,9 +220,10 @@ function drawPortNotch(
   const ey = cy + dy * (half - 5);
   const w = dx !== 0 ? 8 : 18;
   const h = dy !== 0 ? 8 : 18;
-  g.rect(ex - w / 2 - 2, ey - h / 2 - 2, w + 4, h + 4).fill({ color: 0x19242d });
+  g.rect(ex - w / 2 - 2, ey - h / 2 - 2, w + 4, h + 4)
+    .fill({ color: FACTORY_SCHEMATIC_STYLE.portFrame });
   g.rect(ex - w / 2, ey - h / 2, w, h).fill({
-    color: connected ? color : 0x7b858d,
+    color: connected ? color : FACTORY_SCHEMATIC_STYLE.portDisconnected,
     alpha: connected ? 1 : 0.7,
   });
 }
@@ -284,17 +322,17 @@ function drawTileBody(
     }
     case "source": {
       cells.rect(px + 3, py + 3, CELL - 6, CELL - 6).fill({ color: SOURCE_COLOR })
-        .stroke({ color: 0x13633e, width: 3 });
+        .stroke({ color: FACTORY_SCHEMATIC_STYLE.flow, width: 3 });
       cells.circle(cx - (DIR_DX[tile.dir] ?? 0) * 5, cy - (DIR_DY[tile.dir] ?? 0) * 5, CELL * 0.24)
-        .stroke({ color: 0xffffff, width: 3 });
-      drawArrow(cells, cx, cy, tile.dir, 0xffffff, 0.17);
+        .stroke({ color: FACTORY_SCHEMATIC_STYLE.structure, width: 3 });
+      drawArrow(cells, cx, cy, tile.dir, FACTORY_SCHEMATIC_STYLE.flow, 0.17);
       break;
     }
     case "sink": {
       cells.rect(px + 3, py + 3, CELL - 6, CELL - 6).fill({ color: SINK_COLOR })
-        .stroke({ color: 0x56318d, width: 3 });
-      cells.circle(cx, cy, CELL * 0.27).stroke({ color: 0xffffff, width: 3 });
-      cells.circle(cx, cy, CELL * 0.11).fill({ color: 0xffffff });
+        .stroke({ color: FACTORY_SCHEMATIC_STYLE.cure, width: 3 });
+      cells.circle(cx, cy, CELL * 0.27).stroke({ color: FACTORY_SCHEMATIC_STYLE.structure, width: 3 });
+      cells.circle(cx, cy, CELL * 0.11).fill({ color: FACTORY_SCHEMATIC_STYLE.cure });
       break;
     }
   }
@@ -383,8 +421,12 @@ function drawMachine(m: PlacedMachine, isBottleneck: boolean, ctx: DrawCtx): voi
   const { cells, topology } = ctx;
   const baseStyle = machineVisualStyle(m.def.typeId);
   const style = isBottleneck
-    ? { body: 0xe25d52, face: 0xffded9, accent: 0x801f1b }
+    ? {
+        body: FACTORY_SCHEMATIC_STYLE.bottleneckBody,
+        face: FACTORY_SCHEMATIC_STYLE.bottleneckFace,
+      }
     : baseStyle;
+  const accent = isBottleneck ? FACTORY_SCHEMATIC_STYLE.selection : FACTORY_SCHEMATIC_STYLE.flow;
   const occupiedCells = worldCells(m);
   const occupied = new Set(occupiedCells.map((cell) => `${cell.x},${cell.y}`));
 
@@ -403,13 +445,14 @@ function drawMachine(m: PlacedMachine, isBottleneck: boolean, ctx: DrawCtx): voi
     const y0 = py + (topConnected ? 0 : 3);
     const x1 = px + CELL - (rightConnected ? 0 : 3);
     const y1 = py + CELL - (bottomConnected ? 0 : 3);
-    cells.rect(x0 + 3, y0 + 4, x1 - x0, y1 - y0).fill({ color: 0x17212a, alpha: 0.28 });
+    cells.rect(x0 + 3, y0 + 4, x1 - x0, y1 - y0)
+      .fill({ color: FACTORY_SCHEMATIC_STYLE.shadow, alpha: FACTORY_MACHINE_SHADOW_ALPHA });
     cells.rect(x0, y0, x1 - x0, y1 - y0).fill({ color: style.body });
     if (!topConnected) cells.moveTo(x0, y0).lineTo(x1, y0);
     if (!rightConnected) cells.moveTo(x1, y0).lineTo(x1, y1);
     if (!bottomConnected) cells.moveTo(x1, y1).lineTo(x0, y1);
     if (!leftConnected) cells.moveTo(x0, y1).lineTo(x0, y0);
-    cells.stroke({ color: style.accent, width: isBottleneck ? 4 : 3 });
+    cells.stroke({ color: accent, width: isBottleneck ? 4 : 3 });
     cells.circle(px + CELL / 2, py + CELL / 2, 2.5).fill({ color: style.face, alpha: 0.58 });
     if (wc.x < minX) minX = wc.x;
     if (wc.y < minY) minY = wc.y;
@@ -430,7 +473,6 @@ function drawMachine(m: PlacedMachine, isBottleneck: boolean, ctx: DrawCtx): voi
       .stroke({ color: style.face, width: 6, alpha: 0.46 });
   }
 
-  // port notches: green = input, red = output.
   for (const wp of worldInPorts(m)) {
     const connected = topology.machinePorts.some((port) =>
       port.machineId === m.id &&
@@ -472,9 +514,9 @@ function drawMachine(m: PlacedMachine, isBottleneck: boolean, ctx: DrawCtx): voi
     const cx = PAD + ((minX + maxX + 1) * CELL) / 2;
     const cy = PAD + ((minY + maxY + 1) * CELL) / 2;
     cells.rect(cx - 19, cy - 19, 38, 38).fill({ color: style.face })
-      .stroke({ color: style.accent, width: 3 });
+      .stroke({ color: accent, width: 3 });
     cells.rect(cx - 13, cy - 13, 26, 26).stroke({ color: style.body, width: 2, alpha: 0.6 });
-    drawMachineGlyph(cells, m, cx, cy, style.accent);
+    drawMachineGlyph(cells, m, cx, cy, accent);
   }
 }
 

@@ -1,6 +1,6 @@
 # Early Development Policy
 
-HexaPharma 目前是早期開發中的 pre-release 專案。正確性閘、確定性與目前 build 內的 Save v7 存讀檔仍須可靠，但**不承諾任何跨 build 的存檔相容性**。
+HexaPharma 目前是早期開發中的 pre-release 專案。正確性閘、確定性與目前 build 內的 Save v9 存讀檔仍須可靠，但**不承諾任何跨 build 的存檔相容性**。
 
 ## 存檔範圍
 
@@ -12,7 +12,7 @@ HexaPharma 目前是早期開發中的 pre-release 專案。正確性閘、確�
 ## 仍然必須守住
 
 - 同 build、同完整 `GenOptions`、同 seed 與同 input trace 必須逐欄位重現。
-- 當前 build 的合法Save v7必須round-trip；paid Production build trace、non-null Production與cold runtime都必須重播一致。corrupt／partial／偽造authority必須顯式拒絕，不可冒充成功。
+- 當前 build 的合法Save v9必須round-trip；stepwise Research／DiscoveredFormula、paid Production build trace、non-null Production與cold runtime都必須重播一致。corrupt／partial／偽造authority必須顯式拒絕，不可冒充成功。
 - 行為、schema 或操作方式改動時，同一個 change 必須同步更新 active docs、測試與手動 playtest 步驟。
 
 ## 進入正式相容期的條件

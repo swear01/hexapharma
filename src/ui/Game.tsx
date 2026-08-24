@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   DiseaseId,
+  DiscoveredFormula,
   FactoryLayout,
   GameState,
   GenOptions,
@@ -16,6 +17,7 @@ import {
   BASE_GAME_FACTORY_WIDTH,
   CellKind,
   DEFAULT_CATALOG,
+  MAX_TEMPLATE_STEPS,
 } from "../sim/phase0_interfaces";
 import { generate } from "../sim/mapgen";
 import { applyTemplate, previewStep } from "../sim/drug-graph";
@@ -24,7 +26,9 @@ import {
   applyGameIntent,
   availableCatalog,
   createGameState,
+  currentDiscoveredFormula,
   DEFAULT_STARTING_CASH,
+  shippingContracts,
   type GameIntent,
 } from "../sim/game";
 import { activeEffects, DEFAULT_PATENTS } from "../sim/patent";
@@ -135,10 +139,36 @@ export function researchCandidateTrails(
   });
 }
 
-export function researchKeyboardAction(key: string): "dispense" | "erase" | null {
-  if (key === "Enter") return "dispense";
-  if (key === "Backspace") return "erase";
+export function researchKeyboardAction(key: string): "apply" | "abort" | null {
+  if (key === "Enter") return "apply";
+  if (key === "Backspace") return "abort";
   return null;
+}
+
+export function researchAssaySector(start: Vec2, target: Vec2): string {
+  const dx = target.x - start.x;
+  const dy = target.y - start.y;
+  if (dx === 0 && dy === 0) return "local";
+  const horizontal = dx < 0 ? "west" : "east";
+  const vertical = dy < 0 ? "north" : "south";
+  const ax = Math.abs(dx);
+  const ay = Math.abs(dy);
+  if (ax >= ay * 3) return horizontal;
+  if (ay >= ax * 3) return vertical;
+  return `${vertical}-${horizontal}`;
+}
+
+export function researchTestBlockReason(
+  cash: number,
+  completedSteps: number,
+  active: boolean,
+  machine: { readonly cost: number } | undefined,
+): string | null {
+  if (machine === undefined) return "Select a cartridge.";
+  if (active && completedSteps >= MAX_TEMPLATE_STEPS) {
+    return `End this assay before testing more than ${MAX_TEMPLATE_STEPS} cartridges.`;
+  }
+  return cash < machine.cost ? `Need $${machine.cost} to test that cartridge.` : null;
 }
 
 function researchMachineCost(typeId: string): number {
@@ -261,8 +291,8 @@ export function playerFacingIntentError(error: unknown): string {
     };
     return placementMessages[machinePlacement] ?? "Machine layout is invalid.";
   }
-  const researchCash = /^game intent: Research shot requires (\d+) cash$/u.exec(message)?.[1];
-  if (researchCash !== undefined) return `Need $${researchCash} to Dispense.`;
+  const researchCash = /^game intent: Research stamp requires (\d+) cash$/u.exec(message)?.[1];
+  if (researchCash !== undefined) return `Need $${researchCash} to test that cartridge.`;
   const productionCash = /^game intent: Production construction requires (\d+) cash$/u.exec(message)?.[1];
   if (productionCash !== undefined) return `Need $${productionCash} to build in Production.`;
   if (/^game intent: product \d+ is duplicated, unavailable, or not a cure$/u.test(message)) {
@@ -307,6 +337,25 @@ type PendingSaveAction =
 
 function sameGameState(first: GameState, second: GameState): boolean {
   return first === second || serializeGameAuthority(first) === serializeGameAuthority(second);
+}
+
+function FormulaRibbon({ formula }: { readonly formula: DiscoveredFormula }) {
+  return (
+    <aside className="formula-ribbon" data-testid="formula-ribbon" aria-label={`Discovered formula for Disease ${formula.disease + 1}`}>
+      <span className="formula-ribbon-label">Formula</span>
+      <strong>Disease {formula.disease + 1}</strong>
+      <ol>
+        {formula.program.steps.map((step, index) => (
+          <li key={`${index}-${step.typeId}`} title={machineName(step.typeId)}>
+            <MachineIcon typeId={step.typeId} path={step.path} size={24} />
+            <span className="sr-only">{machineName(step.typeId)}</span>
+          </li>
+        ))}
+      </ol>
+      <span className="formula-ribbon-cost">${formula.researchCost} assay</span>
+      <span>{formula.outcome.sideEffects.length === 0 ? "Clean" : `${formula.outcome.sideEffects.length} side effects`}</span>
+    </aside>
+  );
 }
 
 export function Game() {
@@ -434,6 +483,18 @@ export function Game() {
   }, [initialSlot, showSlotRead]);
 
   const level = useMemo(() => generate(game.genOptions), [game.genOptions]);
+  const contracts = useMemo(
+    () => shippingContracts(game),
+    [game.economy.sold, game.genOptions],
+  );
+  const activeContract = contracts.find((contract) => !contract.completed) ?? contracts[contracts.length - 1]!;
+  const currentFormula = useMemo(
+    () => currentDiscoveredFormula(game),
+    [game.research.discoveredFormulas],
+  );
+  const researchMission = level.diseases.find((disease) => disease.id === activeContract.disease)!;
+  const researchMissionStart = level.start.pos[researchMission.map]!;
+  const researchMissionSector = researchAssaySector(researchMissionStart, researchMission.node);
   const knownResearchMap = useMemo(
     () => researchPlanningMap(level.mm, game.fog),
     [game.fog, level.mm],
@@ -509,106 +570,63 @@ export function Game() {
         typeId: selectedResearchEntry.typeId,
         path: selectedResearchEntry.path,
       }, [selectedResearchEntry]);
-  const previewProgram = useMemo<Template>(() => ({
-    steps: game.research.shot === null && selectedResearchMachine !== null
-      ? [...game.research.program.steps, selectedResearchMachine]
-      : game.research.program.steps,
-  }), [game.research.program.steps, game.research.shot, selectedResearchMachine]);
   const planningPreview = useMemo(() => {
-    if (game.research.shot !== null) return null;
-    const committed = researchPlanningPreview(
+    if (selectedResearchMachine === null) return null;
+    return researchPlanningPreview(
       level.mm,
       game.fog,
-      level.start,
-      game.research.program,
+      game.research.shot?.drug ?? level.start,
+      { steps: [selectedResearchMachine] },
     );
-    const combined = selectedResearchMachine === null
-      ? committed
-      : researchPlanningPreview(level.mm, game.fog, level.start, previewProgram);
-    return {
-      committed,
-      candidateTrails: selectedResearchMachine === null
-        ? undefined
-        : researchCandidateTrails(committed.trails, combined.trails),
-      candidateDrug: selectedResearchMachine === null ? undefined : combined.drug,
-    };
   }, [
     game.fog,
-    game.research.lastOutcome,
-    game.research.program,
     game.research.shot,
     level,
-    previewProgram,
     selectedResearchMachine,
   ]);
-  const researchTrails = useMemo(() => {
-    if (planningPreview !== null && game.research.lastOutcome === null) {
-      return planningPreview.committed.trails;
-    }
-    const completedSteps = game.research.shot?.step ?? game.research.program.steps.length;
-    return researchTrailsForProgram(
+  const researchTrails = useMemo(
+    () => researchTrailsForProgram(
       level.mm,
       level.start,
       game.research.program,
-      completedSteps,
-    );
-  }, [game.research.lastOutcome, game.research.program, game.research.shot, level, planningPreview]);
-  const previewDrug = useMemo(() => {
-    return researchDisplayDrug(
+      game.research.program.steps.length,
+    ),
+    [game.research.program, level],
+  );
+  const displayDrug = useMemo(() => researchDisplayDrug(
       level.start,
       game.research.shot?.drug ?? null,
       game.research.lastOutcome,
-    );
-  }, [game.research.lastOutcome, game.research.shot, level.start]);
-  const placeResearchMachine = useCallback(() => {
-    const current = gameRef.current;
-    if (current.research.shot !== null || selectedResearchMachine === null) return;
-    dispatch({
-      kind: "setResearchProgram",
-      program: { steps: [...current.research.program.steps, selectedResearchMachine] },
-    });
-  }, [dispatch, selectedResearchMachine]);
-  const undoResearchMachine = useCallback(() => {
-    const current = gameRef.current;
-    if (current.research.shot !== null || current.research.program.steps.length === 0) return;
-    dispatch({
-      kind: "setResearchProgram",
-      program: { steps: current.research.program.steps.slice(0, -1) },
-    });
-  }, [dispatch]);
-  const removeResearchMachine = useCallback((index: number) => {
-    const current = gameRef.current;
-    if (
-      current.research.shot !== null ||
-      index < 0 ||
-      index >= current.research.program.steps.length
-    ) return;
-    dispatch({
-      kind: "setResearchProgram",
-      program: {
-        steps: current.research.program.steps.filter((_step, stepIndex) => stepIndex !== index),
-      },
-    });
-  }, [dispatch]);
+  ), [game.research.lastOutcome, game.research.shot, level.start]);
   const researchAction = useCallback(() => {
-    const current = gameRef.current;
-    if (current.research.shot !== null || current.research.program.steps.length === 0) return;
-    dispatch({ kind: "beginResearchShot" });
-  }, [dispatch]);
-  const researchShotCost = useMemo(
-    () => researchProgramCost(game.research.program),
-    [game.research.program],
+    const blockReason = researchTestBlockReason(
+      gameRef.current.economy.cash,
+      gameRef.current.research.program.steps.length,
+      gameRef.current.research.shot !== null,
+      selectedResearchEntry,
+    );
+    if (blockReason !== null || selectedResearchMachine === null) {
+      if (blockReason !== null) setIntentError(`Action rejected: ${blockReason}`);
+      return;
+    }
+    dispatch({ kind: "advanceResearchShot", machine: selectedResearchMachine });
+  }, [dispatch, selectedResearchEntry, selectedResearchMachine]);
+  const abortResearch = useCallback(
+    () => dispatch({ kind: "abortResearchShot" }),
+    [dispatch],
+  );
+  const researchShotCost = game.research.shot?.cost ?? researchProgramCost(game.research.program);
+  const researchBlockReason = researchTestBlockReason(
+    game.economy.cash,
+    game.research.program.steps.length,
+    game.research.shot !== null,
+    selectedResearchEntry,
   );
   const buildPilotInProduction = useCallback((layout: FactoryLayout) => {
     if (gameRef.current.pilot.layout !== layout && !dispatch({ kind: "setPilotLayout", layout })) return;
     if (dispatch({ kind: "buildProductionLayout", layout })) openBuilding("production");
   }, [dispatch, openBuilding]);
 
-  useEffect(() => {
-    if (game.research.shot === null) return;
-    const timer = window.setTimeout(() => dispatch({ kind: "advanceResearchShot" }), 320);
-    return () => window.clearTimeout(timer);
-  }, [dispatch, game.research.shot]);
 
   const save = useCallback(() => {
     const slot = selectedSlotRef.current;
@@ -776,8 +794,8 @@ export function Game() {
         }
       } else if (building === "research" && drawer === null && researchKeyboardAction(event.key) !== null) {
         event.preventDefault();
-        if (researchKeyboardAction(event.key) === "dispense") researchAction();
-        else undoResearchMachine();
+        if (researchKeyboardAction(event.key) === "apply") researchAction();
+        else abortResearch();
       } else if (event.key.toLowerCase() === "m") {
         event.preventDefault();
         setDrawer((current) => current === "market" ? null : "market");
@@ -796,6 +814,7 @@ export function Game() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [
     building,
+    abortResearch,
     catalog,
     drawer,
     openBuilding,
@@ -804,7 +823,6 @@ export function Game() {
     researchAction,
     save,
     selectedResearchEntry,
-    undoResearchMachine,
   ]);
 
   const buildingButton = (
@@ -835,19 +853,23 @@ export function Game() {
         <div className="brand-mark">HexaPharma</div>
         <div className="resource-strip" aria-label="Company resources">
           <span className="resource-chip" aria-label={`Cash ${game.economy.cash}`} title={`Cash ${game.economy.cash}`}>
-            <span className="resource-label" aria-hidden="true"><span className="resource-label-full">Cash</span><span className="resource-label-compact">Cash</span></span>
+            <span className="resource-label" aria-hidden="true"><span className="resource-label-full">Cash</span><span className="resource-label-compact">$</span></span>
             <strong data-testid="cash">{game.economy.cash}</strong>
           </span>
           <span className="resource-chip" aria-label={`Knowledge ${game.economy.research}`} title={`Knowledge ${game.economy.research}`}>
-            <span className="resource-label" aria-hidden="true"><span className="resource-label-full">Knowledge</span><span className="resource-label-compact">Know.</span></span>
+            <span className="resource-label" aria-hidden="true"><span className="resource-label-full">Knowledge</span><span className="resource-label-compact">K</span></span>
             <strong data-testid="research">{game.economy.research}</strong>
           </span>
           <span className="resource-chip" aria-label={`Stock ${game.inventory.length}`} title={`Stock ${game.inventory.length}`}>
-            <span className="resource-label" aria-hidden="true"><span className="resource-label-full">Stock</span><span className="resource-label-compact">Stock</span></span>
+            <span className="resource-label" aria-hidden="true"><span className="resource-label-full">Stock</span><span className="resource-label-compact">S</span></span>
             <strong>{game.inventory.length}</strong>
           </span>
+          <span className="resource-chip contract-chip" data-testid="shipping-contract" aria-label={`Disease ${activeContract.disease + 1} shipping contract ${activeContract.sold} of ${activeContract.quota}`}>
+            <span className="resource-label"><span className="resource-label-full">D{activeContract.disease + 1} contract</span><span className="resource-label-compact">D{activeContract.disease + 1}</span></span>
+            <strong>{activeContract.sold} / {activeContract.quota}</strong>
+          </span>
           <span className="resource-chip" aria-label={`Seed ${game.genOptions.seed}`} title={`Seed ${game.genOptions.seed}`}>
-            <span className="resource-label" aria-hidden="true"><span className="resource-label-full">Seed</span><span className="resource-label-compact">Seed</span></span>
+            <span className="resource-label" aria-hidden="true"><span className="resource-label-full">Seed</span><span className="resource-label-compact">#</span></span>
             <strong data-testid="seed">{game.genOptions.seed}</strong>
           </span>
         </div>
@@ -880,7 +902,7 @@ export function Game() {
 
       <nav className="nav-rail" data-testid="nav-rail" aria-label="Facilities">
         {buildingButton("research", "Research", "Research", "⌬", "F1")}
-        {buildingButton("pilot", "Pilot Plant", "Pilot", "◇", "F2")}
+        {buildingButton("pilot", "Production Plan", "Plan", "◇", "F2")}
         {buildingButton("production", "Production", "Production", "▦", "F3")}
         <span className="nav-spacer" />
         <button type="button" className={`nav-button utility-nav-button${drawer === "market" ? " is-active" : ""}`} onClick={() => setDrawer((current) => current === "market" ? null : "market")} data-testid="view-market" aria-label="Market (M)" title="Market (M)">
@@ -895,9 +917,15 @@ export function Game() {
       </nav>
 
       <main className="game-stage" data-testid="game-stage">
+        {currentFormula !== null && <FormulaRibbon formula={currentFormula} />}
         <section className="view-layer" hidden={building !== "research"}>
           {visited.research && (
             <div className="research-workspace" data-testid="research-workspace">
+              <section className="research-mission" data-testid="research-mission" aria-label="Active assay">
+                <span>Active assay</span>
+                <strong>Disease {researchMission.id + 1}</strong>
+                <span>Target signal <output data-testid="research-assay-sector">{researchMissionSector}</output></span>
+              </section>
               {game.research.program.steps.length > 0 && (
                 <div
                   className="research-program-strip"
@@ -911,50 +939,39 @@ export function Game() {
                         <MachineIcon typeId={step.typeId} path={step.path} size={24} />
                         <span className="research-step-name" title={machineName(step.typeId)}>{machineName(step.typeId)}</span>
                         <span className="research-step-cost">${researchMachineCost(step.typeId)}</span>
-                        <button
-                          type="button"
-                          onClick={() => removeResearchMachine(index)}
-                          disabled={game.research.shot !== null}
-                          aria-label={`Remove ${machineName(step.typeId)} step ${index + 1}`}
-                          title={`Remove ${machineName(step.typeId)}`}
-                        >
-                          ×
-                        </button>
                       </li>
                     ))}
                   </ol>
                 </div>
               )}
               <div className="research-commandbar" role="toolbar" aria-label="Research program controls">
-                <strong data-testid="research-program-count">{game.research.program.steps.length} placed</strong>
+                <strong data-testid="research-program-count">{game.research.program.steps.length} tested</strong>
                 <output className="research-shot-cost" data-testid="research-shot-cost">${researchShotCost}</output>
-                <button type="button" onClick={undoResearchMachine} disabled={game.research.shot !== null || game.research.program.steps.length === 0} data-testid="research-undo" aria-label="Undo last path" title="Undo last path (Backspace)">↶</button>
                 {game.research.shot !== null && (
-                  <button type="button" className="is-warning" onClick={() => dispatch({ kind: "abortResearchShot" })} data-testid="research-abort">Abort · no refund</button>
+                  <button type="button" className="is-warning" onClick={abortResearch} data-testid="research-abort">End assay · no refund</button>
                 )}
                 <button
                   type="button"
                   className="facility-command"
-                  disabled={game.research.program.steps.length === 0 || game.research.shot !== null}
+                  disabled={researchBlockReason !== null}
                   onClick={researchAction}
                   data-testid="research-command"
-                  title="Dispense (Enter)"
+                  title={researchBlockReason ?? "Test cartridge (Enter)"}
                 >
-                  Dispense
+                  Test cartridge
                 </button>
               </div>
               <App
                 active={building === "research" && drawer === null}
                 level={level}
                 fog={game.fog}
-                drug={previewDrug}
+                drug={displayDrug}
                 trails={researchTrails}
-                previewTrails={planningPreview?.candidateTrails}
-                previewDrug={planningPreview?.candidateDrug}
-                shotStep={game.research.shot?.step ?? null}
+                previewTrails={planningPreview?.trails}
+                previewDrug={planningPreview?.drug}
                 lastOutcome={game.research.lastOutcome}
-                onWorldActivate={placeResearchMachine}
-                onWorldErase={undoResearchMachine}
+                onWorldActivate={researchAction}
+                onWorldErase={abortResearch}
               />
               <div className="research-path-hotbar" role="toolbar" aria-label="Fixed machine paths" data-testid="research-path-hotbar">
                 {catalog.map((entry, index) => (
@@ -990,7 +1007,7 @@ export function Game() {
               entitledHeight={entitledHeight}
               catalog={catalog}
               onLayoutChange={changePilot}
-              commandLabel={`Build $${quoteProductionBuild(game.production.layout, game.pilot.layout ?? game.production.layout)}`}
+              commandLabel={`Commission $${quoteProductionBuild(game.production.layout, game.pilot.layout ?? game.production.layout)}`}
               commandDisabled={game.pilot.layout === null}
               onCommand={buildPilotInProduction}
             />
@@ -1025,15 +1042,14 @@ export function Game() {
               <Patents
                 economy={game.economy}
                 patents={game.patents}
+                contracts={contracts}
                 expansionResetsProduction={game.production.runtime.tick > 0 || game.production.runtime.unitCount > 0 || game.production.waste > 0}
                 onUnlock={unlock}
               />
             ) : (
               <BlueprintLibrary
-                researchProgram={game.research.program}
                 pilotLayout={game.pilot.layout}
                 productionLayout={game.production.layout}
-                onLoadResearch={(program) => dispatch({ kind: "setResearchProgram", program })}
                 onLoadPilot={changePilot}
                 onBuildProduction={changeProduction}
                 quoteProduction={(layout) => quoteProductionBuild(game.production.layout, layout)}

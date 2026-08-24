@@ -729,18 +729,33 @@ export interface GameOrigin {
 }
 
 export interface ResearchShot {
-  /** Number of programmed machine paths whose effects have already completed. */
+  /** Number of machine stamps executed in this active reveal-decide session. */
   readonly step: number;
   /** The physical drug state after `step` completed effects. */
   readonly drug: DrugState;
-  /** Cash charged exactly once when this shot began. */
+  /** Cumulative cash charged for stamps already executed in this session. */
   readonly cost: number;
+}
+
+export interface DiscoveredFormula {
+  readonly disease: DiseaseId;
+  readonly program: Template;
+  readonly researchCost: number;
+  readonly outcome: Outcome;
 }
 
 export interface ResearchFacilityState {
   readonly program: Template;
   readonly shot: ResearchShot | null;
   readonly lastOutcome: Outcome | null;
+  readonly discoveredFormulas: readonly DiscoveredFormula[];
+}
+
+export interface ShippingContractProgress {
+  readonly disease: DiseaseId;
+  readonly sold: number;
+  readonly quota: number;
+  readonly completed: boolean;
 }
 
 export interface PilotFacilityState {
@@ -755,9 +770,8 @@ export interface ProductionFacilityState {
 
 /** Every authoritative whole-game state transition; consecutive factory ticks are normalized. */
 export type GameIntent =
-  | { readonly kind: "setResearchProgram"; readonly program: Template }
   | { readonly kind: "beginResearchShot" }
-  | { readonly kind: "advanceResearchShot" }
+  | { readonly kind: "advanceResearchShot"; readonly machine: Machine }
   | { readonly kind: "abortResearchShot" }
   | { readonly kind: "setPilotLayout"; readonly layout: FactoryLayout }
   | { readonly kind: "buildProductionLayout"; readonly layout: FactoryLayout }

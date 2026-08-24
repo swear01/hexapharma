@@ -66,6 +66,8 @@ test("Market explains Ship best economics and reports Knowledge from a sale", as
   await expect(row.getByTestId("shop-production-cost-0")).toHaveText("26");
   await expect(row.getByTestId("shop-side-effect-penalty-0")).toHaveText("$25 × 0 = $0");
   await expect(row.getByTestId("shop-net-0")).toHaveText("70");
+  await expect(row.getByTestId("shop-clean-0")).toHaveClass("market-value-clean");
+  await expect(row.getByTestId("shop-tainted-0")).toHaveClass("market-value-tainted");
   await expect(row.getByText("Tainted stock", { exact: true })).toBeVisible();
 
   await row.getByTestId("shop-sell-0").click();

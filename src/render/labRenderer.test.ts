@@ -1,14 +1,32 @@
 import { describe, expect, it } from "vitest";
-import { labFeatureStyle, labPreviewTargetBadge } from "./labRenderer";
+import { LAB_SCHEMATIC_STYLE, labFeatureStyle, labPreviewTargetBadge } from "./labRenderer";
+
+describe("Orbital wet-lab schematic", () => {
+  it("uses one restrained semantic palette instead of asset-local colors", () => {
+    expect(LAB_SCHEMATIC_STYLE).toEqual({
+      background: 0x050a12,
+      deck: 0x18242b,
+      structure: 0xe7e1d2,
+      flow: 0x48d7e5,
+      candidate: 0xf3b45d,
+      cure: 0xb8e06c,
+      sideEffect: 0xde5fb1,
+      failure: 0xef6862,
+      fogGrid: 0x1f313d,
+      wallDetail: 0x637078,
+      abyssDetail: 0x24343d,
+      sideEffectOutline: 0x51223f,
+    });
+  });
+});
 
 describe("Lab feature emphasis", () => {
-  it("renders a revealed Cure as a full-strength tinted target", () => {
-    const cure = labFeatureStyle("cure", 0x8ae8ff);
-    const sideEffect = labFeatureStyle("sideEffect", 0xd6a6ed);
+  it("requests a target ring only for a revealed Cure", () => {
+    const cure = labFeatureStyle("cure");
+    const sideEffect = labFeatureStyle("sideEffect");
 
-    expect(cure).toMatchObject({ alpha: 1, tint: 0x8ae8ff, targetRing: true });
-    expect(cure.scale).toBeGreaterThan(sideEffect.scale);
-    expect(sideEffect.targetRing).toBe(false);
+    expect(cure).toEqual({ targetRing: true });
+    expect(sideEffect).toEqual({ targetRing: false });
   });
 
   it("keeps an add-path badge legible on the preview endpoint", () => {

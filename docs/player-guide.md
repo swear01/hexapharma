@@ -17,7 +17,7 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 
 | 動作 | 操作 |
 |---|---|
-| Research / Pilot / Production | `F1` / `F2` / `F3` |
+| Research / Production Plan / Production | `F1` / `F2` / `F3` |
 | Market / Technology / Blueprints | `M` / `T` / `B` |
 | 關閉 drawer | `Escape` 或 `×` |
 | New Game | HUD `+ New`；輸入 0–4294967295 的 seed 後確認 |
@@ -34,7 +34,8 @@ Blueprint Library 與 save slot 分離；New Game、Load、Rewind、換 slot 都
 ### 看地圖
 
 - Atlas 遠大於 viewport；開局 camera 聚焦世界中心的 generator start，只有以起點為中心的 5×5 已揭露，畫面只顯示整張圖的一小部分。
-- 拖曳任一滑鼠鍵可平移；滾輪以游標位置縮放。規劃時按鈕標成Next，`F`或Next會聚焦橙色candidate endpoint，方便接續離屏長路線；只有出藥時改標Dose並聚焦白色實際藥物。結果保留時Next會立即恢復，出藥期間camera自動跟隨dose，結束後仍可自由pan／zoom；切到其他建築再回來不會重設手動camera。
+- mission label只顯示目前疾病與Target signal的寬廣sector：local、東／西／南／北或對角方向。它不是精確座標、距離或reference route。
+- 拖曳任一滑鼠鍵可平移；滾輪以游標位置縮放。`F`或Next會聚焦橙色candidate endpoint，方便接續離屏路線。每個stamp立即resolve，沒有等待動畫結束的Dose階段或自動camera跟隨；切到其他建築再回來不會重設手動camera。
 - 找到Cure位置後可點底部的`Cure sites x`逐一聚焦已揭露的位置；這是**已發現位置數**，不是已成功治療數。`Cure sites 0`時不可操作，HUD不顯示未知總數或霧下位置。
 - 格線與**Wall**不需要先探索；Wall會取消該步，但機器繼續走剩餘 path。
 - 其他互動物揭露後才可辨識：
@@ -45,22 +46,21 @@ Blueprint Library 與 save slot 分離；New Game、Load、Rewind、換 slot 都
 - Abyss、Swamp、Portal、Cure與SideEffect在揭露前都顯示為普通地面；不要把霧下空白當成沒有內容。
 - Cure以亮色receptor與雙圈target標示。Cure與SideEffect可在同一格重疊：抵達污染的Cure會同時治療疾病並帶來副作用；同一區的constructed reference endpoint是乾淨Cure。
 
-### 組路徑與出藥
+### 逐步 assay
 
-1. 用數字鍵`1`–`9`或底部hotbar選機器。icon顯示該機器的完整奇形path，world從目前program endpoint畫出完整candidate ghost。
-2. 白色瓶是目前route head，橙色瓶與`+`是下一條candidate endpoint；底部`Next`／F可隨時把它重新置中。滑鼠移到橙色marker時會變pointer並顯示`Place next path`；LMB單擊就把**整條**path加入program，不用雙擊。其餘地圖可直接拖曳平移，點空白格不會append，也不能只取其中一段。
-3. machine按鈕會即時改變橙色preview；hover可看到完整名稱與「預覽下一條path」提示。上方route chip保留完整名稱、順序與成本。
-4. 重複選擇不同機器，利用形狀避開Abyss、穿越Portal、控制Swamp消耗。
-5. 上方ordered route strip顯示每一步的機器、單步費用與整次shot總價。按某一步的`×`可移除該完整machine並重算後續；RMB、`Backspace`或undo button移除最後一步。
-6. `Enter`或Dispense開始。系統一次扣除route strip顯示的完整Research費用；Abort、失敗或沒有治療結果都不退款。
-7. 每台machine完成後，實際走過的segment才揭露附近內容。planning、hover與載入Blueprint都不會免費揭霧。
-8. shot結束後短結果同時列出Cure與已知Side effects；不能只看`Cure`而忽略同一endpoint的污染。
+1. 用數字鍵`1`–`9`或底部hotbar選擇**下一台**機器。icon顯示完整奇形path；world從目前actual drug position畫出完整candidate ghost。不能截短或只取其中一段。
+2. 橙色candidate endpoint與`+`是本次commit目標；`Next`／`F`可把它重新置中。滑鼠命中後提示`Test cartridge`；也可用command bar的`Test cartridge`。blank map只負責pan，不會提交action。
+3. 第一次commit以一個原子動作從step 0／cost 0開始並立即執行所選machine。系統當下扣除**這一台**的catalog費用、走完整stamp、揭露actual trail並顯示本步outcome；沒有空session中間態，也沒有先排整批route再一次Dispense。
+4. 若沒有Cure也沒有Failure，session保持active。根據剛揭露的Wall／Abyss／Swamp／Portal／effects與目前drug位置，選擇下一台machine並再次commit。
+5. Failure或任何Cure會結束session。`Abort`會清掉這輪active steps與outcome；已付費用不退、已揭露fog不回滾。
+6. 結果同時列出Cure與已知Side effects；不能只看`Cure`而忽略同一endpoint的污染。
+7. 成功Cure會自動把這輪實際執行的ordered steps、累積assay cost與outcome保存成該疾病的`DiscoveredFormula`。每疾病保留最新一份，formula ribbon可隨時讀取；它不會自動建造Production。
 
-正常Atlas預設4種疾病：第一種reference只需要初始machine；後續疾病逐步可能需要Technology解鎖Zigzag still、Loop vat與Settling spiral。地圖的hidden reference不會在遊戲中顯示，玩家要以揭露結果自行設計ResearchProgram。
+正常Atlas預設4種疾病：第一種reference只需要初始machine；後續疾病逐步可能需要Technology解鎖Zigzag still、Loop vat與Settling spiral。地圖的hidden reference不會在遊戲中顯示，玩家要以sector與逐步揭露結果自行決定下一個stamp。
 
 ## Factory共同操作
 
-Pilot與Production使用相同editor。
+Production Plan與Production使用相同editor。
 
 ### Camera與工具
 
@@ -94,13 +94,13 @@ Pilot與Production使用相同editor。
 - Source按period產生unit；Sink消耗到達unit。
 - Machine只能從input port收料、從output port出料。footprint上的port標記會顯示是否連接。
 
-## Pilot Plant
+## Production Plan
 
-- Pilot沒有clock、建造費、inventory或waste；適合從空地反覆排列layout。
+- Production Plan沒有clock、建造費、inventory或waste；適合從空地反覆排列layout。
 - inspector的Sample、Throughput與Bottleneck只幫你判讀，不限制layout；Sample只依Research已揭露地圖計算，不能用來偷看霧下Cure、SideEffect或Portal配對。無法分析時會顯示可見錯誤。
-- 可在Blueprint drawer用`Save Pilot`保存通用Factory Blueprint。
-- `Build $N`會以Production現況計算差異費用。現金足夠時建到Production並切換F3；現金不足時Pilot保持不變。
-- Pilot完全可選；你可以直接按F3開始正式建造。
+- 可在Blueprint drawer用`Save Production Plan`保存通用Factory Blueprint。
+- `Commission $N`會以Production現況計算差異費用。現金足夠時建到Production並切換F3；現金不足時Plan保持不變。
+- Production Plan完全可選；你可以直接按F3開始正式建造。內部save／intent欄位仍可能顯示為開發名稱`pilot`，不是另一個玩家場域。
 
 ## Production
 
@@ -125,19 +125,20 @@ Pilot與Production使用相同editor。
 ## Blueprints
 
 1. 按`B`開Library，輸入Name。
-2. `Save Research program`保存ordered machine types；`Save Pilot`／`Save Production`保存通用FactoryLayout。
-3. Research card可`Load in Research`。
+2. `Save Production Plan`／`Save Production`保存通用FactoryLayout。目前沒有`Save Research program`或`Load in Research`；Research必須逐步執行。
+3. 匯入既有Blueprint v3 `research-program`時，Library只顯示內容並提供Download／Delete，不會把它套入active session。
 4. Factory card可：
-   - `Open in Pilot`：免費覆蓋Pilot layout。
-   - `Build $N`：以Production目前layout報價並付費建造。
+   - `Open in Production Plan`：免費覆蓋Plan layout。
+   - `Commission $N`：以Production目前layout報價並付費建造。
    - 藍圖尺寸與目前Technology entitlement不同時，目的地停用並顯示`Build unavailable`；先取得相符場地再套用。
 5. Download取得versioned JSON；Upload或貼上JSON可import。checksum、content或geometry不相容時會明示拒絕。
-6. Delete先顯示可取消確認；確認後只永久刪除跨存檔Library entry，不改目前Research／Pilot／Production。
+6. Delete先顯示可取消確認；確認後只永久刪除跨存檔Library entry，不改目前Research／Production Plan／Production。
 
 ## Technology、Market與重置
 
 - Technology解鎖machine、場地或Research輔助。解鎖探索輔助本身不揭霧，只增加之後actual Research segment的感測半徑。
 - Technology頂部只列出已取得的非零benefits；每張卡用完整名稱列出效果、成本與實際前置Technology，沒有前置條件時不顯示空的requirement。
+- HUD contract chip顯示首個未完成疾病的`sold / 3`。Disease 1／2／3各出貨3件後，分別解除Skew／Dilute／Settle patent的合約gate；仍須支付該patent的cash／Knowledge並滿足既有Technology prerequisites。其他patent不需要合約。
 - 每個疾病的Base由mapgen以`12 + 4×difficulty + 2×referenceCost`決定。第一次出售取得Base gross；之後同疾病Next逐次為`floor(前一次 × 9 / 10)`，最後到0。不同疾病各算自己的Sold與Next。
 - 每張需求卡以Clean stock／Tainted stock計數庫存件數；最佳可售庫存會列Next gross、production cost、每個effect `$25`的penalty算式與net。無治療庫存或沒有正net庫存時，Ship disabled並直接顯示原因。
 - Market的`Ship best`按side effects最少、production cost最低、inventory ID最早的順序，略過不賺錢的候選後出售第一件正net產品。`Ship profitable`掃描相同順序，只出售在當下demand仍為正net的項目；略過的庫存不消耗demand，也不會被自動丟棄。每件成功出售另取得1 Knowledge；畫面會顯示本次回饋。

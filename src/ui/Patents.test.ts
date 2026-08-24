@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_PATENTS } from "../sim/patent";
 import {
   patentCostLabel,
+  patentContractRequirement,
   patentEffectSummary,
   patentTitle,
   patentUnlockWarning,
@@ -57,5 +58,17 @@ describe("Technology copy", () => {
       "Research scan radius +4 cells",
       "2 machines unlocked",
     ]);
+  });
+
+  it("names an incomplete shipping contract that gates a machine patent", () => {
+    expect(patentContractRequirement("skew-unlock", [
+      { disease: 0, sold: 2, quota: 3, completed: false },
+    ])).toBe("Complete Disease 1 contract (2/3)");
+    expect(patentContractRequirement("skew-unlock", [
+      { disease: 0, sold: 3, quota: 3, completed: true },
+    ])).toBeNull();
+    expect(patentContractRequirement("dilute-unlock", []))
+      .toBe("Disease 2 contract unavailable");
+    expect(patentContractRequirement("reveal-aid", [])).toBeNull();
   });
 });

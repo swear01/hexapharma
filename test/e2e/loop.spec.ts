@@ -28,7 +28,11 @@ function preparedFacilitiesSave(seed = 14): string {
     BASE_GAME_FACTORY_HEIGHT,
   ).layout;
   let game = createGameState(options, DEFAULT_STARTING_CASH, 0);
-  game = applyGameIntent(game, { kind: "setResearchProgram", program });
+  game = applyGameIntent(game, { kind: "beginResearchShot" });
+  for (const machine of program.steps) {
+    game = applyGameIntent(game, { kind: "advanceResearchShot", machine });
+    if (game.research.shot === null) break;
+  }
   game = applyGameIntent(game, { kind: "setPilotLayout", layout });
   return serializeGame(game);
 }
@@ -40,17 +44,18 @@ async function loadPrepared(page: import("@playwright/test").Page, seed = 14): P
   await confirmLoad(page);
 }
 
-test("full loop: paid Research → independent Pilot → timed Production → Market → Technology", async ({
+test("full loop: paid Research → Formula → Production Plan → Production → shipping contract", async ({
   page,
 }) => {
   await loadPrepared(page);
-  const cashBeforeResearch = Number(await page.getByTestId("cash").textContent());
-  await page.getByTestId("research-command").click();
-  await expect(page.getByTestId("cash")).not.toHaveText(String(cashBeforeResearch));
-  await expect(page.getByTestId("research-atlas-outcome")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId("research-atlas-outcome")).toBeVisible();
+  await expect(page.getByTestId("formula-ribbon")).toContainText("Disease 1");
+  await expect(page.getByTestId("formula-ribbon").locator(".formula-ribbon-cost")).toContainText("assay");
+  await expect(page.getByTestId("shipping-contract")).toContainText("0 / 3");
 
   await page.getByTestId("view-pilot").click();
-  await expect(page.getByRole("heading", { name: "Pilot Plant" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Production Plan" })).toBeVisible();
+  await expect(page.getByTestId("formula-ribbon")).toBeVisible();
   await page.getByTestId("pilot-command").click();
   await expect(page.getByRole("heading", { name: "Production" })).toBeVisible();
   await page.getByTestId("factory-play").click();
@@ -63,6 +68,7 @@ test("full loop: paid Research → independent Pilot → timed Production → Ma
   await sell.click();
   await expect.poll(async () => Number(await page.getByTestId("cash").textContent()))
     .toBeGreaterThan(cashBeforeSale);
+  await expect(page.getByTestId("shipping-contract")).toContainText("1 / 3");
   await page.getByTestId("view-technology").click();
   await expect(page.getByTestId("technology-drawer")).toBeVisible();
   await expect(page.getByTestId("research")).toHaveText("1");
@@ -106,6 +112,7 @@ test("deleting a cross-save Blueprint requires an explicit cancelable confirmati
   await page.getByTestId("blueprint-save-production").click();
   const card = page.locator(".blueprint-card").filter({ hasText: "Keep me" });
   await expect(card).toBeVisible();
+  await expect(card.getByRole("button", { name: "Commission $0", exact: true })).toBeEnabled();
 
   await card.getByRole("button", { name: "Delete Keep me" }).click();
   const confirmation = page.getByTestId("blueprint-delete-confirm");
@@ -138,7 +145,7 @@ test("an expanded-floor Blueprint stays readable on a smaller Production floor",
   await page.goto("/");
   await page.getByTestId("view-blueprints").click();
   const card = page.locator(".blueprint-card").filter({ hasText: "Expanded floor" });
-  await expect(card.getByRole("button", { name: "Open in Pilot" })).toBeDisabled();
+  await expect(card.getByRole("button", { name: "Open in Production Plan" })).toBeDisabled();
   await expect(card.getByRole("button", { name: "Build unavailable" })).toBeDisabled();
   expect(errors).toEqual([]);
 });

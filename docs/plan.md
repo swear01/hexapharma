@@ -27,29 +27,32 @@
    - solver只留tests/tools；runtime、UI與generator rejection loop禁止依賴solver。
 
 4. **Research direct interaction and feedback**
-   - selected machine只產生從目前endpoint接續的完整candidate ghost。
-   - 只有點中candidate endpoint才append；blank map click不改program。
-   - ordered route strip顯示step、machine、單步cost、總shot cost；未出藥時可移除任意完整step並重算後續。
-   - shot期間camera跟隨dose；完成結果同時顯示已知Cure與SideEffect。
+   - 第一個`advanceResearchShot`原子建立並執行reveal–decide session；selected machine只產生從目前actual drug state接續的完整candidate ghost。
+   - 一次commit一個canonical完整stamp；當步立即扣款、執行、揭露與evaluate。blank map click不改program，沒有batch route submission或editable pending queue。
+   - no-cure保留session供下一次決定；Failure／Cure結束，Abort不退款也不回滾fog。
+   - 成功Cure自動建立或覆寫每疾病唯一的`DiscoveredFormula`；formula ribbon顯示已執行steps、累積cost與side effects。
+   - assay mission只提示local／八方向的寬廣sector；不暴露座標、距離或reference。
    - 保持complete fixed PathStamp、no partial path、planning不揭霧、actual segments才揭霧。
 
 5. **Bootstrap, economy and Market**
-   - default cash改為$1000，保證人工Research後仍能直接或經optional Pilot支付第一條有效Production line。
+   - default cash改為$1000，保證人工Research後仍能直接或經optional Production Plan支付第一條有效Production line。
    - base price固定為`12 + 4 × difficulty + 2 × referenceCost`。
    - 每疾病gross由base開始，每售一件next=`floor(previous × 9 / 10)`直到0；移除永久正值floor。
    - Cure與SideEffect overlap完整流入physical inventory與sale penalty。
    - Market stable order是side effects少、production cost低、inventory ID早；`Ship best`／`Ship profitable`只出售正net產品。
-   - Pilot維持free/no-clock/optional；Production維持direct/paid，不能重加頁面前置。
+   - 每疾病shipping contract quota=3；Disease 1／2／3合約分別gate Skew／Dilute／Settle patents。
+   - Production Plan維持free/no-clock/optional、使用Commission玩家文案；Production維持direct/paid，不能重加頁面前置。
 
 6. **Integration, docs and repeated audit**
    - focused unit/property → typecheck/lint → integration/E2E → full `npm run check`。
-   - residue scan：partial path、blank-click append、非Wall穿霧、universal corridor、default one disease、互斥effects、$200 start、permanent price floor與fixture-only full loop都不得留作active truth。
+   - residue scan：batch Research route、partial path、blank-click append、非Wall穿霧、universal corridor、default one disease、互斥effects、$200 start、permanent price floor、Pilot Plant玩家文案、generated bitmap manifest與fixture-only full loop都不得留作active truth。
    - 更新README、design、overview、notes、decisions、invariants、structure、UI contract、player guide、roadmap與playtest。
-   - 重建Research／effects／Market screenshots，做至少一輪邏輯、視覺與文件audit。
+   - Orbital Wet-Lab Schematic收斂為black-blue／graphite／bone-white／steel基底，語意色只用cyan／amber／lime／magenta／red；vector runtime不再依賴generated lab bitmap manifest。
+   - 重建Research／effects／Market screenshots，做至少一輪邏輯、視覺與文件audit；Atlas／Factory保持正方格，不在此milestone遷移hex geometry。
 
 7. **Human fun validation on 53346**
    - 清Save與Blueprint Library；不用`?cash`／`?research`、hidden reference、solver、compiler、預製Blueprint或注入Knowledge。
-   - 人工完成Research → affordable build → Production → first profitable sale，再嘗試理解下一疾病。
+   - 人工完成stepwise Research → DiscoveredFormula → affordable direct build或Plan Commission → Production → first profitable sale，再嘗試完成quota-3 contract並理解下一疾病。
    - 記錄首次理解、嘗試數、first cure／sale時間、最低cash、layout重做、困惑點與是否願意繼續。
    - automated correctness不能代替這份human evidence；任何無資訊、破產或不可達first sale都是blocker。
 
@@ -65,4 +68,4 @@
 - final art/audio polish、帳戶、雲端Blueprint repository。
 - release candidate前的跨build save migration。
 
-平衡可逐步調整；fresh-loop可達性、seed／disease解法差異、finite demand、overlap effects、完整PathStamp、Wall-only穿霧、direct paid Production、optional Pilot、Blueprint v3、Save v7與strict gate不能後置。
+平衡可逐步調整；fresh-loop可達性、stepwise reveal–decide、auto formula、quota-3 contracts／patent gates、seed／disease解法差異、finite demand、overlap effects、完整PathStamp、Wall-only穿霧、direct paid Production、optional Production Plan、Blueprint v3、Save v9與strict gate不能後置。

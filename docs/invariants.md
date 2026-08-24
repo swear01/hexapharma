@@ -3,23 +3,23 @@
 ## Research path core
 
 - 每個 `Machine` 恰為 `{typeId,path}`；`path` 是 catalog 定義的完整 fixed `PathStamp`。
-- UI、GameIntent、Save 與 Blueprint 都不得表示「只走完整 path 的一部分」。加入或移除 Research step 必須以整台 machine 為單位。
+- UI、GameIntent、Save 與 Blueprint 都不得表示「只走完整 path 的一部分」。Research 每次只提交一台完整 machine。
 - 同 program、start 與 terrain 下，planning preview 和 execution 使用同一 pure traversal，逐 cell 與 portal discontinuity 相同。
-- `ResearchProgram` 是 ordered machines；下一步從前一步的實際 endpoint 繼續。不得另存任意 anchor、auto-route 結果或 FactoryLayout。
+- active `ResearchProgram` 是本 session **已實際執行**的 ordered machines；下一步從 shot 的實際 drug state 繼續。不得另存待執行 batch、任意 anchor、auto-route 結果或 FactoryLayout。
 - program 進 state、trace、save 前必須 canonical validate、own 與 freeze。
-- 選Research machine只建立完整candidate；只有candidate endpoint hit可提交step。blank world click不改program。
-- ordered route strip只投影program；每step與總shot cost由catalog重算。移除任意step以整台machine為單位，後續endpoint不得保留舊cache。
+- 選Research machine只建立下一個完整candidate；只有candidate endpoint hit可提交step。blank world click不改program、cash或fog。
+- `advanceResearchShot` 每次恰接受一個 canonical完整 `Machine`，並在同一原子 transition 中扣該 machine catalog cost、執行、揭露、evaluate 與 append。沒有一次提交多步 route 或先編輯後結算。
 
 ## Terrain、portal 與 fog
 
-- Active Research 只有單層座標；跨層位置或交換層操作不得出現在 active program、palette、mapgen、Blueprint 或 Save v7 authority。
+- Active Research 只有單層正方格座標；跨層位置、six-neighbor hex 座標或交換層操作不得出現在 active program、palette、mapgen、Blueprint 或 Save v9 authority。
 - Wall／OOB、Abyss、Swamp 與 Portal 各有 pure、deterministic、共享於 preview／execution 的語意。
 - 每個 portal entry 恰有一個同層 destination；每個 destination 最多一個 entry。B 不可反向作 A；trail 在 jump 處斷開。
 - Wall 不受探索遮罩隱藏，未揭露時仍必須可讀並影響 preview。
 - Abyss、Swamp、Portal entry／exit、Cure與SideEffect只有揭露後才能出現在 renderer、planning map、region 邊界、hover、ghost 或 outcome UI；未揭露時等價於普通 substrate。Portal pairing、方向與 planning jump 必須兩端都揭露後才可見。
 - planning、選工具、放置 program step、載入 Blueprint 或移動 camera 都不改 fog。
 - 只有實際完成的 Research path segment 依 sensor radius 揭露；portal 不揭露兩端之間的直線。
-- Pilot sample outcome 只可讀取同一份 fog-masked planning map；免費、零時鐘的 layout diagnostics 不得查詢隱藏 Atlas authority。Production 的實體產品仍依完整權威地圖結算。
+- Production Plan sample outcome 只可讀取同一份 fog-masked planning map；免費、零時鐘的 layout diagnostics 不得查詢隱藏 Atlas authority。Production 的實體產品仍依完整權威地圖結算。
 - fresh fog在每張active map只揭露start-centered radius 2方格，即正常邊界內5×5；不能沿reference預揭露。
 - Cure與SideEffect是獨立arrays／overlays；同一cell可同時有兩者，evaluate必須同時加入`cured`與`sideEffects`。
 - 每個EffectMap入口必須驗width/height area、exact `Uint8Array`／`Int16Array`／`Int32Array`種類與長度、CellKind與fog值域、`-1`或non-negative effect IDs，以及safe integer且在bounds內的origin/start；不得因overlay而要求Cure與SideEffect互斥。
@@ -39,23 +39,26 @@
 
 ## Research facility
 
-- Research 只持有 Atlas fog、ResearchProgram、shot 與 last outcome；不持有 source／belt／sink routing 或 FactoryLayout。
-- Research shot 必須有至少一個 step，開始時只扣一次完整 cost；中止、fail 或 no-cure 不退款。
-- shot progress 只能向前；已完成的 segment 才能改 fog。編輯 program 時不得有 active shot。
-- Research intent 不能寫 Pilot／Production layout、runtime、inventory 或 waste。
-- active shot期間camera view跟隨權威dose位置；完成Outcome UI必須同時呈現已知cures與side effects，不得因有cure省略污染。
+- Research 只持有 Atlas fog、已執行 program、shot、last outcome 與 discovered formulas；不持有 source／belt／sink routing 或 FactoryLayout。
+- UI第一個cartridge直接以單一`advanceResearchShot`從step 0原子開始；不得先留下可觀察的空session。低階`beginResearchShot`若被replay使用，仍只可在沒有active shot時建立step 0／cost 0／start drug，清program與outcome且不扣cash。
+- no-cure 的 `advanceResearchShot` 保留 active shot 並公開 last outcome；Failure 或任何 Cure 清 shot。shot step／cost只能向前，已完成的 segment 才能改 fog。
+- `abortResearchShot` 清 active program／shot／outcome；不退已扣 machine cost，也不回滾 fog。解鎖 patent 不得中止 active Research session。
+- 成功 Cure 對每個 cured disease 建立 `{disease,program,researchCost,outcome}`；每疾病最多一份，重複發現覆寫舊 formula 並移到 latest。formula 必須 own／freeze完整已執行program與outcome，不能 alias active state。
+- assay sector只能是local或八個寬廣方向，不得顯示target座標、距離、reference program或未揭露region資訊。
+- Research intent 不能寫內部 pilot／Production layout、runtime、inventory 或 waste。
+- 每個UI stamp commit在單一intent中立即resolve；不得虛構timed Dose phase。Outcome UI必須同時呈現已知cures與side effects，不得因有cure省略污染。
 
-## Pilot Plant
+## Production Plan
 
-- Pilot layout nullable；空 Pilot 不阻止玩家打開或編輯 Production。
-- Pilot edit 不扣 cash、不推進 tick、不產生 inventory／waste，也不改 Research。
-- Pilot diagnostics 是 bounded read-only analysis；no-cure、side effect、failure、deadlock 或低吞吐不是 layout rejection。
-- 從 Pilot 建到 Production 必須走與直接 Production edit 相同的 paid `buildProductionLayout` authority。
+- 內部 pilot layout nullable；空 Production Plan 不阻止玩家打開或編輯 Production。
+- Plan edit 不扣 cash、不推進 tick、不產生 inventory／waste，也不改 Research。
+- Plan diagnostics 是 bounded read-only analysis；no-cure、side effect、failure、deadlock 或低吞吐不是 layout rejection。
+- 從 Plan `Commission` 到 Production 必須走與直接 Production edit 相同的 paid `buildProductionLayout` authority。
 
 ## Production construction
 
 - `createGameState` 必須建立 owned、non-null、24×12 空 Production layout 及相符的 initial runtime。
-- Production 不依賴 Pilot state；玩家從新局即可直接提交合法 layout edit。
+- Production 不依賴 Production Plan state；玩家從新局即可直接提交合法 layout edit。
 - `quoteProductionBuild(current, proposed)` 必須只按新增／改建內容計費：belt 2、splitter／merger 8、source 12、sink 6、machine `10 × def.cost`。
 - 相同 tile 方向不收費；方向改變按新 tile 收費。機器 type／anchor／footRot 相同即已安裝，ID 差異不收費；移動／旋轉／換 type 按新機器收費。
 - removal 不收費、不退款；報價必須是 non-negative safe integer。
@@ -66,7 +69,7 @@
 
 ## Factory runtime 與 transport
 
-- 只有 `productionTicks` 推進 runtime；Pilot diagnostics 永不增加 tick、inventory 或 waste。
+- 只有 `productionTicks` 推進 runtime；Production Plan diagnostics 永不增加 tick、inventory 或 waste。
 - runtime layout identity 必須等於 Production layout；layout edit 後不存在舊在途 unit 或 cursor。
 - transport topology 只由 tile accept／emit sides 和 rotated machine ports計算；方向錯誤的相鄰格不形成 edge。
 - topology cell 的 incident mask 唯一決定 isolated／endpoint／straight／corner／tee／cross；machine port 的 connected flag 與 edge authority 一致。
@@ -76,7 +79,7 @@
 
 ## Whole-game authority 與 economy
 
-- GameState 同時 own `research`、`pilot`、`production`，三者不得 alias layout 或以隱藏 token 耦合。
+- GameState 同時 own `research`、內部 `pilot`、`production`，三者不得 alias layout 或以隱藏 token 耦合；玩家文案必須稱 Production Plan／Commission。
 - 正常UI new game origin的starting cash恰為1000、research為0；fresh loop不得需要外部資金／Knowledge或hidden reference才能到first sale。
 - HUD New Game 只可用unsigned 32-bit seed建立標準fresh GameState；不得刪除save checkpoints或Blueprint Library。確認modal開啟期間，背景hotkeys不得產生GameIntent、Factory edit或navigation authority change。
 - mapgen每疾病base price恰為`12 + 4 × difficulty + 2 × referenceCost`，使用safe integer arithmetic。
@@ -84,6 +87,8 @@
 - Market 每個 inventory product 只可賣一次；收入由實際 cure、side effects、production cost 與 sold counters 決定。
 - Market的`Shipped`與Knowledge成功回饋只能由accepted `sellProducts` intent產生；rejected或stale inventory intent必須顯示錯誤，不得同時假報成功。
 - Market候選stable order為side-effect count、production cost、inventory ID；single/bulk automatic shipping必須略過non-positive候選，只出售逐件計入demand後仍有positive net的產品。略過項目不消耗demand，不得自動虧本出售。
+- 每疾病 shipping contract quota 恰為3；progress只由該疾病 accepted sales 的sold count推導。active contract是首個未完成疾病；全部完成時是最後一個completed contract。
+- `skew-unlock`／`dilute-unlock`／`settle-unlock`除一般cash、Knowledge與patent prerequisites外，還分別要求Disease 0／1／2 contract completed；其他patent不得被合約誤擋。
 - 同 origin + canonical intent trace replay 必須逐欄位與 hash 相同。
 - 擴廠若清 runtime／waste，確認前全部 authority 原子不變；解鎖不得中止 active Research shot。
 
@@ -91,16 +96,23 @@
 
 - document／ruleset 固定 version 3，checksum 是 canonical blueprint payload 的 lowercase SHA-256。
 - Research kind 只能是 `research-program`，payload 只能有 ordered `{typeId}`；不得存 path cells、FactoryLayout、fog、seed、outcome 或 economy。
+- `research-program`只保留strict codec／Library import-export相容；UI不得capture或apply，card只可download／delete，不能直接寫active session program、fog、outcome或formula。
 - Factory kind 只能是 `factory-layout`，payload 是 dimensions、sparse routing 與 `{id,typeId,anchor,footRot}`；不得存來源場域、fixed content、diagnostics、runtime、inventory、waste 或 economy。
 - strict decoder 必須拒絕 unknown／missing fields、wrong kind/version/content/checksum、unknown type、duplicate IDs/tiles、collision、越界與 quota violation。
 - Library namespace/lifecycle 與 save slots 分離；Load／Rewind／換 slot 不改 Library。舊文件不得 silent reinterpret。
 
-## Save v7 與 checkpoints
+## Save v9 與 checkpoints
 
-- full／compact／slots／rewind 都使用 Save v7，逐欄位重建 Research、nullable Pilot、non-null Production、fixed path、layout 與 cold runtime；typed/runtime data 不得 alias。
+- full／compact／slots／rewind 都使用 Save v9，逐欄位重建 stepwise Research／formulas、nullable內部pilot、non-null Production、fixed path、layout 與 cold runtime；typed/runtime data 不得 alias。
 - compact reader 在 semantic replay 前先驗 raw ticks／intent count／work caps，之後比對 canonical trace 與 state hash。
 - `buildProductionLayout` 的費用與次序是 replay authority；不能只保存最後 layout 而漏掉 cash 歷史。
 - decoder 對 unknown／missing fields、unsafe integers、invalid path/layout/runtime、oversize 與 replay forgery 顯式失敗；舊 schema 不 migration。
-- checkpoint lineage 外層 version 2 與內層 Save v7 是兩個獨立版本；不得交叉 reinterpret。
+- checkpoint lineage 外層 version 2 與內層 Save v9 是兩個獨立版本；不得交叉 reinterpret。
 - corrupt blob 不得被空/default game 偷換；Recover 前保留 raw data，且 recovery 原子。
 - Load不同saved state與Rewind丟棄最新checkpoint都先取得可取消確認；Cancel不得改GameState、slot history或Library。
+
+## Geometry 與 visual semantics
+
+- Atlas 與 Factory 都維持正方格；兩者仍使用獨立 geometry／validator，不得因 HexaPharma 品牌名改成六鄰接 authority。
+- world renderer 必須是嚴格俯視 2D vector schematic；不得依賴 generated lab bitmap、runtime manifest或3D透視。
+- black-blue／graphite／bone-white／steel構成中性世界；cyan／amber／lime／magenta／red只分別表達active flow／selection-candidate／cure／side effect／failure。裝飾不得挪用語意色造成假狀態。

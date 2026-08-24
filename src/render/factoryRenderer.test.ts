@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { PlacedMachine } from "../sim/phase0_interfaces";
 import { DEFAULT_CATALOG, DEFAULT_SHAPES, SHAPE_1x1 } from "../sim/phase0_interfaces";
 import {
+  FACTORY_MACHINE_SHADOW_ALPHA,
+  FACTORY_SCHEMATIC_STYLE,
   factoryTransportArmGeometry,
   factoryTransportFlowPoint,
   machinePathGlyph,
@@ -9,19 +11,65 @@ import {
   placedMachinePathGlyph,
 } from "./factoryRenderer";
 
+describe("factory orbital wet-lab schematic", () => {
+  it("shares the atlas semantic colors on a dark industrial deck", () => {
+    expect(FACTORY_SCHEMATIC_STYLE).toEqual({
+      background: 0x050a12,
+      deck: 0x18242b,
+      shadow: 0x000000,
+      gridLine: 0x35454e,
+      belt: 0x40515a,
+      beltRail: 0x101920,
+      merge: 0x303a3f,
+      source: 0x173d45,
+      sink: 0x2b3d27,
+      chassis: 0x28343b,
+      structure: 0xe7e1d2,
+      flow: 0x48d7e5,
+      selection: 0xf3b45d,
+      cure: 0xb8e06c,
+      failure: 0xef6862,
+      portFrame: 0x19242d,
+      portDisconnected: 0x7b858d,
+      portInput: 0x48d7e5,
+      portOutput: 0xe7e1d2,
+      pushBody: 0x2a373f,
+      pushFace: 0xbcc6c9,
+      push2Body: 0x24323a,
+      push2Face: 0xc9d1d1,
+      pullBody: 0x303840,
+      pullFace: 0xd2d3cd,
+      shearBody: 0x34383a,
+      shearFace: 0xd8d3c5,
+      skewBody: 0x25363c,
+      skewFace: 0xc7d5d4,
+      diluteBody: 0x293a38,
+      diluteFace: 0xcbd8d0,
+      settleBody: 0x34333a,
+      settleFace: 0xd4ccd3,
+      bottleneckBody: 0x3b352a,
+      bottleneckFace: 0xddd1b9,
+    });
+  });
+
+  it("keeps machine shadows subordinate to the chassis", () => {
+    expect(FACTORY_SCHEMATIC_STYLE.shadow).not.toBe(FACTORY_SCHEMATIC_STYLE.background);
+    expect(FACTORY_MACHINE_SHADOW_ALPHA).toBe(0.28);
+  });
+});
+
 describe("factory machine visual language", () => {
   it("gives every machine family a distinct bounded chassis palette", () => {
     const styles = DEFAULT_CATALOG.map((entry) => machineVisualStyle(entry.typeId));
-    const signatures = styles.map((style) => `${style.body}:${style.face}:${style.accent}`);
+    const signatures = styles.map((style) => `${style.body}:${style.face}`);
 
     expect(new Set(signatures).size).toBe(DEFAULT_CATALOG.length);
     for (const style of styles) {
+      expect(style).not.toHaveProperty("accent");
       expect(style.body).toBeGreaterThanOrEqual(0);
       expect(style.body).toBeLessThanOrEqual(0xffffff);
       expect(style.face).toBeGreaterThanOrEqual(0);
       expect(style.face).toBeLessThanOrEqual(0xffffff);
-      expect(style.accent).toBeGreaterThanOrEqual(0);
-      expect(style.accent).toBeLessThanOrEqual(0xffffff);
     }
   });
 

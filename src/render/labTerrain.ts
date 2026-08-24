@@ -1,5 +1,6 @@
 import type { EffectMap, Vec2 } from "../sim/phase0_interfaces";
 import { CellKind } from "../sim/phase0_interfaces";
+import { SHARED_SCHEMATIC_STYLE } from "./schematicStyle";
 
 export type LabTerrainMotif =
   | "substrate"
@@ -36,21 +37,21 @@ export type LabTerrainVisual = CellTerrainVisual | PortalTerrainVisual;
 const EMPTY_TERRAIN_VISUAL: CellTerrainVisual = {
   kind: "empty",
   motif: "substrate",
-  baseColor: 0xdce4dc,
-  rimColor: 0xa4b6b2,
+  baseColor: SHARED_SCHEMATIC_STYLE.deck,
+  rimColor: 0x41515a,
   opaque: true,
   sideEffectOverlay: false,
 };
 
 const CURE_PALETTE = [
-  { baseColor: 0x1d7c5b, rimColor: 0x75f0b8 },
-  { baseColor: 0x245b8f, rimColor: 0x83cfff },
-  { baseColor: 0x8a5a22, rimColor: 0xffd27d },
-  { baseColor: 0x7d3f70, rimColor: 0xf2a7dd },
-  { baseColor: 0x3f7480, rimColor: 0x9ce8ed },
-  { baseColor: 0x6e6f2d, rimColor: 0xdde779 },
-  { baseColor: 0x75452c, rimColor: 0xf2a477 },
-  { baseColor: 0x514f8c, rimColor: 0xbab5ff },
+  { baseColor: 0x314326, rimColor: SHARED_SCHEMATIC_STYLE.cure },
+  { baseColor: 0x354a2a, rimColor: 0xc5e983 },
+  { baseColor: 0x3d4928, rimColor: 0xd0e86f },
+  { baseColor: 0x2d482e, rimColor: 0xa8dc78 },
+  { baseColor: 0x3e4525, rimColor: 0xd7df68 },
+  { baseColor: 0x294532, rimColor: 0x9ee28a },
+  { baseColor: 0x394829, rimColor: 0xc0e275 },
+  { baseColor: 0x33462c, rimColor: 0xafe07f },
 ] as const;
 
 function cureColors(id: number): (typeof CURE_PALETTE)[number] {
@@ -88,8 +89,8 @@ function portalVisual(
     kind: "portal",
     motif: "paired-directional",
     role,
-    baseColor: 0x17235e,
-    rimColor: 0x67e8f9,
+    baseColor: 0x102331,
+    rimColor: SHARED_SCHEMATIC_STYLE.flow,
     opaque: true,
     pairMarker: pairKnown ? `P${entryIndex}-${destinationIndex}` : null,
     destination: pairKnown ? destination : null,
@@ -138,8 +139,8 @@ export function labTerrainVisual(map: EffectMap, x: number, y: number): LabTerra
       return {
         kind: "wall",
         motif: "solid-masonry",
-        baseColor: 0x1b2528,
-        rimColor: 0xf4d58d,
+        baseColor: 0x242e34,
+        rimColor: SHARED_SCHEMATIC_STYLE.structure,
         opaque: true,
         sideEffectOverlay: false,
       };
@@ -147,8 +148,8 @@ export function labTerrainVisual(map: EffectMap, x: number, y: number): LabTerra
       return {
         kind: "abyss",
         motif: "void-rim",
-        baseColor: 0x020406,
-        rimColor: 0x8eb8cc,
+        baseColor: 0x03070d,
+        rimColor: 0x617785,
         opaque: true,
         sideEffectOverlay: false,
       };
@@ -156,8 +157,8 @@ export function labTerrainVisual(map: EffectMap, x: number, y: number): LabTerra
       return {
         kind: "swamp",
         motif: "viscous-drag",
-        baseColor: 0x315f37,
-        rimColor: 0xb5d56a,
+        baseColor: 0x39352a,
+        rimColor: 0xa49367,
         opaque: true,
         sideEffectOverlay: false,
       };
@@ -170,8 +171,8 @@ export function labTerrainVisual(map: EffectMap, x: number, y: number): LabTerra
       return {
         kind: "sideEffect",
         motif: "side-effect-colony",
-        baseColor: 0x6d3f83,
-        rimColor: 0xd6a6ed,
+        baseColor: 0x51223f,
+        rimColor: 0xde5fb1,
         opaque: true,
         sideEffectOverlay: false,
       };

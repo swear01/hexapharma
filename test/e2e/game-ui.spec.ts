@@ -11,10 +11,36 @@ test("a default run starts with a viable budget and four independent disease mar
   await expect(page.getByText(/complexity|difficulty/i)).toHaveCount(0);
 });
 
+test("an active game control stays amber while hovered", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => {
+    const control = document.createElement("button");
+    control.className = "game-control is-active";
+    control.textContent = "Active control";
+    control.style.position = "fixed";
+    control.style.top = "100px";
+    control.style.left = "100px";
+    control.style.zIndex = "999";
+    document.body.append(control);
+  });
+  const control = page.locator(".game-control.is-active");
+  await control.hover();
+  await expect(control).toHaveCSS("border-color", "rgb(221, 160, 68)");
+  await expect(control).toHaveCSS("color", "rgb(242, 184, 93)");
+});
+
 test("the complete HUD stays reachable across narrow widths", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 844 });
+  await page.goto("/");
+  const contractColumns = await page.getByTestId("shipping-contract").evaluate((element) =>
+    getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/),
+  );
+  expect(contractColumns).toHaveLength(2);
+
   for (const width of [390, 430, 560, 651]) {
     await page.setViewportSize({ width, height: 844 });
     await page.goto("/?cash=999712&research=100000");
+    await expect(page.getByTestId("shipping-contract")).toHaveCSS("display", "grid");
 
     for (const element of await page.locator(".resource-chip, .system-strip > *").all()) {
       const box = await element.boundingBox();
@@ -46,7 +72,7 @@ test("the complete HUD stays reachable across narrow widths", async ({ page }) =
         .map((part) => part.textContent));
     expect(clippedResourceParts, `resource labels and values must remain readable at ${width}px`)
       .toEqual([]);
-    for (const testId of ["research-undo", "research-command", "lab-focus", "research-cures"]) {
+    for (const testId of ["research-command", "lab-focus", "research-cures"]) {
       const target = await page.getByTestId(testId).boundingBox();
       if (target === null) throw new Error(`${testId} has no bounds at ${width}px`);
       expect(target.height, `${testId} must remain touch-sized at ${width}px`)
@@ -61,10 +87,10 @@ test("the complete HUD stays reachable across narrow widths", async ({ page }) =
   }
 });
 
-test("facility hotkeys switch three world pages while utility hotkeys open drawers", async ({ page }) => {
+test("facility hotkeys connect Research, Production Plan, and Production while utility hotkeys open drawers", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByTestId("view-research").locator(".nav-label")).toHaveText("Research");
-  await expect(page.getByTestId("view-pilot").locator(".nav-label")).toHaveText("Pilot");
+  await expect(page.getByTestId("view-pilot").locator(".nav-label")).toHaveText("Plan");
   await expect(page.getByTestId("view-production").locator(".nav-label")).toHaveText("Production");
   const clippedLabels = await page.locator(".nav-label").evaluateAll((labels) =>
     labels
@@ -75,6 +101,8 @@ test("facility hotkeys switch three world pages while utility hotkeys open drawe
   await expect(page.getByTestId("view-research")).toHaveAttribute("aria-current", "page");
   await page.keyboard.press("F2");
   await expect(page.getByTestId("view-pilot")).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("heading", { name: "Production Plan" })).toBeVisible();
+  await expect(page.getByTestId("pilot-command")).toContainText("Commission");
   await page.keyboard.press("F3");
   await expect(page.getByTestId("view-production")).toHaveAttribute("aria-current", "page");
   await page.keyboard.press("F1");

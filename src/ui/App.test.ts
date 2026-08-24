@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { EffectMap, MultiMap } from "../sim/phase0_interfaces";
 import {
@@ -91,6 +92,13 @@ describe("Lab fog authority", () => {
   });
 });
 
+describe("Research camera contract", () => {
+  it("has no shot-phase prop or automatic camera-follow path", () => {
+    const source = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+    expect(source).not.toContain("shotStep");
+  });
+});
+
 describe("Lab pointer projection", () => {
   it("maps a pointer through a uniformly scaled, horizontally cropped canvas", () => {
     expect(labPointerToViewport(195, 322, {
@@ -130,19 +138,15 @@ describe("Lab pointer projection", () => {
     expect(researchPreviewEndpointHit({ x: 12.5, y: 8.5 }, undefined)).toBe(false);
   });
 
-  it("labels planning focus as Next and active-shot focus as Dose", () => {
+  it("focuses the next candidate when present and the current dose otherwise", () => {
     const dose = { pos: [{ x: 3, y: 4 }], failed: false };
     const candidate = { pos: [{ x: 12, y: 9 }], failed: false };
 
-    expect(researchFocusTarget(dose, candidate, 0, false)).toEqual({
+    expect(researchFocusTarget(dose, candidate, 0)).toEqual({
       label: "Next",
       position: { x: 12, y: 9 },
     });
-    expect(researchFocusTarget(dose, candidate, 0, true)).toEqual({
-      label: "Dose",
-      position: { x: 3, y: 4 },
-    });
-    expect(researchFocusTarget(dose, undefined, 0, false)).toEqual({
+    expect(researchFocusTarget(dose, undefined, 0)).toEqual({
       label: "Dose",
       position: { x: 3, y: 4 },
     });

@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { EconomyState, PatentState } from "../sim/phase0_interfaces";
+import type { EconomyState, PatentState, ShippingContractProgress } from "../sim/phase0_interfaces";
+import { requiredShippingContractForPatent } from "../sim/game";
 import { DEFAULT_PATENTS, canUnlock, activeEffects } from "../sim/patent";
 import { createPortal } from "react-dom";
+import { diseaseName } from "./effectLabels";
 import { machineName } from "./machineLabels";
 
 interface PatentsProps {
   readonly economy: EconomyState;
   readonly patents: PatentState;
+  readonly contracts: readonly ShippingContractProgress[];
   readonly expansionResetsProduction: boolean;
   readonly onUnlock: (id: string) => void;
 }
@@ -54,6 +57,19 @@ export function patentCostLabel(node: (typeof DEFAULT_PATENTS)[number]): string 
   return `${node.cost} cash · ${node.researchCost} Knowledge`;
 }
 
+export function patentContractRequirement(
+  patentId: string,
+  contracts: readonly ShippingContractProgress[],
+): string | null {
+  const disease = requiredShippingContractForPatent(patentId);
+  if (disease === null) return null;
+  const contract = contracts.find((candidate) => candidate.disease === disease);
+  if (contract === undefined) return `${diseaseName(disease)} contract unavailable`;
+  return contract.completed
+    ? null
+    : `Complete ${diseaseName(disease)} contract (${contract.sold}/${contract.quota})`;
+}
+
 export function patentEffectSummary(effects: ReturnType<typeof activeEffects>): readonly string[] {
   const summary: string[] = [];
   if (effects.factoryDw > 0) {
@@ -75,6 +91,7 @@ export function patentEffectSummary(effects: ReturnType<typeof activeEffects>): 
 export function Patents({
   economy,
   patents,
+  contracts,
   expansionResetsProduction,
   onUnlock,
 }: PatentsProps) {
@@ -121,7 +138,9 @@ export function Patents({
         <div className="patent-grid-contents" data-testid="patents-table">
           {DEFAULT_PATENTS.map((node) => {
             const unlocked = patents.unlocked.includes(node.id);
-            const affordable = canUnlock(DEFAULT_PATENTS, patents, economy.cash, economy.research, node.id);
+            const contractRequirement = patentContractRequirement(node.id, contracts);
+            const affordable = contractRequirement === null
+              && canUnlock(DEFAULT_PATENTS, patents, economy.cash, economy.research, node.id);
             const stateLabel = unlocked ? "unlocked" : affordable ? "available" : "locked";
             return (
               <article key={node.id} className={`patent-card is-${stateLabel}`} data-testid={`patent-row-${node.id}`}>
@@ -134,6 +153,9 @@ export function Patents({
                   <div className="patent-requirement">
                     Requires: {node.requires.map(patentTitle).join(", ")}
                   </div>
+                )}
+                {contractRequirement !== null && (
+                  <div className="patent-requirement">{contractRequirement}</div>
                 )}
                 <div className="patent-cost">{patentCostLabel(node)}</div>
                 <button

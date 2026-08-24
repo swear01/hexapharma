@@ -83,10 +83,10 @@ function withProduction(
     BASE_GAME_FACTORY_HEIGHT,
   ).layout,
 ): GameState {
-  let next = applyGameIntent(game, { kind: "setResearchProgram", program: recipe });
-  next = applyGameIntent(next, { kind: "beginResearchShot" });
-  for (let guard = 0; next.research.shot !== null && guard <= recipe.steps.length; guard++) {
-    next = applyGameIntent(next, { kind: "advanceResearchShot" });
+  let next = applyGameIntent(game, { kind: "beginResearchShot" });
+  for (const machine of recipe.steps) {
+    next = applyGameIntent(next, { kind: "advanceResearchShot", machine });
+    if (next.research.shot === null) break;
   }
   if (next.research.shot !== null) throw new Error("test Research shot did not finish");
   next = applyGameIntent(next, { kind: "setPilotLayout", layout });
@@ -94,7 +94,7 @@ function withProduction(
 }
 
 describe("checkpoint storage budget", () => {
-  it("retains rewind lineage across normalized tick, sale, program, and layout extensions", () => {
+  it("retains rewind lineage across normalized tick, sale, and layout extensions", () => {
     const recipe = generate(options).diseases[0]!.reference;
     const layout = compileEntitledPrototype(
       recipe,
@@ -137,19 +137,6 @@ describe("checkpoint storage budget", () => {
     const secondTiles = firstTiles.slice();
     secondTiles[sourceCell] = { kind: "source", dir: 0, period: 3 };
     const secondLayout = { ...firstLayout, tiles: secondTiles };
-    const shorterProgram = { steps: recipe.steps.slice(0, -1) };
-    const programEarlier = applyGameIntent(createGameState(options, 200, 0), {
-      kind: "setResearchProgram",
-      program: shorterProgram,
-    });
-    const programLater = applyGameIntent(programEarlier, {
-      kind: "setResearchProgram",
-      program: recipe,
-    });
-    const programWrite = saveSlot(new MemoryStorage(), 0, [programEarlier], programLater);
-    expect(programWrite.replacedTimeline).toBe(false);
-    expect(programWrite.history).toHaveLength(2);
-
     const pilotEarlier = applyGameIntent(createGameState(options, 200, 0), {
       kind: "setPilotLayout",
       layout: firstLayout,
@@ -233,7 +220,7 @@ describe("checkpoint storage budget", () => {
     expect(read.recovery?.history).toEqual([secondRun]);
   });
 
-  it("persists v7 ResearchProgram, Pilot, and paid Production authority", () => {
+  it("persists v9 Formula, reveal-decide Research, Plan, and paid Production authority", () => {
     const recipe = generate(fastOptions).diseases[0]!.reference;
     const game = withProduction(createGameState(fastOptions, PRODUCTION_CASH, 0), recipe);
     const storage = new MemoryStorage();
@@ -242,8 +229,9 @@ describe("checkpoint storage budget", () => {
     const checkpoint = JSON.parse(storage.getItem("hexapharma.save.checkpoint.0")!) as {
       head: string;
     };
-    expect(checkpoint.head).toContain('"version":7');
-    expect(checkpoint.head).toContain('"kind":"setResearchProgram"');
+    expect(checkpoint.head).toContain('"version":9');
+    expect(checkpoint.head).toContain('"kind":"beginResearchShot"');
+    expect(checkpoint.head).toContain('"kind":"advanceResearchShot"');
     expect(checkpoint.head).toContain('"kind":"setPilotLayout"');
     expect(checkpoint.head).toContain('"kind":"buildProductionLayout"');
     expect(checkpoint.head).not.toContain("sendPilotToProduction");
@@ -254,18 +242,17 @@ describe("checkpoint storage budget", () => {
 
     const loaded = readSlot(storage, 0).head!;
     expect(loaded.research.program).toEqual(recipe);
+    expect(loaded.research.discoveredFormulas).toHaveLength(1);
     expect(loaded.production.layout).toEqual(loaded.pilot.layout);
     expect(loaded.production.layout).not.toBe(loaded.pilot.layout);
     expect("contract" in loaded.pilot).toBe(false);
     expect("contract" in loaded.production).toBe(false);
   });
 
-  it("migrates only validated v7 data from legacy storage keys and makes write failure visible", () => {
+  it("migrates only validated v9 data from legacy storage keys and makes write failure visible", () => {
     const machine = options.catalog[0]!;
-    const game = applyGameIntent(createGameState(options, 200, 0), {
-      kind: "setResearchProgram",
-      program: { steps: [{ typeId: machine.typeId, path: machine.path }] },
-    });
+    const started = applyGameIntent(createGameState(options, 200, 0), { kind: "beginResearchShot" });
+    const game = applyGameIntent(started, { kind: "advanceResearchShot", machine });
     const head = serializeGame(game);
     const history = serializeSlots([game]);
     const storage = new MemoryStorage();
@@ -305,7 +292,7 @@ describe("checkpoint storage budget", () => {
     storage.setItem("hexapharma.save.slot.0", rawV6);
 
     const read = readSlot(storage, 0);
-    expect(read.error).toMatch(/legacy version 6.*not supported.*v7/i);
+    expect(read.error).toMatch(/legacy version 6.*not supported.*v9/i);
     expect(read.head).toBeNull();
     expect(read.recovery).toBeNull();
     expect(read.migration).toBeNull();
@@ -313,7 +300,7 @@ describe("checkpoint storage budget", () => {
     expect(storage.getItem("hexapharma.save.checkpoint.0")).toBeNull();
   });
 
-  it("offers v7 history recovery when a checkpoint head is an explicitly rejected v6 authority", () => {
+  it("offers v9 history recovery when a checkpoint head is an explicitly rejected v6 authority", () => {
     const game = createGameState(options, 200, 0);
     const good = serializeGameAuthority(game);
     const parsed = JSON.parse(good) as { version: number };
@@ -324,7 +311,7 @@ describe("checkpoint storage budget", () => {
     storage.setItem("hexapharma.save.checkpoint.0", raw);
 
     const read = readSlot(storage, 0);
-    expect(read.error).toMatch(/legacy version 6.*not supported.*v7/i);
+    expect(read.error).toMatch(/legacy version 6.*not supported.*v9/i);
     expect(read.recovery?.head).toEqual(game);
     expect(read.recovery?.history).toEqual([game]);
     expect(read.migration).toBeNull();
@@ -413,8 +400,8 @@ describe("checkpoint storage budget", () => {
     };
     const recipe = generate(authority.authority.origin.genOptions).diseases[0]!.reference;
     authority.authority.intentTrace = [
-      { kind: "setResearchProgram", program: recipe },
-      ...new Array(3_000).fill({ kind: "advanceResearchShot" }),
+      { kind: "beginResearchShot" },
+      ...new Array(3_000).fill({ kind: "advanceResearchShot", machine: recipe.steps[0] }),
     ];
     const rawAuthority = JSON.stringify(authority);
     const storage = new MemoryStorage();

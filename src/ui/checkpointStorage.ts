@@ -87,11 +87,7 @@ function normalizedIntentExtends(earlier: GameIntent, later: GameIntent): boolea
   if (earlier.kind === "productionTicks" && later.kind === "productionTicks") {
     return later.ticks >= earlier.ticks;
   }
-  if (
-    (earlier.kind === "setResearchProgram" ||
-      earlier.kind === "setPilotLayout") &&
-    later.kind === earlier.kind
-  ) {
+  if (earlier.kind === "setPilotLayout" && later.kind === earlier.kind) {
     return true;
   }
   const earlierSale = sale(earlier);

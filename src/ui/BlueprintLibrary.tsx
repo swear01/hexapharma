@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { FactoryLayout, Template } from "../sim/phase0_interfaces";
+import type { FactoryLayout } from "../sim/phase0_interfaces";
 import {
   MAX_BLUEPRINT_BYTES,
   blueprintFromFactoryLayout,
-  blueprintFromProgram,
   materializeFactoryLayout,
-  materializeResearchProgram,
 } from "../blueprint/format";
 import {
   deleteLibraryBlueprint,
@@ -18,10 +16,8 @@ import {
 import { createPortal } from "react-dom";
 
 interface BlueprintLibraryProps {
-  readonly researchProgram: Template;
   readonly pilotLayout: FactoryLayout | null;
   readonly productionLayout: FactoryLayout;
-  readonly onLoadResearch: (program: Template) => boolean;
   readonly onLoadPilot: (layout: FactoryLayout) => boolean;
   readonly onBuildProduction: (layout: FactoryLayout) => boolean;
   readonly quoteProduction: (layout: FactoryLayout) => number;
@@ -54,10 +50,8 @@ export function factoryBlueprintBuildQuote(
 }
 
 export function BlueprintLibrary({
-  researchProgram,
   pilotLayout,
   productionLayout,
-  onLoadResearch,
   onLoadPilot,
   onBuildProduction,
   quoteProduction,
@@ -107,16 +101,6 @@ export function BlueprintLibrary({
     void refresh();
   }, [refresh]);
 
-  const captureResearch = useCallback(async () => {
-    if (researchProgram.steps.length === 0) return;
-    try {
-      const saved = await saveLibraryBlueprint(localStorage, blueprintFromProgram(name, researchProgram));
-      await refresh();
-      setStatus(`Saved “${saved.blueprint.name}”.`);
-    } catch (error) {
-      setStatus(`Could not save blueprint: ${message(error)}`);
-    }
-  }, [name, refresh, researchProgram]);
   const capturePilot = useCallback(async () => {
     if (pilotLayout === null) return;
     try {
@@ -151,22 +135,13 @@ export function BlueprintLibrary({
     }
   }, [refresh]);
 
-  const loadResearch = useCallback((entry: LibraryBlueprint) => {
-    try {
-      const accepted = onLoadResearch(materializeResearchProgram(entry.blueprint));
-      setStatus(accepted
-        ? `Loaded “${entry.blueprint.name}” into Research.`
-        : `Could not load “${entry.blueprint.name}”.`);
-    } catch (error) {
-      setStatus(`Could not materialize blueprint: ${message(error)}`);
-    }
-  }, [onLoadResearch]);
   const loadFactory = useCallback((entry: LibraryBlueprint, destination: "pilot" | "production") => {
     try {
       const layout = materializeFactoryLayout(entry.blueprint);
+      const destinationLabel = destination === "pilot" ? "Production Plan" : "Production";
       const accepted = destination === "pilot" ? onLoadPilot(layout) : onBuildProduction(layout);
       setStatus(accepted
-        ? `Loaded “${entry.blueprint.name}” into ${destination === "pilot" ? "Pilot" : "Production"}.`
+        ? `Loaded “${entry.blueprint.name}” into ${destinationLabel}.`
         : `Could not load “${entry.blueprint.name}”.`);
     } catch (error) {
       setStatus(`Could not materialize blueprint: ${message(error)}`);
@@ -210,8 +185,7 @@ export function BlueprintLibrary({
           <input value={name} maxLength={80} onChange={(event) => setName(event.target.value)} data-testid="blueprint-name" />
         </label>
         <div className="panel-actions">
-          <button type="button" disabled={researchProgram.steps.length === 0} onClick={() => void captureResearch()} data-testid="blueprint-save-research">Save Research program</button>
-          <button type="button" disabled={pilotLayout === null} onClick={() => void capturePilot()} data-testid="blueprint-save-pilot">Save Pilot</button>
+          <button type="button" disabled={pilotLayout === null} onClick={() => void capturePilot()} data-testid="blueprint-save-pilot">Save Production Plan</button>
           <button type="button" onClick={() => void captureProduction()} data-testid="blueprint-save-production">Save Production</button>
         </div>
       </section>
@@ -256,12 +230,10 @@ export function BlueprintLibrary({
                 : `${entry.blueprint.layout.width}×${entry.blueprint.layout.height} · ${entry.blueprint.layout.machines.length} machines`}</small>
             </div>
             <div className="panel-actions">
-              {entry.blueprint.kind === "research-program" ? (
-                <button type="button" onClick={() => loadResearch(entry)}>Load in Research</button>
-              ) : (
+              {entry.blueprint.kind === "factory-layout" && (
                 <>
-                  <button type="button" disabled={buildQuote === null} onClick={() => loadFactory(entry, "pilot")}>Open in Pilot</button>
-                  <button type="button" disabled={buildQuote === null} onClick={() => loadFactory(entry, "production")}>{buildQuote === null ? "Build unavailable" : `Build $${buildQuote}`}</button>
+                  <button type="button" disabled={buildQuote === null} onClick={() => loadFactory(entry, "pilot")}>Open in Production Plan</button>
+                  <button type="button" disabled={buildQuote === null} onClick={() => loadFactory(entry, "production")}>{buildQuote === null ? "Build unavailable" : `Commission $${buildQuote}`}</button>
                 </>
               )}
               <button type="button" onClick={() => void exportEntry(entry)}>Download</button>
