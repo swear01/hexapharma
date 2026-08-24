@@ -19,6 +19,8 @@ import type {
   ProducedUnit,
   InventoryProduct,
   GameIntent,
+  Dir,
+  HexCoord,
   SerializeGameFn,
   DeserializeGameFn,
 } from "../phase0_interfaces";
@@ -67,7 +69,7 @@ import { estimateGameReplayWork } from "../replay-work";
 // blob field-by-field and rebuilding a structurally-equal GameState — never
 // defaulting silently on missing/wrong fields.
 
-export const SAVE_VERSION = 9;
+export const SAVE_VERSION = 10;
 export const MAX_SLOT_STATES = 20;
 export const MAX_SAVE_CHARACTERS = 5_000_000;
 
@@ -193,9 +195,9 @@ function describe(v: unknown): string {
 
 // ── shape parsers (rebuild structurally-equal values) ──
 
-function parseVec2(v: unknown, path: string): { x: number; y: number } {
-  const o = reqExactObject(v, path, ["x", "y"]);
-  return { x: reqInt(o.x, `${path}.x`), y: reqInt(o.y, `${path}.y`) };
+function parseHexCoord(v: unknown, path: string): HexCoord {
+  const o = reqExactObject(v, path, ["q", "r"]);
+  return { q: reqInt(o.q, `${path}.q`), r: reqInt(o.r, `${path}.r`) };
 }
 
 function parseGenOptions(v: unknown, path = "genOptions"): GenOptions {
@@ -228,13 +230,7 @@ function parsePathStamp(v: unknown, path: string): Machine["path"] {
   if (deltas.length < 1 || deltas.length > MAX_TEMPLATE_STEPS) {
     throw new SaveError(`${path}: path length must be 1..${MAX_TEMPLATE_STEPS}`);
   }
-  return deltas.map((value, index) => {
-    const delta = parseVec2(value, `${path}[${index}]`);
-    if (Math.abs(delta.x) + Math.abs(delta.y) !== 1) {
-      throw new SaveError(`${path}[${index}]: expected a cardinal unit delta`);
-    }
-    return delta as Machine["path"][number];
-  });
+  return deltas.map((value, index) => parseDir(value, `${path}[${index}]`));
 }
 
 function parseCatalog(v: unknown, catalogPath: string): GenOptions["catalog"] {
@@ -313,7 +309,7 @@ function parseDrugState(v: unknown, path: string, expectedMaps?: number): DrugSt
     throw new SaveError(`${path}.pos: map count mismatch`);
   }
   return {
-    pos: pos.map((p, i) => parseVec2(p, `${path}.pos[${i}]`)),
+    pos: pos.map((p, i) => parseHexCoord(p, `${path}.pos[${i}]`)),
     failed: reqBool(o.failed, `${path}.failed`),
   };
 }
@@ -332,7 +328,7 @@ function parseOutcome(v: unknown, path: string, expectedMaps: number): Outcome {
   }
   return {
     failed: reqBool(o.failed, `${path}.failed`),
-    final: final.map((p, i) => parseVec2(p, `${path}.final[${i}]`)),
+    final: final.map((p, i) => parseHexCoord(p, `${path}.final[${i}]`)),
     cured: cured.map((id, i) => reqInt(id, `${path}.cured[${i}]`)),
     sideEffects: sideEffects.map((id, i) =>
       reqInt(id, `${path}.sideEffects[${i}]`),
@@ -362,8 +358,8 @@ function parseTile(v: unknown, path: string): FactoryTile {
       return { kind: "sink" };
     case "splitter":
       requireExactKeys(o, ["kind", "inDir", "outDirs"], path);
-      if (reqArray(o.outDirs, `${path}.outDirs`).length > 4) {
-        throw new SaveError(`${path}.outDirs: exceeds four directions`);
+      if (reqArray(o.outDirs, `${path}.outDirs`).length > 6) {
+        throw new SaveError(`${path}.outDirs: exceeds six directions`);
       }
       return {
         kind: "splitter",
@@ -374,8 +370,8 @@ function parseTile(v: unknown, path: string): FactoryTile {
       };
     case "merger":
       requireExactKeys(o, ["kind", "inDirs", "outDir"], path);
-      if (reqArray(o.inDirs, `${path}.inDirs`).length > 4) {
-        throw new SaveError(`${path}.inDirs: exceeds four directions`);
+      if (reqArray(o.inDirs, `${path}.inDirs`).length > 6) {
+        throw new SaveError(`${path}.inDirs: exceeds six directions`);
       }
       return {
         kind: "merger",
@@ -389,12 +385,12 @@ function parseTile(v: unknown, path: string): FactoryTile {
   }
 }
 
-function parseDir(v: unknown, path: string): 0 | 1 | 2 | 3 {
+function parseDir(v: unknown, path: string): Dir {
   const d = reqInt(v, path);
-  if (d !== 0 && d !== 1 && d !== 2 && d !== 3) {
-    throw new SaveError(`${path}: expected Dir 0..3, got ${d}`);
+  if (d < 0 || d > 5) {
+    throw new SaveError(`${path}: expected Dir 0..5, got ${d}`);
   }
-  return d;
+  return d as Dir;
 }
 
 function parseMachineDef(v: unknown, path: string): FactoryMachineDef {
@@ -409,7 +405,7 @@ function parseMachineDef(v: unknown, path: string): FactoryMachineDef {
 
 function parsePort(v: unknown, path: string): Port {
   const o = reqExactObject(v, path, ["cell", "side"]);
-  return { cell: parseVec2(o.cell, `${path}.cell`), side: parseDir(o.side, `${path}.side`) };
+  return { cell: parseHexCoord(o.cell, `${path}.cell`), side: parseDir(o.side, `${path}.side`) };
 }
 
 function parseShape(v: unknown, path: string): MachineShape {
@@ -426,7 +422,7 @@ function parseShape(v: unknown, path: string): MachineShape {
     throw new SaveError(`${path}: shape or port count exceeds bounds`);
   }
   return {
-    cells: cells.map((c, i) => parseVec2(c, `${path}.cells[${i}]`)),
+    cells: cells.map((c, i) => parseHexCoord(c, `${path}.cells[${i}]`)),
     inPorts: inPorts.map((p, i) => parsePort(p, `${path}.inPorts[${i}]`)),
     outPorts: outPorts.map((p, i) =>
       parsePort(p, `${path}.outPorts[${i}]`),
@@ -436,14 +432,11 @@ function parseShape(v: unknown, path: string): MachineShape {
 
 function parsePlacedMachine(v: unknown, path: string): PlacedMachine {
   const o = reqExactObject(v, path, ["id", "def", "anchor", "footRot", "shape"]);
-  const footRot = reqInt(o.footRot, `${path}.footRot`);
-  if (footRot !== 0 && footRot !== 1 && footRot !== 2 && footRot !== 3) {
-    throw new SaveError(`${path}.footRot: expected 0..3, got ${footRot}`);
-  }
+  const footRot = parseDir(o.footRot, `${path}.footRot`);
   return {
     id: reqInt(o.id, `${path}.id`),
     def: parseMachineDef(o.def, `${path}.def`),
-    anchor: parseVec2(o.anchor, `${path}.anchor`),
+    anchor: parseHexCoord(o.anchor, `${path}.anchor`),
     footRot,
     shape: parseShape(o.shape, `${path}.shape`),
   };
@@ -577,7 +570,7 @@ function parseUnit(v: unknown, path: string, expectedMaps: number): Unit {
   ]);
   return {
     id: reqInt(o.id, `${path}.id`),
-    pos: parseVec2(o.pos, `${path}.pos`),
+    pos: parseHexCoord(o.pos, `${path}.pos`),
     drug: parseDrugState(o.drug, `${path}.drug`, expectedMaps),
     proc: reqInt(o.proc, `${path}.proc`),
     machineId: o.machineId === null ? null : reqInt(o.machineId, `${path}.machineId`),
@@ -688,12 +681,12 @@ function validateFactorySnapshot(
     }
     previousId = unit.id;
     if (
-      !Number.isSafeInteger(unit.pos.x) ||
-      !Number.isSafeInteger(unit.pos.y) ||
-      unit.pos.x < 0 ||
-      unit.pos.y < 0 ||
-      unit.pos.x >= factory.width ||
-      unit.pos.y >= factory.height
+      !Number.isSafeInteger(unit.pos.q) ||
+      !Number.isSafeInteger(unit.pos.r) ||
+      unit.pos.q < 0 ||
+      unit.pos.r < 0 ||
+      unit.pos.q >= factory.width ||
+      unit.pos.r >= factory.height
     ) {
       throw new SaveError(`${path}.units[${index}].pos: outside factory layout`);
     }
@@ -883,8 +876,10 @@ function parseAuthorityEnvelope(serialized: string): unknown {
   }
   const envelope = reqObject(parsed, "authority save");
   const version = reqInt(envelope.version, "authority save.version");
-  if (version === 5 || version === 6 || version === 7 || version === 8) {
-    throw new SaveError(`authority save: legacy version ${version} is not supported by Save v9`);
+  if (version >= 5 && version < SAVE_VERSION) {
+    throw new SaveError(
+      `authority save: legacy version ${version} is not supported by Save v${SAVE_VERSION}`,
+    );
   }
   if (version !== SAVE_VERSION) {
     throw new SaveError(
@@ -1012,8 +1007,8 @@ export const deserializeGame: DeserializeGameFn = (s) => {
   const env = reqObject(parsed, "save");
   if (!("version" in env)) throw new SaveError("save: missing version tag");
   const version = reqInt(env.version, "save.version");
-  if (version === 5 || version === 6 || version === 7 || version === 8) {
-    throw new SaveError(`save: legacy version ${version} is not supported by Save v9`);
+  if (version >= 5 && version < SAVE_VERSION) {
+    throw new SaveError(`save: legacy version ${version} is not supported by Save v${SAVE_VERSION}`);
   }
   if (version !== SAVE_VERSION) {
     throw new SaveError(`save: incompatible version ${version} (expected ${SAVE_VERSION})`);
@@ -1224,8 +1219,8 @@ export const deserializeSlots = (s: string): GameState[] => {
   const env = reqObject(parsed, "slots");
   if (!("version" in env)) throw new SaveError("slots: missing version tag");
   const version = reqInt(env.version, "slots.version");
-  if (version === 5 || version === 6 || version === 7 || version === 8) {
-    throw new SaveError(`slots: legacy version ${version} is not supported by Save v9`);
+  if (version >= 5 && version < SAVE_VERSION) {
+    throw new SaveError(`slots: legacy version ${version} is not supported by Save v${SAVE_VERSION}`);
   }
   if (version !== SAVE_VERSION) {
     throw new SaveError(`slots: incompatible version ${version} (expected ${SAVE_VERSION})`);

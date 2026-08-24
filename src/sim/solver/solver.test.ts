@@ -1,30 +1,30 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import type {
-  CardinalDelta,
   DrugState,
   EffectMap,
+  HexCoord,
+  HexDir,
   MachineCatalogEntry,
   MultiMap,
   Solution,
   SolveOptions,
-  Vec2,
 } from "../phase0_interfaces";
 import { CellKind } from "../phase0_interfaces";
 import { evaluate, initialState } from "../drug-graph";
 import { solve } from ".";
 
-const E: CardinalDelta = { x: 1, y: 0 };
-const S: CardinalDelta = { x: 0, y: 1 };
-const W: CardinalDelta = { x: -1, y: 0 };
-const N: CardinalDelta = { x: 0, y: -1 };
+const E: HexDir = 0;
+const S: HexDir = 1;
+const W: HexDir = 3;
+const N: HexDir = 4;
 
-function emptyMap(width: number, height: number, start: Vec2): EffectMap {
+function emptyMap(width: number, height: number, start: HexCoord): EffectMap {
   const size = width * height;
   return {
     width,
     height,
-    origin: { x: Math.floor(width / 2), y: Math.floor(height / 2) },
+    origin: { q: Math.floor(width / 2), r: Math.floor(height / 2) },
     start,
     cell: new Uint8Array(size),
     cureId: new Int16Array(size).fill(-1),
@@ -36,30 +36,30 @@ function emptyMap(width: number, height: number, start: Vec2): EffectMap {
 
 function setCell(
   map: EffectMap,
-  x: number,
-  y: number,
+  q: number,
+  r: number,
   kind: number,
   cureId = -1,
 ): EffectMap {
   const cell = Uint8Array.from(map.cell);
   const ids = Int16Array.from(map.cureId);
-  const index = y * map.width + x;
+  const index = r * map.width + q;
   cell[index] = kind;
   ids[index] = cureId;
   return { ...map, cell, cureId: ids };
 }
 
-const cure = (map: EffectMap, x: number, y: number, id: number): EffectMap =>
-  setCell(map, x, y, CellKind.Cure, id);
-const wall = (map: EffectMap, x: number, y: number): EffectMap =>
-  setCell(map, x, y, CellKind.Wall);
-const abyss = (map: EffectMap, x: number, y: number): EffectMap =>
-  setCell(map, x, y, CellKind.Abyss);
-const swamp = (map: EffectMap, x: number, y: number): EffectMap =>
-  setCell(map, x, y, CellKind.Swamp);
+const cure = (map: EffectMap, q: number, r: number, id: number): EffectMap =>
+  setCell(map, q, r, CellKind.Cure, id);
+const wall = (map: EffectMap, q: number, r: number): EffectMap =>
+  setCell(map, q, r, CellKind.Wall);
+const abyss = (map: EffectMap, q: number, r: number): EffectMap =>
+  setCell(map, q, r, CellKind.Abyss);
+const swamp = (map: EffectMap, q: number, r: number): EffectMap =>
+  setCell(map, q, r, CellKind.Swamp);
 const maps = (...value: EffectMap[]): MultiMap => ({ maps: value });
 
-function entry(typeId: string, path: readonly CardinalDelta[], cost = 1): MachineCatalogEntry {
+function entry(typeId: string, path: readonly HexDir[], cost = 1): MachineCatalogEntry {
   return { typeId, path, cost, speed: 1 };
 }
 
@@ -86,7 +86,7 @@ function expectCures(
 
 describe("fixed-path solver", () => {
   it("returns a sound shortest solution and sums machine costs", () => {
-    const mm = maps(cure(emptyMap(7, 5, { x: 1, y: 2 }), 4, 2, 42));
+    const mm = maps(cure(emptyMap(7, 5, { q: 1, r: 2 }), 4, 2, 42));
     const start = initialState(mm);
     const solution = solve(mm, start, options([entry("east", [E], 3)], 5, [42]));
 
@@ -97,7 +97,7 @@ describe("fixed-path solver", () => {
   });
 
   it("chooses the lowest-cost solution among all shortest complete paths", () => {
-    const mm = maps(cure(emptyMap(5, 3, { x: 1, y: 1 }), 2, 1, 7));
+    const mm = maps(cure(emptyMap(5, 3, { q: 1, r: 1 }), 2, 1, 7));
     const solution = solve(mm, initialState(mm), options([
       entry("expensive", [E], 10),
       entry("cheap", [E], 1),
@@ -108,13 +108,13 @@ describe("fixed-path solver", () => {
   });
 
   it("returns a zero-step solution when the start is already cured", () => {
-    const mm = maps(cure(emptyMap(5, 5, { x: 2, y: 2 }), 2, 2, 7));
+    const mm = maps(cure(emptyMap(5, 5, { q: 2, r: 2 }), 2, 2, 7));
     const solution = solve(mm, initialState(mm), options(EAST, 4, [7]));
     expect(solution).toMatchObject({ difficulty: 0, cost: 0, template: { steps: [] } });
   });
 
   it("solves for any cell in a multi-cell Cure region", () => {
-    let map = cure(emptyMap(7, 4, { x: 0, y: 2 }), 5, 0, 7);
+    let map = cure(emptyMap(7, 4, { q: 0, r: 2 }), 5, 0, 7);
     map = cure(map, 2, 2, 7);
     const mm = maps(map);
 
@@ -126,13 +126,13 @@ describe("fixed-path solver", () => {
 
   it("searches only complete fixed paths without rotating or truncating the stamp", () => {
     const catalog = [entry("hook", [E, S, E])];
-    const east = maps(cure(emptyMap(7, 7, { x: 2, y: 2 }), 3, 2, 1));
-    const bend = maps(cure(emptyMap(7, 7, { x: 2, y: 2 }), 3, 3, 2));
-    const north = maps(cure(emptyMap(7, 7, { x: 2, y: 2 }), 2, 1, 3));
+    const east = maps(cure(emptyMap(7, 7, { q: 2, r: 2 }), 3, 2, 1));
+    const bend = maps(cure(emptyMap(7, 7, { q: 2, r: 2 }), 3, 3, 2));
+    const north = maps(cure(emptyMap(7, 7, { q: 2, r: 2 }), 2, 1, 3));
 
     expect(solve(east, initialState(east), options(catalog, 1, [1]))).toBeNull();
     expect(solve(bend, initialState(bend), options(catalog, 1, [2]))).toBeNull();
-    const full = maps(cure(emptyMap(7, 7, { x: 2, y: 2 }), 4, 3, 4));
+    const full = maps(cure(emptyMap(7, 7, { q: 2, r: 2 }), 4, 3, 4));
     expect(solve(full, initialState(full), options(catalog, 1, [4]))?.template.steps[0])
       .toEqual({ typeId: "hook", path: [E, S, E] });
     expect(solve(north, initialState(north), options(catalog, 3, [3]))).toBeNull();
@@ -140,7 +140,7 @@ describe("fixed-path solver", () => {
 
   it("rewards machine diversity and scores a shaped path deterministically", () => {
     const catalog = [entry("east", [E]), entry("hook", [E, S])];
-    const mm = maps(cure(emptyMap(7, 7, { x: 1, y: 1 }), 3, 2, 8));
+    const mm = maps(cure(emptyMap(7, 7, { q: 1, r: 1 }), 3, 2, 8));
     const start = initialState(mm);
     const solution = solve(mm, start, options(catalog, 2, [8]));
 
@@ -151,7 +151,7 @@ describe("fixed-path solver", () => {
   });
 
   it("can exploit wall cancellation while continuing the remaining stamp", () => {
-    let map = wall(emptyMap(6, 6, { x: 0, y: 0 }), 1, 0);
+    let map = wall(emptyMap(6, 6, { q: 0, r: 0 }), 1, 0);
     map = cure(map, 1, 1, 9);
     const mm = maps(map);
     const solution = solve(mm, initialState(mm), options([entry("wall-hook", [E, S, E])], 1, [9]));
@@ -160,14 +160,14 @@ describe("fixed-path solver", () => {
   });
 
   it("never expands an abyss-failed state", () => {
-    let map = abyss(emptyMap(6, 3, { x: 0, y: 1 }), 1, 1);
+    let map = abyss(emptyMap(6, 3, { q: 0, r: 1 }), 1, 1);
     map = cure(map, 2, 1, 4);
     const mm = maps(map);
     expect(solve(mm, initialState(mm), options(EAST, 8, [4]))).toBeNull();
   });
 
   it("accounts for swamp energy while applying the complete path", () => {
-    let map = swamp(emptyMap(7, 3, { x: 0, y: 1 }), 1, 1);
+    let map = swamp(emptyMap(7, 3, { q: 0, r: 1 }), 1, 1);
     map = cure(map, 2, 1, 5);
     const mm = maps(map);
     const solution = solve(mm, initialState(mm), options([entry("long", [E, E, E])], 1, [5]));
@@ -176,21 +176,21 @@ describe("fixed-path solver", () => {
   });
 
   it("enforces the joint same-path constraint without cross-layer swaps", () => {
-    const map0 = cure(emptyMap(7, 5, { x: 1, y: 2 }), 3, 2, 1);
-    const map1 = cure(emptyMap(7, 5, { x: 1, y: 2 }), 4, 2, 2);
+    const map0 = cure(emptyMap(7, 5, { q: 1, r: 2 }), 3, 2, 1);
+    const map1 = cure(emptyMap(7, 5, { q: 1, r: 2 }), 4, 2, 2);
     const mm = maps(map0, map1);
     expect(solve(mm, initialState(mm), options(EAST, 6, [1, 2]))).toBeNull();
   });
 
   it("rejects two different cure positions requested on one map", () => {
-    let map = cure(emptyMap(6, 4, { x: 0, y: 1 }), 2, 1, 1);
+    let map = cure(emptyMap(6, 4, { q: 0, r: 1 }), 2, 1, 1);
     map = cure(map, 4, 1, 2);
     const mm = maps(map);
     expect(solve(mm, initialState(mm), options(EAST, 8, [1, 2]))).toBeNull();
   });
 
   it("returns null for a missing target or insufficient depth", () => {
-    const mm = maps(cure(emptyMap(8, 3, { x: 0, y: 1 }), 6, 1, 1));
+    const mm = maps(cure(emptyMap(8, 3, { q: 0, r: 1 }), 6, 1, 1));
     const start = initialState(mm);
     expect(solve(mm, start, options(EAST, 4, [1]))).toBeNull();
     expect(solve(mm, start, options(EAST, 8, [999]))).toBeNull();
@@ -202,7 +202,7 @@ describe("fixed-path solver", () => {
       fc.integer({ min: 0, max: 5 }),
       fc.integer({ min: 0, max: 5 }),
       (x, y) => {
-        const mm = maps(cure(emptyMap(7, 7, { x: 3, y: 3 }), x, y, 6));
+        const mm = maps(cure(emptyMap(7, 7, { q: 3, r: 3 }), x, y, 6));
         const start = initialState(mm);
         const first = solve(mm, start, options(catalog, 8, [6]));
         const second = solve(mm, start, options(catalog, 8, [6]));

@@ -5,12 +5,12 @@ import type {
   DrugState,
   EffectMap,
   EvaluateFn,
+  HexCoord,
   InitialStateFn,
   Machine,
   MultiMap,
   RevealAlongFn,
   SideEffectId,
-  Vec2,
 } from "../phase0_interfaces";
 import { CellKind } from "../phase0_interfaces";
 import { walkPath } from "./path";
@@ -26,7 +26,7 @@ export { validateEffectMap, validateMachinePath, validatePathStamp } from "./val
 
 export interface PreviewStepResult {
   readonly next: DrugState;
-  readonly trails: readonly (readonly Vec2[])[];
+  readonly trails: readonly (readonly HexCoord[])[];
 }
 
 function validateState(mm: MultiMap, state: DrugState): void {
@@ -39,14 +39,14 @@ function validateState(mm: MultiMap, state: DrugState): void {
     if (position === undefined || map === undefined) {
       throw new Error("drug graph: state is missing a map position");
     }
-    if (!Number.isSafeInteger(position.x) || !Number.isSafeInteger(position.y)) {
+    if (!Number.isSafeInteger(position.q) || !Number.isSafeInteger(position.r)) {
       throw new Error("drug graph: state positions must be safe-integer coordinates");
     }
     if (
-      position.x < 0 ||
-      position.y < 0 ||
-      position.x >= map.width ||
-      position.y >= map.height
+      position.q < 0 ||
+      position.r < 0 ||
+      position.q >= map.width ||
+      position.r >= map.height
     ) {
       throw new Error("drug graph: state position is outside its map");
     }
@@ -58,11 +58,11 @@ export function previewStep(mm: MultiMap, state: DrugState, machine: Machine): P
   for (const map of mm.maps) validateEffectMap(map);
   validateState(mm, state);
 
-  const emptyTrails: Vec2[][] = mm.maps.map(() => []);
+  const emptyTrails: HexCoord[][] = mm.maps.map(() => []);
   if (state.failed) return { next: state, trails: emptyTrails };
 
-  const positions: Vec2[] = new Array<Vec2>(mm.maps.length);
-  const trails: Vec2[][] = new Array<Vec2[]>(mm.maps.length);
+  const positions: HexCoord[] = new Array<HexCoord>(mm.maps.length);
+  const trails: HexCoord[][] = new Array<HexCoord[]>(mm.maps.length);
   let failed = false;
 
   for (let index = 0; index < mm.maps.length; index++) {
@@ -83,7 +83,7 @@ export function previewStep(mm: MultiMap, state: DrugState, machine: Machine): P
 export const initialState: InitialStateFn = (mm) => {
   for (const map of mm.maps) validateEffectMap(map);
   return {
-    pos: mm.maps.map((map) => ({ x: map.start.x, y: map.start.y })),
+    pos: mm.maps.map((map) => ({ q: map.start.q, r: map.start.r })),
     failed: false,
   };
 };
@@ -111,7 +111,7 @@ export const evaluate: EvaluateFn = (mm, start, template) => {
     if (map === undefined || position === undefined) {
       throw new Error("drug graph: evaluated map/state arrays diverged");
     }
-    const cellIndex = position.y * map.width + position.x;
+    const cellIndex = position.r * map.width + position.q;
     const kind = map.cell[cellIndex];
     if (kind === CellKind.Cure) {
       const diseaseId = map.cureId[cellIndex];
@@ -137,7 +137,7 @@ export const revealAlong: RevealAlongFn = (mm, start, template) => {
       if (map === undefined || fog === undefined || trail === undefined) {
         throw new Error("drug graph: reveal map/trail arrays diverged");
       }
-      for (const position of trail) fog[position.y * map.width + position.x] = 1;
+      for (const position of trail) fog[position.r * map.width + position.q] = 1;
     }
     state = preview.next;
   }

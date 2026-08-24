@@ -18,8 +18,8 @@ import {
 import { fnv1a32Hex } from "../sim/hash";
 
 export const BLUEPRINT_FORMAT = "hexapharma-blueprint" as const;
-export const BLUEPRINT_VERSION = 3 as const;
-export const BLUEPRINT_RULESET = 3 as const;
+export const BLUEPRINT_VERSION = 4 as const;
+export const BLUEPRINT_RULESET = 4 as const;
 export const MAX_BLUEPRINT_BYTES = 1_048_576;
 export const MAX_BLUEPRINT_NAME_LENGTH = 80;
 
@@ -42,8 +42,8 @@ function contentFingerprint(): string {
 export const BLUEPRINT_CONTENT_FINGERPRINT = contentFingerprint();
 
 interface PortableTilePosition {
-  readonly x: number;
-  readonly y: number;
+  readonly q: number;
+  readonly r: number;
 }
 
 export type PortableFactoryTile =
@@ -73,8 +73,8 @@ export interface PortableFactoryMachine {
   readonly id: number;
   readonly typeId: string;
   readonly anchor: {
-    readonly x: number;
-    readonly y: number;
+    readonly q: number;
+    readonly r: number;
   };
   readonly footRot: Rotation;
 }
@@ -140,16 +140,16 @@ function requireInteger(value: unknown, path: string, min: number, max: number):
 }
 
 function requireDir(value: unknown, path: string): Dir {
-  return requireInteger(value, path, 0, 3) as Dir;
+  return requireInteger(value, path, 0, 5) as Dir;
 }
 
 function requireRotation(value: unknown, path: string): Rotation {
-  return requireInteger(value, path, 0, 3) as Rotation;
+  return requireInteger(value, path, 0, 5) as Rotation;
 }
 
 function requireDirectionList(value: unknown, path: string): readonly Dir[] {
-  if (!Array.isArray(value) || value.length < 1 || value.length > 4) {
-    throw new Error(`blueprint: ${path} must contain from 1 to 4 directions`);
+  if (!Array.isArray(value) || value.length < 1 || value.length > 6) {
+    throw new Error(`blueprint: ${path} must contain from 1 to 6 directions`);
   }
   const result = value.map((direction, index) => requireDir(direction, `${path}[${index}]`));
   if (new Set(result).size !== result.length) {
@@ -209,44 +209,44 @@ function parseProgram(value: unknown): PortableResearchBlueprint["program"] {
 function parseTile(value: unknown, width: number, height: number, index: number): PortableFactoryTile {
   const path = `blueprint.layout.tiles[${index}]`;
   const record = requireRecord(value, path);
-  const x = requireInteger(record.x, `${path}.x`, 0, width - 1);
-  const y = requireInteger(record.y, `${path}.y`, 0, height - 1);
+  const q = requireInteger(record.q, `${path}.q`, 0, width - 1);
+  const r = requireInteger(record.r, `${path}.r`, 0, height - 1);
   if (typeof record.kind !== "string") throw new Error(`blueprint: ${path}.kind must be a string`);
 
   switch (record.kind) {
     case "belt":
-      requireExactKeys(record, ["x", "y", "kind", "dir"], path);
-      return { x, y, kind: "belt", dir: requireDir(record.dir, `${path}.dir`) };
+      requireExactKeys(record, ["q", "r", "kind", "dir"], path);
+      return { q, r, kind: "belt", dir: requireDir(record.dir, `${path}.dir`) };
     case "splitter":
-      requireExactKeys(record, ["x", "y", "kind", "inDir", "outDirs"], path);
+      requireExactKeys(record, ["q", "r", "kind", "inDir", "outDirs"], path);
       return {
-        x,
-        y,
+        q,
+        r,
         kind: "splitter",
         inDir: requireDir(record.inDir, `${path}.inDir`),
         outDirs: requireDirectionList(record.outDirs, `${path}.outDirs`),
       };
     case "merger":
-      requireExactKeys(record, ["x", "y", "kind", "inDirs", "outDir"], path);
+      requireExactKeys(record, ["q", "r", "kind", "inDirs", "outDir"], path);
       return {
-        x,
-        y,
+        q,
+        r,
         kind: "merger",
         inDirs: requireDirectionList(record.inDirs, `${path}.inDirs`),
         outDir: requireDir(record.outDir, `${path}.outDir`),
       };
     case "source":
-      requireExactKeys(record, ["x", "y", "kind", "dir", "period"], path);
+      requireExactKeys(record, ["q", "r", "kind", "dir", "period"], path);
       return {
-        x,
-        y,
+        q,
+        r,
         kind: "source",
         dir: requireDir(record.dir, `${path}.dir`),
         period: requireInteger(record.period, `${path}.period`, 1, 0x7fff_ffff),
       };
     case "sink":
-      requireExactKeys(record, ["x", "y", "kind"], path);
-      return { x, y, kind: "sink" };
+      requireExactKeys(record, ["q", "r", "kind"], path);
+      return { q, r, kind: "sink" };
     case "empty":
       throw new Error(`blueprint: ${path} must omit empty tiles from the sparse tile list`);
     default:
@@ -268,13 +268,13 @@ function parseFactoryMachine(
     throw new Error(`blueprint: ${path}.typeId has no local factory shape`);
   }
   const anchor = requireRecord(record.anchor, `${path}.anchor`);
-  requireExactKeys(anchor, ["x", "y"], `${path}.anchor`);
+  requireExactKeys(anchor, ["q", "r"], `${path}.anchor`);
   return {
     id: requireInteger(record.id, `${path}.id`, 0, 0x7fff_ffff),
     typeId: entry.typeId,
     anchor: {
-      x: requireInteger(anchor.x, `${path}.anchor.x`, 0, width - 1),
-      y: requireInteger(anchor.y, `${path}.anchor.y`, 0, height - 1),
+      q: requireInteger(anchor.q, `${path}.anchor.q`, 0, width - 1),
+      r: requireInteger(anchor.r, `${path}.anchor.r`, 0, height - 1),
     },
     footRot: requireRotation(record.footRot, `${path}.footRot`),
   };
@@ -302,11 +302,11 @@ function parseLayout(value: unknown): PortableFactoryBlueprint["layout"] {
   const tiles = layout.tiles.map((tile, index) => parseTile(tile, width, height, index));
   const tilePositions = new Set<number>();
   for (const tile of tiles) {
-    const position = tile.y * width + tile.x;
-    if (tilePositions.has(position)) throw new Error(`blueprint: duplicate tile at ${tile.x},${tile.y}`);
+    const position = tile.r * width + tile.q;
+    if (tilePositions.has(position)) throw new Error(`blueprint: duplicate tile at ${tile.q},${tile.r}`);
     tilePositions.add(position);
   }
-  tiles.sort((left, right) => left.y - right.y || left.x - right.x);
+  tiles.sort((left, right) => left.r - right.r || left.q - right.q);
 
   const machines = layout.machines.map((machine, index) =>
     parseFactoryMachine(machine, width, height, index));
@@ -371,7 +371,7 @@ function materializeLayoutCanonical(blueprint: PortableFactoryBlueprint): Factor
   const { width, height } = blueprint.layout;
   const tiles: FactoryTile[] = Array.from({ length: width * height }, () => ({ kind: "empty" }));
   for (const tile of blueprint.layout.tiles) {
-    const index = tile.y * width + tile.x;
+    const index = tile.r * width + tile.q;
     switch (tile.kind) {
       case "belt":
         tiles[index] = { kind: "belt", dir: tile.dir };
@@ -405,7 +405,7 @@ function materializeLayoutCanonical(blueprint: PortableFactoryBlueprint): Factor
         cost: entry.cost,
         speed: entry.speed,
       },
-      anchor: { x: machine.anchor.x, y: machine.anchor.y },
+      anchor: { q: machine.anchor.q, r: machine.anchor.r },
       footRot: machine.footRot,
       shape,
     };
@@ -414,10 +414,10 @@ function materializeLayoutCanonical(blueprint: PortableFactoryBlueprint): Factor
   const occupied = new Int32Array(width * height).fill(-1);
   for (const machine of machines) {
     for (const cell of worldCells(machine)) {
-      if (cell.x < 0 || cell.y < 0 || cell.x >= width || cell.y >= height) {
+      if (cell.q < 0 || cell.r < 0 || cell.q >= width || cell.r >= height) {
         throw new Error(`blueprint: machine ${machine.id} footprint is out of bounds`);
       }
-      const index = cell.y * width + cell.x;
+      const index = cell.r * width + cell.q;
       if ((occupied[index] ?? -1) >= 0) {
         throw new Error(`blueprint: machine ${machine.id} footprint overlaps another machine`);
       }
@@ -487,8 +487,10 @@ export async function decodeBlueprint(source: string): Promise<PortableBlueprint
   const document = requireRecord(parsed, "document");
   requireExactKeys(document, ["format", "version", "checksum", "blueprint"], "document");
   if (document.format !== BLUEPRINT_FORMAT) throw new Error("blueprint: unsupported format");
-  if (document.version === 1 || document.version === 2) {
-    throw new Error(`blueprint: legacy blueprint version ${document.version} is not supported by the v3 schema`);
+  if (document.version === 1 || document.version === 2 || document.version === 3) {
+    throw new Error(
+      `blueprint: legacy blueprint version ${document.version} is not supported by the v4 schema`,
+    );
   }
   if (document.version !== BLUEPRINT_VERSION) {
     throw new Error(`blueprint: unsupported version ${String(document.version)}`);
@@ -519,20 +521,20 @@ export function materializeFactoryLayout(value: PortableBlueprint): FactoryLayou
   return materializeLayoutCanonical(blueprint);
 }
 
-function portableTile(tile: FactoryTile, x: number, y: number): PortableFactoryTile | null {
+function portableTile(tile: FactoryTile, q: number, r: number): PortableFactoryTile | null {
   switch (tile.kind) {
     case "empty":
       return null;
     case "belt":
-      return { x, y, kind: "belt", dir: tile.dir };
+      return { q, r, kind: "belt", dir: tile.dir };
     case "splitter":
-      return { x, y, kind: "splitter", inDir: tile.inDir, outDirs: [...tile.outDirs] };
+      return { q, r, kind: "splitter", inDir: tile.inDir, outDirs: [...tile.outDirs] };
     case "merger":
-      return { x, y, kind: "merger", inDirs: [...tile.inDirs], outDir: tile.outDir };
+      return { q, r, kind: "merger", inDirs: [...tile.inDirs], outDir: tile.outDir };
     case "source":
-      return { x, y, kind: "source", dir: tile.dir, period: tile.period };
+      return { q, r, kind: "source", dir: tile.dir, period: tile.period };
     case "sink":
-      return { x, y, kind: "sink" };
+      return { q, r, kind: "sink" };
   }
 }
 
@@ -600,7 +602,7 @@ export function blueprintFromFactoryLayout(name: string, layout: FactoryLayout):
     return {
       id: machine.id,
       typeId: entry.typeId,
-      anchor: { x: machine.anchor.x, y: machine.anchor.y },
+      anchor: { q: machine.anchor.q, r: machine.anchor.r },
       footRot: machine.footRot,
     };
   });

@@ -9,6 +9,7 @@ import type {
   Vec2,
 } from "../sim/phase0_interfaces";
 import type { LabRenderer } from "../render/labRenderer";
+import type { PixelPoint } from "../render/hexProjection";
 import {
   LAB_VIEWPORT,
   clampLabCamera,
@@ -31,7 +32,7 @@ export function labPointerToViewport(
   clientX: number,
   clientY: number,
   rect: LabSurfaceRect,
-): Vec2 {
+): PixelPoint {
   return {
     x: (clientX - rect.left) * LAB_VIEWPORT.width / rect.width,
     y: (clientY - rect.top) * LAB_VIEWPORT.height / rect.height,
@@ -55,10 +56,7 @@ export function researchPreviewEndpointHit(
   pointerWorld: Vec2,
   endpoint: Vec2 | undefined,
 ): boolean {
-  if (endpoint === undefined) return false;
-  const dx = pointerWorld.x - (endpoint.x + 0.5);
-  const dy = pointerWorld.y - (endpoint.y + 0.5);
-  return dx * dx + dy * dy <= 0.55 * 0.55;
+  return endpoint !== undefined && pointerWorld.q === endpoint.q && pointerWorld.r === endpoint.r;
 }
 
 export function researchOutcomeText(lastOutcome: Outcome | null): string | null {
@@ -118,7 +116,7 @@ export function researchKnownCureLocations(
       locations.push({
         mapIndex,
         cureId: cure,
-        pos: { x: index % map.width, y: Math.floor(index / map.width) },
+        pos: { q: index % map.width, r: Math.floor(index / map.width) },
       });
     }
   }
@@ -186,7 +184,7 @@ export function App({
       map,
     ),
   ));
-  const camera = cameras[activeMap] ?? focusLabCamera(drug.pos[activeMap] ?? { x: 0, y: 0 });
+  const camera = cameras[activeMap] ?? focusLabCamera(drug.pos[activeMap] ?? { q: 0, r: 0 });
   const view = useMemo(
     () => ({
       activeMap,

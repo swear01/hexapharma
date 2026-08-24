@@ -11,7 +11,7 @@ test("Ctrl+S saves the game while text entry keeps its native keys", async ({ pa
 
   await name.press("Control+s");
   await expect(page.getByTestId("save-msg")).toContainText("Saved slot 1");
-  expect(await page.evaluate(() => localStorage.getItem("hexapharma.save.checkpoint.0")))
+  expect(await page.evaluate(() => localStorage.getItem("hexapharma.save.v10.checkpoint.0")))
     .not.toBeNull();
   await expect(name).toHaveValue("Draftm");
 });
@@ -30,7 +30,7 @@ test("Load confirms before replacing a different current game and remains cancel
   };
 
   const checkpointBefore = await page.evaluate(() =>
-    localStorage.getItem("hexapharma.save.checkpoint.0"));
+    localStorage.getItem("hexapharma.save.v10.checkpoint.0"));
   await page.getByTestId("load").click();
   const dialog = page.getByRole("alertdialog", { name: "Load saved game?" });
   await expect(dialog).toBeVisible();
@@ -52,7 +52,7 @@ test("Load confirms before replacing a different current game and remains cancel
   expect(await page.evaluate(() =>
     (window as Window & { __saveShortcutPrevented?: boolean }).__saveShortcutPrevented))
     .toBe(true);
-  expect(await page.evaluate(() => localStorage.getItem("hexapharma.save.checkpoint.0")))
+  expect(await page.evaluate(() => localStorage.getItem("hexapharma.save.v10.checkpoint.0")))
     .toBe(checkpointBefore);
   await page.keyboard.press("Tab");
   await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
@@ -60,14 +60,14 @@ test("Load confirms before replacing a different current game and remains cancel
   await expect(dialog).toHaveCount(0);
   await expect(page.getByTestId("load")).toBeFocused();
   await expect(page.getByTestId("cash")).toHaveText("9919");
-  expect(await page.evaluate(() => localStorage.getItem("hexapharma.save.checkpoint.0")))
+  expect(await page.evaluate(() => localStorage.getItem("hexapharma.save.v10.checkpoint.0")))
     .toBe(checkpointBefore);
 
   await page.getByTestId("load").click();
   await dialog.getByRole("button", { name: "Cancel" }).click();
   await expect(dialog).toHaveCount(0);
   await expect(page.getByTestId("cash")).toHaveText("9919");
-  expect(await page.evaluate(() => localStorage.getItem("hexapharma.save.checkpoint.0")))
+  expect(await page.evaluate(() => localStorage.getItem("hexapharma.save.v10.checkpoint.0")))
     .toBe(checkpointBefore);
 
   await page.getByTestId("load").click();
@@ -89,7 +89,7 @@ test("Rewind confirms before dropping the latest checkpoint and restoring the ol
   await expect(page.getByTestId("rewind")).toBeEnabled();
 
   const checkpointBefore = await page.evaluate(() =>
-    localStorage.getItem("hexapharma.save.checkpoint.0"));
+    localStorage.getItem("hexapharma.save.v10.checkpoint.0"));
   await page.getByTestId("rewind").click();
   const dialog = page.getByRole("alertdialog", { name: "Rewind save history?" });
   await expect(dialog).toBeVisible();
@@ -99,14 +99,14 @@ test("Rewind confirms before dropping the latest checkpoint and restoring the ol
   await expect(dialog).toHaveCount(0);
   await expect(page.getByTestId("rewind")).toBeFocused();
   await expect(page.getByTestId("cash")).toHaveText("9919");
-  expect(await page.evaluate(() => localStorage.getItem("hexapharma.save.checkpoint.0")))
+  expect(await page.evaluate(() => localStorage.getItem("hexapharma.save.v10.checkpoint.0")))
     .toBe(checkpointBefore);
 
   await page.getByTestId("rewind").click();
   await dialog.getByRole("button", { name: "Rewind" }).click();
   await expect(dialog).toHaveCount(0);
   await expect(page.getByTestId("cash")).toHaveText("9999");
-  expect(await page.evaluate(() => localStorage.getItem("hexapharma.save.checkpoint.0")))
+  expect(await page.evaluate(() => localStorage.getItem("hexapharma.save.v10.checkpoint.0")))
     .not.toBe(checkpointBefore);
   await expect(page.getByTestId("rewind")).toBeDisabled();
 });

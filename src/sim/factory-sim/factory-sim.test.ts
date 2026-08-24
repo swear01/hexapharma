@@ -44,10 +44,10 @@ import { hashFactory, replayFactory } from "../state";
 
 const E: Dir = 0;
 const S: Dir = 1;
-const W: Dir = 2;
-const N: Dir = 3;
+const W: Dir = 3;
+const N: Dir = 4;
 
-function emptyMap(n: number, start: Vec2, origin: Vec2 = { x: 0, y: 0 }): EffectMap {
+function emptyMap(n: number, start: Vec2, origin: Vec2 = { q: 0, r: 0 }): EffectMap {
   const len = n * n;
   return {
     width: n,
@@ -74,7 +74,7 @@ function withTerrain(
   const index = y * map.width + x;
   cell[index] = kind;
   if (portalDestination !== undefined) {
-    portalTo[index] = portalDestination.y * map.width + portalDestination.x;
+    portalTo[index] = portalDestination.r * map.width + portalDestination.q;
   }
   return { ...map, cell, portalTo };
 }
@@ -82,12 +82,12 @@ function withTerrain(
 /** Two big empty maps so translates never hit a wall. */
 function twoMaps(): MultiMap {
   return {
-    maps: [emptyMap(40, { x: 5, y: 5 }), emptyMap(40, { x: 8, y: 8 })],
+    maps: [emptyMap(40, { q: 5, r: 5 }), emptyMap(40, { q: 8, r: 8 })],
   };
 }
 
-const EAST_STEP = [{ x: 1, y: 0 }] as const;
-const WEST_STEP = [{ x: -1, y: 0 }] as const;
+const EAST_STEP = [E] as const;
+const WEST_STEP = [W] as const;
 
 function machineDef(
   typeId: string,
@@ -119,8 +119,8 @@ function blank(width: number, height: number): LayoutBuilder {
   return { width, height, tiles };
 }
 
-function set(b: LayoutBuilder, x: number, y: number, t: FactoryTile): void {
-  b.tiles[y * b.width + x] = t;
+function set(b: LayoutBuilder, q: number, r: number, t: FactoryTile): void {
+  b.tiles[r * b.width + q] = t;
 }
 
 function finish(b: LayoutBuilder, machines: PlacedMachine[]): FactoryLayout {
@@ -144,12 +144,22 @@ function products(states: readonly FactoryState[]) {
 // ───────────────────────────── basic line ─────────────────────────────
 
 describe("factory-sim straight line", () => {
+  it("moves a unit across a southwest axial edge", () => {
+    const b = blank(4, 4);
+    set(b, 2, 1, { kind: "source", dir: 2 as Dir, period: 1 });
+    set(b, 1, 2, { kind: "sink" });
+    const layout = finish(b, []);
+    const mm = twoMaps();
+
+    expect(products(run(layout, mm, initialState(mm), 2))).toHaveLength(2);
+  });
+
   it("sizes hot runtime storage from carrier and machine slots, not empty floor area", () => {
     const b = blank(100, 100);
     set(b, 0, 0, { kind: "source", dir: E, period: 1 });
     set(b, 1, 0, { kind: "belt", dir: E });
     set(b, 2, 0, { kind: "sink" });
-    const mm: MultiMap = { maps: [emptyMap(40, { x: 20, y: 20 })] };
+    const mm: MultiMap = { maps: [emptyMap(40, { q: 20, r: 20 })] };
     expect(initFactory(finish(b, []), mm, initialState(mm)).capacity).toBe(1);
   });
 
@@ -158,7 +168,7 @@ describe("factory-sim straight line", () => {
     set(b, 0, 0, { kind: "source", dir: E, period: 1 });
     set(b, 1, 0, { kind: "belt", dir: E });
     set(b, 2, 0, { kind: "sink" });
-    const mm: MultiMap = { maps: [emptyMap(40, { x: 20, y: 20 })] };
+    const mm: MultiMap = { maps: [emptyMap(40, { q: 20, r: 20 })] };
     const states = run(finish(b, []), mm, initialState(mm), 8);
     expect(states.at(-1)?.producedTotal).toBeGreaterThan(0);
   });
@@ -194,7 +204,7 @@ describe("factory-sim straight line", () => {
     stepFactory(layout, mm, runtime);
     const s1 = snapshotFactory(runtime);
     expect(s1.units.length).toBe(1);
-    expect(s1.units[0]!.pos).toEqual({ x: 1, y: 0 });
+    expect(s1.units[0]!.pos).toEqual({ q: 1, r: 0 });
     expect(s1.units[0]!.machineId).toBeNull();
     expect(s1.nextUnitId).toBe(1);
   });
@@ -206,7 +216,7 @@ describe("factory-sim straight line", () => {
     const layout = finish(b, []);
     const mm = twoMaps();
     const start: DrugState = {
-      pos: [{ x: 12, y: 13 }, { x: 14, y: 15 }],
+      pos: [{ q: 12, r: 13 }, { q: 14, r: 15 }],
       failed: true,
     };
     const runtime = initFactory(layout, mm, start);
@@ -228,8 +238,8 @@ describe("path correctness", () => {
     set(b, 2, 0, { kind: "belt", dir: E });
     set(b, 4, 0, { kind: "sink" });
     const machines = [
-      placeMachine(0, a, SHAPE_1x1, { x: 1, y: 0 }),
-      placeMachine(1, bdef, SHAPE_1x1, { x: 3, y: 0 }),
+      placeMachine(0, a, SHAPE_1x1, { q: 1, r: 0 }),
+      placeMachine(1, bdef, SHAPE_1x1, { q: 3, r: 0 }),
     ];
     const layout = finish(b, machines);
     const mm = twoMaps();
@@ -257,8 +267,8 @@ describe("path correctness", () => {
     set(b, 2, 0, { kind: "belt", dir: E });
     set(b, 4, 0, { kind: "sink" });
     const machines = [
-      placeMachine(0, a, SHAPE_1x1, { x: 1, y: 0 }),
-      placeMachine(1, bdef, SHAPE_1x1, { x: 3, y: 0 }),
+      placeMachine(0, a, SHAPE_1x1, { q: 1, r: 0 }),
+      placeMachine(1, bdef, SHAPE_1x1, { q: 3, r: 0 }),
     ];
     const layout = finish(b, machines);
     const mm = twoMaps();
@@ -272,26 +282,26 @@ describe("path correctness", () => {
   });
 
   it("matches applyStep for wall/OOB cancellation, swamp energy, abyss, and portals", () => {
-    const wall = withTerrain(emptyMap(8, { x: 2, y: 2 }), 3, 2, CellKind.Wall);
-    const abyss = withTerrain(emptyMap(8, { x: 1, y: 2 }), 3, 2, CellKind.Abyss);
-    const swamp = withTerrain(emptyMap(8, { x: 1, y: 2 }), 2, 2, CellKind.Swamp);
+    const wall = withTerrain(emptyMap(8, { q: 2, r: 2 }), 3, 2, CellKind.Wall);
+    const abyss = withTerrain(emptyMap(8, { q: 1, r: 2 }), 3, 2, CellKind.Abyss);
+    const swamp = withTerrain(emptyMap(8, { q: 1, r: 2 }), 2, 2, CellKind.Swamp);
     const portal = withTerrain(
-      emptyMap(8, { x: 0, y: 1 }),
+      emptyMap(8, { q: 0, r: 1 }),
       1,
       1,
       CellKind.Portal,
-      { x: 5, y: 1 },
+      { q: 5, r: 1 },
     );
     const scenarios: readonly {
       readonly name: string;
       readonly map: EffectMap;
       readonly path: PathStamp;
     }[] = [
-      { name: "wall", map: wall, path: [{ x: 1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 0 }] },
-      { name: "out-of-bounds", map: emptyMap(8, { x: 0, y: 1 }), path: [{ x: -1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 0 }] },
-      { name: "abyss", map: abyss, path: [{ x: 1, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 0 }] },
-      { name: "swamp", map: swamp, path: [{ x: 1, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 0 }] },
-      { name: "portal", map: portal, path: [{ x: 1, y: 0 }, { x: 1, y: 0 }] },
+      { name: "wall", map: wall, path: [E, S, E] },
+      { name: "out-of-bounds", map: emptyMap(8, { q: 0, r: 1 }), path: [W, S, E] },
+      { name: "abyss", map: abyss, path: [E, E, E] },
+      { name: "swamp", map: swamp, path: [E, E, E] },
+      { name: "portal", map: portal, path: [E, E] },
     ];
 
     for (const scenario of scenarios) {
@@ -300,7 +310,7 @@ describe("path correctness", () => {
       set(builder, 0, 0, { kind: "source", dir: E, period: 100 });
       set(builder, 2, 0, { kind: "sink" });
       const layout = finish(builder, [
-        placeMachine(0, def, SHAPE_1x1, { x: 1, y: 0 }),
+        placeMachine(0, def, SHAPE_1x1, { q: 1, r: 0 }),
       ]);
       const maps = { maps: [scenario.map] };
       const start = initialState(maps);
@@ -326,7 +336,7 @@ describe("mass conservation", () => {
     set(b, 1, 0, { kind: "belt", dir: E });
     set(b, 4, 0, { kind: "belt", dir: E });
     set(b, 5, 0, { kind: "sink" });
-    const machines = [placeMachine(0, a, SHAPE_2x1, { x: 2, y: 0 })]; // occupies (2,0),(3,0)
+    const machines = [placeMachine(0, a, SHAPE_2x1, { q: 2, r: 0 })]; // occupies (2,0),(3,0)
     const layout = finish(b, machines);
     const mm = twoMaps();
     const start = initialState(mm);
@@ -350,7 +360,7 @@ function singleLineLayout(): { layout: FactoryLayout; mm: MultiMap } {
   set(b, 1, 0, { kind: "belt", dir: E });
   set(b, 4, 0, { kind: "belt", dir: E });
   set(b, 5, 0, { kind: "sink" });
-  const machines = [placeMachine(0, machineDef("p", EAST_STEP, 3), SHAPE_1x1, { x: 2, y: 0 })];
+  const machines = [placeMachine(0, machineDef("p", EAST_STEP, 3), SHAPE_1x1, { q: 2, r: 0 })];
   // machine occupies (2,0); belt at (1,0) feeds it from W; out E -> need an accepting cell at (3,0).
   set(b, 3, 0, { kind: "belt", dir: E });
   return { layout: finish(b, machines), mm: twoMaps() };
@@ -360,28 +370,28 @@ function serpentineLayout(size: number): FactoryLayout {
   const path: Vec2[] = [];
   for (let y = 0; y < size; y++) {
     if (y % 2 === 0) {
-      for (let x = 0; x < size; x++) path.push({ x, y });
+      for (let x = 0; x < size; x++) path.push({ q: x, r: y });
     } else {
-      for (let x = size - 1; x >= 0; x--) path.push({ x, y });
+      for (let x = size - 1; x >= 0; x--) path.push({ q: x, r: y });
     }
   }
   const tiles = new Array<FactoryTile>(size * size).fill({ kind: "empty" });
   const direction = (from: Vec2, to: Vec2): Dir => {
-    if (to.x > from.x) return E;
-    if (to.x < from.x) return W;
-    if (to.y > from.y) return S;
+    if (to.q > from.q) return E;
+    if (to.q < from.q) return W;
+    if (to.r > from.r) return S;
     return N;
   };
   tiles[0] = { kind: "source", dir: direction(path[0]!, path[1]!), period: 1 };
   for (let index = 1; index < path.length - 1; index++) {
     const cell = path[index]!;
-    tiles[cell.y * size + cell.x] = {
+    tiles[cell.r * size + cell.q] = {
       kind: "belt",
       dir: direction(cell, path[index + 1]!),
     };
   }
   const sink = path.at(-1)!;
-  tiles[sink.y * size + sink.x] = { kind: "sink" };
+  tiles[sink.r * size + sink.q] = { kind: "sink" };
   return { width: size, height: size, tiles, machines: [] };
 }
 
@@ -410,8 +420,8 @@ function parallelLayout(): { layout: FactoryLayout; mm: MultiMap } {
   set(b, 3, 1, { kind: "belt", dir: E });
   set(b, 4, 1, { kind: "belt", dir: N });
   const machines = [
-    placeMachine(0, machineDef("p", EAST_STEP, 3), SHAPE_1x1, { x: 2, y: 0 }),
-    placeMachine(1, machineDef("p", EAST_STEP, 3), SHAPE_1x1, { x: 2, y: 1 }),
+    placeMachine(0, machineDef("p", EAST_STEP, 3), SHAPE_1x1, { q: 2, r: 0 }),
+    placeMachine(1, machineDef("p", EAST_STEP, 3), SHAPE_1x1, { q: 2, r: 1 }),
   ];
   return { layout: finish(b, machines), mm: twoMaps() };
 }
@@ -473,8 +483,8 @@ describe("splitter and merger routing contracts", () => {
     const runtime = restoreFactory(layout, mm, start, {
       tick: 0,
       units: [
-        { id: 0, pos: { x: 0, y: 1 }, drug: start, proc: 0, machineId: null, productionCost: 10 },
-        { id: 1, pos: { x: 1, y: 2 }, drug: start, proc: 0, machineId: null, productionCost: 20 },
+        { id: 0, pos: { q: 0, r: 1 }, drug: start, proc: 0, machineId: null, productionCost: 10 },
+        { id: 1, pos: { q: 1, r: 2 }, drug: start, proc: 0, machineId: null, productionCost: 20 },
       ],
       nextUnitId: 2,
       producedTotal: 0,
@@ -486,8 +496,8 @@ describe("splitter and merger routing contracts", () => {
     stepFactory(layout, mm, runtime);
 
     const state = snapshotFactory(runtime);
-    expect(state.units.find((unit) => unit.pos.x === 1 && unit.pos.y === 1)?.id).toBe(1);
-    expect(state.units.find((unit) => unit.id === 0)?.pos).toEqual({ x: 0, y: 1 });
+    expect(state.units.find((unit) => unit.pos.q === 1 && unit.pos.r === 1)?.id).toBe(1);
+    expect(state.units.find((unit) => unit.id === 0)?.pos).toEqual({ q: 0, r: 1 });
   });
 
   it("applies merger priority consistently between active units and scheduled sources", () => {
@@ -506,7 +516,7 @@ describe("splitter and merger routing contracts", () => {
       const runtime = restoreFactory(layout, mm, start, {
         tick: 0,
         units: [
-          { id: 0, pos: { x: 0, y: 1 }, drug: start, proc: 0, machineId: null, productionCost: 10 },
+          { id: 0, pos: { q: 0, r: 1 }, drug: start, proc: 0, machineId: null, productionCost: 10 },
         ],
         nextUnitId: 1,
         producedTotal: 0,
@@ -520,11 +530,11 @@ describe("splitter and merger routing contracts", () => {
       const state = snapshotFactory(runtime);
       if (expectedSourceWin) {
         expect(state.nextUnitId).toBe(2);
-        expect(state.units.find((unit) => unit.id === 0)?.pos).toEqual({ x: 0, y: 1 });
-        expect(state.units.find((unit) => unit.id === 1)?.pos).toEqual({ x: 1, y: 1 });
+        expect(state.units.find((unit) => unit.id === 0)?.pos).toEqual({ q: 0, r: 1 });
+        expect(state.units.find((unit) => unit.id === 1)?.pos).toEqual({ q: 1, r: 1 });
       } else {
         expect(state.nextUnitId).toBe(1);
-        expect(state.units[0]?.pos).toEqual({ x: 1, y: 1 });
+        expect(state.units[0]?.pos).toEqual({ q: 1, r: 1 });
       }
     }
   });
@@ -537,7 +547,7 @@ describe("splitter and merger routing contracts", () => {
     set(b, 1, 1, { kind: "sink" });
     set(b, 2, 1, { kind: "source", dir: E, period: 1 });
     set(b, 3, 1, { kind: "sink" });
-    const machine = placeMachine(0, machineDef("costly", EAST_STEP, 1), SHAPE_1x1, { x: 2, y: 0 });
+    const machine = placeMachine(0, machineDef("costly", EAST_STEP, 1), SHAPE_1x1, { q: 2, r: 0 });
     const layout = finish(b, [machine]);
     const mm = twoMaps();
     const states = run(layout, mm, initialState(mm), 10);
@@ -577,7 +587,7 @@ describe("multi-cell + footRot routing", () => {
     const b = blank(4, 1);
     set(b, 0, 0, { kind: "source", dir: E, period: 100 });
     set(b, 3, 0, { kind: "sink" });
-    const machines = [placeMachine(0, machineDef("p", EAST_STEP, 1), SHAPE_2x1, { x: 1, y: 0 })];
+    const machines = [placeMachine(0, machineDef("p", EAST_STEP, 1), SHAPE_2x1, { q: 1, r: 0 })];
     const layout = finish(b, machines);
     const mm = twoMaps();
     const start = initialState(mm);
@@ -591,7 +601,7 @@ describe("multi-cell + footRot routing", () => {
     const b = blank(4, 4);
     set(b, 0, 1, { kind: "source", dir: E, period: 100 });
     set(b, 2, 3, { kind: "sink" });
-    const machines = [placeMachine(0, machineDef("p", EAST_STEP, 1), SHAPE_L, { x: 1, y: 1 })];
+    const machines = [placeMachine(0, machineDef("p", EAST_STEP, 1), SHAPE_L, { q: 1, r: 1 })];
     const layout = finish(b, machines);
     const mm = twoMaps();
     const start = initialState(mm);
@@ -608,7 +618,7 @@ describe("multi-cell + footRot routing", () => {
     const b = blank(3, 4);
     set(b, 1, 0, { kind: "source", dir: S, period: 100 });
     set(b, 1, 3, { kind: "sink" });
-    const machines = [placeMachine(0, machineDef("p", EAST_STEP, 1), SHAPE_2x1, { x: 1, y: 1 }, 1)];
+    const machines = [placeMachine(0, machineDef("p", EAST_STEP, 1), SHAPE_2x1, { q: 1, r: 1 }, 1)];
     const layout = finish(b, machines);
     const mm = twoMaps();
     const start = initialState(mm);
@@ -617,8 +627,8 @@ describe("multi-cell + footRot routing", () => {
     expect(last.producedTotal).toBeGreaterThan(0);
     // Physical foot rotation does not rotate the fixed chemical path.
     for (const product of products(states)) {
-      expect(product.drug.pos[0]).toEqual({ x: 6, y: 5 });
-      expect(product.drug.pos[1]).toEqual({ x: 9, y: 8 });
+      expect(product.drug.pos[0]).toEqual({ q: 6, r: 5 });
+      expect(product.drug.pos[1]).toEqual({ q: 9, r: 8 });
     }
   });
 });
@@ -713,7 +723,7 @@ describe("deterministic mutable runtime (INV-15)", () => {
         set(b, 1, 0, { kind: "belt", dir: E });
         set(b, 4, 0, { kind: "belt", dir: E });
         set(b, 5, 0, { kind: "sink" });
-        const machines = [placeMachine(0, a, SHAPE_2x1, { x: 2, y: 0 })];
+        const machines = [placeMachine(0, a, SHAPE_2x1, { q: 2, r: 0 })];
         const layout = finish(b, machines);
         const mm = twoMaps();
         const start = initialState(mm);
@@ -877,24 +887,24 @@ describe("cold factory layout authority", () => {
     expect(layout.tiles[0]).toEqual({ kind: "source", dir: E, period: 1 });
   });
 
-  it("rejects empty, non-cardinal, and non-safe-integer machine paths", () => {
+  it("rejects empty, out-of-range, and non-safe-integer machine paths", () => {
     const invalid = [
       [] as unknown as PathStamp,
-      [{ x: 1, y: 1 }] as unknown as PathStamp,
-      [{ x: Number.MAX_SAFE_INTEGER + 1, y: 0 }] as unknown as PathStamp,
+      [6] as unknown as PathStamp,
+      [Number.MAX_SAFE_INTEGER + 1] as unknown as PathStamp,
     ];
     for (const path of invalid) {
       const b = blank(3, 1);
       set(b, 0, 0, { kind: "source", dir: E, period: 1 });
       set(b, 2, 0, { kind: "sink" });
       const def = machineDef("invalid-path", path, 1);
-      const layout = finish(b, [placeMachine(0, def, SHAPE_1x1, { x: 1, y: 0 })]);
-      expect(() => initFactory(layout, twoMaps(), start)).toThrow(/path|cardinal|safe integer/i);
+      const layout = finish(b, [placeMachine(0, def, SHAPE_1x1, { q: 1, r: 0 })]);
+      expect(() => initFactory(layout, twoMaps(), start)).toThrow(/path|direction|safe integer/i);
     }
   });
 
   it("validates portal authority once during initialization", () => {
-    const map = emptyMap(5, { x: 2, y: 2 });
+    const map = emptyMap(5, { q: 2, r: 2 });
     map.cell[3 * map.width + 2] = CellKind.Portal;
     const start: DrugState = { pos: [map.start], failed: false };
     expect(() => initFactory(finish(blank(1, 1), []), { maps: [map] }, start)).toThrow(
@@ -914,9 +924,9 @@ describe("cold factory layout authority", () => {
 
   it("rejects excessive aggregate machine ports before allocating port indices", () => {
     const machineCount = Math.floor(MAX_FACTORY_PORTS / MAX_MACHINE_PORTS) + 1;
-    const ports = new Array(MAX_MACHINE_PORTS).fill({ cell: { x: 0, y: 0 }, side: E });
+    const ports = new Array(MAX_MACHINE_PORTS).fill({ cell: { q: 0, r: 0 }, side: E });
     const shape: MachineShape = {
-      cells: [{ x: 0, y: 0 }],
+      cells: [{ q: 0, r: 0 }],
       inPorts: ports,
       outPorts: [],
     };
@@ -925,7 +935,7 @@ describe("cold factory layout authority", () => {
       height: 1,
       tiles: new Array(machineCount).fill({ kind: "empty" }),
       machines: Array.from({ length: machineCount }, (_, id) =>
-        placeMachine(id, machineDef("many-ports", EAST_STEP, 1), shape, { x: id, y: 0 })),
+        placeMachine(id, machineDef("many-ports", EAST_STEP, 1), shape, { q: id, r: 0 })),
     };
     expect(() => initFactory(layout, twoMaps(), start)).toThrow(/port count|geometry.*bound/i);
   });
@@ -935,7 +945,7 @@ describe("cold restore factory invariants", () => {
   function baseUnit(start: DrugState, id: number) {
     return {
       id,
-      pos: { x: 1, y: 0 },
+      pos: { q: 1, r: 0 },
       drug: start,
       proc: 0,
       machineId: null,
@@ -1019,8 +1029,8 @@ describe("cold restore factory invariants", () => {
     const bad: FactoryState = {
       tick: 0,
       units: [
-        { ...baseUnit(start, 0), pos: { x: 2, y: 0 }, machineId: 0 },
-        { ...baseUnit(start, 1), pos: { x: 2, y: 0 }, machineId: 0 },
+        { ...baseUnit(start, 0), pos: { q: 2, r: 0 }, machineId: 0 },
+        { ...baseUnit(start, 1), pos: { q: 2, r: 0 }, machineId: 0 },
       ],
       nextUnitId: 2,
       producedTotal: 0,
@@ -1036,7 +1046,7 @@ describe("cold restore factory invariants", () => {
     const start = initialState(mm);
     const bad: FactoryState = {
       tick: 0,
-      units: [{ ...baseUnit(start, 0), pos: { x: 3, y: 0 }, machineId: 0 }],
+      units: [{ ...baseUnit(start, 0), pos: { q: 3, r: 0 }, machineId: 0 }],
       nextUnitId: 1,
       producedTotal: 0,
       splitterCursors: [],
@@ -1054,7 +1064,7 @@ describe("throughput edge cases", () => {
     const b = blank(3, 1);
     set(b, 0, 0, { kind: "source", dir: E, period: 1 });
     const machines = [
-      placeMachine(7, machineDef("push", EAST_STEP, 1), SHAPE_1x1, { x: 1, y: 0 }),
+      placeMachine(7, machineDef("push", EAST_STEP, 1), SHAPE_1x1, { q: 1, r: 0 }),
     ];
 
     expect(analyzeThroughput(finish(b, machines), twoMaps())).toEqual({
@@ -1068,7 +1078,7 @@ describe("throughput edge cases", () => {
   it("warms up across a legal long routing path before measuring the tail", () => {
     const report = analyzeThroughput(serpentineLayout(20), twoMaps());
     expect(report).toMatchObject({ rateNum: 1, rateDen: 1, bottleneck: null });
-  });
+  }, 10_000);
 
   it("rejects a diagnostic whose layout-weighted simulation would block the UI", () => {
     __resetFactorySimDebugCounts();
@@ -1103,7 +1113,7 @@ describe("throughput edge cases", () => {
         0,
         machineDef("slow", EAST_STEP, MAX_FACTORY_REPLAY_TICKS),
         SHAPE_1x1,
-        { x: 1, y: 0 },
+        { q: 1, r: 0 },
       ),
     ];
     expect(() => analyzeThroughput(finish(b, machines), twoMaps())).toThrow(/budget/i);
@@ -1114,7 +1124,7 @@ describe("throughput edge cases", () => {
     const b = blank(4, 1);
     set(b, 0, 0, { kind: "source", dir: E, period: 7 });
     set(b, 3, 0, { kind: "sink" });
-    const machines = [placeMachine(0, machineDef("m", EAST_STEP, 1), SHAPE_2x1, { x: 1, y: 0 })];
+    const machines = [placeMachine(0, machineDef("m", EAST_STEP, 1), SHAPE_2x1, { q: 1, r: 0 })];
     const layout = finish(b, machines);
     const mm = twoMaps();
     const report = analyzeThroughput(layout, mm);

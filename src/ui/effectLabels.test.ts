@@ -11,7 +11,7 @@ describe("player-facing effect labels", () => {
   it("summarizes side effects without exposing global effect ids or coordinates", () => {
     const text = outcomeEffectText({
       failed: false,
-      final: [{ x: 91, y: 73 }],
+      final: [{ q: 91, r: 73 }],
       cured: [0],
       sideEffects: [4001, 9002],
     });

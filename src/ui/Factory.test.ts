@@ -57,8 +57,8 @@ describe("Production placement cost preview", () => {
   it("quotes the whole one-bend belt gesture instead of only its endpoint", () => {
     const current = initialFacilityLayout(null, 6, 6);
     const proposed = paintBeltRoute(current, [
-      { x: 1, y: 1 }, { x: 2, y: 1 }, { x: 3, y: 1 },
-      { x: 3, y: 2 }, { x: 3, y: 3 },
+      { q: 1, r: 1 }, { q: 2, r: 1 }, { q: 3, r: 1 },
+      { q: 3, r: 2 }, { q: 3, r: 3 },
     ], 0);
 
     expect(previewProductionBuildCost("production", current, proposed)).toBe(10);
@@ -77,7 +77,7 @@ describe("direct machine manipulation", () => {
       machines: [{
         id: 7,
         def: { typeId: entry.typeId, path: entry.path, cost: entry.cost, speed: entry.speed },
-        anchor: { x: 2, y: 2 },
+        anchor: { q: 2, r: 2 },
         footRot: 0,
         shape: DEFAULT_SHAPES[entry.typeId]!,
       }],
@@ -86,16 +86,16 @@ describe("direct machine manipulation", () => {
 
   it("moves a placed machine directly while preserving its identity", () => {
     const layout = placedLayout();
-    const moved = transformPlacedMachine(layout, 7, { x: 6, y: 4 }, 0);
+    const moved = transformPlacedMachine(layout, 7, { q: 6, r: 4 }, 0);
 
     expect(moved).not.toBe(layout);
-    expect(moved.machines[0]).toMatchObject({ id: 7, anchor: { x: 6, y: 4 }, footRot: 0 });
+    expect(moved.machines[0]).toMatchObject({ id: 7, anchor: { q: 6, r: 4 }, footRot: 0 });
   });
 
   it("rotates a placed machine and rejects occupied destinations atomically", () => {
     const layout = placedLayout();
-    const rotated = transformPlacedMachine(layout, 7, { x: 2, y: 2 }, 1);
-    expect(rotated.machines[0]).toMatchObject({ id: 7, anchor: { x: 2, y: 2 }, footRot: 1 });
+    const rotated = transformPlacedMachine(layout, 7, { q: 2, r: 2 }, 1);
+    expect(rotated.machines[0]).toMatchObject({ id: 7, anchor: { q: 2, r: 2 }, footRot: 1 });
 
     const blocked = {
       ...layout,
@@ -103,7 +103,7 @@ describe("direct machine manipulation", () => {
         ? { kind: "sink" as const }
         : tile),
     };
-    expect(transformPlacedMachine(blocked, 7, { x: 6, y: 5 }, 0)).toBe(blocked);
+    expect(transformPlacedMachine(blocked, 7, { q: 6, r: 5 }, 0)).toBe(blocked);
   });
 
   it("lets touch Erase bypass direct-move capture while other tools select the machine", () => {
@@ -116,11 +116,11 @@ describe("direct machine manipulation", () => {
   it("skips machine cells when a belt gesture crosses their footprint", () => {
     const layout = placedLayout();
     const painted = paintBeltRoute(layout, [
-      { x: 0, y: 2 },
-      { x: 1, y: 2 },
-      { x: 2, y: 2 },
-      { x: 3, y: 2 },
-      { x: 4, y: 2 },
+      { q: 0, r: 2 },
+      { q: 1, r: 2 },
+      { q: 2, r: 2 },
+      { q: 3, r: 2 },
+      { q: 4, r: 2 },
     ], 0);
 
     expect(painted.machines).toEqual(layout.machines);
@@ -133,9 +133,9 @@ describe("direct machine manipulation", () => {
 
   it("previews the whole machine footprint before Erase removes it", () => {
     expect(factoryErasePreviewCells(placedLayout(), 2, 2)).toEqual([
-      { x: 2, y: 2 },
-      { x: 3, y: 2 },
-      { x: 3, y: 3 },
+      { q: 2, r: 2 },
+      { q: 3, r: 2 },
+      { q: 3, r: 3 },
     ]);
   });
 });
@@ -169,7 +169,7 @@ describe("Factory clipboard tile payload", () => {
       machines: [{
         id: 3,
         def: { typeId: entry.typeId, path: entry.path, cost: entry.cost, speed: entry.speed },
-        anchor: { x: 2, y: 2 },
+        anchor: { q: 2, r: 2 },
         footRot: 0,
         shape: DEFAULT_SHAPES[entry.typeId]!,
       }],
@@ -244,14 +244,14 @@ describe("facility sample visibility", () => {
   it("reports useful Pilot effects without raw ids or provisional coordinates", () => {
     expect(formatFacilityOutcome({
       failed: false,
-      final: [{ x: 2, y: -1 }],
+      final: [{ q: 2, r: -1 }],
       cured: [7],
       sideEffects: [200, 201],
     })).toBe("Cure Disease 8 · 2 side effects");
 
     expect(formatFacilityOutcome({
       failed: false,
-      final: [{ x: 4, y: 3 }],
+      final: [{ q: 4, r: 3 }],
       cured: [],
       sideEffects: [202],
     })).toBe("No cure · 1 side effect");

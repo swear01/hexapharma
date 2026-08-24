@@ -21,6 +21,7 @@ import {
 } from "../sim/phase0_interfaces";
 import { generate } from "../sim/mapgen";
 import { applyTemplate, previewStep } from "../sim/drug-graph";
+import { hexDistance, hexIndex } from "../sim/hex";
 import { serializeGameAuthority } from "../sim/save";
 import {
   applyGameIntent,
@@ -39,6 +40,7 @@ import { Factory } from "./Factory";
 import { Patents } from "./Patents";
 import { Shop } from "./Shop";
 import { MachineIcon } from "./MachineIcon";
+import { hexToPixel } from "../render/hexProjection";
 import { machineName, machineShortName } from "./machineLabels";
 import {
   finishMigration,
@@ -146,16 +148,12 @@ export function researchKeyboardAction(key: string): "apply" | "abort" | null {
 }
 
 export function researchAssaySector(start: Vec2, target: Vec2): string {
-  const dx = target.x - start.x;
-  const dy = target.y - start.y;
-  if (dx === 0 && dy === 0) return "local";
-  const horizontal = dx < 0 ? "west" : "east";
-  const vertical = dy < 0 ? "north" : "south";
-  const ax = Math.abs(dx);
-  const ay = Math.abs(dy);
-  if (ax >= ay * 3) return horizontal;
-  if (ay >= ax * 3) return vertical;
-  return `${vertical}-${horizontal}`;
+  const q = target.q - start.q;
+  const r = target.r - start.r;
+  if (q === 0 && r === 0) return "local";
+  const projected = hexToPixel(q, r, 1);
+  const direction = ((Math.round(Math.atan2(projected.y, projected.x) / (Math.PI / 3)) % 6) + 6) % 6;
+  return ["east", "south-east", "south-west", "west", "north-west", "north-east"][direction]!;
 }
 
 export function researchTestBlockReason(
@@ -191,7 +189,7 @@ export function researchTrailsForProgram(
 ): readonly (readonly (Vec2 | null)[])[] {
   const trails: (Vec2 | null)[][] = mm.maps.map((_map, index) => {
     const position = start.pos[index];
-    return position === undefined ? [] : [{ x: position.x, y: position.y }];
+    return position === undefined ? [] : [{ q: position.q, r: position.r }];
   });
   let drug = start;
   const limit = Math.min(completedSteps, program.steps.length);
@@ -206,8 +204,8 @@ export function researchTrailsForProgram(
         let previous = drug.pos[mapIndex];
         for (const position of entered) {
           if (previous !== undefined && map !== undefined) {
-            const previousKind = map.cell[previous.y * map.width + previous.x];
-            const jumped = Math.abs(position.x - previous.x) + Math.abs(position.y - previous.y) !== 1;
+            const previousKind = map.cell[hexIndex(map.width, previous.q, previous.r)];
+            const jumped = hexDistance(previous.q, previous.r, position.q, position.r) !== 1;
             if (previousKind === CellKind.Portal || jumped) trails[mapIndex]!.push(null);
           }
           trails[mapIndex]!.push(position);

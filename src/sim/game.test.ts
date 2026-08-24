@@ -459,7 +459,7 @@ describe("whole-game deterministic state", () => {
           cost: 0,
           speed: push.speed,
         },
-        anchor: { x: 2, y: 2 },
+        anchor: { q: 2, r: 2 },
         footRot: 0,
         shape: DEFAULT_SHAPES.push!,
       }],
@@ -500,7 +500,7 @@ describe("whole-game deterministic state", () => {
         cost: push.cost,
         speed: push.speed,
       },
-      anchor: { x: 2, y: 2 },
+      anchor: { q: 2, r: 2 },
       footRot: 0 as const,
       shape: DEFAULT_SHAPES.push!,
     });

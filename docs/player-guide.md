@@ -27,14 +27,16 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 
 Blueprint Library 與 save slot 分離；New Game、Load、Rewind、換 slot 都不會移除藍圖。New Game 只取代目前未保存狀態，既有 save checkpoints 仍可 Load 回來。
 
+目前存檔格式是Save v10。checkpoint history的外層lineage仍是v2，內層使用Save v10；舊開發版不會自動升級。
+
 正常新局從 $1000 cash、0 Knowledge開始，同一張 Atlas 預設有4種疾病。全新 origin 的 Blueprint Library 為空；之後換 seed 會保留既有藍圖。URL query注入的cash／research只供開發驗證，不是正常玩法。
 
 ## Research
 
 ### 看地圖
 
-- Atlas 遠大於 viewport；開局 camera 聚焦世界中心的 generator start，只有以起點為中心的 5×5 已揭露，畫面只顯示整張圖的一小部分。
-- mission label只顯示目前疾病與Target signal的寬廣sector：local、東／西／南／北或對角方向。它不是精確座標、距離或reference route。
+- Atlas 遠大於 viewport；開局 camera 聚焦世界中心的 generator start，只有以起點為中心、hex distance radius 2 的19-cell disk已揭露，畫面只顯示整張圖的一小部分。地圖是pointy-top hex，六個相鄰方向為E／SE／SW／W／NW／NE。
+- mission label只顯示目前疾病與Target signal的寬廣sector：local，或east／south-east／south-west／west／north-west／north-east。它不是精確座標、距離或reference route。
 - 拖曳任一滑鼠鍵可平移；滾輪以游標位置縮放。`F`或Next會聚焦橙色candidate endpoint，方便接續離屏路線。每個stamp立即resolve，沒有等待動畫結束的Dose階段或自動camera跟隨；切到其他建築再回來不會重設手動camera。
 - 找到Cure位置後可點底部的`Cure sites x`逐一聚焦已揭露的位置；這是**已發現位置數**，不是已成功治療數。`Cure sites 0`時不可操作，HUD不顯示未知總數或霧下位置。
 - 格線與**Wall**不需要先探索；Wall會取消該步，但機器繼續走剩餘 path。
@@ -78,9 +80,9 @@ Production Plan與Production使用相同editor。
 | Undo / Redo | `Ctrl+Z` / `Ctrl+Y`或`Ctrl+Shift+Z` |
 | Copy / Cut / Paste | `Ctrl+C` / `Ctrl+X` / `Ctrl+V` |
 
-- Belt一次drag會從起點到游標形成單一正交轉角；目前方向決定先走水平或垂直段。每格方向跟著路線，轉角會用connected texture顯示。
+- Belt一次drag會從起點到游標形成六鄰接連續hex route。每格方向跟著下一格，轉折會用connected texture顯示。
 - connected transport只在方向與接收面真的相容時接上。斷口或unconnected machine port代表sim也不會通過。
-- machine的`R`只旋轉footprint與ports，不改其chemical path。
+- machine的`R`每次只把footprint與ports順時針旋轉60°；六次回到原向，不改其chemical path。
 - 從既有machine上直接拖曳即可搬動整台machine；越界或碰撞時不會破壞原layout。Touch單指在格內使用目前工具，因此可連續畫Belt、直接拖動machine，或用Erase刪除；兩指drag負責camera。Touch點一下既有machine後再按`R · Rotate`可直接旋轉它。
 - 非Erase工具畫過machine footprint會略過該格，不會暗中拆機。hover既有machine時預覽其現有footprint，不顯示不存在的建造或刪除費。
 - Copy／Cut／Paste保留tile的完整方向與參數，包括Source period及Splitter／Merger branches；`Q`只把游標內容選成目前brush。
@@ -88,6 +90,7 @@ Production Plan與Production使用相同editor。
 
 ### Transport方向
 
+- Factory使用pointy-top axial hex；direction依序是E／SE／SW／W／NW／NE。
 - Belt接受相鄰輸入並朝箭頭方向輸出。
 - Splitter從`inDir`接收，依固定round-robin送往多個outputs。
 - Merger依`inDirs`固定優先順序接收，再往`outDir`輸出。
@@ -104,7 +107,7 @@ Production Plan與Production使用相同editor。
 
 ## Production
 
-- 新局已有空白24×12場地。每次成功place、drag、move、rotate、paste、undo或redo都可能產生建造費。
+- 新局已有空白24×12 pointy-top hex場地。每次成功place、drag、move、rotate、paste、undo或redo都可能產生建造費。
 - ghost旁的`$N`是該次新增內容報價：
 
 | 內容 | 價格 |
@@ -126,7 +129,7 @@ Production Plan與Production使用相同editor。
 
 1. 按`B`開Library，輸入Name。
 2. `Save Production Plan`／`Save Production`保存通用FactoryLayout。目前沒有`Save Research program`或`Load in Research`；Research必須逐步執行。
-3. 匯入既有Blueprint v3 `research-program`時，Library只顯示內容並提供Download／Delete，不會把它套入active session。
+3. 匯入現行Blueprint v4 `research-program`時，Library只顯示內容並提供Download／Delete，不會把它套入active session。Library使用`hexapharma.blueprint-library.v4`。
 4. Factory card可：
    - `Open in Production Plan`：免費覆蓋Plan layout。
    - `Commission $N`：以Production目前layout報價並付費建造。

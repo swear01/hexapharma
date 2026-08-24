@@ -1,40 +1,41 @@
-import type { EffectMap, Machine, Vec2 } from "../phase0_interfaces";
+import type { EffectMap, HexCoord, Machine } from "../phase0_interfaces";
 import { CellKind } from "../phase0_interfaces";
+import { HEX_DQ, HEX_DR } from "../hex";
 import { validateEffectMap, validateMachinePath } from "./validation";
 
 export interface PathWalkResult {
-  readonly pos: Vec2;
+  readonly pos: HexCoord;
   readonly failed: boolean;
-  readonly entered: readonly Vec2[];
+  readonly entered: readonly HexCoord[];
 }
 
-function inBounds(map: EffectMap, x: number, y: number): boolean {
-  return x >= 0 && y >= 0 && x < map.width && y < map.height;
+function inBounds(map: EffectMap, q: number, r: number): boolean {
+  return q >= 0 && r >= 0 && q < map.width && r < map.height;
 }
 
 function walkPathCore(
   map: EffectMap,
-  fromX: number,
-  fromY: number,
+  fromQ: number,
+  fromR: number,
   machine: Machine,
-  entered: Vec2[] | null,
+  entered: HexCoord[] | null,
   out: Int32Array,
   outOffset: number,
 ): void {
-  let x = fromX;
-  let y = fromY;
+  let q = fromQ;
+  let r = fromR;
   let energy = machine.path.length;
   let failed = 0;
 
   for (let stepIndex = 0; stepIndex < machine.path.length; stepIndex++) {
-    const delta = machine.path[stepIndex];
-    if (delta === undefined) throw new Error("drug graph: validated path is missing a delta");
+    const dir = machine.path[stepIndex];
+    if (dir === undefined) throw new Error("drug graph: validated path is missing a direction");
 
-    const nextX = x + delta.x;
-    const nextY = y + delta.y;
-    if (!inBounds(map, nextX, nextY)) continue;
+    const nextQ = q + HEX_DQ[dir]!;
+    const nextR = r + HEX_DR[dir]!;
+    if (!inBounds(map, nextQ, nextR)) continue;
 
-    const cellIndex = nextY * map.width + nextX;
+    const cellIndex = nextR * map.width + nextQ;
     const kind = map.cell[cellIndex];
     if (kind === CellKind.Wall) continue;
 
@@ -42,9 +43,9 @@ function walkPathCore(
     if (energy < cost) break;
     energy -= cost;
 
-    x = nextX;
-    y = nextY;
-    if (entered !== null) entered.push({ x, y });
+    q = nextQ;
+    r = nextR;
+    if (entered !== null) entered.push({ q, r });
 
     if (kind === CellKind.Abyss) {
       failed = 1;
@@ -56,14 +57,14 @@ function walkPathCore(
       if (destination === undefined) {
         throw new Error("drug graph: validated portal has no destination");
       }
-      x = destination % map.width;
-      y = Math.floor(destination / map.width);
-      if (entered !== null) entered.push({ x, y });
+      q = destination % map.width;
+      r = Math.floor(destination / map.width);
+      if (entered !== null) entered.push({ q, r });
     }
   }
 
-  out[outOffset] = x;
-  out[outOffset + 1] = y;
+  out[outOffset] = q;
+  out[outOffset + 1] = r;
   out[outOffset + 2] = failed;
 }
 
@@ -76,37 +77,37 @@ function validateOutputRange(out: Int32Array, outOffset: number): void {
 /** Caller must validate the EffectMap and Machine once before using this in a hot loop. */
 export function walkValidatedPathInto(
   map: EffectMap,
-  fromX: number,
-  fromY: number,
+  fromQ: number,
+  fromR: number,
   machine: Machine,
   out: Int32Array,
   outOffset: number,
 ): void {
   validateOutputRange(out, outOffset);
-  walkPathCore(map, fromX, fromY, machine, null, out, outOffset);
+  walkPathCore(map, fromQ, fromR, machine, null, out, outOffset);
 }
 
 export function walkPathInto(
   map: EffectMap,
-  fromX: number,
-  fromY: number,
+  fromQ: number,
+  fromR: number,
   machine: Machine,
   out: Int32Array,
   outOffset: number,
 ): void {
   validateEffectMap(map);
   validateMachinePath(machine);
-  walkValidatedPathInto(map, fromX, fromY, machine, out, outOffset);
+  walkValidatedPathInto(map, fromQ, fromR, machine, out, outOffset);
 }
 
-export function walkPath(map: EffectMap, from: Vec2, machine: Machine): PathWalkResult {
+export function walkPath(map: EffectMap, from: HexCoord, machine: Machine): PathWalkResult {
   validateEffectMap(map);
   validateMachinePath(machine);
-  const entered: Vec2[] = [];
+  const entered: HexCoord[] = [];
   const out = new Int32Array(3);
-  walkPathCore(map, from.x, from.y, machine, entered, out, 0);
+  walkPathCore(map, from.q, from.r, machine, entered, out, 0);
   return {
-    pos: { x: out[0]!, y: out[1]! },
+    pos: { q: out[0]!, r: out[1]! },
     failed: out[2] === 1,
     entered,
   };

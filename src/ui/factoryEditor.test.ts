@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { hexDistance } from "../sim/hex";
 import {
   appendUniqueCells,
   clampCamera,
@@ -69,115 +70,115 @@ describe("factory editor camera", () => {
 });
 
 describe("factory editor coordinates", () => {
+  it("picks pointy-top axial centers and fills fast drags with six-neighbor cells", () => {
+    const rect = { left: 100, top: 50, width: 600, height: 300 };
+    const intrinsic = { width: 1200, height: 600 };
+    const camera: Camera = { x: -75, y: 45, zoom: 1.5 };
+    const grid = { cellSize: 21, origin: { x: 32, y: 33 } };
+    const cell: GridCell = { q: 7, r: 3 };
+
+    const screen = gridCellCenterToScreen(cell, rect, intrinsic, camera, grid);
+
+    expect(screenToGrid(screen, rect, intrinsic, camera, grid)).toEqual(cell);
+    const line = rasterizeGridLine({ q: 0, r: 0 }, { q: 5, r: 3 });
+    for (let index = 1; index < line.length; index++) {
+      const before = line[index - 1]!;
+      const after = line[index]!;
+      expect(hexDistance(before.q, before.r, after.q, after.r)).toBe(1);
+    }
+  });
+
   it("round-trips a grid cell through a scaled canvas rect and camera", () => {
     const rect = { left: 100, top: 50, width: 600, height: 300 };
     const intrinsic = { width: 1200, height: 600 };
     const camera: Camera = { x: -75, y: 45, zoom: 1.5 };
     const grid = { cellSize: 56, origin: { x: 12, y: 12 } };
-    const cell: GridCell = { x: 7, y: 3 };
+    const cell: GridCell = { q: 7, r: 3 };
 
     const screen = gridCellCenterToScreen(cell, rect, intrinsic, camera, grid);
 
     expect(screenToGrid(screen, rect, intrinsic, camera, grid)).toEqual(cell);
   });
 
-  it("maps coordinates immediately outside the grid origin to negative cells", () => {
+  it("maps a negative axial center outside the grid origin", () => {
     const rect = { left: 0, top: 0, width: 500, height: 500 };
     const intrinsic = { width: 500, height: 500 };
     const camera: Camera = { x: 0, y: 0, zoom: 1 };
 
-    expect(
-      screenToGrid({ x: 11.9, y: 11.9 }, rect, intrinsic, camera, {
-        cellSize: 56,
-        origin: { x: 12, y: 12 },
-      }),
-    ).toEqual({ x: -1, y: -1 });
+    const grid = { cellSize: 28, origin: { x: 250, y: 250 } };
+    const screen = gridCellCenterToScreen(
+      { q: -1, r: -1 },
+      rect,
+      intrinsic,
+      camera,
+      grid,
+    );
+    expect(screenToGrid(screen, rect, intrinsic, camera, grid)).toEqual({ q: -1, r: -1 });
   });
 });
 
 describe("factory editor gestures", () => {
-  it("rasterizes fast drags as a single readable orthogonal bend", () => {
-    expect(rasterizeGridLine({ x: 1, y: 2 }, { x: 5, y: 2 })).toEqual([
-      { x: 1, y: 2 },
-      { x: 2, y: 2 },
-      { x: 3, y: 2 },
-      { x: 4, y: 2 },
-      { x: 5, y: 2 },
+  it("rasterizes fast drags as a direct contiguous hex line", () => {
+    expect(rasterizeGridLine({ q: 1, r: 2 }, { q: 5, r: 2 })).toEqual([
+      { q: 1, r: 2 },
+      { q: 2, r: 2 },
+      { q: 3, r: 2 },
+      { q: 4, r: 2 },
+      { q: 5, r: 2 },
     ]);
-    expect(rasterizeGridLine({ x: 1, y: 1 }, { x: 4, y: 4 })).toEqual([
-      { x: 1, y: 1 },
-      { x: 2, y: 1 },
-      { x: 3, y: 1 },
-      { x: 4, y: 1 },
-      { x: 4, y: 2 },
-      { x: 4, y: 3 },
-      { x: 4, y: 4 },
+    const diagonal = rasterizeGridLine({ q: 1, r: 1 }, { q: 4, r: 4 });
+    expect(diagonal[0]).toEqual({ q: 1, r: 1 });
+    expect(diagonal.at(-1)).toEqual({ q: 4, r: 4 });
+    expect(rasterizeGridLine({ q: 3, r: 1 }, { q: 1, r: 1 })).toEqual([
+      { q: 3, r: 1 },
+      { q: 2, r: 1 },
+      { q: 1, r: 1 },
     ]);
-    expect(rasterizeGridLine({ x: 1, y: 1 }, { x: 4, y: 4 }, "vertical")).toEqual([
-      { x: 1, y: 1 },
-      { x: 1, y: 2 },
-      { x: 1, y: 3 },
-      { x: 1, y: 4 },
-      { x: 2, y: 4 },
-      { x: 3, y: 4 },
-      { x: 4, y: 4 },
-    ]);
-    expect(rasterizeGridLine({ x: 3, y: 1 }, { x: 1, y: 1 })).toEqual([
-      { x: 3, y: 1 },
-      { x: 2, y: 1 },
-      { x: 1, y: 1 },
-    ]);
-    expect(rasterizeGridLine({ x: 2, y: 8 }, { x: 2, y: 8 })).toEqual([{ x: 2, y: 8 }]);
+    expect(rasterizeGridLine({ q: 2, r: 8 }, { q: 2, r: 8 })).toEqual([{ q: 2, r: 8 }]);
   });
 
-  it("replaces a belt drag preview with one bend from its original cell", () => {
+  it("replaces a belt drag preview with a direct line from its original cell", () => {
     expect(routeBeltGesture(
-      [{ x: 2, y: 2 }, { x: 3, y: 2 }, { x: 3, y: 3 }],
-      { x: 6, y: 5 },
-      0,
-    )).toEqual([
-      { x: 2, y: 2 }, { x: 3, y: 2 }, { x: 4, y: 2 }, { x: 5, y: 2 },
-      { x: 6, y: 2 }, { x: 6, y: 3 }, { x: 6, y: 4 }, { x: 6, y: 5 },
-    ]);
-    expect(routeBeltGesture([{ x: 2, y: 2 }], { x: 4, y: 4 }, 1)).toEqual([
-      { x: 2, y: 2 }, { x: 2, y: 3 }, { x: 2, y: 4 }, { x: 3, y: 4 }, { x: 4, y: 4 },
-    ]);
+      [{ q: 2, r: 2 }, { q: 3, r: 2 }, { q: 3, r: 3 }],
+      { q: 6, r: 5 },
+    )).toEqual(rasterizeGridLine({ q: 2, r: 2 }, { q: 6, r: 5 }));
+    expect(routeBeltGesture([], { q: 4, r: 4 })).toEqual([{ q: 4, r: 4 }]);
   });
 
   it("never repeats a rasterized cell and never skips a neighboring cell", () => {
-    const cells = rasterizeGridLine({ x: -8, y: 3 }, { x: 17, y: 11 });
-    expect(new Set(cells.map((cell) => `${cell.x},${cell.y}`)).size).toBe(cells.length);
+    const cells = rasterizeGridLine({ q: -8, r: 3 }, { q: 17, r: 11 });
+    expect(new Set(cells.map((cell) => `${cell.q},${cell.r}`)).size).toBe(cells.length);
     for (let index = 1; index < cells.length; index++) {
       const previous = cells[index - 1]!;
       const current = cells[index]!;
-      expect(Math.abs(current.x - previous.x) + Math.abs(current.y - previous.y)).toBe(1);
+      expect(hexDistance(previous.q, previous.r, current.q, current.r)).toBe(1);
     }
   });
 
   it("orients every belt toward the next cell and keeps the final tangent", () => {
     expect(orientBeltGesture([
-      { x: 1, y: 1 },
-      { x: 2, y: 1 },
-      { x: 2, y: 2 },
-      { x: 3, y: 2 },
-    ], 3)).toEqual([0, 1, 0, 0]);
-    expect(orientBeltGesture([{ x: 4, y: 4 }], 2)).toEqual([2]);
+      { q: 1, r: 1 },
+      { q: 2, r: 1 },
+      { q: 2, r: 2 },
+      { q: 1, r: 3 },
+    ], 3)).toEqual([0, 1, 2, 2]);
+    expect(orientBeltGesture([{ q: 4, r: 4 }], 5)).toEqual([5]);
   });
 
   it("appends only unseen cells in stable gesture order without mutating inputs", () => {
-    const existing: readonly GridCell[] = [{ x: 1, y: 1 }, { x: 2, y: 1 }];
+    const existing: readonly GridCell[] = [{ q: 1, r: 1 }, { q: 2, r: 1 }];
     const additions: readonly GridCell[] = [
-      { x: 2, y: 1 },
-      { x: 3, y: 1 },
-      { x: 3, y: 1 },
-      { x: 4, y: 2 },
+      { q: 2, r: 1 },
+      { q: 3, r: 1 },
+      { q: 3, r: 1 },
+      { q: 4, r: 2 },
     ];
 
     expect(appendUniqueCells(existing, additions)).toEqual([
-      { x: 1, y: 1 },
-      { x: 2, y: 1 },
-      { x: 3, y: 1 },
-      { x: 4, y: 2 },
+      { q: 1, r: 1 },
+      { q: 2, r: 1 },
+      { q: 3, r: 1 },
+      { q: 4, r: 2 },
     ]);
     expect(existing).toHaveLength(2);
     expect(additions).toHaveLength(4);

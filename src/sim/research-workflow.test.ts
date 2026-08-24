@@ -7,6 +7,7 @@ import {
 } from "./phase0_interfaces";
 import { applyGameIntent, createGameState, currentDiscoveredFormula } from "./game";
 import { previewStep } from "./drug-graph";
+import { HEX_DIRS, HEX_DQ, HEX_DR } from "./hex";
 import { generate } from "./mapgen";
 import { compileEntitledPrototype } from "./recipe";
 
@@ -164,11 +165,11 @@ describe("ResearchProgram workflow", () => {
     expect(started.research.program.steps).toEqual([]);
   });
 
-  it("starts in a centered 5x5 clearing and the first available stamp reveals new ground", () => {
+  it("starts in a centered radius-two hex disk and the first available stamp reveals new ground", () => {
     const entry = DEFAULT_CATALOG[0]!;
     let game = createGameState(options, 500, 0);
     const before = game.fog[0]!.reduce((sum, value) => sum + value, 0);
-    expect(before).toBe(25);
+    expect(before).toBe(19);
 
     game = dispatch(game, { kind: "beginResearchShot" });
     game = dispatch(game, { kind: "advanceResearchShot", machine: entry });
@@ -191,13 +192,12 @@ describe("ResearchProgram workflow", () => {
       const map = level.mm.maps[mapIndex]!;
       const points = [...(preview.trails[mapIndex] ?? []), preview.next.pos[mapIndex]!];
       for (const point of points) {
-        for (let dy = -1; dy <= 1; dy++) {
-          for (let dx = -1; dx <= 1; dx++) {
-            const x = point.x + dx;
-            const y = point.y + dy;
-            if (x >= 0 && y >= 0 && x < map.width && y < map.height) {
-              expected[mapIndex]![y * map.width + x] = 1;
-            }
+        expected[mapIndex]![point.r * map.width + point.q] = 1;
+        for (const direction of HEX_DIRS) {
+          const q = point.q + (HEX_DQ[direction] ?? 0);
+          const r = point.r + (HEX_DR[direction] ?? 0);
+          if (q >= 0 && r >= 0 && q < map.width && r < map.height) {
+            expected[mapIndex]![r * map.width + q] = 1;
           }
         }
       }
@@ -244,14 +244,14 @@ describe("ResearchProgram workflow", () => {
     };
     let game = dispatch(createGameState(options, 500, 0), { kind: "beginResearchShot" });
     game = dispatch(game, { kind: "advanceResearchShot", machine: mutable });
-    (catalog.path[0] as { x: number }).x = -1;
-    expect(game.research.program.steps[0]?.path[0]).toEqual({ x: 1, y: 0 });
+    (catalog.path as number[])[0] = 3;
+    expect(game.research.program.steps[0]?.path[0]).toBe(0);
   });
 
   it("contains no phase-exchange machine or cross-layer calibration", () => {
     expect(DEFAULT_CATALOG.some((entry) => entry.typeId === "swap01")).toBe(false);
     for (const entry of DEFAULT_CATALOG) {
-      expect(entry.path.every((delta) => Math.abs(delta.x) + Math.abs(delta.y) === 1)).toBe(true);
+      expect(entry.path.every((direction) => direction >= 0 && direction <= 5)).toBe(true);
     }
   });
 

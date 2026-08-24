@@ -10,8 +10,8 @@ function map(): EffectMap {
   return {
     width,
     height,
-    origin: { x: 3, y: 1 },
-    start: { x: 3, y: 1 },
+    origin: { q: 3, r: 1 },
+    start: { q: 3, r: 1 },
     cell: new Uint8Array(length),
     cureId: new Int16Array(length).fill(-1),
     sideEffectId: new Int32Array(length).fill(-1),
@@ -59,14 +59,14 @@ describe("Lab terrain visual language", () => {
       motif: "paired-directional",
       role: "entry",
       pairMarker: "P3-6",
-      destination: { x: 6, y: 0 },
-      direction: { x: 1, y: 0 },
+      destination: { q: 6, r: 0 },
+      direction: { q: 3, r: 0 },
     });
     expect(labTerrainVisual(level, 6, 0)).toMatchObject({
       kind: "portal",
       role: "exit",
       pairMarker: "P3-6",
-      direction: { x: 1, y: 0 },
+      direction: { q: 3, r: 0 },
     });
   });
 
@@ -174,15 +174,32 @@ describe("Lab terrain visual language", () => {
       kind: "portal",
       role: "entry",
       pairMarker: `P${left}-${right}`,
-      destination: { x: 5, y: 1 },
-      direction: { x: 1, y: 0 },
+      destination: { q: 5, r: 1 },
+      direction: { q: 4, r: 0 },
     });
     expect(revealedExit).toMatchObject({
       kind: "portal",
       role: "exit",
       pairMarker: `P${left}-${right}`,
-      destination: { x: 5, y: 1 },
-      direction: { x: 1, y: 0 },
+      destination: { q: 5, r: 1 },
+      direction: { q: 4, r: 0 },
+    });
+  });
+
+  it("preserves the full axial portal displacement for rendering", () => {
+    const level = map();
+    const entry = 1 * level.width + 5;
+    const exit = 2 * level.width;
+    level.cell[entry] = CellKind.Portal;
+    level.portalTo[entry] = exit;
+    level.fog[entry] = 1;
+    level.fog[exit] = 1;
+
+    expect(labTerrainVisual(level, 5, 1)).toMatchObject({
+      direction: { q: -5, r: 1 },
+    });
+    expect(labTerrainVisual(level, 0, 2)).toMatchObject({
+      direction: { q: -5, r: 1 },
     });
   });
 

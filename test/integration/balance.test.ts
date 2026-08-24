@@ -59,7 +59,7 @@ describe("balance: generated-content diversity", () => {
       disease.reference.steps.map((step) => step.typeId).join(","),
     ).join("|")));
     const cureSets = new Set(levels.map((level) => level.diseases.map((disease) =>
-      `${disease.map}:${disease.node.x},${disease.node.y}`,
+      `${disease.map}:${disease.node.q},${disease.node.r}`,
     ).join("|")));
     expect(referenceSets.size).toBeGreaterThanOrEqual(Math.ceil(SEEDS.length * 0.75));
     expect(cureSets.size).toBeGreaterThanOrEqual(Math.ceil(SEEDS.length * 0.75));

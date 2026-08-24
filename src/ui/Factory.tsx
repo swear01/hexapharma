@@ -8,7 +8,7 @@
  *
  * NEW model recap:
  *  - Machines are NOT tiles. A PlacedMachine = { id, def, anchor, footRot, shape }.
- *    Its WORLD footprint = local shape rotated by `footRot` quarter-turns CW about
+ *    Its WORLD footprint = local shape rotated by `footRot` sixth-turns CW about
  *    the anchor; `def.path` remains fixed.
  *  - Belts/splitters/mergers/source/sink are tiles; splitter fans one input out
  *    round-robin, merger fans inputs into one output → REAL parallelism: a
@@ -25,7 +25,7 @@ import { machineName, machineShortName } from "./machineLabels";
 import { outcomeEffectText } from "./effectLabels";
 import type {
   Dir,
-  Vec2,
+  HexCoord,
   Rotation,
   PlacedMachine,
   MachineShape,
@@ -44,6 +44,9 @@ import { DEFAULT_CATALOG, DEFAULT_SHAPES } from "../sim/phase0_interfaces";
 import { initFactory, analyzeThroughput } from "../sim/factory-sim";
 import { factoryOutcome } from "../sim/recipe";
 import { quoteProductionBuild } from "../sim/construction";
+import { worldCells } from "../sim/factory-geom";
+import { hexInBounds, hexIndex, rotateHexCoord } from "../sim/hex";
+import { hexToPixel } from "../render/hexProjection";
 import type { FactoryRenderer } from "../render/factoryRenderer";
 import {
   appendUniqueCells,
@@ -68,40 +71,20 @@ import {
 
 const E: Dir = 0;
 function opposite(d: Dir): Dir {
-  return ((d + 2) & 3) as Dir;
+  return ((d + 3) % 6) as Dir;
 }
 
 function emptyTiles(w: number, h: number): FactoryTile[] {
   return Array.from({ length: w * h }, () => ({ kind: "empty" }));
 }
 
-// ───────────────────────────── machine geometry (mirrors the sim) ─────────────────────────────
+// ───────────────────────────── machine geometry ─────────────────────────────
 
-/** Rotate a LOCAL vector `rot` quarter-turns CW (y-down): (x,y)->(-y,x). */
-function rotateVec(v: Vec2, rot: Rotation): Vec2 {
-  let x = v.x;
-  let y = v.y;
-  for (let i = 0; i < rot; i++) {
-    const nx = -y;
-    const ny = x;
-    x = nx;
-    y = ny;
-  }
-  return { x, y };
-}
-
-function worldCells(m: PlacedMachine): Vec2[] {
-  return m.shape.cells.map((c) => {
-    const r = rotateVec(c, m.footRot);
-    return { x: r.x + m.anchor.x, y: r.y + m.anchor.y };
-  });
-}
-
-/** The machine (if any) whose rotated footprint covers world cell (x,y). */
-function machineAt(layout: FactoryLayout, x: number, y: number): PlacedMachine | undefined {
+/** The machine (if any) whose rotated footprint covers world cell (q,r). */
+function machineAt(layout: FactoryLayout, q: number, r: number): PlacedMachine | undefined {
   for (const m of layout.machines) {
     for (const c of worldCells(m)) {
-      if (c.x === x && c.y === y) return m;
+      if (c.q === q && c.r === r) return m;
     }
   }
   return undefined;
@@ -109,34 +92,34 @@ function machineAt(layout: FactoryLayout, x: number, y: number): PlacedMachine |
 
 export function directGestureMachineAt(
   layout: FactoryLayout,
-  x: number,
-  y: number,
+  q: number,
+  r: number,
   eraseActive: boolean,
 ): PlacedMachine | undefined {
-  return eraseActive ? undefined : machineAt(layout, x, y);
+  return eraseActive ? undefined : machineAt(layout, q, r);
 }
 
 export function factoryErasePreviewCells(
   layout: FactoryLayout,
-  x: number,
-  y: number,
-): readonly Vec2[] {
-  const machine = machineAt(layout, x, y);
-  return machine === undefined ? [{ x, y }] : worldCells(machine);
+  q: number,
+  r: number,
+): readonly HexCoord[] {
+  const machine = machineAt(layout, q, r);
+  return machine === undefined ? [{ q, r }] : worldCells(machine);
 }
 
 export function transformPlacedMachine(
   layout: FactoryLayout,
   machineId: number,
-  anchor: Vec2,
+  anchor: HexCoord,
   footRot: Rotation,
 ): FactoryLayout {
   const machineIndex = layout.machines.findIndex((machine) => machine.id === machineId);
   const current = layout.machines[machineIndex];
   if (current === undefined) return layout;
   if (
-    current.anchor.x === anchor.x &&
-    current.anchor.y === anchor.y &&
+    current.anchor.q === anchor.q &&
+    current.anchor.r === anchor.r &&
     current.footRot === footRot
   ) {
     return layout;
@@ -144,11 +127,9 @@ export function transformPlacedMachine(
 
   const transformed: PlacedMachine = { ...current, anchor, footRot };
   for (const cell of worldCells(transformed)) {
-    if (cell.x < 0 || cell.y < 0 || cell.x >= layout.width || cell.y >= layout.height) {
-      return layout;
-    }
-    if (layout.tiles[cell.y * layout.width + cell.x]?.kind !== "empty") return layout;
-    const occupied = machineAt(layout, cell.x, cell.y);
+    if (!hexInBounds(layout.width, layout.height, cell.q, cell.r)) return layout;
+    if (layout.tiles[hexIndex(layout.width, cell.q, cell.r)]?.kind !== "empty") return layout;
+    const occupied = machineAt(layout, cell.q, cell.r);
     if (occupied !== undefined && occupied.id !== machineId) return layout;
   }
 
@@ -199,33 +180,33 @@ export function initialFacilityLayout(
   };
 }
 
-function factoryLayoutFocus(layout: FactoryLayout): Vec2 | null {
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
+function factoryLayoutFocus(layout: FactoryLayout): HexCoord | null {
+  let minQ = Infinity;
+  let minR = Infinity;
+  let maxQ = -Infinity;
+  let maxR = -Infinity;
   for (const machine of layout.machines) {
     for (const cell of worldCells(machine)) {
-      minX = Math.min(minX, cell.x);
-      minY = Math.min(minY, cell.y);
-      maxX = Math.max(maxX, cell.x);
-      maxY = Math.max(maxY, cell.y);
+      minQ = Math.min(minQ, cell.q);
+      minR = Math.min(minR, cell.r);
+      maxQ = Math.max(maxQ, cell.q);
+      maxR = Math.max(maxR, cell.r);
     }
   }
-  if (minX === Infinity) {
+  if (minQ === Infinity) {
     for (let index = 0; index < layout.tiles.length; index++) {
       if (layout.tiles[index]?.kind === "empty") continue;
-      const x = index % layout.width;
-      const y = Math.floor(index / layout.width);
-      minX = Math.min(minX, x);
-      minY = Math.min(minY, y);
-      maxX = Math.max(maxX, x);
-      maxY = Math.max(maxY, y);
+      const q = index % layout.width;
+      const r = Math.floor(index / layout.width);
+      minQ = Math.min(minQ, q);
+      minR = Math.min(minR, r);
+      maxQ = Math.max(maxQ, q);
+      maxR = Math.max(maxR, r);
     }
   }
-  return minX === Infinity
+  return minQ === Infinity
     ? null
-    : { x: (minX + maxX + 1) / 2, y: (minY + maxY + 1) / 2 };
+    : { q: (minQ + maxQ) / 2, r: (minR + maxR) / 2 };
 }
 
 // ───────────────────────────── palette / editing ─────────────────────────────
@@ -261,11 +242,18 @@ type CanvasGesture =
       readonly cells: readonly GridCell[];
       readonly last: GridCell;
       readonly machineId: number;
-      readonly anchorOffset: Vec2;
+      readonly anchorOffset: HexCoord;
       readonly footRot: Rotation;
     };
 
-const DIR_LABEL: Record<Dir, string> = { 0: "→ E", 1: "↓ S", 2: "← W", 3: "↑ N" };
+const DIR_LABEL: Record<Dir, string> = {
+  0: "→ E",
+  1: "↘ SE",
+  2: "↙ SW",
+  3: "← W",
+  4: "↖ NW",
+  5: "↗ NE",
+};
 
 /** A belt-grid tile for the current brush + direction (machines handled separately). */
 function makeTile(brush: Brush, dir: Dir): FactoryTile | null {
@@ -274,10 +262,10 @@ function makeTile(brush: Brush, dir: Dir): FactoryTile | null {
       return { kind: "belt", dir };
     case "splitter":
       // in from behind; fan out forward + one perpendicular (CW). brushDir=E → in W, out [E,S].
-      return { kind: "splitter", inDir: opposite(dir), outDirs: [dir, ((dir + 1) & 3) as Dir] };
+      return { kind: "splitter", inDir: opposite(dir), outDirs: [dir, ((dir + 1) % 6) as Dir] };
     case "merger":
       // out forward; accept from behind + one perpendicular (CW). brushDir=E → out E, in [W,S].
-      return { kind: "merger", inDirs: [opposite(dir), ((dir + 1) & 3) as Dir], outDir: dir };
+      return { kind: "merger", inDirs: [opposite(dir), ((dir + 1) % 6) as Dir], outDir: dir };
     case "source":
       return { kind: "source", dir, period: 1 };
     case "sink":
@@ -308,32 +296,29 @@ function cloneFactoryTile(tile: FactoryTile): FactoryTile {
 
 export function copyFactoryTile(
   layout: FactoryLayout,
-  x: number,
-  y: number,
+  q: number,
+  r: number,
 ): FactoryTile | null {
-  if (x < 0 || y < 0 || x >= layout.width || y >= layout.height) return null;
-  if (machineAt(layout, x, y) !== undefined) return null;
-  const tile = layout.tiles[y * layout.width + x];
+  if (!hexInBounds(layout.width, layout.height, q, r)) return null;
+  if (machineAt(layout, q, r) !== undefined) return null;
+  const tile = layout.tiles[hexIndex(layout.width, q, r)];
   return tile === undefined || tile.kind === "empty" ? null : cloneFactoryTile(tile);
 }
 
 export function placeFactoryTile(
   layout: FactoryLayout,
-  x: number,
-  y: number,
+  q: number,
+  r: number,
   tile: FactoryTile,
 ): FactoryLayout {
   if (
     tile.kind === "empty" ||
-    x < 0 ||
-    y < 0 ||
-    x >= layout.width ||
-    y >= layout.height ||
-    machineAt(layout, x, y) !== undefined
+    !hexInBounds(layout.width, layout.height, q, r) ||
+    machineAt(layout, q, r) !== undefined
   ) {
     return layout;
   }
-  const index = y * layout.width + x;
+  const index = hexIndex(layout.width, q, r);
   const current = layout.tiles[index];
   if (current !== undefined && JSON.stringify(current) === JSON.stringify(tile)) return layout;
   const tiles = layout.tiles.slice();
@@ -342,7 +327,7 @@ export function placeFactoryTile(
 }
 
 function brushAt(layout: FactoryLayout, cell: GridCell): ClipboardBrush | null {
-  const machine = machineAt(layout, cell.x, cell.y);
+  const machine = machineAt(layout, cell.q, cell.r);
   if (machine !== undefined) {
     return {
       brush: { kind: "machine", typeId: machine.def.typeId },
@@ -351,7 +336,7 @@ function brushAt(layout: FactoryLayout, cell: GridCell): ClipboardBrush | null {
       tile: null,
     };
   }
-  const tile = copyFactoryTile(layout, cell.x, cell.y);
+  const tile = copyFactoryTile(layout, cell.q, cell.r);
   if (tile === null) return null;
   if (tile.kind === "empty") return null;
   const dir = tile.kind === "belt" || tile.kind === "source"
@@ -367,11 +352,11 @@ function brushAt(layout: FactoryLayout, cell: GridCell): ClipboardBrush | null {
   };
 }
 
-/** Apply a click at (x,y) with the current brush, returning a new layout. */
+/** Apply a click at (q,r) with the current brush, returning a new layout. */
 function paint(
   layout: FactoryLayout,
-  x: number,
-  y: number,
+  q: number,
+  r: number,
   brush: Brush,
   dir: Dir,
   footRot: Rotation,
@@ -382,32 +367,33 @@ function paint(
     const m: PlacedMachine = {
       id: nextMachineId(layout),
       def: machineDef(brush.typeId),
-      anchor: { x, y },
+      anchor: { q, r },
       footRot,
       shape,
     };
     for (const cell of worldCells(m)) {
-      if (cell.x < 0 || cell.y < 0 || cell.x >= layout.width || cell.y >= layout.height) return layout;
-      if (machineAt(layout, cell.x, cell.y) !== undefined) return layout;
-      if (layout.tiles[cell.y * layout.width + cell.x]?.kind !== "empty") return layout;
+      if (!hexInBounds(layout.width, layout.height, cell.q, cell.r)) return layout;
+      if (machineAt(layout, cell.q, cell.r) !== undefined) return layout;
+      if (layout.tiles[hexIndex(layout.width, cell.q, cell.r)]?.kind !== "empty") return layout;
     }
     return { ...layout, machines: [...layout.machines, m] };
   }
 
   if (brush.kind === "erase") {
     // remove any machine covering the cell AND clear the tile.
-    const hit = machineAt(layout, x, y);
-    const currentTile = layout.tiles[y * layout.width + x];
+    const hit = machineAt(layout, q, r);
+    const index = hexIndex(layout.width, q, r);
+    const currentTile = layout.tiles[index];
     if (hit === undefined && currentTile?.kind === "empty") return layout;
     const machines = hit ? layout.machines.filter((m) => m.id !== hit.id) : layout.machines;
     const tiles = layout.tiles.slice();
-    tiles[y * layout.width + x] = { kind: "empty" };
+    tiles[index] = { kind: "empty" };
     return { ...layout, tiles, machines };
   }
 
   const tile = makeTile(brush, dir);
   if (tile === null) return layout;
-  return placeFactoryTile(layout, x, y, tile);
+  return placeFactoryTile(layout, q, r, tile);
 }
 
 export function paintBeltRoute(
@@ -419,13 +405,23 @@ export function paintBeltRoute(
   let next = layout;
   for (let index = 0; index < cells.length; index++) {
     const cell = cells[index]!;
-    next = paint(next, cell.x, cell.y, { kind: "belt" }, directions[index] ?? fallbackDirection, 0);
+    next = paint(next, cell.q, cell.r, { kind: "belt" }, directions[index] ?? fallbackDirection, 0);
   }
   return next;
 }
 
 const CELL = 42;
+const FACTORY_HEX_SIZE = CELL / 2;
+const FACTORY_HEX_WIDTH = Math.sqrt(3) * FACTORY_HEX_SIZE;
 const PAD = 12;
+
+function factoryCellCenter(cell: HexCoord): { readonly x: number; readonly y: number } {
+  const projected = hexToPixel(cell.q, cell.r, FACTORY_HEX_SIZE);
+  return {
+    x: PAD + FACTORY_HEX_WIDTH / 2 + projected.x,
+    y: PAD + FACTORY_HEX_SIZE + projected.y,
+  };
+}
 
 // ───────────────────────────── component ─────────────────────────────
 
@@ -684,8 +680,8 @@ export function Factory({
   }, [restoreHistory]);
 
   const rotateActiveBrush = useCallback(() => {
-    if (brush.kind === "machine") setFootRot((value) => ((value + 1) & 3) as Rotation);
-    else setBrushDir((value) => ((value + 1) & 3) as Dir);
+    if (brush.kind === "machine") setFootRot((value) => ((value + 1) % 6) as Rotation);
+    else setBrushDir((value) => ((value + 1) % 6) as Dir);
   }, [brush.kind]);
 
   // ── mount / unmount the Pixi renderer ──
@@ -713,8 +709,9 @@ export function Factory({
     const visibleBottom = Math.min(frameRect.bottom, toolbeltTop);
     const targetX = frameRect.left + frameRect.width / 2;
     const targetY = frameRect.top + Math.max(0, visibleBottom - frameRect.top) / 2;
-    const focusX = canvasRect.left + (PAD + focus.x * CELL) * canvasRect.width / canvas.width;
-    const focusY = canvasRect.top + (PAD + focus.y * CELL) * canvasRect.height / canvas.height;
+    const projectedFocus = factoryCellCenter(focus);
+    const focusX = canvasRect.left + projectedFocus.x * canvasRect.width / canvas.width;
+    const focusY = canvasRect.top + projectedFocus.y * canvasRect.height / canvas.height;
     if (frame.scrollWidth > frame.clientWidth) frame.scrollLeft += focusX - targetX;
     if (frame.scrollHeight > frame.clientHeight) frame.scrollTop += focusY - targetY;
     pendingViewportFocusRef.current = false;
@@ -902,15 +899,15 @@ export function Factory({
       { width: baseWidth, height: baseHeight },
       current,
       {
-        cellSize: CELL * baseWidth / canvas.width,
+        cellSize: FACTORY_HEX_SIZE * baseWidth / canvas.width,
         origin: {
-          x: PAD * baseWidth / canvas.width,
-          y: PAD * baseHeight / canvas.height,
+          x: (PAD + FACTORY_HEX_WIDTH / 2) * baseWidth / canvas.width,
+          y: (PAD + FACTORY_HEX_SIZE) * baseHeight / canvas.height,
         },
       },
     );
     const layout = layoutRef.current;
-    return cell.x < 0 || cell.y < 0 || cell.x >= layout.width || cell.y >= layout.height
+    return !hexInBounds(layout.width, layout.height, cell.q, cell.r)
       ? null
       : cell;
   }, []);
@@ -948,7 +945,7 @@ export function Factory({
         return;
       }
       const base = layoutRef.current;
-      const machine = directGestureMachineAt(base, cell.x, cell.y, brush.kind === "erase");
+      const machine = directGestureMachineAt(base, cell.q, cell.r, brush.kind === "erase");
       gestureRef.current = machine === undefined
         ? {
             pointerId: event.pointerId,
@@ -964,7 +961,7 @@ export function Factory({
             cells: [cell],
             last: cell,
             machineId: machine.id,
-            anchorOffset: { x: machine.anchor.x - cell.x, y: machine.anchor.y - cell.y },
+            anchorOffset: { q: machine.anchor.q - cell.q, r: machine.anchor.r - cell.r },
             footRot: machine.footRot,
           };
       return;
@@ -989,7 +986,7 @@ export function Factory({
     setHoverCell(cell);
     const base = layoutRef.current;
     const machine = event.button === 0
-      ? directGestureMachineAt(base, cell.x, cell.y, brush.kind === "erase")
+      ? directGestureMachineAt(base, cell.q, cell.r, brush.kind === "erase")
       : undefined;
     gestureRef.current = machine === undefined
       ? {
@@ -1006,7 +1003,7 @@ export function Factory({
           cells: [cell],
           last: cell,
           machineId: machine.id,
-          anchorOffset: { x: machine.anchor.x - cell.x, y: machine.anchor.y - cell.y },
+          anchorOffset: { q: machine.anchor.q - cell.q, r: machine.anchor.r - cell.r },
           footRot: machine.footRot,
         };
   }, [brush.kind, camera.x, camera.y, pointerCell]);
@@ -1029,7 +1026,7 @@ export function Factory({
       return;
     }
     const cells = gesture.mode === "paint" && brush.kind === "belt"
-      ? routeBeltGesture(gesture.cells, cell, brushDir)
+      ? routeBeltGesture(gesture.cells, cell)
       : appendUniqueCells(gesture.cells, rasterizeGridLine(gesture.last, cell));
     gestureRef.current = {
       ...gesture,
@@ -1055,8 +1052,8 @@ export function Factory({
         gesture.base,
         gesture.machineId,
         {
-          x: gesture.last.x + gesture.anchorOffset.x,
-          y: gesture.last.y + gesture.anchorOffset.y,
+          q: gesture.last.q + gesture.anchorOffset.q,
+          r: gesture.last.r + gesture.anchorOffset.r,
         },
         gesture.footRot,
       ));
@@ -1068,7 +1065,7 @@ export function Factory({
       : gesture.base;
     if (activeBrush.kind !== "belt") {
       for (const cell of gesture.cells) {
-        next = paint(next, cell.x, cell.y, activeBrush, brushDir, footRot);
+        next = paint(next, cell.q, cell.r, activeBrush, brushDir, footRot);
       }
     }
     commitLayout(next);
@@ -1108,7 +1105,7 @@ export function Factory({
       ? machineShortName(copied.brush.typeId)
       : copied.brush.kind);
     if (cut) {
-      commitLayout(paint(layoutRef.current, hoverCell.x, hoverCell.y, { kind: "erase" }, E, 0));
+      commitLayout(paint(layoutRef.current, hoverCell.q, hoverCell.r, { kind: "erase" }, E, 0));
     }
   }, [commitLayout, hoverCell]);
 
@@ -1118,25 +1115,25 @@ export function Factory({
     commitLayout(copied.tile === null
       ? paint(
           layoutRef.current,
-          hoverCell.x,
-          hoverCell.y,
+          hoverCell.q,
+          hoverCell.r,
           copied.brush,
           copied.dir,
           copied.footRot,
         )
-      : placeFactoryTile(layoutRef.current, hoverCell.x, hoverCell.y, copied.tile));
+      : placeFactoryTile(layoutRef.current, hoverCell.q, hoverCell.r, copied.tile));
   }, [commitLayout, hoverCell]);
 
   const rotateHoveredMachine = useCallback(() => {
     if (hoverCell === null) return false;
     const current = layoutRef.current;
-    const machine = machineAt(current, hoverCell.x, hoverCell.y);
+    const machine = machineAt(current, hoverCell.q, hoverCell.r);
     if (machine === undefined) return false;
     commitLayout(transformPlacedMachine(
       current,
       machine.id,
       machine.anchor,
-      ((machine.footRot + 1) & 3) as Rotation,
+      ((machine.footRot + 1) % 6) as Rotation,
     ));
     return true;
   }, [commitLayout, hoverCell]);
@@ -1227,10 +1224,10 @@ export function Factory({
     ? "not runnable"
     : formatFacilityOutcome(sampleAnalysis.outcome);
   const resetAvailable = mode === "production" && onReset !== undefined && factoryRuntimeMayReset(state);
-  const hoveredMachine = hoverCell === null ? undefined : machineAt(layout, hoverCell.x, hoverCell.y);
+  const hoveredMachine = hoverCell === null ? undefined : machineAt(layout, hoverCell.q, hoverCell.r);
   const hoveredTile = hoverCell === null
     ? undefined
-    : layout.tiles[hoverCell.y * layout.width + hoverCell.x];
+    : layout.tiles[hexIndex(layout.width, hoverCell.q, hoverCell.r)];
   const hoverKind = hoveredMachine === undefined
     ? hoveredTile?.kind ?? "outside"
     : machineName(hoveredMachine.def.typeId);
@@ -1242,8 +1239,8 @@ export function Factory({
   const moveAnchor = moveGesture === null
     ? null
     : {
-        x: moveGesture.last.x + moveGesture.anchorOffset.x,
-        y: moveGesture.last.y + moveGesture.anchorOffset.y,
+        q: moveGesture.last.q + moveGesture.anchorOffset.q,
+        r: moveGesture.last.r + moveGesture.anchorOffset.r,
       };
   const moveBase = moveGesture?.base ?? null;
   const moveCandidate = moveBase === null || moveMachine === undefined || moveAnchor === null
@@ -1253,22 +1250,22 @@ export function Factory({
     ? paintBeltRoute(activeGesture.base, activeGesture.cells, brushDir)
     : null;
   const idleDirectMachine = activeGesture === null && hoverCell !== null
-    ? directGestureMachineAt(layout, hoverCell.x, hoverCell.y, brush.kind === "erase")
+    ? directGestureMachineAt(layout, hoverCell.q, hoverCell.r, brush.kind === "erase")
     : undefined;
   const hoverCandidate = moveCandidate ?? beltGestureCandidate ?? (idleDirectMachine !== undefined
     ? layout
     : hoverCell === null
     ? layout
-    : paint(layout, hoverCell.x, hoverCell.y, brush, brushDir, footRot));
+    : paint(layout, hoverCell.q, hoverCell.r, brush, brushDir, footRot));
   const moveUnchanged = moveMachine !== undefined && moveAnchor !== null &&
-    moveMachine.anchor.x === moveAnchor.x && moveMachine.anchor.y === moveAnchor.y;
+    moveMachine.anchor.q === moveAnchor.q && moveMachine.anchor.r === moveAnchor.r;
   const hoverPlacementValid = moveBase !== null
     ? moveUnchanged || moveCandidate !== moveBase
     : idleDirectMachine !== undefined || hoverCell === null || brush.kind === "erase" || hoverCandidate !== layout;
   const hoverBuildCost = previewProductionBuildCost(mode, layout, hoverCandidate);
   const erasePreviewCells = hoverCell !== null &&
     (brush.kind === "erase" || activeGesture?.mode === "erase")
-    ? factoryErasePreviewCells(layout, hoverCell.x, hoverCell.y)
+    ? factoryErasePreviewCells(layout, hoverCell.q, hoverCell.r)
     : null;
   const ghostCells = moveMachine !== undefined && moveAnchor !== null
     ? worldCells({ ...moveMachine, anchor: moveAnchor })
@@ -1282,8 +1279,8 @@ export function Factory({
     ? []
     : brush.kind === "machine"
       ? DEFAULT_SHAPES[brush.typeId]!.cells.map((cell) => {
-          const rotated = rotateVec(cell, footRot);
-          return { x: hoverCell.x + rotated.x, y: hoverCell.y + rotated.y };
+          const rotated = rotateHexCoord(cell, footRot);
+          return { q: hoverCell.q + rotated.q, r: hoverCell.r + rotated.r };
         })
       : [hoverCell];
 
@@ -1364,18 +1361,30 @@ export function Factory({
           >
             <div className="factory-canvas-transform" style={{ transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})` }}>
               <div ref={mountRef} className="factory-canvas-mount" />
-              {ghostCells.map((cell) => (
-                <div
-                  key={`${cell.x},${cell.y}`}
-                  className={`factory-ghost${gestureRef.current?.mode === "erase" || brush.kind === "erase" ? " is-erase" : ""}${hoverPlacementValid ? "" : " is-invalid"}`}
-                  style={{ left: PAD + cell.x * CELL, top: PAD + cell.y * CELL }}
-                />
-              ))}
+              {ghostCells.map((cell) => {
+                const center = factoryCellCenter(cell);
+                return (
+                  <div
+                    key={`${cell.q},${cell.r}`}
+                    className={`factory-ghost${gestureRef.current?.mode === "erase" || brush.kind === "erase" ? " is-erase" : ""}${hoverPlacementValid ? "" : " is-invalid"}`}
+                    style={{
+                      left: center.x - FACTORY_HEX_WIDTH / 2,
+                      top: center.y - FACTORY_HEX_SIZE,
+                      width: FACTORY_HEX_WIDTH,
+                      height: CELL,
+                      clipPath: "polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%)",
+                    }}
+                  />
+                );
+              })}
               {hoverCell !== null && hoverBuildCost !== null && (
                 <output
                   className="factory-ghost-cost"
                   data-testid="factory-ghost-cost"
-                  style={{ left: PAD + hoverCell.x * CELL, top: PAD + hoverCell.y * CELL }}
+                  style={{
+                    left: factoryCellCenter(hoverCell).x,
+                    top: factoryCellCenter(hoverCell).y,
+                  }}
                 >${hoverBuildCost}</output>
               )}
             </div>
@@ -1442,14 +1451,14 @@ export function Factory({
 
           <div className="panel-section hover-inspector">
             <div className="panel-heading"><h2>Cursor</h2><span className="hotkey">Q pick</span></div>
-            <div data-testid="factory-hover-cell">{hoverCell === null ? "outside" : `${hoverCell.x}, ${hoverCell.y}`}</div>
+            <div data-testid="factory-hover-cell">{hoverCell === null ? "outside" : `${hoverCell.q}, ${hoverCell.r}`}</div>
             <strong data-testid="factory-hover-kind">{hoverCell === null ? "" : hoverKind}</strong>
           </div>
 
           <div className="panel-section">
             <div className="panel-heading"><h2>Build tool</h2><strong data-testid="brush-selected">{brushLabel}</strong></div>
             <div className="brush-readout" data-testid="brush-direction">
-              {brushIsMachine ? `Footprint ${footRot * 90}°` : `Direction ${DIR_LABEL[brushDir]}`}
+              {brushIsMachine ? `Footprint ${footRot * 60}°` : `Direction ${DIR_LABEL[brushDir]}`}
             </div>
             <div className="panel-actions">
               <button type="button" onClick={rotateHoveredOrActive} className="game-control" data-testid="brush-rotate">R · Rotate</button>

@@ -17,11 +17,11 @@ const singleAtlasOptions: GenOptions = {
 };
 
 describe("single Research Atlas authority", () => {
-  it("uses only fixed cardinal PathStamps without phase-exchange controls", () => {
+  it("uses only fixed six-neighbor PathStamps without phase-exchange controls", () => {
     expect(DEFAULT_CATALOG.some((entry) => entry.typeId.startsWith("swap"))).toBe(false);
     for (const entry of DEFAULT_CATALOG) {
       expect(entry.path.length).toBeGreaterThan(0);
-      expect(entry.path.every((delta) => Math.abs(delta.x) + Math.abs(delta.y) === 1)).toBe(true);
+      expect(entry.path.every((direction) => direction >= 0 && direction <= 5)).toBe(true);
     }
 
     const machine = DEFAULT_CATALOG[0]!;

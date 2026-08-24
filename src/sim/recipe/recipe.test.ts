@@ -31,7 +31,7 @@ function emptyMap(size: number, start: Vec2): EffectMap {
   return {
     width: size,
     height: size,
-    origin: { x: Math.floor(size / 2), y: Math.floor(size / 2) },
+    origin: { q: Math.floor(size / 2), r: Math.floor(size / 2) },
     start,
     cell: new Uint8Array(area),
     cureId: new Int16Array(area).fill(-1),
@@ -70,7 +70,7 @@ function spacedLine(value: Template, gap: number): FactoryLayout {
     tiles.push({ kind: "belt", dir: E });
     const x = tiles.length;
     tiles.push({ kind: "empty" });
-    machines.push({ id, def: defOf(step), anchor: { x, y: 0 }, footRot: 0, shape: SHAPE_1x1 });
+    machines.push({ id, def: defOf(step), anchor: { q: x, r: 0 }, footRot: 0, shape: SHAPE_1x1 });
     for (let index = 0; index < Math.max(1, gap); index++) tiles.push({ kind: "belt", dir: E });
   });
   tiles.push({ kind: "sink" });
@@ -80,20 +80,20 @@ function spacedLine(value: Template, gap: number): FactoryLayout {
 function serpentineLayout(size: number): FactoryLayout {
   const path: Vec2[] = [];
   for (let y = 0; y < size; y++) {
-    if (y % 2 === 0) for (let x = 0; x < size; x++) path.push({ x, y });
-    else for (let x = size - 1; x >= 0; x--) path.push({ x, y });
+    if (y % 2 === 0) for (let x = 0; x < size; x++) path.push({ q: x, r: y });
+    else for (let x = size - 1; x >= 0; x--) path.push({ q: x, r: y });
   }
   const direction = (from: Vec2, to: Vec2) => (
-    to.x > from.x ? 0 : to.x < from.x ? 2 : to.y > from.y ? 1 : 3
-  ) as 0 | 1 | 2 | 3;
+    to.q > from.q ? 0 : to.q < from.q ? 3 : to.r > from.r ? 1 : 4
+  ) as 0 | 1 | 3 | 4;
   const tiles = Array.from<unknown, FactoryTile>({ length: size * size }, () => ({ kind: "empty" }));
   tiles[0] = { kind: "source", dir: direction(path[0]!, path[1]!), period: 1 };
   for (let index = 1; index < path.length - 1; index++) {
     const cell = path[index]!;
-    tiles[cell.y * size + cell.x] = { kind: "belt", dir: direction(cell, path[index + 1]!) };
+    tiles[cell.r * size + cell.q] = { kind: "belt", dir: direction(cell, path[index + 1]!) };
   }
   const sink = path.at(-1)!;
-  tiles[sink.y * size + sink.x] = { kind: "sink" };
+  tiles[sink.r * size + sink.q] = { kind: "sink" };
   return { width: size, height: size, tiles, machines: [] };
 }
 
@@ -107,10 +107,10 @@ const samples: readonly Template[] = [
 
 describe("compileTemplate and factoryOutcome", () => {
   it("preserves a side-effect overlay on a produced Cure", () => {
-    const map = emptyMap(41, { x: 20, y: 20 });
+    const map = emptyMap(41, { q: 20, r: 20 });
     const value = template(machine("push"));
     const final = applyTemplate(multimaps(map), initialState(multimaps(map)), value).pos[0]!;
-    const index = final.y * map.width + final.x;
+    const index = final.r * map.width + final.q;
     map.cell[index] = CellKind.Cure;
     map.cureId[index] = 7;
     map.sideEffectId[index] = 91;
@@ -123,17 +123,17 @@ describe("compileTemplate and factoryOutcome", () => {
   });
 
   it("waits for a product across a legal long routing path", () => {
-    const mm = multimaps(emptyMap(41, { x: 20, y: 20 }));
+    const mm = multimaps(emptyMap(41, { q: 20, r: 20 }));
     expect(factoryOutcome(serpentineLayout(20), mm, initialState(mm))).toEqual({
       failed: false,
-      final: [{ x: 20, y: 20 }],
+      final: [{ q: 20, r: 20 }],
       cured: [],
       sideEffects: [],
     });
   });
 
   it("rejects diagnostics above the layout-weighted work budget", () => {
-    const mm = multimaps(emptyMap(41, { x: 20, y: 20 }));
+    const mm = multimaps(emptyMap(41, { q: 20, r: 20 }));
     expect(() => factoryOutcome(serpentineLayout(22), mm, initialState(mm))).toThrow(
       /analysis work budget/i,
     );
@@ -158,26 +158,26 @@ describe("compileTemplate and factoryOutcome", () => {
     const catalog = structuredClone(DEFAULT_CATALOG.find((entry) => entry.typeId === "push")!);
     const step: Machine = { typeId: catalog.typeId, path: catalog.path };
     const layout = compileTemplate(template(step));
-    (catalog.path[0] as { x: number }).x = -1;
+    (catalog.path as number[])[0] = 3;
 
-    expect(layout.machines[0]?.def.path[0]).toEqual({ x: 1, y: 0 });
-    expect(() => initFactory(layout, multimaps(emptyMap(31, { x: 15, y: 15 })), {
-      pos: [{ x: 15, y: 15 }],
+    expect(layout.machines[0]?.def.path[0]).toBe(E);
+    expect(() => initFactory(layout, multimaps(emptyMap(31, { q: 15, r: 15 })), {
+      pos: [{ q: 15, r: 15 }],
       failed: false,
     })).not.toThrow();
-    expect(() => ((catalog.path[0] as { x: number }).x = 1)).not.toThrow();
+    expect(() => ((catalog.path as number[])[0] = E)).not.toThrow();
   });
 
   it("reports budget exhaustion rather than a false outcome", () => {
-    const mm = multimaps(emptyMap(31, { x: 15, y: 15 }));
+    const mm = multimaps(emptyMap(31, { q: 15, r: 15 }));
     const layout: FactoryLayout = {
       width: 3,
       height: 1,
       tiles: [{ kind: "source", dir: E, period: 1 }, { kind: "empty" }, { kind: "sink" }],
       machines: [{
         id: 0,
-        def: { typeId: "slow", path: [{ x: 1, y: 0 }], cost: 1, speed: MAX_FACTORY_REPLAY_TICKS },
-        anchor: { x: 1, y: 0 },
+        def: { typeId: "slow", path: [E], cost: 1, speed: MAX_FACTORY_REPLAY_TICKS },
+        anchor: { q: 1, r: 0 },
         footRot: 0,
         shape: SHAPE_1x1,
       }],
@@ -194,7 +194,7 @@ describe("compileTemplate and factoryOutcome", () => {
         const placed = layout.machines[index]!;
         expect(placed.shape).toBe(DEFAULT_SHAPES[value.steps[index]!.typeId]);
         for (const cell of worldCells(placed)) {
-          const key = cell.y * layout.width + cell.x;
+          const key = cell.r * layout.width + cell.q;
           expect(occupied.has(key)).toBe(false);
           occupied.add(key);
         }
@@ -208,8 +208,8 @@ describe("compileTemplate and factoryOutcome", () => {
 
     it(`matches the pure fixed-path engine for sample ${sampleIndex}`, () => {
       const mm = multimaps(
-        emptyMap(63, { x: 31, y: 31 }),
-        emptyMap(63, { x: 30, y: 30 }),
+        emptyMap(63, { q: 31, r: 31 }),
+        emptyMap(63, { q: 30, r: 30 }),
       );
       const layout = compileTemplate(value);
       const expected = evaluate(mm, initialState(mm), value);
@@ -222,10 +222,10 @@ describe("compileTemplate and factoryOutcome", () => {
 
   it("lands on and reports a cure reached by an irregular path", () => {
     const value = template(machine("push"), machine("shear"));
-    const open = multimaps(emptyMap(41, { x: 20, y: 20 }));
+    const open = multimaps(emptyMap(41, { q: 20, r: 20 }));
     const final = applyTemplate(open, initialState(open), value).pos[0]!;
-    const map = emptyMap(41, { x: 20, y: 20 });
-    const index = final.y * map.width + final.x;
+    const map = emptyMap(41, { q: 20, r: 20 });
+    const index = final.r * map.width + final.q;
     map.cell[index] = CellKind.Cure;
     map.cureId[index] = 77;
     const mm = multimaps(map);
@@ -233,11 +233,11 @@ describe("compileTemplate and factoryOutcome", () => {
   });
 
   it("rejects unknown machine types", () => {
-    expect(() => compileTemplate(template({ typeId: "missing", path: [{ x: 1, y: 0 }] })))
+    expect(() => compileTemplate(template({ typeId: "missing", path: [E] })))
       .toThrow(/unknown machine/i);
     expect(() => compileTemplate(template({
       typeId: "push",
-      path: [{ x: -1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: -1 }],
+      path: [3, 3, 4],
     }))).toThrow(/path does not match/i);
   });
 });
@@ -245,7 +245,7 @@ describe("compileTemplate and factoryOutcome", () => {
 describe("factory rearrange invariance", () => {
   it("belt spacing and physical packing do not alter chemical paths", () => {
     const value = template(machine("push"), machine("skew"), machine("pull"));
-    const mm = multimaps(emptyMap(63, { x: 31, y: 31 }));
+    const mm = multimaps(emptyMap(63, { q: 31, r: 31 }));
     const pure = evaluate(mm, initialState(mm), value);
     expect(factoryOutcome(spacedLine(value, 1), mm, initialState(mm))).toEqual(pure);
     expect(factoryOutcome(spacedLine(value, 6), mm, initialState(mm))).toEqual(pure);
@@ -266,7 +266,7 @@ describe("factory rearrange invariance", () => {
             };
           }),
         };
-        const mm = multimaps(emptyMap(63, { x: 31, y: 31 }));
+        const mm = multimaps(emptyMap(63, { q: 31, r: 31 }));
         const first = compileTemplate(value);
         const second = compileTemplate(value);
         expect(first).toEqual(second);

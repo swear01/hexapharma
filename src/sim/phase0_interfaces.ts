@@ -11,7 +11,7 @@
  *
  * ───────────────────────────── Phase 0 invariants ─────────────────────────────
  * drug-graph:
- *   INV-1  path: machines apply their complete cardinal-unit path independently on
+ *   INV-1  path: machines apply their complete six-neighbor path independently on
  *          every map. Wall/OOB cancel one delta; Abyss fails; Swamp costs 2 energy.
  *   INV-2  portal: entering a Portal records entry + same-map exit, then continues.
  *   INV-3  every machine always traverses its complete fixed catalog path.
@@ -37,6 +37,9 @@
  * ───────────────────────────────────────────────────────────────────────────────
  */
 
+import type { HexCoord, HexDir, HexRotation } from "./hex";
+export type { HexCoord, HexDir, HexRotation } from "./hex";
+
 // ─────────────────────────────── identifiers ───────────────────────────────
 
 export type DiseaseId = number;
@@ -46,24 +49,11 @@ export type MachineTypeId = string;
 
 // ─────────────────────────────── geometry ───────────────────────────────
 
-/** Integer grid coordinate. */
-export interface Vec2 {
-  readonly x: number;
-  readonly y: number;
-}
-
-/** Physical square-grid rotation: `rot` × 90° clockwise. */
-export type Rotation = 0 | 1 | 2 | 3;
-
-/** A single cardinal, unit-length chemical path delta. */
-export type CardinalDelta =
-  | { readonly x: -1; readonly y: 0 }
-  | { readonly x: 1; readonly y: 0 }
-  | { readonly x: 0; readonly y: -1 }
-  | { readonly x: 0; readonly y: 1 };
+export type Vec2 = HexCoord;
+export type Rotation = HexRotation;
 
 /** A machine's fixed chemical route, applied in array order. */
-export type PathStamp = readonly CardinalDelta[];
+export type PathStamp = readonly HexDir[];
 
 // ─────────────────────────────── cells / maps ───────────────────────────────
 
@@ -80,16 +70,16 @@ export const CellKind = {
 export type CellKind = (typeof CellKind)[keyof typeof CellKind];
 
 /**
- * One effect map = one ingredient/base. Flat arrays indexed by `y * width + x`.
+ * One effect map = one ingredient/base. Flat arrays indexed by `r * width + q`.
  * Typed arrays keep storage deterministic and pool-friendly.
  */
 export interface EffectMap {
   readonly width: number;
   readonly height: number;
   /** Scale-to-origin target for this map. */
-  readonly origin: Vec2;
+  readonly origin: HexCoord;
   /** The drug's starting position on this map. */
-  readonly start: Vec2;
+  readonly start: HexCoord;
   /** length width*height; values are CellKind. */
   readonly cell: Uint8Array;
   /** length width*height; DiseaseId at Cure cells, else -1. */
@@ -109,7 +99,7 @@ export interface MultiMap {
 
 /** Dynamic per-drug state: one position per map + a sticky failure flag. */
 export interface DrugState {
-  readonly pos: readonly Vec2[]; // length N
+  readonly pos: readonly HexCoord[]; // length N
   readonly failed: boolean; // true once a path has entered an abyss
 }
 
@@ -129,7 +119,7 @@ export interface Template {
 /** Result of running a template from a start state. */
 export interface Outcome {
   readonly failed: boolean;
-  readonly final: readonly Vec2[]; // final position per map
+  readonly final: readonly HexCoord[]; // final position per map
   readonly cured: readonly DiseaseId[]; // diseases whose node a final position landed on
   readonly sideEffects: readonly SideEffectId[]; // side-effect overlays landed on
 }
@@ -210,7 +200,7 @@ export type SolveFn = (mm: MultiMap, start: DrugState, opts: SolveOptions) => So
 export interface DiseaseSpec {
   readonly id: DiseaseId;
   readonly map: MapIndex;
-  readonly node: Vec2;
+  readonly node: HexCoord;
   readonly difficulty: number;
   readonly basePrice: number;
   /** A constructed/known solution (existence proof — INV-9). */
@@ -255,31 +245,33 @@ function deepFreezeData<T>(value: T): T {
   return value;
 }
 
-const EAST: CardinalDelta = { x: 1, y: 0 };
-const WEST: CardinalDelta = { x: -1, y: 0 };
-const NORTH: CardinalDelta = { x: 0, y: -1 };
-const SOUTH: CardinalDelta = { x: 0, y: 1 };
+const EAST: HexDir = 0;
+const SOUTH_EAST: HexDir = 1;
+const SOUTH_WEST: HexDir = 2;
+const WEST: HexDir = 3;
+const NORTH_WEST: HexDir = 4;
+const NORTH_EAST: HexDir = 5;
 
 export const DEFAULT_CATALOG: readonly MachineCatalogEntry[] = deepFreezeData([
-  { typeId: "push", path: [EAST, EAST, SOUTH], cost: 2, speed: 2 },
+  { typeId: "push", path: [EAST, EAST, SOUTH_EAST], cost: 2, speed: 2 },
   {
     typeId: "push2",
-    path: [EAST, NORTH, EAST, SOUTH, EAST, SOUTH, EAST],
+    path: [EAST, NORTH_EAST, EAST, SOUTH_EAST, EAST, SOUTH_EAST, EAST],
     cost: 6,
     speed: 7,
   },
-  { typeId: "pull", path: [WEST, WEST, NORTH], cost: 2, speed: 3 },
-  { typeId: "shear", path: [NORTH, NORTH, EAST, SOUTH], cost: 4, speed: 5 },
-  { typeId: "skew", path: [SOUTH, EAST, SOUTH, WEST, SOUTH, EAST], cost: 5, speed: 6 },
+  { typeId: "pull", path: [WEST, WEST, NORTH_WEST], cost: 2, speed: 3 },
+  { typeId: "shear", path: [NORTH_WEST, NORTH_WEST, NORTH_EAST, SOUTH_EAST], cost: 4, speed: 5 },
+  { typeId: "skew", path: [SOUTH_EAST, EAST, SOUTH_WEST, WEST, SOUTH_EAST, NORTH_EAST], cost: 5, speed: 6 },
   {
     typeId: "dilute",
-    path: [EAST, SOUTH, WEST, NORTH, EAST, SOUTH, WEST, NORTH],
+    path: [EAST, SOUTH_EAST, SOUTH_WEST, WEST, NORTH_WEST, NORTH_EAST, EAST, SOUTH_EAST],
     cost: 6,
     speed: 8,
   },
   {
     typeId: "settle",
-    path: [SOUTH, SOUTH, EAST, EAST, NORTH, NORTH, NORTH, WEST, WEST],
+    path: [SOUTH_EAST, SOUTH_EAST, EAST, EAST, NORTH_WEST, NORTH_WEST, NORTH_EAST, WEST, SOUTH_WEST],
     cost: 7,
     speed: 9,
   },
@@ -296,8 +288,8 @@ export const DEFAULT_CATALOG: readonly MachineCatalogEntry[] = deepFreezeData([
 // EFFECT vs PACKING: a machine's `def.path` determines the DRUG EFFECT; its `footRot`
 // only rotates the footprint/ports for spatial packing and NEVER changes the effect.
 
-/** Cardinal direction on the square grid (y-down): 0=E, 1=S, 2=W, 3=N. */
-export type Dir = 0 | 1 | 2 | 3;
+/** Clockwise pointy-top axial direction: 0=E, 1=SE, 2=SW, 3=W, 4=NW, 5=NE. */
+export type Dir = HexDir;
 export const MAX_TEMPLATE_STEPS = 256;
 export const MAX_FACTORY_CELLS = 65_536;
 export const MAX_FACTORY_MACHINES = 65_536;
@@ -329,20 +321,20 @@ export interface FactoryMachineDef {
 
 /** A port on a machine's LOCAL cell, facing `side` (the side units enter/leave through). */
 export interface Port {
-  readonly cell: Vec2;
+  readonly cell: HexCoord;
   readonly side: Dir;
 }
 
 /** A machine's spatial template in LOCAL coords (anchor at (0,0)), before placement. */
 export interface MachineShape {
-  readonly cells: readonly Vec2[]; // occupied cells
+  readonly cells: readonly HexCoord[]; // occupied cells
   readonly inPorts: readonly Port[]; // entry ports
   readonly outPorts: readonly Port[]; // exit ports
 }
 
 /**
  * A machine placed on the factory grid. `footRot` rotates the footprint cells + ports
- * about the anchor (0..3 quarter-turns) for spatial packing ONLY; it never rotates
+ * about the anchor (0..5 sixth-turns) for spatial packing ONLY; it never rotates
  * the chemical path in `def.path`.
  * Phase 2: one unit in process per machine at a time (capacity 1) — parallelism comes
  * from placing multiple machines fed by a splitter.
@@ -350,7 +342,7 @@ export interface MachineShape {
 export interface PlacedMachine {
   readonly id: number;
   readonly def: FactoryMachineDef;
-  readonly anchor: Vec2; // world cell of the shape's local (0,0)
+  readonly anchor: HexCoord; // world cell of the shape's local (0,0)
   readonly footRot: Rotation; // packing rotation of the footprint/ports (not the effect)
   readonly shape: MachineShape;
 }
@@ -374,7 +366,7 @@ export type FactoryTile =
 export interface FactoryLayout {
   readonly width: number;
   readonly height: number;
-  readonly tiles: readonly FactoryTile[]; // length width*height; index = y*width + x
+  readonly tiles: readonly FactoryTile[]; // length width*height; index = r*width + q
   readonly machines: readonly PlacedMachine[]; // multi-cell machines occupying grid cells
 }
 
@@ -386,7 +378,7 @@ export interface FactoryLayout {
  */
 export interface Unit {
   readonly id: number;
-  readonly pos: Vec2;
+  readonly pos: HexCoord;
   readonly drug: DrugState;
   readonly proc: number;
   readonly machineId: number | null;
@@ -528,93 +520,93 @@ export type FactoryOutcomeFn = (layout: FactoryLayout, mm: MultiMap, start: Drug
 // ── shared machine shapes (footprint + ports per machine type) ──
 
 const SH_E: Dir = 0;
-const SH_S: Dir = 1;
-const SH_W: Dir = 2;
+const SH_SE: Dir = 1;
+const SH_W: Dir = 3;
 
 /** 1×1 cell, in on the west side, out on the east side. */
 export const SHAPE_1x1: MachineShape = deepFreezeData({
-  cells: [{ x: 0, y: 0 }],
-  inPorts: [{ cell: { x: 0, y: 0 }, side: SH_W }],
-  outPorts: [{ cell: { x: 0, y: 0 }, side: SH_E }],
+  cells: [{ q: 0, r: 0 }],
+  inPorts: [{ cell: { q: 0, r: 0 }, side: SH_W }],
+  outPorts: [{ cell: { q: 0, r: 0 }, side: SH_E }],
 });
 /** 2×1 horizontal: in west of left cell, out east of right cell. */
 export const SHAPE_2x1: MachineShape = deepFreezeData({
-  cells: [{ x: 0, y: 0 }, { x: 1, y: 0 }],
-  inPorts: [{ cell: { x: 0, y: 0 }, side: SH_W }],
-  outPorts: [{ cell: { x: 1, y: 0 }, side: SH_E }],
+  cells: [{ q: 0, r: 0 }, { q: 1, r: 0 }],
+  inPorts: [{ cell: { q: 0, r: 0 }, side: SH_W }],
+  outPorts: [{ cell: { q: 1, r: 0 }, side: SH_E }],
 });
 /** L-tromino: in west of (0,0), out south of (1,1). */
 export const SHAPE_L: MachineShape = deepFreezeData({
-  cells: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }],
-  inPorts: [{ cell: { x: 0, y: 0 }, side: SH_W }],
-  outPorts: [{ cell: { x: 1, y: 1 }, side: SH_S }],
+  cells: [{ q: 0, r: 0 }, { q: 1, r: 0 }, { q: 1, r: 1 }],
+  inPorts: [{ cell: { q: 0, r: 0 }, side: SH_W }],
+  outPorts: [{ cell: { q: 1, r: 1 }, side: SH_SE }],
 });
 /** 2×2 block: in west of (0,0), out east of (1,0). */
 export const SHAPE_2x2: MachineShape = deepFreezeData({
-  cells: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }],
-  inPorts: [{ cell: { x: 0, y: 0 }, side: SH_W }],
-  outPorts: [{ cell: { x: 1, y: 0 }, side: SH_E }],
+  cells: [{ q: 0, r: 0 }, { q: 1, r: 0 }, { q: 0, r: 1 }, { q: 1, r: 1 }],
+  inPorts: [{ cell: { q: 0, r: 0 }, side: SH_W }],
+  outPorts: [{ cell: { q: 1, r: 0 }, side: SH_E }],
 });
 
 /** Compact three-cell pump body. */
 export const SHAPE_PUMP: MachineShape = deepFreezeData({
-  cells: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }],
-  inPorts: [{ cell: { x: 0, y: 0 }, side: SH_W }],
-  outPorts: [{ cell: { x: 1, y: 0 }, side: SH_E }],
+  cells: [{ q: 0, r: 0 }, { q: 1, r: 0 }, { q: 1, r: 1 }],
+  inPorts: [{ cell: { q: 0, r: 0 }, side: SH_W }],
+  outPorts: [{ cell: { q: 1, r: 0 }, side: SH_E }],
 });
 /** Four-cell return chamber with ports on opposite corners. */
 export const SHAPE_RETURN: MachineShape = deepFreezeData({
-  cells: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }],
-  inPorts: [{ cell: { x: 0, y: 0 }, side: SH_W }],
-  outPorts: [{ cell: { x: 1, y: 1 }, side: SH_E }],
+  cells: [{ q: 0, r: 0 }, { q: 1, r: 0 }, { q: 0, r: 1 }, { q: 1, r: 1 }],
+  inPorts: [{ cell: { q: 0, r: 0 }, side: SH_W }],
+  outPorts: [{ cell: { q: 1, r: 1 }, side: SH_E }],
 });
 /** Long-bed reactor: a conspicuous eight-cell throughput bottleneck. */
 export const SHAPE_LONG_BED: MachineShape = deepFreezeData({
   cells: [
-    { x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }, { x: 3, y: 0 },
-    { x: 0, y: 1 }, { x: 1, y: 1 }, { x: 2, y: 1 }, { x: 3, y: 1 },
+    { q: 0, r: 0 }, { q: 1, r: 0 }, { q: 2, r: 0 }, { q: 3, r: 0 },
+    { q: 0, r: 1 }, { q: 1, r: 1 }, { q: 2, r: 1 }, { q: 3, r: 1 },
   ],
-  inPorts: [{ cell: { x: 0, y: 0 }, side: SH_W }],
-  outPorts: [{ cell: { x: 3, y: 1 }, side: SH_E }],
+  inPorts: [{ cell: { q: 0, r: 0 }, side: SH_W }],
+  outPorts: [{ cell: { q: 3, r: 1 }, side: SH_E }],
 });
 /** Five-cell centrifuge with a south-facing discharge. */
 export const SHAPE_CENTRIFUGE: MachineShape = deepFreezeData({
   cells: [
-    { x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 },
-    { x: 2, y: 1 }, { x: 2, y: 2 },
+    { q: 0, r: 0 }, { q: 1, r: 0 }, { q: 2, r: 0 },
+    { q: 2, r: 1 }, { q: 2, r: 2 },
   ],
-  inPorts: [{ cell: { x: 0, y: 0 }, side: SH_W }],
-  outPorts: [{ cell: { x: 2, y: 2 }, side: SH_S }],
+  inPorts: [{ cell: { q: 0, r: 0 }, side: SH_W }],
+  outPorts: [{ cell: { q: 2, r: 2 }, side: SH_SE }],
 });
 /** Six-cell diagonal reactor whose silhouette exposes its offset effect. */
 export const SHAPE_SKEW: MachineShape = deepFreezeData({
   cells: [
-    { x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 },
-    { x: 2, y: 1 }, { x: 2, y: 2 }, { x: 3, y: 2 },
+    { q: 0, r: 0 }, { q: 1, r: 0 }, { q: 1, r: 1 },
+    { q: 2, r: 1 }, { q: 2, r: 2 }, { q: 3, r: 2 },
   ],
-  inPorts: [{ cell: { x: 0, y: 0 }, side: SH_W }],
-  outPorts: [{ cell: { x: 3, y: 2 }, side: SH_E }],
+  inPorts: [{ cell: { q: 0, r: 0 }, side: SH_W }],
+  outPorts: [{ cell: { q: 3, r: 2 }, side: SH_E }],
 });
 /** Seven-cell vat; broad rather than long so it packs differently from reactors. */
 export const SHAPE_VAT: MachineShape = deepFreezeData({
   cells: [
-    { x: 0, y: 0 }, { x: 1, y: 0 },
-    { x: 0, y: 1 }, { x: 1, y: 1 }, { x: 2, y: 1 },
-    { x: 0, y: 2 }, { x: 1, y: 2 },
+    { q: 0, r: 0 }, { q: 1, r: 0 },
+    { q: 0, r: 1 }, { q: 1, r: 1 }, { q: 2, r: 1 },
+    { q: 0, r: 2 }, { q: 1, r: 2 },
   ],
-  inPorts: [{ cell: { x: 0, y: 1 }, side: SH_W }],
-  outPorts: [{ cell: { x: 2, y: 1 }, side: SH_E }],
+  inPorts: [{ cell: { q: 0, r: 1 }, side: SH_W }],
+  outPorts: [{ cell: { q: 2, r: 1 }, side: SH_E }],
 });
 
 /** Seven-cell U-settler; the open chamber makes its return path legible in packing. */
 export const SHAPE_SETTLER: MachineShape = deepFreezeData({
   cells: [
-    { x: 0, y: 0 }, { x: 0, y: 1 }, { x: 0, y: 2 },
-    { x: 1, y: 2 },
-    { x: 2, y: 2 }, { x: 2, y: 1 }, { x: 2, y: 0 },
+    { q: 0, r: 0 }, { q: 0, r: 1 }, { q: 0, r: 2 },
+    { q: 1, r: 2 },
+    { q: 2, r: 2 }, { q: 2, r: 1 }, { q: 2, r: 0 },
   ],
-  inPorts: [{ cell: { x: 0, y: 0 }, side: SH_W }],
-  outPorts: [{ cell: { x: 2, y: 0 }, side: SH_E }],
+  inPorts: [{ cell: { q: 0, r: 0 }, side: SH_W }],
+  outPorts: [{ cell: { q: 2, r: 0 }, side: SH_E }],
 });
 
 /** Canonical footprint per machine type (each type has a fixed shape, Big-Pharma style). */

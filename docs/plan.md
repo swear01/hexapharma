@@ -7,8 +7,9 @@
 ### TDD implementation order
 
 1. **Freeze gameplay contracts and RED tests**
+   - Research與Factory凍結為pointy-top axial `{q,r}`；六方向E／SE／SW／W／NW／NE、六個60° rotations及dense `r * width + q`索引都有direct contract tests。
    - 單一大型 Atlas 正常生成 4 種獨立疾病，generator 支援 1–8 種。
-   - fresh fog 恰為 start-centered 5×5；只有 Wall 穿霧可見。
+   - fresh fog 恰為start-centered hex distance radius 2（正常邊界內19 cells）；只有 Wall 穿霧可見。
    - Cure／SideEffect 是可重疊欄位，Outcome 可同時含 cure 與 side effect。
    - 正常 starting cash 是 $1000；無注資 fresh run 必須可達 first sale。
    - 先寫 seed diversity、terrain relevance、solver region-minima、endpoint commit、finite demand、profitable Market與fresh-start integration tests。
@@ -31,7 +32,7 @@
    - 一次commit一個canonical完整stamp；當步立即扣款、執行、揭露與evaluate。blank map click不改program，沒有batch route submission或editable pending queue。
    - no-cure保留session供下一次決定；Failure／Cure結束，Abort不退款也不回滾fog。
    - 成功Cure自動建立或覆寫每疾病唯一的`DiscoveredFormula`；formula ribbon顯示已執行steps、累積cost與side effects。
-   - assay mission只提示local／八方向的寬廣sector；不暴露座標、距離或reference。
+   - assay mission只提示local或canonical六方向的寬廣sector；不暴露座標、距離或reference。
    - 保持complete fixed PathStamp、no partial path、planning不揭霧、actual segments才揭霧。
 
 5. **Bootstrap, economy and Market**
@@ -48,7 +49,7 @@
    - residue scan：batch Research route、partial path、blank-click append、非Wall穿霧、universal corridor、default one disease、互斥effects、$200 start、permanent price floor、Pilot Plant玩家文案、generated bitmap manifest與fixture-only full loop都不得留作active truth。
    - 更新README、design、overview、notes、decisions、invariants、structure、UI contract、player guide、roadmap與playtest。
    - Orbital Wet-Lab Schematic收斂為black-blue／graphite／bone-white／steel基底，語意色只用cyan／amber／lime／magenta／red；vector runtime不再依賴generated lab bitmap manifest。
-   - 重建Research／effects／Market screenshots，做至少一輪邏輯、視覺與文件audit；Atlas／Factory保持正方格，不在此milestone遷移hex geometry。
+   - 重建Research／Factory／effects／Market screenshots，做至少一輪邏輯、視覺與文件audit；確認pointy-top polygon、q/r picking、六鄰接routing與六個60° rotations在sim／renderer／UI一致。
 
 7. **Human fun validation on 53346**
    - 清Save與Blueprint Library；不用`?cash`／`?research`、hidden reference、solver、compiler、預製Blueprint或注入Knowledge。
@@ -68,4 +69,4 @@
 - final art/audio polish、帳戶、雲端Blueprint repository。
 - release candidate前的跨build save migration。
 
-平衡可逐步調整；fresh-loop可達性、stepwise reveal–decide、auto formula、quota-3 contracts／patent gates、seed／disease解法差異、finite demand、overlap effects、完整PathStamp、Wall-only穿霧、direct paid Production、optional Production Plan、Blueprint v3、Save v9與strict gate不能後置。
+平衡可逐步調整；fresh-loop可達性、stepwise reveal–decide、auto formula、quota-3 contracts／patent gates、seed／disease解法差異、finite demand、overlap effects、完整PathStamp、Wall-only穿霧、direct paid Production、optional Production Plan、true-hex geometry、Blueprint v4、Save v10與strict gate不能後置。

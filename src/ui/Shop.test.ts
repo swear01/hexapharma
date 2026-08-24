@@ -17,11 +17,11 @@ function product(
   return {
     id: inventoryId,
     inventoryId,
-    drug: { pos: [{ x: 0, y: 0 }], failed: false },
+    drug: { pos: [{ q: 0, r: 0 }], failed: false },
     productionCost,
     outcome: {
       failed: false,
-      final: [{ x: 0, y: 0 }],
+      final: [{ q: 0, r: 0 }],
       cured: cures,
       sideEffects,
     },

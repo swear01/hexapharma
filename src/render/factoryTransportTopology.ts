@@ -4,20 +4,11 @@ import type {
   FactoryTile,
 } from "../sim/phase0_interfaces";
 import { worldCells, worldInPorts, worldOutPorts } from "../sim/factory-geom";
+import { HEX_DIRS, HEX_DQ, HEX_DR, hexInBounds, hexIndex, oppositeHexDir } from "../sim/hex";
 
-const DIR_DX: readonly number[] = [1, 0, -1, 0];
-const DIR_DY: readonly number[] = [0, 1, 0, -1];
-const ALL_SIDES_MASK = 0b1111;
+const ALL_SIDES_MASK = 0b111111;
 
 export const TRANSPORT_ANIMATION_PERIOD = 20;
-
-export type FactoryTransportShape =
-  | "isolated"
-  | "endpoint"
-  | "straight"
-  | "corner"
-  | "tee"
-  | "cross";
 
 export type FactoryTransportKind = FactoryTile["kind"] | "machine";
 
@@ -28,19 +19,18 @@ export interface FactoryTransportCell {
   readonly inMask: number;
   readonly outMask: number;
   readonly incidentMask: number;
-  readonly shape: FactoryTransportShape;
 }
 
 export interface FactoryTransportEdge {
-  readonly from: { readonly x: number; readonly y: number };
-  readonly to: { readonly x: number; readonly y: number };
+  readonly from: { readonly q: number; readonly r: number };
+  readonly to: { readonly q: number; readonly r: number };
   readonly dir: Dir;
 }
 
 export interface FactoryMachinePortVisual {
   readonly machineId: number;
-  readonly x: number;
-  readonly y: number;
+  readonly q: number;
+  readonly r: number;
   readonly side: Dir;
   readonly role: "input" | "output";
   readonly connected: boolean;
@@ -62,10 +52,6 @@ interface MutableTransportCell {
 
 function sideBit(side: Dir): number {
   return 1 << side;
-}
-
-function opposite(side: Dir): Dir {
-  return ((side + 2) & 3) as Dir;
 }
 
 function maskForSides(sides: readonly Dir[]): number {
@@ -91,35 +77,11 @@ function tilePorts(tile: FactoryTile): { readonly acceptMask: number; readonly e
   }
 }
 
-function bitCount(mask: number): number {
-  let value = mask & ALL_SIDES_MASK;
-  let count = 0;
-  while (value !== 0) {
-    count += value & 1;
-    value >>>= 1;
+function requireCellIndex(layout: FactoryLayout, q: number, r: number, context: string): number {
+  if (!hexInBounds(layout.width, layout.height, q, r)) {
+    throw new Error(`Factory transport ${context} is outside the layout at ${q},${r}`);
   }
-  return count;
-}
-
-export function classifyTransportMask(mask: number): FactoryTransportShape {
-  if (!Number.isSafeInteger(mask) || mask < 0 || mask > ALL_SIDES_MASK) {
-    throw new Error("Factory transport mask must be an integer in [0, 15]");
-  }
-  const count = bitCount(mask);
-  if (count === 0) return "isolated";
-  if (count === 1) return "endpoint";
-  if (count === 3) return "tee";
-  if (count === 4) return "cross";
-  const horizontal = sideBit(0) | sideBit(2);
-  const vertical = sideBit(1) | sideBit(3);
-  return mask === horizontal || mask === vertical ? "straight" : "corner";
-}
-
-function requireCellIndex(layout: FactoryLayout, x: number, y: number, context: string): number {
-  if (x < 0 || y < 0 || x >= layout.width || y >= layout.height) {
-    throw new Error(`Factory transport ${context} is outside the layout at ${x},${y}`);
-  }
-  return y * layout.width + x;
+  return hexIndex(layout.width, q, r);
 }
 
 export function buildFactoryTransportTopology(layout: FactoryLayout): FactoryTransportTopology {
@@ -141,11 +103,11 @@ export function buildFactoryTransportTopology(layout: FactoryLayout): FactoryTra
   const unresolvedPorts: Omit<FactoryMachinePortVisual, "connected">[] = [];
   for (const machine of layout.machines) {
     for (const worldCell of worldCells(machine)) {
-      const index = requireCellIndex(layout, worldCell.x, worldCell.y, `machine ${machine.id} cell`);
+      const index = requireCellIndex(layout, worldCell.q, worldCell.r, `machine ${machine.id} cell`);
       const cell = cells[index];
       if (cell === undefined) throw new Error(`Factory transport layout is missing tile ${index}`);
       if (cell.kind === "machine") {
-        throw new Error(`Factory transport machines overlap at ${worldCell.x},${worldCell.y}`);
+        throw new Error(`Factory transport machines overlap at ${worldCell.q},${worldCell.r}`);
       }
       if (cell.kind !== "empty") {
         throw new Error(`Factory transport machine ${machine.id} overlaps a ${cell.kind} tile`);
@@ -155,7 +117,7 @@ export function buildFactoryTransportTopology(layout: FactoryLayout): FactoryTra
       cell.emitMask = 0;
     }
     for (const port of worldInPorts(machine)) {
-      const index = requireCellIndex(layout, port.x, port.y, `machine ${machine.id} input port`);
+      const index = requireCellIndex(layout, port.q, port.r, `machine ${machine.id} input port`);
       const cell = cells[index];
       if (cell === undefined || cell.kind !== "machine") {
         throw new Error(`Factory transport machine ${machine.id} has a detached input port`);
@@ -163,14 +125,14 @@ export function buildFactoryTransportTopology(layout: FactoryLayout): FactoryTra
       cell.acceptMask |= sideBit(port.side);
       unresolvedPorts.push({
         machineId: machine.id,
-        x: port.x,
-        y: port.y,
+        q: port.q,
+        r: port.r,
         side: port.side,
         role: "input",
       });
     }
     for (const port of worldOutPorts(machine)) {
-      const index = requireCellIndex(layout, port.x, port.y, `machine ${machine.id} output port`);
+      const index = requireCellIndex(layout, port.q, port.r, `machine ${machine.id} output port`);
       const cell = cells[index];
       if (cell === undefined || cell.kind !== "machine") {
         throw new Error(`Factory transport machine ${machine.id} has a detached output port`);
@@ -178,8 +140,8 @@ export function buildFactoryTransportTopology(layout: FactoryLayout): FactoryTra
       cell.emitMask |= sideBit(port.side);
       unresolvedPorts.push({
         machineId: machine.id,
-        x: port.x,
-        y: port.y,
+        q: port.q,
+        r: port.r,
         side: port.side,
         role: "output",
       });
@@ -187,23 +149,22 @@ export function buildFactoryTransportTopology(layout: FactoryLayout): FactoryTra
   }
 
   const edges: FactoryTransportEdge[] = [];
-  for (let y = 0; y < layout.height; y++) {
-    for (let x = 0; x < layout.width; x++) {
-      const index = y * layout.width + x;
+  for (let r = 0; r < layout.height; r++) {
+    for (let q = 0; q < layout.width; q++) {
+      const index = hexIndex(layout.width, q, r);
       const from = cells[index];
       if (from === undefined) continue;
-      for (let rawDir = 0; rawDir < 4; rawDir++) {
-        const dir = rawDir as Dir;
+      for (const dir of HEX_DIRS) {
         if ((from.emitMask & sideBit(dir)) === 0) continue;
-        const toX = x + (DIR_DX[dir] ?? 0);
-        const toY = y + (DIR_DY[dir] ?? 0);
-        if (toX < 0 || toY < 0 || toX >= layout.width || toY >= layout.height) continue;
-        const to = cells[toY * layout.width + toX];
-        const toSide = opposite(dir);
+        const toQ = q + HEX_DQ[dir]!;
+        const toR = r + HEX_DR[dir]!;
+        if (!hexInBounds(layout.width, layout.height, toQ, toR)) continue;
+        const to = cells[hexIndex(layout.width, toQ, toR)];
+        const toSide = oppositeHexDir(dir);
         if (to === undefined || (to.acceptMask & sideBit(toSide)) === 0) continue;
         from.outMask |= sideBit(dir);
         to.inMask |= sideBit(toSide);
-        edges.push({ from: { x, y }, to: { x: toX, y: toY }, dir });
+        edges.push({ from: { q, r }, to: { q: toQ, r: toR }, dir });
       }
     }
   }
@@ -217,11 +178,10 @@ export function buildFactoryTransportTopology(layout: FactoryLayout): FactoryTra
       inMask: cell.inMask,
       outMask: cell.outMask,
       incidentMask,
-      shape: classifyTransportMask(incidentMask),
     };
   });
   const machinePorts: FactoryMachinePortVisual[] = unresolvedPorts.map((port) => {
-    const cell = resolvedCells[port.y * layout.width + port.x];
+    const cell = resolvedCells[hexIndex(layout.width, port.q, port.r)];
     if (cell === undefined) throw new Error("Factory transport resolved port cell is missing");
     const connectedMask = port.role === "input" ? cell.inMask : cell.outMask;
     return { ...port, connected: (connectedMask & sideBit(port.side)) !== 0 };

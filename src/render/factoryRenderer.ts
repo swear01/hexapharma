@@ -8,8 +8,8 @@
  * the sim calls; this module only paints what it is given. See AGENTS.md layering.
  *
  * NEW model: machines are NOT tiles. Each PlacedMachine carries a MachineShape in
- * LOCAL coords; its WORLD cells/ports = local rotated by `footRot` quarter-turns CW
- * (y-down: (x,y)->(-y,x)) + anchor, with port side = (side + footRot) & 3 — the same
+ * LOCAL coords; its WORLD cells/ports = local rotated by `footRot` sixth-turns CW
+ * + anchor, with port side = (side + footRot) % 6 — the same
  * geometry the sim uses (src/sim/factory-sim). Belts/splitters/mergers route units
  * between machine ports, so parallel machines really raise throughput.
  */
@@ -21,9 +21,15 @@ import type {
   FactoryLayout,
   FactoryRuntime,
   PathStamp,
-  Vec2,
 } from "../sim/phase0_interfaces";
 import { worldCells, worldInPorts, worldOutPorts } from "../sim/factory-geom";
+import { HEX_DIRS, HEX_DQ, HEX_DR, hexIndex } from "../sim/hex";
+import {
+  hexBoardBounds,
+  hexPolygon,
+  hexToPixel,
+  type PixelPoint,
+} from "./hexProjection";
 import {
   buildFactoryTransportTopology,
   transportAnimationPhase,
@@ -35,7 +41,9 @@ import { SHARED_SCHEMATIC_STYLE } from "./schematicStyle";
 
 // ───────────────────────────── layout constants ─────────────────────────────
 
-const CELL = 42; // px per grid cell
+const CELL = 42; // px point-to-point hex diameter
+export const FACTORY_HEX_SIZE = CELL / 2;
+const HEX_WIDTH = Math.sqrt(3) * FACTORY_HEX_SIZE;
 const PAD = 12; // outer padding
 
 // ───────────────────────────── palette ─────────────────────────────
@@ -93,37 +101,39 @@ const TOKEN_FAILED = FACTORY_SCHEMATIC_STYLE.failure;
 const TOKEN_RING = FACTORY_SCHEMATIC_STYLE.structure;
 const TOKEN_PROC = FACTORY_SCHEMATIC_STYLE.selection;
 
-const DIR_DX: readonly number[] = [1, 0, -1, 0];
-const DIR_DY: readonly number[] = [0, 1, 0, -1];
-
 export interface FactoryTransportArmGeometry {
   readonly side: Dir;
-  readonly from: Vec2;
-  readonly to: Vec2;
+  readonly from: PixelPoint;
+  readonly to: PixelPoint;
 }
 
 export function factoryTransportArmGeometry(mask: number): readonly FactoryTransportArmGeometry[] {
-  if (!Number.isSafeInteger(mask) || mask < 0 || mask > 0b1111) {
-    throw new Error("Factory renderer transport mask must be an integer in [0, 15]");
+  if (!Number.isSafeInteger(mask) || mask < 0 || mask > 0b111111) {
+    throw new Error("Factory renderer transport mask must be an integer in [0, 63]");
   }
   const arms: FactoryTransportArmGeometry[] = [];
-  for (let rawSide = 0; rawSide < 4; rawSide++) {
-    const side = rawSide as Dir;
+  for (const side of HEX_DIRS) {
     if ((mask & (1 << side)) === 0) continue;
+    const offset = hexToPixel(HEX_DQ[side]!, HEX_DR[side]!, FACTORY_HEX_SIZE);
     arms.push({
       side,
-      from: { x: CELL / 2, y: CELL / 2 },
-      to: {
-        x: CELL / 2 + (DIR_DX[side] ?? 0) * CELL / 2,
-        y: CELL / 2 + (DIR_DY[side] ?? 0) * CELL / 2,
-      },
+      from: { x: HEX_WIDTH / 2, y: FACTORY_HEX_SIZE },
+      to: { x: HEX_WIDTH / 2 + offset.x / 2, y: FACTORY_HEX_SIZE + offset.y / 2 },
     });
   }
   return arms;
 }
 
-export interface FactoryTransportFlowPoint extends Vec2 {
+export interface FactoryTransportFlowPoint extends PixelPoint {
   readonly dir: Dir;
+}
+
+export function factoryCellCenter(q: number, r: number): PixelPoint {
+  const projected = hexToPixel(q, r, FACTORY_HEX_SIZE);
+  return {
+    x: PAD + HEX_WIDTH / 2 + projected.x,
+    y: PAD + FACTORY_HEX_SIZE + projected.y,
+  };
 }
 
 export function factoryTransportFlowPoint(
@@ -135,16 +145,14 @@ export function factoryTransportFlowPoint(
   if (!Number.isFinite(phase) || phase < 0 || phase >= 1) {
     throw new Error("Factory renderer transport animation phase must be in [0, 1)");
   }
-  const fromX = PAD + edge.from.x * CELL + CELL / 2;
-  const fromY = PAD + edge.from.y * CELL + CELL / 2;
-  const toX = PAD + edge.to.x * CELL + CELL / 2;
-  const toY = PAD + edge.to.y * CELL + CELL / 2;
+  const from = factoryCellCenter(edge.from.q, edge.from.r);
+  const to = factoryCellCenter(edge.to.q, edge.to.r);
   const start = fromMachine ? 0.5 : 0.18;
   const end = toMachine ? 0.5 : 0.82;
   const progress = start + (end - start) * phase;
   return {
-    x: fromX + (toX - fromX) * progress,
-    y: fromY + (toY - fromY) * progress,
+    x: from.x + (to.x - from.x) * progress,
+    y: from.y + (to.y - from.y) * progress,
     dir: edge.dir,
   };
 }
@@ -180,9 +188,10 @@ export function machineVisualStyle(typeId: string): MachineVisualStyle {
 
 /** Pixel size of the whole canvas for a layout. */
 function canvasSize(layout: FactoryLayout): { width: number; height: number } {
+  const bounds = hexBoardBounds(layout.width, layout.height, FACTORY_HEX_SIZE);
   return {
-    width: PAD * 2 + layout.width * CELL,
-    height: PAD * 2 + layout.height * CELL,
+    width: Math.ceil(PAD * 2 + bounds.maxX - bounds.minX),
+    height: Math.ceil(PAD * 2 + bounds.maxY - bounds.minY),
   };
 }
 
@@ -190,8 +199,10 @@ function canvasSize(layout: FactoryLayout): { width: number; height: number } {
 
 /** Draw a triangle arrow centered at (cx,cy) pointing in direction `d`. */
 function drawArrow(g: Graphics, cx: number, cy: number, d: Dir, color: number, scale = 0.22): void {
-  const dx = DIR_DX[d] ?? 0;
-  const dy = DIR_DY[d] ?? 0;
+  const projected = hexToPixel(HEX_DQ[d]!, HEX_DR[d]!, 1);
+  const length = Math.hypot(projected.x, projected.y);
+  const dx = projected.x / length;
+  const dy = projected.y / length;
   const r = CELL * scale;
   const tipX = cx + dx * r;
   const tipY = cy + dy * r;
@@ -204,7 +215,7 @@ function drawArrow(g: Graphics, cx: number, cy: number, d: Dir, color: number, s
   g.moveTo(tipX, tipY).lineTo(b1x, b1y).lineTo(b2x, b2y).lineTo(tipX, tipY).fill({ color });
 }
 
-/** Draw a small notch rectangle on the `side` edge of the cell at world (cx,cy). */
+/** Draw a small notch on the `side` edge of the cell at world (cx,cy). */
 function drawPortNotch(
   g: Graphics,
   cx: number,
@@ -213,16 +224,11 @@ function drawPortNotch(
   color: number,
   connected: boolean,
 ): void {
-  const dx = DIR_DX[side] ?? 0;
-  const dy = DIR_DY[side] ?? 0;
-  const half = CELL / 2;
-  const ex = cx + dx * (half - 5); // mid-point of the edge, just inside
-  const ey = cy + dy * (half - 5);
-  const w = dx !== 0 ? 8 : 18;
-  const h = dy !== 0 ? 8 : 18;
-  g.rect(ex - w / 2 - 2, ey - h / 2 - 2, w + 4, h + 4)
-    .fill({ color: FACTORY_SCHEMATIC_STYLE.portFrame });
-  g.rect(ex - w / 2, ey - h / 2, w, h).fill({
+  const offset = hexToPixel(HEX_DQ[side]!, HEX_DR[side]!, FACTORY_HEX_SIZE);
+  const ex = cx + offset.x * 0.42;
+  const ey = cy + offset.y * 0.42;
+  g.circle(ex, ey, 7).fill({ color: FACTORY_SCHEMATIC_STYLE.portFrame });
+  g.circle(ex, ey, 5).fill({
     color: connected ? color : FACTORY_SCHEMATIC_STYLE.portDisconnected,
     alpha: connected ? 1 : 0.7,
   });
@@ -233,32 +239,34 @@ interface DrawCtx {
   readonly topology: FactoryTransportTopology;
 }
 
-function drawFloorCell(x: number, y: number, cells: Graphics): void {
-  const px = PAD + x * CELL;
-  const py = PAD + y * CELL;
-  cells.rect(px, py, CELL, CELL).fill({ color: EMPTY_COLOR });
-  cells.rect(px, py, CELL, CELL).stroke({ color: GRID_LINE, width: 1 });
+function drawFloorCell(q: number, r: number, cells: Graphics): void {
+  const center = factoryCellCenter(q, r);
+  const polygon = hexPolygon(center.x, center.y, FACTORY_HEX_SIZE);
+  cells.poly([...polygon], true).fill({ color: EMPTY_COLOR });
+  cells.poly([...polygon], true).stroke({ color: GRID_LINE, width: 1 });
 }
 
 function drawTransportBase(
   visual: FactoryTransportCell,
   tile: FactoryTile,
-  x: number,
-  y: number,
+  q: number,
+  r: number,
   cells: Graphics,
 ): void {
-  const px = PAD + x * CELL;
-  const py = PAD + y * CELL;
-  const cx = px + CELL / 2;
-  const cy = py + CELL / 2;
+  const center = factoryCellCenter(q, r);
+  const px = center.x - HEX_WIDTH / 2;
+  const py = center.y - FACTORY_HEX_SIZE;
+  const cx = center.x;
+  const cy = center.y;
   const arms = factoryTransportArmGeometry(visual.incidentMask);
   if (arms.length === 0) {
     if (tile.kind !== "belt") return;
-    const dx = DIR_DX[tile.dir] ?? 0;
-    const dy = DIR_DY[tile.dir] ?? 0;
-    cells.moveTo(cx - dx * 4, cy - dy * 4).lineTo(cx + dx * 10, cy + dy * 10)
+    const offset = hexToPixel(HEX_DQ[tile.dir]!, HEX_DR[tile.dir]!, FACTORY_HEX_SIZE);
+    const dx = offset.x / Math.hypot(offset.x, offset.y);
+    const dy = offset.y / Math.hypot(offset.x, offset.y);
+    cells.moveTo(cx - dx * 4, cy - dy * 4).lineTo(cx + offset.x / 2, cy + offset.y / 2)
       .stroke({ color: BELT_RAIL, width: 22 });
-    cells.moveTo(cx - dx * 4, cy - dy * 4).lineTo(cx + dx * 10, cy + dy * 10)
+    cells.moveTo(cx - dx * 4, cy - dy * 4).lineTo(cx + offset.x / 2, cy + offset.y / 2)
       .stroke({ color: BELT_COLOR, width: 16 });
     return;
   }
@@ -278,14 +286,14 @@ function drawTransportBase(
 function drawTileBody(
   tile: FactoryTile,
   visual: FactoryTransportCell,
-  x: number,
-  y: number,
+  q: number,
+  r: number,
   ctx: DrawCtx,
 ): void {
-  const px = PAD + x * CELL;
-  const py = PAD + y * CELL;
-  const cx = px + CELL / 2;
-  const cy = py + CELL / 2;
+  const center = factoryCellCenter(q, r);
+  const cx = center.x;
+  const cy = center.y;
+  const body = (inset: number) => hexPolygon(cx, cy, FACTORY_HEX_SIZE - inset);
   const { cells } = ctx;
 
   switch (tile.kind) {
@@ -297,39 +305,38 @@ function drawTileBody(
       break;
     }
     case "splitter": {
-      cells.rect(px + 4, py + 4, CELL - 8, CELL - 8).fill({ color: SPLIT_COLOR })
+      cells.poly([...body(4)], true).fill({ color: SPLIT_COLOR })
         .stroke({ color: SPLIT_MARK, width: 2 });
       cells.circle(cx, cy, CELL * 0.13).fill({ color: SPLIT_MARK });
       for (const d of tile.outDirs) {
-        const dx = DIR_DX[d] ?? 0;
-        const dy = DIR_DY[d] ?? 0;
-        cells.moveTo(cx, cy).lineTo(cx + dx * CELL * 0.38, cy + dy * CELL * 0.38)
+        const offset = hexToPixel(HEX_DQ[d]!, HEX_DR[d]!, FACTORY_HEX_SIZE);
+        cells.moveTo(cx, cy).lineTo(cx + offset.x * 0.45, cy + offset.y * 0.45)
           .stroke({ color: SPLIT_MARK, width: 4 });
       }
       break;
     }
     case "merger": {
-      cells.rect(px + 4, py + 4, CELL - 8, CELL - 8).fill({ color: MERGE_COLOR })
+      cells.poly([...body(4)], true).fill({ color: MERGE_COLOR })
         .stroke({ color: MERGE_MARK, width: 2 });
       for (const d of tile.inDirs) {
-        const dx = DIR_DX[d] ?? 0;
-        const dy = DIR_DY[d] ?? 0;
-        cells.moveTo(cx + dx * CELL * 0.38, cy + dy * CELL * 0.38).lineTo(cx, cy)
+        const offset = hexToPixel(HEX_DQ[d]!, HEX_DR[d]!, FACTORY_HEX_SIZE);
+        cells.moveTo(cx + offset.x * 0.45, cy + offset.y * 0.45).lineTo(cx, cy)
           .stroke({ color: MERGE_MARK, width: 4 });
       }
       drawArrow(cells, cx, cy, tile.outDir, MERGE_MARK, 0.22);
       break;
     }
     case "source": {
-      cells.rect(px + 3, py + 3, CELL - 6, CELL - 6).fill({ color: SOURCE_COLOR })
+      cells.poly([...body(3)], true).fill({ color: SOURCE_COLOR })
         .stroke({ color: FACTORY_SCHEMATIC_STYLE.flow, width: 3 });
-      cells.circle(cx - (DIR_DX[tile.dir] ?? 0) * 5, cy - (DIR_DY[tile.dir] ?? 0) * 5, CELL * 0.24)
+      const offset = hexToPixel(HEX_DQ[tile.dir]!, HEX_DR[tile.dir]!, 5 / Math.sqrt(3));
+      cells.circle(cx - offset.x, cy - offset.y, CELL * 0.24)
         .stroke({ color: FACTORY_SCHEMATIC_STYLE.structure, width: 3 });
       drawArrow(cells, cx, cy, tile.dir, FACTORY_SCHEMATIC_STYLE.flow, 0.17);
       break;
     }
     case "sink": {
-      cells.rect(px + 3, py + 3, CELL - 6, CELL - 6).fill({ color: SINK_COLOR })
+      cells.poly([...body(3)], true).fill({ color: SINK_COLOR })
         .stroke({ color: FACTORY_SCHEMATIC_STYLE.cure, width: 3 });
       cells.circle(cx, cy, CELL * 0.27).stroke({ color: FACTORY_SCHEMATIC_STYLE.structure, width: 3 });
       cells.circle(cx, cy, CELL * 0.11).fill({ color: FACTORY_SCHEMATIC_STYLE.cure });
@@ -339,28 +346,29 @@ function drawTileBody(
 }
 
 export interface MachinePathGlyph {
-  readonly points: readonly Vec2[];
+  readonly points: readonly PixelPoint[];
 }
 
 export function machinePathGlyph(path: PathStamp): MachinePathGlyph {
   if (path.length === 0) {
     throw new Error("Factory renderer requires a non-empty path");
   }
-  const authored: Vec2[] = [{ x: 0, y: 0 }];
-  let x = 0;
-  let y = 0;
+  const authored: PixelPoint[] = [{ x: 0, y: 0 }];
+  let q = 0;
+  let r = 0;
   let minX = 0;
   let minY = 0;
   let maxX = 0;
   let maxY = 0;
-  for (const delta of path) {
-    x += delta.x;
-    y += delta.y;
-    authored.push({ x, y });
-    if (x < minX) minX = x;
-    if (y < minY) minY = y;
-    if (x > maxX) maxX = x;
-    if (y > maxY) maxY = y;
+  for (const dir of path) {
+    q += HEX_DQ[dir]!;
+    r += HEX_DR[dir]!;
+    const point = hexToPixel(q, r, 1);
+    authored.push(point);
+    if (point.x < minX) minX = point.x;
+    if (point.y < minY) minY = point.y;
+    if (point.x > maxX) maxX = point.x;
+    if (point.y > maxY) maxY = point.y;
   }
   const scale = 22 / Math.max(1, maxX - minX, maxY - minY);
   const centerX = (minX + maxX) / 2;
@@ -428,48 +436,34 @@ function drawMachine(m: PlacedMachine, isBottleneck: boolean, ctx: DrawCtx): voi
     : baseStyle;
   const accent = isBottleneck ? FACTORY_SCHEMATIC_STYLE.selection : FACTORY_SCHEMATIC_STYLE.flow;
   const occupiedCells = worldCells(m);
-  const occupied = new Set(occupiedCells.map((cell) => `${cell.x},${cell.y}`));
 
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
   let maxY = -Infinity;
   for (const wc of occupiedCells) {
-    const px = PAD + wc.x * CELL;
-    const py = PAD + wc.y * CELL;
-    const leftConnected = occupied.has(`${wc.x - 1},${wc.y}`);
-    const rightConnected = occupied.has(`${wc.x + 1},${wc.y}`);
-    const topConnected = occupied.has(`${wc.x},${wc.y - 1}`);
-    const bottomConnected = occupied.has(`${wc.x},${wc.y + 1}`);
-    const x0 = px + (leftConnected ? 0 : 3);
-    const y0 = py + (topConnected ? 0 : 3);
-    const x1 = px + CELL - (rightConnected ? 0 : 3);
-    const y1 = py + CELL - (bottomConnected ? 0 : 3);
-    cells.rect(x0 + 3, y0 + 4, x1 - x0, y1 - y0)
+    const center = factoryCellCenter(wc.q, wc.r);
+    const shadow = hexPolygon(center.x + 3, center.y + 4, FACTORY_HEX_SIZE - 3);
+    const body = hexPolygon(center.x, center.y, FACTORY_HEX_SIZE - 3);
+    cells.poly([...shadow], true)
       .fill({ color: FACTORY_SCHEMATIC_STYLE.shadow, alpha: FACTORY_MACHINE_SHADOW_ALPHA });
-    cells.rect(x0, y0, x1 - x0, y1 - y0).fill({ color: style.body });
-    if (!topConnected) cells.moveTo(x0, y0).lineTo(x1, y0);
-    if (!rightConnected) cells.moveTo(x1, y0).lineTo(x1, y1);
-    if (!bottomConnected) cells.moveTo(x1, y1).lineTo(x0, y1);
-    if (!leftConnected) cells.moveTo(x0, y1).lineTo(x0, y0);
-    cells.stroke({ color: accent, width: isBottleneck ? 4 : 3 });
-    cells.circle(px + CELL / 2, py + CELL / 2, 2.5).fill({ color: style.face, alpha: 0.58 });
-    if (wc.x < minX) minX = wc.x;
-    if (wc.y < minY) minY = wc.y;
-    if (wc.x > maxX) maxX = wc.x;
-    if (wc.y > maxY) maxY = wc.y;
+    cells.poly([...body], true).fill({ color: style.body })
+      .stroke({ color: accent, width: isBottleneck ? 4 : 3 });
+    cells.circle(center.x, center.y, 2.5).fill({ color: style.face, alpha: 0.58 });
+    if (center.x < minX) minX = center.x;
+    if (center.y < minY) minY = center.y;
+    if (center.x > maxX) maxX = center.x;
+    if (center.y > maxY) maxY = center.y;
   }
 
   const input = worldInPorts(m)[0];
   const output = worldOutPorts(m)[0];
   if (minX !== Infinity && input !== undefined && output !== undefined) {
-    const cx = PAD + ((minX + maxX + 1) * CELL) / 2;
-    const cy = PAD + ((minY + maxY + 1) * CELL) / 2;
-    const inX = PAD + input.x * CELL + CELL / 2;
-    const inY = PAD + input.y * CELL + CELL / 2;
-    const outX = PAD + output.x * CELL + CELL / 2;
-    const outY = PAD + output.y * CELL + CELL / 2;
-    cells.moveTo(inX, inY).lineTo(cx, cy).lineTo(outX, outY)
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+    const inCenter = factoryCellCenter(input.q, input.r);
+    const outCenter = factoryCellCenter(output.q, output.r);
+    cells.moveTo(inCenter.x, inCenter.y).lineTo(cx, cy).lineTo(outCenter.x, outCenter.y)
       .stroke({ color: style.face, width: 6, alpha: 0.46 });
   }
 
@@ -477,15 +471,15 @@ function drawMachine(m: PlacedMachine, isBottleneck: boolean, ctx: DrawCtx): voi
     const connected = topology.machinePorts.some((port) =>
       port.machineId === m.id &&
       port.role === "input" &&
-      port.x === wp.x &&
-      port.y === wp.y &&
+      port.q === wp.q &&
+      port.r === wp.r &&
       port.side === wp.side &&
       port.connected
     );
     drawPortNotch(
       cells,
-      PAD + wp.x * CELL + CELL / 2,
-      PAD + wp.y * CELL + CELL / 2,
+      factoryCellCenter(wp.q, wp.r).x,
+      factoryCellCenter(wp.q, wp.r).y,
       wp.side,
       PORT_IN,
       connected,
@@ -495,15 +489,15 @@ function drawMachine(m: PlacedMachine, isBottleneck: boolean, ctx: DrawCtx): voi
     const connected = topology.machinePorts.some((port) =>
       port.machineId === m.id &&
       port.role === "output" &&
-      port.x === wp.x &&
-      port.y === wp.y &&
+      port.q === wp.q &&
+      port.r === wp.r &&
       port.side === wp.side &&
       port.connected
     );
     drawPortNotch(
       cells,
-      PAD + wp.x * CELL + CELL / 2,
-      PAD + wp.y * CELL + CELL / 2,
+      factoryCellCenter(wp.q, wp.r).x,
+      factoryCellCenter(wp.q, wp.r).y,
       wp.side,
       PORT_OUT,
       connected,
@@ -511,11 +505,11 @@ function drawMachine(m: PlacedMachine, isBottleneck: boolean, ctx: DrawCtx): voi
   }
 
   if (minX !== Infinity) {
-    const cx = PAD + ((minX + maxX + 1) * CELL) / 2;
-    const cy = PAD + ((minY + maxY + 1) * CELL) / 2;
-    cells.rect(cx - 19, cy - 19, 38, 38).fill({ color: style.face })
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+    cells.circle(cx, cy, 19).fill({ color: style.face })
       .stroke({ color: accent, width: 3 });
-    cells.rect(cx - 13, cy - 13, 26, 26).stroke({ color: style.body, width: 2, alpha: 0.6 });
+    cells.circle(cx, cy, 13).stroke({ color: style.body, width: 2, alpha: 0.6 });
     drawMachineGlyph(cells, m, cx, cy, accent);
   }
 }
@@ -528,8 +522,8 @@ function drawTransportFlow(
 ): void {
   const phase = transportAnimationPhase(tick);
   for (const edge of topology.edges) {
-    const from = topology.cells[edge.from.y * width + edge.from.x];
-    const to = topology.cells[edge.to.y * width + edge.to.x];
+    const from = topology.cells[hexIndex(width, edge.from.q, edge.from.r)];
+    const to = topology.cells[hexIndex(width, edge.to.q, edge.to.r)];
     if (from === undefined || to === undefined) {
       throw new Error("Factory renderer transport edge references a missing cell");
     }
@@ -582,23 +576,23 @@ export async function createFactoryRenderer(layout: FactoryLayout): Promise<Fact
       renderedTopology = buildFactoryTransportTopology(curr);
       cells.clear();
       const ctx: DrawCtx = { cells, topology: renderedTopology };
-      for (let y = 0; y < curr.height; y++) {
-        for (let x = 0; x < curr.width; x++) drawFloorCell(x, y, cells);
+      for (let r = 0; r < curr.height; r++) {
+        for (let q = 0; q < curr.width; q++) drawFloorCell(q, r, cells);
       }
-      for (let y = 0; y < curr.height; y++) {
-        for (let x = 0; x < curr.width; x++) {
-          const tile = curr.tiles[y * curr.width + x];
-          const visual = renderedTopology.cells[y * curr.width + x];
+      for (let r = 0; r < curr.height; r++) {
+        for (let q = 0; q < curr.width; q++) {
+          const tile = curr.tiles[hexIndex(curr.width, q, r)];
+          const visual = renderedTopology.cells[hexIndex(curr.width, q, r)];
           if (tile === undefined || visual === undefined) continue;
-          drawTransportBase(visual, tile, x, y, cells);
+          drawTransportBase(visual, tile, q, r, cells);
         }
       }
-      for (let y = 0; y < curr.height; y++) {
-        for (let x = 0; x < curr.width; x++) {
-          const tile = curr.tiles[y * curr.width + x];
-          const visual = renderedTopology.cells[y * curr.width + x];
+      for (let r = 0; r < curr.height; r++) {
+        for (let q = 0; q < curr.width; q++) {
+          const tile = curr.tiles[hexIndex(curr.width, q, r)];
+          const visual = renderedTopology.cells[hexIndex(curr.width, q, r)];
           if (tile === undefined || visual === undefined) continue;
-          drawTileBody(tile, visual, x, y, ctx);
+          drawTileBody(tile, visual, q, r, ctx);
         }
       }
       for (const m of curr.machines) {
@@ -610,8 +604,12 @@ export async function createFactoryRenderer(layout: FactoryLayout): Promise<Fact
     }
     drawTransportFlow(renderedTopology, curr.width, runtime.tick, flow);
     for (let unitIndex = 0; unitIndex < runtime.unitCount; unitIndex++) {
-      const cx = PAD + (runtime.unitX[unitIndex] ?? 0) * CELL + CELL / 2;
-      const cy = PAD + (runtime.unitY[unitIndex] ?? 0) * CELL + CELL / 2;
+      const center = factoryCellCenter(
+        runtime.unitX[unitIndex] ?? 0,
+        runtime.unitY[unitIndex] ?? 0,
+      );
+      const cx = center.x;
+      const cy = center.y;
       const r = CELL * 0.2;
       tokens.circle(cx, cy, r + 2).fill({ color: TOKEN_RING });
       tokens.circle(cx, cy, r).fill({

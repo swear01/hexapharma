@@ -10,7 +10,7 @@
 - **portal 是同層 A→B**：成對、有向、trail 斷段；B 不是回程入口。單獨揭露一端不公開配對、方向或 preview jump。
 - **Research 逐步探索**：選machine與hover不改fog；每個已付費stamp的actual segments立即揭露。assay只給broad sector，不提供座標或距離。
 - **Cure 自動成為formula**：每疾病最多一份`DiscoveredFormula`；重複發現以最新完整session覆寫。formula是可讀成果，不是自動建廠指令。
-- **5×5 起始視野**：fresh fog只揭露中心start周圍5×5；每個stamp在單一intent中立即resolve，camera不虛構timed Dose phase。
+- **Radius-two 起始視野**：fresh fog只揭露中心start周圍hex distance≤2的19-cell disk；每個stamp在單一intent中立即resolve，camera不虛構timed Dose phase。
 - **mapgen terrain-first**：先由 seed 完成 radial bands／motifs／terrain，再在真實 traversal 上 constructive 地找 diverse references。禁止先造答案再保護一條 universal corridor。
 - **單圖多疾病**：預設 4 種、支援 1–8 種；default references 由 initial machines 到 `skew`／`dilute`／`settle` 分 tier。reference 只供 tests/tools，runtime 不提示答案。
 - **effect fields 可重疊**：constructed endpoint 是乾淨 Cure；區域其他 Cure cell 可同時有 SideEffect。renderer、Outcome 與 Market 不能用互斥 cell-kind 假設丟掉其中一種效果。
@@ -20,9 +20,9 @@
 - **Production Plan 是可選 sandbox**：無clock／cost／inventory／waste，與Research、Production狀態解耦；Sample只使用fog-masked planning map。玩家動詞是Commission，內部state可仍名pilot。
 - **Production 可直接建造**：新局已有空 24×12 layout。不要再加入Production Plan前置、封鎖頁或隱藏token。
 - **建造差異就是經濟 authority**：tile/machine新建收費；拆除不退款。只有接受的edit停止播放並重建runtime；rejection原子不變，累積waste保留。
-- **Blueprint v3 factory kind 是通用的**：`factory-layout`不記錄來自Production Plan或Production；同文件可開到Plan或付費Commission到Production。codec仍讀`research-program`，但UI不capture/apply它。
+- **Blueprint v4 factory kind 是通用的**：`factory-layout`不記錄來自Production Plan或Production；同文件可開到Plan或付費Commission到Production。codec仍讀現行`research-program`，但UI不capture/apply它；Library key是`hexapharma.blueprint-library.v4`。
 - **Blueprint ≠ save**：Library lifecycle 獨立；不含 fog、seed、economy、runtime 或結果。Load／Rewind 不能改 Library。
-- **Save v9 不兼容舊開發版**：full／compact／slots／rewind都必須保留stepwise Research／formulas、paid build trace與non-null Production。
+- **Save v10 不兼容舊開發版**：full／compact／slots／rewind都必須保留stepwise Research／formulas、paid build trace與non-null Production。checkpoint外層lineage仍是v2，內層key帶Save v10。
 - **connected texture 不是鄰居 skin**：只畫 sim 真正形成的 accept→emit edge；錯向相鄰格必須看得出沒有連接。
 - **hidden mounted ≠ active**：已造訪建築可 mounted 保存 camera/tool/history；hidden page 不接 gameplay input。
 - **renderer failure 必須可見**：asset/init 失敗不能用空 canvas 或 debug fallback 冒充成功。
@@ -30,7 +30,7 @@
 - **bootstrap 不是作弊 fixture**：正常起始 cash 是 $1000，fresh loop 必須不用注入 cash／Knowledge、hidden reference 或 compiler 就能到第一次出售。
 - **demand 必須耗盡**：base price 是 `12 + 4×difficulty + 2×referenceCost`；各疾病 next gross 逐次 `floor(9/10)` 到 0。Market 先乾淨、再低成本，只自動出售正 net 庫存。
 - **contracts 回饋探索工具**：每疾病shipping quota=3；Disease 1／2／3分別gate Skew／Dilute／Settle patent，並且不取代一般cash／Knowledge／prerequisites。
-- **Hexa 是品牌，不是幾何現況**：Atlas與Factory仍是分離的正方格authority；本PR不做true-hex migration。
+- **True hex 是 authority，不只是品牌**：Atlas與Factory都使用pointy-top axial `{q,r}`、E／SE／SW／W／NW／NE與`r * width + q` dense indexing。Factory有六個60° footprint／port rotations；兩個domain仍不得互載payload或共用validator。
 - **Orbital Wet-Lab 是語意系統**：black-blue／graphite／bone-white／steel為中性基底；cyan／amber／lime／magenta／red只對應flow／selection／cure／side-effect／failure。world是vector runtime，不再依賴generated bitmap manifest。
 
 ## Why

@@ -17,14 +17,14 @@ import { initFactory, snapshotFactory, stepFactory } from "./factory-sim";
 
 const E: Dir = 0;
 const S: Dir = 1;
-const W: Dir = 2;
+const W: Dir = 3;
 
 function emptyMap(n: number, start: Vec2): EffectMap {
   const len = n * n;
   return {
     width: n,
     height: n,
-    origin: { x: 0, y: 0 },
+    origin: { q: 0, r: 0 },
     start,
     cell: new Uint8Array(len),
     cureId: new Int16Array(len).fill(-1),
@@ -35,18 +35,18 @@ function emptyMap(n: number, start: Vec2): EffectMap {
 }
 
 function twoMaps(): MultiMap {
-  const first = emptyMap(20, { x: 5, y: 5 });
+  const first = emptyMap(20, { q: 5, r: 5 });
   first.cell[0] = CellKind.Wall;
   first.cell[1] = CellKind.Abyss;
   first.cell[2] = CellKind.Swamp;
   first.cell[3] = CellKind.Portal;
   first.portalTo[3] = 19;
-  const second = emptyMap(20, { x: 8, y: 8 });
+  const second = emptyMap(20, { q: 8, r: 8 });
   return { maps: [first, second] };
 }
 
 function machineDef(typeId: string, speed: number): FactoryMachineDef {
-  return { typeId, path: [{ x: 1, y: 0 }], cost: 1, speed };
+  return { typeId, path: [0], cost: 1, speed };
 }
 
 function lineLayout(period: number, speed: number): FactoryLayout {
@@ -60,7 +60,7 @@ function lineLayout(period: number, speed: number): FactoryLayout {
     { kind: "sink" },
   ];
   const machines: PlacedMachine[] = [
-    { id: 0, def: machineDef("m", speed), anchor: { x: 2, y: 0 }, footRot: 0, shape: SHAPE_1x1 },
+    { id: 0, def: machineDef("m", speed), anchor: { q: 2, r: 0 }, footRot: 0, shape: SHAPE_1x1 },
   ];
   return { width: 5, height: 1, tiles, machines };
 }

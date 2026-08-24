@@ -93,7 +93,7 @@ test("Blueprint Library persists Pilot layouts independently of save-slot loadin
   await expect(page.getByTestId("blueprint-status")).toContainText(/invalid JSON|Could not import/i);
 
   await page.evaluate((save) => {
-    localStorage.removeItem("hexapharma.save.checkpoint.0");
+    localStorage.removeItem("hexapharma.save.v10.checkpoint.0");
     localStorage.setItem("hexapharma.save.slot.0", save);
   }, preparedFacilitiesSave(15));
   await confirmLoad(page);

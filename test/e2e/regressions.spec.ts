@@ -4,6 +4,8 @@ import { generate } from "../../src/sim/mapgen";
 import { serializeGame } from "../../src/sim/save";
 import { DEFAULT_CATALOG } from "../../src/sim/phase0_interfaces";
 import { defaultGenOptions, researchPlanningTrails } from "../../src/ui/Game";
+import { focusLabCamera } from "../../src/render/labCamera";
+import type { HexCoord } from "../../src/sim/hex";
 
 test.setTimeout(60_000);
 
@@ -14,7 +16,7 @@ async function confirmLoad(page: import("@playwright/test").Page): Promise<void>
   await dialog.getByRole("button", { name: "Load saved game" }).click();
 }
 
-function plannedEndpoint(stepCount: number): { readonly x: number; readonly y: number } {
+function plannedEndpoint(stepCount: number): HexCoord {
   const options = defaultGenOptions(14);
   const level = generate(options);
   const game = createGameState(options, 200, 0);
@@ -37,10 +39,12 @@ async function clickCandidateEndpoint(page: Page, stepCount: number): Promise<vo
   if (box === null) throw new Error("Research canvas has no bounds");
   const cameraX = Number(await frame.getAttribute("data-camera-x"));
   const cameraY = Number(await frame.getAttribute("data-camera-y"));
+  const zoom = Number(await frame.getAttribute("data-camera-zoom"));
   const endpoint = plannedEndpoint(stepCount);
+  const endpointCenter = focusLabCamera(endpoint);
   await page.mouse.click(
-    box.x + box.width / 2 + (endpoint.x + 0.5 - cameraX) * 40 * box.width / 832,
-    box.y + box.height / 2 + (endpoint.y + 0.5 - cameraY) * 40 * box.height / 512,
+    box.x + box.width / 2 + (endpointCenter.x - cameraX) * zoom * box.width / 832,
+    box.y + box.height / 2 + (endpointCenter.y - cameraY) * zoom * box.height / 512,
   );
 }
 

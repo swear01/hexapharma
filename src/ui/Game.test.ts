@@ -21,10 +21,14 @@ import { generate } from "../sim/mapgen";
 
 describe("default Lab world options", () => {
   it("gives Research one broad target sector without leaking a coordinate or distance", () => {
-    expect(researchAssaySector({ x: 10, y: 10 }, { x: 24, y: 13 })).toBe("east");
-    expect(researchAssaySector({ x: 10, y: 10 }, { x: 14, y: 21 })).toBe("south-east");
-    expect(researchAssaySector({ x: 10, y: 10 }, { x: 3, y: 3 })).toBe("north-west");
-    expect(researchAssaySector({ x: 10, y: 10 }, { x: 10, y: 10 })).toBe("local");
+    const start = { q: 10, r: 10 };
+    expect(researchAssaySector(start, { q: 17, r: 10 })).toBe("east");
+    expect(researchAssaySector(start, { q: 10, r: 17 })).toBe("south-east");
+    expect(researchAssaySector(start, { q: 3, r: 17 })).toBe("south-west");
+    expect(researchAssaySector(start, { q: 3, r: 10 })).toBe("west");
+    expect(researchAssaySector(start, { q: 10, r: 3 })).toBe("north-west");
+    expect(researchAssaySector(start, { q: 17, r: 3 })).toBe("north-east");
+    expect(researchAssaySector(start, start)).toBe("local");
   });
 
   it("starts a new run on one large odd-sized map", () => {
@@ -112,37 +116,37 @@ describe("default Lab world options", () => {
     const mm: MultiMap = { maps: [{
       width,
       height: width,
-      origin: { x: 3, y: 3 },
-      start: { x: 3, y: 3 },
+      origin: { q: 3, r: 3 },
+      start: { q: 3, r: 3 },
       cell,
       cureId: new Int16Array(cells).fill(-1),
       sideEffectId: new Int32Array(cells).fill(-1),
       portalTo,
       fog: new Uint8Array(cells),
     }] };
-    const start = { pos: [{ x: 3, y: 3 }], failed: false };
+    const start = { pos: [{ q: 3, r: 3 }], failed: false };
     const program = { steps: [{
       typeId: DEFAULT_CATALOG[0]!.typeId,
       path: DEFAULT_CATALOG[0]!.path,
     }] };
 
     expect(researchPlanningTrails(mm, [new Uint8Array(cells)], start, program)[0]).toEqual([
-      { x: 3, y: 3 }, { x: 4, y: 3 }, { x: 5, y: 3 }, { x: 5, y: 4 },
+      { q: 3, r: 3 }, { q: 4, r: 3 }, { q: 5, r: 3 }, { q: 5, r: 4 },
     ]);
     const entryDiscovered = new Uint8Array(cells);
     entryDiscovered[3 * width + 4] = 1;
     expect(researchPlanningTrails(mm, [entryDiscovered], start, program)[0]).toEqual([
-      { x: 3, y: 3 }, { x: 4, y: 3 }, { x: 5, y: 3 }, { x: 5, y: 4 },
+      { q: 3, r: 3 }, { q: 4, r: 3 }, { q: 5, r: 3 }, { q: 5, r: 4 },
     ]);
     const known = Uint8Array.from(entryDiscovered);
     known[1 * width + 1] = 1;
     expect(researchPlanningTrails(mm, [known], start, program)[0]).toEqual([
-      { x: 3, y: 3 }, { x: 4, y: 3 }, null,
-      { x: 1, y: 1 }, { x: 2, y: 1 }, { x: 2, y: 2 },
+      { q: 3, r: 3 }, { q: 4, r: 3 }, null,
+      { q: 1, r: 1 }, { q: 2, r: 1 }, { q: 2, r: 2 },
     ]);
     expect(researchTrailsForProgram(mm, start, program, 1)[0]).toEqual([
-      { x: 3, y: 3 }, { x: 4, y: 3 }, null,
-      { x: 1, y: 1 }, { x: 2, y: 1 }, { x: 2, y: 2 },
+      { q: 3, r: 3 }, { q: 4, r: 3 }, null,
+      { q: 1, r: 1 }, { q: 2, r: 1 }, { q: 2, r: 2 },
     ]);
   });
 
@@ -155,24 +159,24 @@ describe("default Lab world options", () => {
     const mm: MultiMap = { maps: [{
       width,
       height: width,
-      origin: { x: 3, y: 3 },
-      start: { x: 3, y: 3 },
+      origin: { q: 3, r: 3 },
+      start: { q: 3, r: 3 },
       cell,
       cureId: new Int16Array(cells).fill(-1),
       sideEffectId: new Int32Array(cells).fill(-1),
       portalTo,
       fog: new Uint8Array(cells),
     }] };
-    const start = { pos: [{ x: 3, y: 3 }], failed: false };
+    const start = { pos: [{ q: 3, r: 3 }], failed: false };
     const program = { steps: [{
       typeId: "known-wall",
-      path: [{ x: 1 as const, y: 0 as const }, { x: 0 as const, y: 1 as const }],
+      path: [0, 1] as const,
     }] };
     const fog = new Uint8Array(cells);
     fog[3 * width + 4] = 1;
 
     expect(researchPlanningTrails(mm, [fog], start, program)[0]).toEqual([
-      { x: 3, y: 3 }, { x: 3, y: 4 },
+      { q: 3, r: 3 }, { q: 3, r: 4 },
     ]);
   });
 
@@ -195,8 +199,8 @@ describe("default Lab world options", () => {
     const mm: MultiMap = { maps: [{
       width,
       height: width,
-      origin: { x: 1, y: 1 },
-      start: { x: 1, y: 1 },
+      origin: { q: 1, r: 1 },
+      start: { q: 1, r: 1 },
       cell,
       cureId,
       sideEffectId,
@@ -218,9 +222,9 @@ describe("default Lab world options", () => {
 
   it("draws only the held candidate as the preview suffix", () => {
     expect(researchCandidateTrails(
-      [[{ x: 3, y: 3 }, { x: 4, y: 3 }]],
-      [[{ x: 3, y: 3 }, { x: 4, y: 3 }, { x: 4, y: 4 }]],
-    )).toEqual([[{ x: 4, y: 3 }, { x: 4, y: 4 }]]);
+      [[{ q: 3, r: 3 }, { q: 4, r: 3 }]],
+      [[{ q: 3, r: 3 }, { q: 4, r: 3 }, { q: 4, r: 4 }]],
+    )).toEqual([[{ q: 4, r: 3 }, { q: 4, r: 4 }]]);
   });
 
   it("maps Enter to the next cartridge and Backspace to ending the active assay", () => {
@@ -243,13 +247,13 @@ describe("default Lab world options", () => {
     expect(researchOutcomeText(null)).toBeNull();
     expect(researchOutcomeText({
       failed: false,
-      final: [{ x: 7, y: 4 }],
+      final: [{ q: 7, r: 4 }],
       cured: [0],
       sideEffects: [101, 102],
     })).toBe("Cure Disease 1 · 2 side effects");
     expect(researchOutcomeText({
       failed: false,
-      final: [{ x: 7, y: 4 }],
+      final: [{ q: 7, r: 4 }],
       cured: [],
       sideEffects: [],
     })).toBe("No cure · No side effects");
@@ -271,20 +275,20 @@ describe("default Lab world options", () => {
     const mm: MultiMap = { maps: [{
       width,
       height: width,
-      origin: { x: 2, y: 2 },
-      start: { x: 2, y: 2 },
+      origin: { q: 2, r: 2 },
+      start: { q: 2, r: 2 },
       cell,
       cureId: new Int16Array(cells).fill(-1),
       sideEffectId: new Int32Array(cells).fill(-1),
       portalTo: new Int32Array(cells).fill(-1),
       fog: new Uint8Array(cells),
     }] };
-    const start = { pos: [{ x: 2, y: 2 }], failed: false };
+    const start = { pos: [{ q: 2, r: 2 }], failed: false };
     const program = { steps: [{
       typeId: DEFAULT_CATALOG[0]!.typeId,
-      path: [{ x: 1 as const, y: 0 as const }],
+      path: [0] as const,
     }] };
 
-    expect(researchTrailsForProgram(mm, start, program, 1)[0]).toEqual([{ x: 2, y: 2 }]);
+    expect(researchTrailsForProgram(mm, start, program, 1)[0]).toEqual([{ q: 2, r: 2 }]);
   });
 });

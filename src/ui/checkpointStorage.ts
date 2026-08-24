@@ -7,6 +7,7 @@ import {
 } from "../sim/phase0_interfaces";
 import { asJsonRecord } from "../json-guards";
 import {
+  SAVE_VERSION,
   deserializeGame,
   deserializeGameAuthority,
   deserializeSlots,
@@ -46,6 +47,10 @@ export interface SlotWrite {
 }
 
 function checkpointKey(slot: number): string {
+  return `hexapharma.save.v${SAVE_VERSION}.checkpoint.${slot}`;
+}
+
+function legacyCheckpointKey(slot: number): string {
   return `hexapharma.save.checkpoint.${slot}`;
 }
 
@@ -414,10 +419,12 @@ function invalidRead(
 
 export function readSlot(storage: Storage, slot: number): SlotRead {
   let canonicalRaw: string | null;
+  let legacyCheckpointRaw: string | null;
   let legacyHeadRaw: string | null;
   let legacyHistoryRaw: string | null;
   try {
     canonicalRaw = storage.getItem(checkpointKey(slot));
+    legacyCheckpointRaw = storage.getItem(legacyCheckpointKey(slot));
     legacyHeadRaw = storage.getItem(legacyHeadKey(slot));
     legacyHistoryRaw = storage.getItem(legacyHistoryKey(slot));
   } catch (error) {
@@ -440,6 +447,26 @@ export function readSlot(storage: Storage, slot: number): SlotRead {
         slot,
         `checkpoint is invalid: ${message(error)}`,
         salvageCheckpoint(canonicalRaw),
+      );
+    }
+  }
+
+  if (legacyCheckpointRaw !== null) {
+    try {
+      const decoded = decodeCheckpoint(legacyCheckpointRaw);
+      return {
+        ...decoded,
+        error: null,
+        notice: `${slotLabel(slot)} legacy checkpoint is validated and ready to migrate.`,
+        recovery: decoded,
+        canRecover: true,
+        migration: legacyCheckpointRaw,
+      };
+    } catch (error) {
+      return invalidRead(
+        slot,
+        `legacy checkpoint is invalid: ${message(error)}`,
+        salvageCheckpoint(legacyCheckpointRaw),
       );
     }
   }

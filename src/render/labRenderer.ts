@@ -1,14 +1,18 @@
 import { Application, Graphics } from "pixi.js";
 import type { DrugState, EffectMap, MultiMap, Vec2 } from "../sim/phase0_interfaces";
+import { hexInBounds, hexIndex } from "../sim/hex";
 import {
   LAB_CELL_PIXELS,
   LAB_VIEWPORT,
+  labCellCenter,
+  labCellPolygon,
   labGridKindForBoundary,
   labGridLineStyle,
   visibleLabCells,
   type LabCamera,
   type LabGridLineKind,
 } from "./labCamera";
+import { hexToPixel, type PixelPoint } from "./hexProjection";
 import { revealedRegionEdges } from "./labRegions";
 import { labTerrainVisual, type CellTerrainVisual, type PortalTerrainVisual } from "./labTerrain";
 import { SHARED_SCHEMATIC_STYLE } from "./schematicStyle";
@@ -37,17 +41,9 @@ export interface LabRenderer {
   destroy(): void;
 }
 
-function cellScreen(camera: LabCamera, x: number, y: number): Vec2 {
-  const cell = LAB_CELL_PIXELS * camera.zoom;
-  return {
-    x: LAB_VIEWPORT.width / 2 + (x - camera.x) * cell,
-    y: LAB_VIEWPORT.height / 2 + (y - camera.y) * cell,
-  };
-}
-
-function isRevealed(map: EffectMap, x: number, y: number): boolean {
-  if (x < 0 || y < 0 || x >= map.width || y >= map.height) return false;
-  return map.fog[y * map.width + x] === 1;
+function isRevealed(map: EffectMap, q: number, r: number): boolean {
+  if (!hexInBounds(map.width, map.height, q, r)) return false;
+  return map.fog[hexIndex(map.width, q, r)] === 1;
 }
 
 export interface LabFeatureStyle {
@@ -67,22 +63,17 @@ function drawGridKind(
   bounds: ReturnType<typeof visibleLabCells>,
   origin: Vec2,
 ): void {
-  const topLeft = cellScreen(camera, bounds.x0, bounds.y0);
-  const bottomRight = cellScreen(camera, bounds.x1, bounds.y1);
-  let drewLine = false;
-  for (let x = bounds.x0; x <= bounds.x1; x++) {
-    if (labGridKindForBoundary(x, origin.x) !== kind) continue;
-    const screen = cellScreen(camera, x, bounds.y0);
-    grid.moveTo(screen.x, topLeft.y).lineTo(screen.x, bottomRight.y);
-    drewLine = true;
+  let drewCell = false;
+  for (let r = bounds.r0; r < bounds.r1; r++) {
+    for (let q = bounds.q0; q < bounds.q1; q++) {
+      const isMajor = labGridKindForBoundary(q, origin.q) === "major"
+        || labGridKindForBoundary(r, origin.r) === "major";
+      if ((kind === "major") !== isMajor) continue;
+      grid.poly([...labCellPolygon(camera, { q, r })], true);
+      drewCell = true;
+    }
   }
-  for (let y = bounds.y0; y <= bounds.y1; y++) {
-    if (labGridKindForBoundary(y, origin.y) !== kind) continue;
-    const screen = cellScreen(camera, bounds.x0, y);
-    grid.moveTo(topLeft.x, screen.y).lineTo(bottomRight.x, screen.y);
-    drewLine = true;
-  }
-  if (drewLine) grid.stroke(labGridLineStyle(kind, camera.zoom));
+  if (drewCell) grid.stroke(labGridLineStyle(kind, camera.zoom));
 }
 
 function drawLabGrid(map: EffectMap, camera: LabCamera, grid: Graphics): void {
@@ -108,15 +99,14 @@ function portalMarkerColor(marker: string): number {
 function drawPortalMotif(
   terrain: Graphics,
   visual: PortalTerrainVisual,
-  x: number,
-  y: number,
+  center: PixelPoint,
+  polygon: readonly PixelPoint[],
   cell: number,
 ): void {
-  const cx = x + cell / 2;
-  const cy = y + cell / 2;
+  const { x: cx, y: cy } = center;
   const marker = visual.pairMarker ?? `unpaired-${visual.role}`;
   const markerColor = portalMarkerColor(marker);
-  terrain.rect(x, y, cell, cell).fill({ color: visual.baseColor, alpha: 1 });
+  terrain.poly([...polygon], true).fill({ color: visual.baseColor, alpha: 1 });
   terrain.circle(cx, cy, cell * 0.34).fill({ color: LAB_SCHEMATIC_STYLE.background, alpha: 1 });
   terrain.circle(cx, cy, cell * 0.34).stroke({ color: markerColor, width: Math.max(3, cell * 0.08) });
   terrain.circle(cx, cy, cell * 0.2).stroke({ color: visual.rimColor, width: Math.max(2, cell * 0.045), alpha: 0.9 });
@@ -149,9 +139,10 @@ function drawPortalMotif(
     }
     return;
   }
-  const length = Math.hypot(visual.direction.x, visual.direction.y);
-  const dx = visual.direction.x / length;
-  const dy = visual.direction.y / length;
+  const projectedDirection = hexToPixel(visual.direction.q, visual.direction.r, 1);
+  const length = Math.hypot(projectedDirection.x, projectedDirection.y);
+  const dx = projectedDirection.x / length;
+  const dy = projectedDirection.y / length;
   const px = -dy;
   const py = dx;
   const tipX = cx + dx * cell * 0.19;
@@ -173,18 +164,20 @@ function drawPortalMotif(
 function drawTerrainMotif(
   terrain: Graphics,
   visual: CellTerrainVisual | PortalTerrainVisual,
-  x: number,
-  y: number,
+  center: PixelPoint,
+  polygon: readonly PixelPoint[],
   cell: number,
 ): void {
   if (visual.kind === "empty") return;
   if (visual.kind === "portal") {
-    drawPortalMotif(terrain, visual, x, y, cell);
+    drawPortalMotif(terrain, visual, center, polygon, cell);
     return;
   }
+  const x = center.x - cell / 2;
+  const y = center.y - cell / 2;
   if (visual.kind === "wall") {
-    terrain.rect(x, y, cell, cell).fill({ color: visual.baseColor, alpha: 1 });
-    terrain.rect(x + 1, y + 1, cell - 2, cell - 2)
+    terrain.poly([...polygon], true).fill({ color: visual.baseColor, alpha: 1 });
+    terrain.poly([...polygon], true)
       .stroke({ color: visual.rimColor, width: Math.max(2, cell * 0.055), alpha: 0.95 });
     for (let row = 1; row <= 2; row++) {
       const lineY = y + (cell * row) / 3;
@@ -198,7 +191,7 @@ function drawTerrainMotif(
     return;
   }
   if (visual.kind === "abyss") {
-    terrain.rect(x, y, cell, cell).fill({ color: visual.baseColor, alpha: 1 });
+    terrain.poly([...polygon], true).fill({ color: visual.baseColor, alpha: 1 });
     terrain.circle(x + cell / 2, y + cell / 2, cell * 0.37).fill({ color: LAB_SCHEMATIC_STYLE.background, alpha: 1 });
     terrain.circle(x + cell / 2, y + cell / 2, cell * 0.4)
       .stroke({ color: visual.rimColor, width: Math.max(3, cell * 0.075), alpha: 0.95 });
@@ -208,7 +201,7 @@ function drawTerrainMotif(
       .fill({ color: LAB_SCHEMATIC_STYLE.flow, alpha: 0.28 });
     return;
   }
-  terrain.rect(x, y, cell, cell).fill({ color: visual.baseColor, alpha: 0.82 });
+  terrain.poly([...polygon], true).fill({ color: visual.baseColor, alpha: 0.82 });
   if (visual.kind === "swamp") {
     for (let line = 0; line < 3; line++) {
       const lineY = y + cell * (0.25 + line * 0.25);
@@ -261,40 +254,42 @@ function drawVisibleMap(
 ): void {
   const cell = LAB_CELL_PIXELS * camera.zoom;
   const bounds = visibleLabCells(camera, LAB_VIEWPORT, map);
-  for (let y = bounds.y0; y < bounds.y1; y++) {
-    for (let x = bounds.x0; x < bounds.x1; x++) {
-      const screen = cellScreen(camera, x, y);
-      const revealed = isRevealed(map, x, y);
-      terrain.rect(screen.x, screen.y, cell, cell)
+  for (let r = bounds.r0; r < bounds.r1; r++) {
+    for (let q = bounds.q0; q < bounds.q1; q++) {
+      const coord = { q, r };
+      const center = labCellCenter(camera, coord);
+      const polygon = labCellPolygon(camera, coord);
+      const revealed = isRevealed(map, q, r);
+      terrain.poly([...polygon], true)
         .fill({ color: revealed ? LAB_SCHEMATIC_STYLE.deck : LAB_SCHEMATIC_STYLE.background });
-      if (!revealed) terrain.rect(screen.x + 2, screen.y + 2, cell - 4, cell - 4)
+      if (!revealed) terrain.poly([...polygon], true)
         .stroke({ color: LAB_SCHEMATIC_STYLE.fogGrid, width: 1, alpha: 0.32 });
 
-      const visual = labTerrainVisual(map, x, y);
-      drawTerrainMotif(terrain, visual, screen.x, screen.y, cell);
+      const visual = labTerrainVisual(map, q, r);
+      drawTerrainMotif(terrain, visual, center, polygon, cell);
       if (labFeatureStyle(visual.kind).targetRing) {
-        const cx = screen.x + cell / 2;
-        const cy = screen.y + cell / 2;
-        featureOverlay.circle(cx, cy, cell * 0.37)
+        featureOverlay.circle(center.x, center.y, cell * 0.37)
           .stroke({ color: LAB_SCHEMATIC_STYLE.structure, width: Math.max(2, cell * 0.04), alpha: 0.9 });
       }
       if (visual.kind !== "portal" && visual.sideEffectOverlay) {
-        featureOverlay.circle(screen.x + cell * 0.78, screen.y + cell * 0.22, cell * 0.12)
+        featureOverlay.circle(center.x + cell * 0.28, center.y - cell * 0.28, cell * 0.12)
           .fill({ color: LAB_SCHEMATIC_STYLE.sideEffect, alpha: 0.98 });
-        featureOverlay.circle(screen.x + cell * 0.78, screen.y + cell * 0.22, cell * 0.17)
+        featureOverlay.circle(center.x + cell * 0.28, center.y - cell * 0.28, cell * 0.17)
           .stroke({ color: LAB_SCHEMATIC_STYLE.sideEffectOutline, width: Math.max(2, cell * 0.04), alpha: 0.98 });
       }
       if (visual.kind !== "empty") {
-        const edges = revealedRegionEdges(map, x, y);
+        const edges = revealedRegionEdges(map, q, r);
         const edgeStyle = {
           color: visual.rimColor,
           width: Math.max(2, cell * (visual.kind === "cure" ? 0.07 : 0.045)),
           alpha: visual.kind === "cure" ? 0.9 : 0.7,
         };
-        if (edges.top) terrain.moveTo(screen.x, screen.y).lineTo(screen.x + cell, screen.y).stroke(edgeStyle);
-        if (edges.right) terrain.moveTo(screen.x + cell, screen.y).lineTo(screen.x + cell, screen.y + cell).stroke(edgeStyle);
-        if (edges.bottom) terrain.moveTo(screen.x, screen.y + cell).lineTo(screen.x + cell, screen.y + cell).stroke(edgeStyle);
-        if (edges.left) terrain.moveTo(screen.x, screen.y).lineTo(screen.x, screen.y + cell).stroke(edgeStyle);
+        for (let direction = 0; direction < edges.length; direction++) {
+          if (edges[direction] !== true) continue;
+          const start = polygon[(direction + 1) % 6]!;
+          const end = polygon[(direction + 2) % 6]!;
+          terrain.moveTo(start.x, start.y).lineTo(end.x, end.y).stroke(edgeStyle);
+        }
       }
     }
   }
@@ -307,9 +302,7 @@ function drawToken(
   failed: boolean,
 ): void {
   const cell = LAB_CELL_PIXELS * camera.zoom;
-  const screen = cellScreen(camera, pos.x, pos.y);
-  const cx = screen.x + cell / 2;
-  const cy = screen.y + cell / 2;
+  const { x: cx, y: cy } = labCellCenter(camera, pos);
   const color = failed ? LAB_SCHEMATIC_STYLE.failure : LAB_SCHEMATIC_STYLE.flow;
   token.circle(cx, cy, cell * 0.42).stroke({ color, width: 2, alpha: 0.28 });
   token.circle(cx, cy, cell * 0.31).fill({ color: LAB_SCHEMATIC_STYLE.background, alpha: 0.96 })
@@ -337,13 +330,9 @@ function drawTrail(
       previous = null;
       continue;
     }
-    const point = cellScreen(camera, world.x, world.y);
-    const x = point.x + cell / 2;
-    const y = point.y + cell / 2;
+    const { x, y } = labCellCenter(camera, world);
     if (drawing && previous !== null && preview) {
-      const from = cellScreen(camera, previous.x, previous.y);
-      const x0 = from.x + cell / 2;
-      const y0 = from.y + cell / 2;
+      const { x: x0, y: y0 } = labCellCenter(camera, previous);
       const dx = x - x0;
       const dy = y - y0;
       const length = Math.hypot(dx, dy);
@@ -393,9 +382,7 @@ function drawPreviewToken(
   failed: boolean,
 ): void {
   const cell = LAB_CELL_PIXELS * camera.zoom;
-  const screen = cellScreen(camera, pos.x, pos.y);
-  const cx = screen.x + cell / 2;
-  const cy = screen.y + cell / 2;
+  const { x: cx, y: cy } = labCellCenter(camera, pos);
   const color = failed ? LAB_SCHEMATIC_STYLE.failure : LAB_SCHEMATIC_STYLE.candidate;
   token.circle(cx, cy, cell * 0.38).fill({ color, alpha: 0.18 });
   token.circle(cx, cy, cell * 0.34).stroke({ color, width: 3, alpha: 0.96 });

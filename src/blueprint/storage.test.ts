@@ -37,10 +37,10 @@ function fixture() {
   return blueprintFromProgram("Reusable Research program", program);
 }
 
-describe("cross-save Blueprint Library v3", () => {
-  it("uses a breaking v3 namespace and persists checksummed documents outside save slots", async () => {
-    expect(BLUEPRINT_LIBRARY_VERSION).toBe(3);
-    expect(BLUEPRINT_LIBRARY_KEY).toBe("hexapharma.blueprint-library.v3");
+describe("cross-save Blueprint Library v4", () => {
+  it("uses a breaking v4 namespace and persists checksummed documents outside save slots", async () => {
+    expect(BLUEPRINT_LIBRARY_VERSION).toBe(4);
+    expect(BLUEPRINT_LIBRARY_KEY).toBe("hexapharma.blueprint-library.v4");
     const storage = new MemoryStorage();
     const saved = await saveLibraryBlueprint(storage, fixture());
     expect(storage.getItem(BLUEPRINT_LIBRARY_KEY)).toContain("hexapharma-blueprint");
@@ -74,16 +74,26 @@ describe("cross-save Blueprint Library v3", () => {
     await expect(listLibraryBlueprints(storage)).rejects.toThrow(/version 1/i);
   });
 
-  it("rejects imported v1 Blueprint documents without changing storage", async () => {
+  it("rejects imported v3 Blueprint documents without changing storage", async () => {
     const storage = new MemoryStorage();
     const legacy = JSON.stringify({
       format: "hexapharma-blueprint",
-      version: 1,
+      version: 3,
       checksum: `sha256:${"0".repeat(64)}`,
       blueprint: { kind: "research-route" },
     });
 
-    await expect(importLibraryBlueprint(storage, legacy)).rejects.toThrow(/version 1/i);
+    await expect(importLibraryBlueprint(storage, legacy)).rejects.toThrow(/version 3/i);
+    expect(storage.getItem(BLUEPRINT_LIBRARY_KEY)).toBeNull();
+  });
+
+  it("leaves the v3 library namespace untouched when opening the v4 library", async () => {
+    const storage = new MemoryStorage();
+    const legacy = JSON.stringify({ version: 3, entries: [] });
+    storage.setItem("hexapharma.blueprint-library.v3", legacy);
+
+    expect(await listLibraryBlueprints(storage)).toEqual([]);
+    expect(storage.getItem("hexapharma.blueprint-library.v3")).toBe(legacy);
     expect(storage.getItem(BLUEPRINT_LIBRARY_KEY)).toBeNull();
   });
 

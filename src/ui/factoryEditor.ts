@@ -1,12 +1,12 @@
+import { hexLine, hexToPixel, pixelToHex } from "../render/hexProjection";
+import { HEX_DIRS, HEX_DQ, HEX_DR, type HexCoord, type HexDir } from "../sim/hex";
+
 export interface Point {
   readonly x: number;
   readonly y: number;
 }
 
-export interface GridCell {
-  readonly x: number;
-  readonly y: number;
-}
+export type GridCell = HexCoord;
 
 export interface Camera {
   readonly x: number;
@@ -155,10 +155,7 @@ export function screenToGrid(
   const canvasY = (screen.y - rect.top) * intrinsic.height / rect.height;
   const worldX = (canvasX - camera.x) / camera.zoom;
   const worldY = (canvasY - camera.y) / camera.zoom;
-  return {
-    x: Math.floor((worldX - grid.origin.x) / grid.cellSize),
-    y: Math.floor((worldY - grid.origin.y) / grid.cellSize),
-  };
+  return pixelToHex(worldX - grid.origin.x, worldY - grid.origin.y, grid.cellSize);
 }
 
 export function gridCellCenterToScreen(
@@ -169,10 +166,11 @@ export function gridCellCenterToScreen(
   grid: GridGeometry,
 ): Point {
   requireCoordinates(rect, intrinsic, camera, grid);
-  requireFinite(cell.x, "cell.x");
-  requireFinite(cell.y, "cell.y");
-  const worldX = grid.origin.x + (cell.x + 0.5) * grid.cellSize;
-  const worldY = grid.origin.y + (cell.y + 0.5) * grid.cellSize;
+  requireFinite(cell.q, "cell.q");
+  requireFinite(cell.r, "cell.r");
+  const projected = hexToPixel(cell.q, cell.r, grid.cellSize);
+  const worldX = grid.origin.x + projected.x;
+  const worldY = grid.origin.y + projected.y;
   const canvasX = worldX * camera.zoom + camera.x;
   const canvasY = worldY * camera.zoom + camera.y;
   return {
@@ -182,7 +180,7 @@ export function gridCellCenterToScreen(
 }
 
 function requireGridCell(cell: GridCell, name: string): void {
-  if (!Number.isSafeInteger(cell.x) || !Number.isSafeInteger(cell.y)) {
+  if (!Number.isSafeInteger(cell.q) || !Number.isSafeInteger(cell.r)) {
     throw new RangeError(`${name} must contain safe integer coordinates`);
   }
 }
@@ -190,69 +188,37 @@ function requireGridCell(cell: GridCell, name: string): void {
 export function rasterizeGridLine(
   start: GridCell,
   end: GridCell,
-  firstAxis: "horizontal" | "vertical" = "horizontal",
 ): readonly GridCell[] {
   requireGridCell(start, "start");
   requireGridCell(end, "end");
-  const cells: GridCell[] = [{ x: start.x, y: start.y }];
-  let x = start.x;
-  let y = start.y;
-  const walkHorizontal = () => {
-    const step = x < end.x ? 1 : -1;
-    while (x !== end.x) {
-      x += step;
-      cells.push({ x, y });
-    }
-  };
-  const walkVertical = () => {
-    const step = y < end.y ? 1 : -1;
-    while (y !== end.y) {
-      y += step;
-      cells.push({ x, y });
-    }
-  };
-  if (firstAxis === "horizontal") {
-    walkHorizontal();
-    walkVertical();
-  } else {
-    walkVertical();
-    walkHorizontal();
-  }
-  return cells;
+  return hexLine(start, end);
 }
 
-export type BeltDirection = 0 | 1 | 2 | 3;
+export type BeltDirection = HexDir;
 
 export function routeBeltGesture(
   existing: readonly GridCell[],
   end: GridCell,
-  initialDirection: BeltDirection,
 ): readonly GridCell[] {
   requireGridCell(end, "end");
   const start = existing[0];
-  if (start === undefined) return [{ x: end.x, y: end.y }];
-  return rasterizeGridLine(
-    start,
-    end,
-    initialDirection === 1 || initialDirection === 3 ? "vertical" : "horizontal",
-  );
+  return start === undefined ? [{ q: end.q, r: end.r }] : hexLine(start, end);
 }
 
 function directionBetween(from: GridCell, to: GridCell): BeltDirection {
-  const dx = to.x - from.x;
-  const dy = to.y - from.y;
-  if (dx === 1 && dy === 0) return 0;
-  if (dx === 0 && dy === 1) return 1;
-  if (dx === -1 && dy === 0) return 2;
-  if (dx === 0 && dy === -1) return 3;
-  throw new RangeError("belt gesture cells must be cardinal neighbors");
+  const dq = to.q - from.q;
+  const dr = to.r - from.r;
+  for (const dir of HEX_DIRS) {
+    if (HEX_DQ[dir] === dq && HEX_DR[dir] === dr) return dir;
+  }
+  throw new RangeError("belt gesture cells must be hex neighbors");
 }
 
 export function orientBeltGesture(
   cells: readonly GridCell[],
   fallback: BeltDirection,
 ): readonly BeltDirection[] {
-  if (!Number.isSafeInteger(fallback) || fallback < 0 || fallback > 3) {
+  if (!Number.isSafeInteger(fallback) || fallback < 0 || fallback > 5) {
     throw new RangeError("belt gesture fallback direction is invalid");
   }
   for (const cell of cells) requireGridCell(cell, "cell");
@@ -279,7 +245,7 @@ export function appendUniqueCells(
   const seen = new Set<string>();
   for (const cell of [...existing, ...additions]) {
     requireGridCell(cell, "cell");
-    const key = `${cell.x},${cell.y}`;
+    const key = `${cell.q},${cell.r}`;
     if (seen.has(key)) continue;
     seen.add(key);
     result.push(cell);

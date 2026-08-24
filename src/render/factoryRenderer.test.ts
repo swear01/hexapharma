@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { PlacedMachine } from "../sim/phase0_interfaces";
 import { DEFAULT_CATALOG, DEFAULT_SHAPES, SHAPE_1x1 } from "../sim/phase0_interfaces";
+import { HEX_DIRS, HEX_DQ, HEX_DR } from "../sim/hex";
+import { hexToPixel } from "./hexProjection";
 import {
+  FACTORY_HEX_SIZE,
   FACTORY_MACHINE_SHADOW_ALPHA,
   FACTORY_SCHEMATIC_STYLE,
+  factoryCellCenter,
   factoryTransportArmGeometry,
   factoryTransportFlowPoint,
   machinePathGlyph,
@@ -85,12 +89,7 @@ describe("factory machine visual language", () => {
   });
 
   it("draws the complete authored path", () => {
-    const path = [
-      { x: 1, y: 0 },
-      { x: 0, y: 1 },
-      { x: -1, y: 0 },
-      { x: 0, y: -1 },
-    ] as const;
+    const path = [0, 1, 3, 4] as const;
     const glyph = machinePathGlyph(path);
 
     expect(glyph.points).toHaveLength(path.length + 1);
@@ -109,7 +108,7 @@ describe("factory machine visual language", () => {
         cost: entry.cost,
         speed: entry.speed,
       },
-      anchor: { x: 1, y: 1 },
+      anchor: { q: 1, r: 1 },
       footRot,
       shape: SHAPE_1x1,
     });
@@ -120,34 +119,35 @@ describe("factory machine visual language", () => {
 
 describe("factory connected transport geometry", () => {
   it("runs every arm from the cell centre to the exact shared boundary", () => {
-    expect(factoryTransportArmGeometry((1 << 2) | (1 << 1))).toEqual([
-      { side: 1, from: { x: 21, y: 21 }, to: { x: 21, y: 42 } },
-      { side: 2, from: { x: 21, y: 21 }, to: { x: 0, y: 21 } },
-    ]);
-    expect(factoryTransportArmGeometry(0b1111).map((arm) => arm.to)).toEqual([
-      { x: 42, y: 21 },
-      { x: 21, y: 42 },
-      { x: 0, y: 21 },
-      { x: 21, y: 0 },
-    ]);
+    const arms = factoryTransportArmGeometry(0b111111);
+    expect(arms.map((arm) => arm.side)).toEqual(HEX_DIRS);
+    for (const arm of arms) {
+      const neighbor = hexToPixel(HEX_DQ[arm.side]!, HEX_DR[arm.side]!, FACTORY_HEX_SIZE);
+      expect(arm.to.x - arm.from.x).toBeCloseTo(neighbor.x / 2);
+      expect(arm.to.y - arm.from.y).toBeCloseTo(neighbor.y / 2);
+    }
   });
 
   it("keeps animated arrows outside a machine body while reaching its port boundary", () => {
     const intoMachine = factoryTransportFlowPoint(
-      { from: { x: 1, y: 1 }, to: { x: 2, y: 1 }, dir: 0 },
+      { from: { q: 1, r: 1 }, to: { q: 2, r: 1 }, dir: 0 },
       false,
       true,
       0.75,
     );
     const outOfMachine = factoryTransportFlowPoint(
-      { from: { x: 2, y: 1 }, to: { x: 3, y: 1 }, dir: 0 },
+      { from: { q: 2, r: 1 }, to: { q: 3, r: 1 }, dir: 0 },
       true,
       false,
       0.25,
     );
 
-    expect(intoMachine.x).toBeLessThanOrEqual(12 + 2 * 42);
-    expect(outOfMachine.x).toBeGreaterThanOrEqual(12 + 3 * 42);
+    expect(intoMachine.x).toBeLessThanOrEqual(
+      (factoryCellCenter(1, 1).x + factoryCellCenter(2, 1).x) / 2,
+    );
+    expect(outOfMachine.x).toBeGreaterThanOrEqual(
+      (factoryCellCenter(2, 1).x + factoryCellCenter(3, 1).x) / 2,
+    );
     expect(intoMachine.dir).toBe(0);
     expect(outOfMachine.dir).toBe(0);
   });
