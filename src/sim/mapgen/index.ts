@@ -1,5 +1,4 @@
 import type {
-  CardinalDelta,
   DifficultyToBasePriceFn,
   DiseaseId,
   DiseaseSpec,
@@ -11,10 +10,18 @@ import type {
   MultiMap,
   Rng,
   Template,
-  Vec2,
+  HexCoord,
+  HexDir,
 } from "../phase0_interfaces";
 import { CellKind, MAX_TEMPLATE_STEPS } from "../phase0_interfaces";
 import { initialState, walkValidatedPathInto } from "../drug-graph";
+import {
+  HEX_DIRS,
+  HEX_DQ,
+  HEX_DR,
+  hexDistance,
+  rotateHexCoord,
+} from "../hex";
 import { makeRng } from "../rng";
 
 export const MAX_MAP_CELLS = 65_536;
@@ -34,22 +41,6 @@ export const TERRAIN_MOTIF_NAMES = Object.freeze([
 
 const MAX_SAFE_PRICE = BigInt(Number.MAX_SAFE_INTEGER);
 const MAX_PATH_LENGTH = 256;
-const DIRECTIONS: readonly Vec2[] = [
-  { x: 1, y: 0 },
-  { x: 1, y: 1 },
-  { x: 0, y: 1 },
-  { x: -1, y: 1 },
-  { x: -1, y: 0 },
-  { x: -1, y: -1 },
-  { x: 0, y: -1 },
-  { x: 1, y: -1 },
-];
-const CARDINALS: readonly Vec2[] = [
-  { x: 1, y: 0 },
-  { x: 0, y: 1 },
-  { x: -1, y: 0 },
-  { x: 0, y: -1 },
-];
 const CURE_FRONTIER_SALT = 0xcb30e825;
 
 export const difficultyToBasePrice: DifficultyToBasePriceFn = (difficulty, refCost) => {
@@ -80,8 +71,8 @@ export const difficultyToBasePrice: DifficultyToBasePriceFn = (difficulty, refCo
 interface ScratchMap {
   readonly width: number;
   readonly height: number;
-  readonly origin: Vec2;
-  readonly start: Vec2;
+  readonly origin: HexCoord;
+  readonly start: HexCoord;
   readonly cell: Uint8Array;
   readonly cureId: Int16Array;
   readonly sideEffectId: Int32Array;
@@ -92,30 +83,32 @@ interface ScratchMap {
 interface ProgramCandidate {
   readonly ordinal: number;
   readonly reference: Template;
-  readonly endpoint: Vec2;
+  readonly endpoint: HexCoord;
   readonly difficulty: number;
   readonly cost: number;
   readonly quality: number;
   readonly signature: string;
   readonly region: readonly number[];
+  readonly strictPrefixCells: readonly ReadonlySet<number>[];
 }
 
 interface BuiltDisease {
   readonly id: DiseaseId;
   readonly map: MapIndex;
-  readonly node: Vec2;
+  readonly node: HexCoord;
   readonly difficulty: number;
   readonly cost: number;
   readonly reference: Template;
   readonly region: readonly number[];
+  readonly strictPrefixCells: readonly ReadonlySet<number>[];
 }
 
 type MotifName = (typeof TERRAIN_MOTIF_NAMES)[number];
 
 interface MotifPlacement {
   readonly name: MotifName;
-  readonly x: number;
-  readonly y: number;
+  readonly q: number;
+  readonly r: number;
   readonly rotation: number;
   readonly size: number;
 }
@@ -127,10 +120,30 @@ interface TerrainBand {
   readonly indices: readonly number[];
 }
 
-const idx = (width: number, x: number, y: number): number => y * width + x;
+const idx = (width: number, q: number, r: number): number => r * width + q;
 
-function centerOf(width: number, height: number): Vec2 {
-  return { x: Math.floor(width / 2), y: Math.floor(height / 2) };
+function directionScore(q: number, r: number, dir: HexDir): number {
+  const dq = HEX_DQ[dir]!;
+  const dr = HEX_DR[dir]!;
+  return q * dq + r * dr + (-q - r) * (-dq - dr);
+}
+
+function closestDirection(q: number, r: number): HexDir {
+  let best = HEX_DIRS[0]!;
+  let bestScore = directionScore(q, r, best);
+  for (let index = 1; index < HEX_DIRS.length; index++) {
+    const dir = HEX_DIRS[index]!;
+    const score = directionScore(q, r, dir);
+    if (score > bestScore) {
+      best = dir;
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
+function centerOf(width: number, height: number): HexCoord {
+  return { q: Math.floor(width / 2), r: Math.floor(height / 2) };
 }
 
 function makeScratch(width: number, height: number): ScratchMap {
@@ -147,7 +160,7 @@ function makeScratch(width: number, height: number): ScratchMap {
     portalTo: new Int32Array(length).fill(-1),
     protectedCells: new Uint8Array(length),
   };
-  map.protectedCells[idx(width, center.x, center.y)] = 1;
+  map.protectedCells[idx(width, center.q, center.r)] = 1;
   return map;
 }
 
@@ -170,43 +183,37 @@ function freezeMaps(maps: readonly ScratchMap[]): MultiMap {
 }
 
 function ownMachine(entry: MachineCatalogEntry): Machine {
-  const path = entry.path.map((delta): CardinalDelta => {
-    if (delta.x === -1) return Object.freeze({ x: -1, y: 0 });
-    if (delta.x === 1) return Object.freeze({ x: 1, y: 0 });
-    if (delta.y === -1) return Object.freeze({ x: 0, y: -1 });
-    return Object.freeze({ x: 0, y: 1 });
-  });
   return Object.freeze({
     typeId: entry.typeId,
-    path: Object.freeze(path),
+    path: Object.freeze(entry.path.slice()),
   });
 }
 
 function pathSignature(entry: MachineCatalogEntry): string {
-  return entry.path.map((delta) => `${delta.x},${delta.y}`).join(";");
+  return entry.path.join(",");
 }
 
 function referenceDifficulty(reference: Template): number {
   const signatures = new Set(reference.steps.map((step) =>
-    step.path.map((delta) => `${delta.x},${delta.y}`).join(";"),
+    step.path.join(","),
   ));
   return reference.steps.length + Math.max(0, signatures.size - 1);
 }
 
-function stepEndpoint(position: Vec2, machine: Machine, width: number, height: number): Vec2 {
-  let x = position.x;
-  let y = position.y;
-  for (const delta of machine.path) {
-    const nx = x + delta.x;
-    const ny = y + delta.y;
-    if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
-    x = nx;
-    y = ny;
+function stepEndpoint(position: HexCoord, machine: Machine, width: number, height: number): HexCoord {
+  let q = position.q;
+  let r = position.r;
+  for (const dir of machine.path) {
+    const nextQ = q + HEX_DQ[dir]!;
+    const nextR = r + HEX_DR[dir]!;
+    if (nextQ < 0 || nextR < 0 || nextQ >= width || nextR >= height) continue;
+    q = nextQ;
+    r = nextR;
   }
-  return { x, y };
+  return { q, r };
 }
 
-function programEndpoint(start: Vec2, reference: Template, width: number, height: number): Vec2 {
+function programEndpoint(start: HexCoord, reference: Template, width: number, height: number): HexCoord {
   let position = start;
   for (const machine of reference.steps) position = stepEndpoint(position, machine, width, height);
   return position;
@@ -216,15 +223,21 @@ function simulateReference(
   terrain: MultiMap,
   start: ReturnType<typeof initialState>,
   reference: Template,
-): { readonly failed: boolean; readonly final: readonly Vec2[] } {
+): {
+  readonly failed: boolean;
+  readonly final: readonly HexCoord[];
+  readonly strictPrefixCells: readonly ReadonlySet<number>[];
+} {
   const positions = new Int32Array(terrain.maps.length * 2);
   const walk = new Int32Array(terrain.maps.length * 3);
+  const strictPrefixCells = terrain.maps.map(() => new Set<number>());
   for (let mapIndex = 0; mapIndex < terrain.maps.length; mapIndex++) {
-    positions[mapIndex * 2] = start.pos[mapIndex]!.x;
-    positions[mapIndex * 2 + 1] = start.pos[mapIndex]!.y;
+    positions[mapIndex * 2] = start.pos[mapIndex]!.q;
+    positions[mapIndex * 2 + 1] = start.pos[mapIndex]!.r;
   }
   let failed = false;
-  for (const machine of reference.steps) {
+  for (let stepIndex = 0; stepIndex < reference.steps.length; stepIndex++) {
+    const machine = reference.steps[stepIndex]!;
     for (let mapIndex = 0; mapIndex < terrain.maps.length; mapIndex++) {
       const map = terrain.maps[mapIndex]!;
       walkValidatedPathInto(
@@ -242,18 +255,38 @@ function simulateReference(
       if (walk[mapIndex * 3 + 2] === 1) failed = true;
     }
     if (failed) break;
+    if (stepIndex + 1 < reference.steps.length) {
+      for (let mapIndex = 0; mapIndex < terrain.maps.length; mapIndex++) {
+        const map = terrain.maps[mapIndex]!;
+        strictPrefixCells[mapIndex]!.add(idx(
+          map.width,
+          positions[mapIndex * 2]!,
+          positions[mapIndex * 2 + 1]!,
+        ));
+      }
+    }
   }
   const final = Array.from({ length: terrain.maps.length }, (_, mapIndex) => ({
-    x: positions[mapIndex * 2]!,
-    y: positions[mapIndex * 2 + 1]!,
+    q: positions[mapIndex * 2]!,
+    r: positions[mapIndex * 2 + 1]!,
   }));
-  return { failed, final };
+  return { failed, final, strictPrefixCells };
 }
 
-function normalizedRadius(map: ScratchMap, x: number, y: number): number {
-  const radius = Math.max(Math.abs(x - map.origin.x), Math.abs(y - map.origin.y));
-  const base = Math.max(1, Math.floor((Math.min(map.width, map.height) - 1) / 2));
+function normalizedRadius(map: ScratchMap, q: number, r: number): number {
+  const radius = hexDistance(map.origin.q, map.origin.r, q, r);
+  const base = mapRadius(map);
   return Math.floor((radius * 31) / base);
+}
+
+function mapRadius(map: ScratchMap): number {
+  return Math.max(
+    1,
+    hexDistance(map.origin.q, map.origin.r, 0, 0),
+    hexDistance(map.origin.q, map.origin.r, map.width - 1, 0),
+    hexDistance(map.origin.q, map.origin.r, 0, map.height - 1),
+    hexDistance(map.origin.q, map.origin.r, map.width - 1, map.height - 1),
+  );
 }
 
 function chooseDistinctEntries(
@@ -317,13 +350,13 @@ function seededVisibleCureRegion(
   while (region.length < 5) {
     const frontier: number[] = [];
     for (const current of region) {
-      const x = current % map.width;
-      const y = Math.floor(current / map.width);
-      for (const direction of CARDINALS) {
-        const nx = x + direction.x;
-        const ny = y + direction.y;
-        if (nx < 0 || ny < 0 || nx >= map.width || ny >= map.height) continue;
-        const next = idx(map.width, nx, ny);
+      const q = current % map.width;
+      const r = Math.floor(current / map.width);
+      for (const dir of HEX_DIRS) {
+        const nextQ = q + HEX_DQ[dir]!;
+        const nextR = r + HEX_DR[dir]!;
+        if (nextQ < 0 || nextR < 0 || nextQ >= map.width || nextR >= map.height) continue;
+        const next = idx(map.width, nextQ, nextR);
         if (
           visited[next] === 1 ||
           frontierSeen[next] === 1 ||
@@ -354,61 +387,60 @@ function seededVisibleCureRegion(
 
 function candidateCureRegion(
   map: ScratchMap,
-  position: Vec2,
+  position: HexCoord,
   limit: number,
   forbidden: ReadonlySet<number>,
   occupied: ReadonlySet<number>,
   seedWord: number,
 ): number[] | null {
-  const seed = idx(map.width, position.x, position.y);
+  const seed = idx(map.width, position.q, position.r);
   if (!availableForCure(map, seed) || forbidden.has(seed) || occupied.has(seed)) return null;
   const visited = new Uint8Array(map.cell.length);
   const queue = new Int32Array(map.cell.length);
   const region: number[] = [];
   let head = 0;
   let tail = 0;
-  const tangent = Math.abs(position.x - map.origin.x) >= Math.abs(position.y - map.origin.y)
-    ? { x: 0, y: 1 }
-    : { x: 1, y: 0 };
-  const tangentSign = (mix32(seedWord ^ seed) & 1) === 0 ? 1 : -1;
+  const radial = closestDirection(position.q - map.origin.q, position.r - map.origin.r);
+  const tangent = ((radial + ((mix32(seedWord ^ seed) & 1) === 0 ? 2 : 4)) % 6) as HexDir;
+  const preferredLength = 1 + (mix32(seedWord ^ seed ^ 0x8da6b343) % 5);
   const preferredOffsets = Math.min(map.width, map.height) >= 31 && limit >= 5
-    ? [0, tangentSign, tangentSign * 2, tangentSign * 3, tangentSign * 4]
+    ? [0, 1, 2, 3, 4].slice(0, preferredLength)
     : [0];
   const initialOffsets = preferredOffsets.every((offset) => {
-    const x = position.x + tangent.x * offset;
-    const y = position.y + tangent.y * offset;
-    if (x < 0 || y < 0 || x >= map.width || y >= map.height) return false;
-    const cellIndex = idx(map.width, x, y);
+    const q = position.q + HEX_DQ[tangent]! * offset;
+    const r = position.r + HEX_DR[tangent]! * offset;
+    if (q < 0 || r < 0 || q >= map.width || r >= map.height) return false;
+    const cellIndex = idx(map.width, q, r);
     return availableForCure(map, cellIndex) && !forbidden.has(cellIndex) && !occupied.has(cellIndex);
   }) ? preferredOffsets : [0];
   for (const offset of initialOffsets) {
-    const x = position.x + tangent.x * offset;
-    const y = position.y + tangent.y * offset;
-    const cellIndex = idx(map.width, x, y);
+    const q = position.q + HEX_DQ[tangent]! * offset;
+    const r = position.r + HEX_DR[tangent]! * offset;
+    const cellIndex = idx(map.width, q, r);
     visited[cellIndex] = 1;
     queue[tail++] = cellIndex;
     region.push(cellIndex);
   }
   while (head < tail && region.length < limit) {
     const current = queue[head++]!;
-    const x = current % map.width;
-    const y = Math.floor(current / map.width);
-    const neighbors = CARDINALS.map((direction, order) => ({
-      x: x + direction.x,
-      y: y + direction.y,
+    const q = current % map.width;
+    const r = Math.floor(current / map.width);
+    const neighbors = HEX_DIRS.map((dir, order) => ({
+      q: q + HEX_DQ[dir]!,
+      r: r + HEX_DR[dir]!,
       order,
     })).sort((left, right) => {
-      const leftRadius = normalizedRadius(map, left.x, left.y);
-      const rightRadius = normalizedRadius(map, right.x, right.y);
+      const leftRadius = normalizedRadius(map, left.q, left.r);
+      const rightRadius = normalizedRadius(map, right.q, right.r);
       if (leftRadius !== rightRadius) return rightRadius - leftRadius;
       return (mix32(seedWord ^ current ^ left.order) & 0xffff) -
         (mix32(seedWord ^ current ^ right.order) & 0xffff);
     });
     for (const neighbor of neighbors) {
-      const nx = neighbor.x;
-      const ny = neighbor.y;
-      if (nx < 0 || ny < 0 || nx >= map.width || ny >= map.height) continue;
-      const next = idx(map.width, nx, ny);
+      const nextQ = neighbor.q;
+      const nextR = neighbor.r;
+      if (nextQ < 0 || nextR < 0 || nextQ >= map.width || nextR >= map.height) continue;
+      const next = idx(map.width, nextQ, nextR);
       if (
         visited[next] === 1 ||
         !availableForCure(map, next) ||
@@ -448,8 +480,8 @@ function makeProgramCandidate(
     minDifficulty < maxDifficulty &&
     minDifficulty >= 2 &&
     Math.min(map.width, map.height) >= 31;
-  const desiredDirection = DIRECTIONS[
-    mix32(seedWord ^ Math.imul(disease + 1, 0x51ed270b)) & 7
+  const desiredDirection = HEX_DIRS[
+    mix32(seedWord ^ Math.imul(disease + 1, 0x51ed270b)) % HEX_DIRS.length
   ]!;
   const span = maxDifficulty - minDifficulty + 1;
   let targetDifficulty = minDifficulty + (compactMap ? (ordinal + disease * 5) % span : candidateWord % span);
@@ -507,20 +539,20 @@ function makeProgramCandidate(
       for (let index = 0; index < entries.length; index++) {
         if (entryUses[index] !== leastUses) continue;
         const entry = entries[index]!;
-        let netX = 0;
-        let netY = 0;
-        for (const delta of entry.path) {
-          netX += delta.x;
-          netY += delta.y;
+        let netQ = 0;
+        let netR = 0;
+        for (const dir of entry.path) {
+          netQ += HEX_DQ[dir]!;
+          netR += HEX_DR[dir]!;
         }
-        const entryForward = netX * desiredDirection.x + netY * desiredDirection.y;
+        const entryForward = directionScore(netQ, netR, desiredDirection);
         if (entryForward > bestForward) {
           bestForward = entryForward;
           entryIndex = index;
         }
       }
       const fillerWord = mix32(candidateWord ^ Math.imul(stepIndex + 1, 0x165667b1));
-      const fillerStrategy = ordinal & 3;
+      const fillerStrategy = ordinal % 4;
       if (fillerStrategy !== 0) {
         let choice = fillerWord % entryUses.reduce(
           (count, uses) => count + (uses === leastUses ? 1 : 0),
@@ -552,21 +584,48 @@ function makeProgramCandidate(
   if (outcome.failed) return null;
   const endpoint = outcome.final[mapIndex];
   if (endpoint === undefined) return null;
-  if (endpoint.x === map.start.x && endpoint.y === map.start.y) return null;
-  if (!availableForCure(map, idx(map.width, endpoint.x, endpoint.y))) return null;
-  const endpointDx = endpoint.x - map.origin.x;
-  const endpointDy = endpoint.y - map.origin.y;
-  const radius = normalizedRadius(map, endpoint.x, endpoint.y);
+  if (endpoint.q === map.start.q && endpoint.r === map.start.r) return null;
+  if (!availableForCure(map, idx(map.width, endpoint.q, endpoint.r))) return null;
+  const endpointDq = endpoint.q - map.origin.q;
+  const endpointDr = endpoint.r - map.origin.r;
+  const radius = normalizedRadius(map, endpoint.q, endpoint.r);
   const occupied = new Set<number>();
   for (const other of built) {
-    if (other.map !== mapIndex) continue;
-    for (const cellIndex of other.region) occupied.add(cellIndex);
+    const candidatePrefixes = outcome.strictPrefixCells[other.map]!;
+    if (other.region.some((cellIndex) => candidatePrefixes.has(cellIndex))) return null;
+    if (other.map === mapIndex) {
+      for (const cellIndex of other.region) occupied.add(cellIndex);
+    }
+  }
+  const candidateForbidden = new Set(forbiddenCures);
+  for (const cellIndex of outcome.strictPrefixCells[mapIndex]!) {
+    candidateForbidden.add(cellIndex);
+  }
+  for (const other of built) {
+    for (const cellIndex of other.strictPrefixCells[mapIndex]!) {
+      candidateForbidden.add(cellIndex);
+    }
+  }
+  let cureRegionLimit = Math.min(9, map.cell.length - 1);
+  if (compactMap) {
+    let availableCells = 0;
+    for (let cellIndex = 0; cellIndex < map.cell.length; cellIndex++) {
+      if (
+        availableForCure(map, cellIndex) &&
+        !candidateForbidden.has(cellIndex) &&
+        !occupied.has(cellIndex)
+      ) {
+        availableCells++;
+      }
+    }
+    cureRegionLimit = Math.min(cureRegionLimit, availableCells);
+    if (cureRegionLimit < 5) return null;
   }
   const region = candidateCureRegion(
     map,
     endpoint,
-    Math.min(9, map.cell.length - 1),
-    forbiddenCures,
+    cureRegionLimit,
+    candidateForbidden,
     occupied,
     candidateWord ^ 0xc0febabe,
   );
@@ -574,21 +633,21 @@ function makeProgramCandidate(
   let nearest = Math.max(map.width, map.height);
   for (const other of built) {
     if (other.map !== mapIndex) continue;
-    const distance = Math.max(Math.abs(endpoint.x - other.node.x), Math.abs(endpoint.y - other.node.y));
+    const distance = hexDistance(endpoint.q, endpoint.r, other.node.q, other.node.r);
     if (distance < 3) return null;
     nearest = Math.min(nearest, distance);
   }
   const emptyEndpoint = programEndpoint(map.start, reference, map.width, map.height);
-  const terrainChanged = emptyEndpoint.x !== endpoint.x || emptyEndpoint.y !== endpoint.y;
+  const terrainChanged = emptyEndpoint.q !== endpoint.q || emptyEndpoint.r !== endpoint.r;
   if (minDifficulty >= 2 && Math.min(map.width, map.height) >= 9 && !terrainChanged) return null;
   const desiredRadius = 6 + (
     mix32(seedWord ^ Math.imul(disease + 1, 0x6a09e667)) % 4
   ) * 5;
   const radiusWeight = 40_000;
-  const dx = endpointDx;
-  const dy = endpointDy;
-  const forward = dx * desiredDirection.x + dy * desiredDirection.y;
-  const lateral = Math.abs(dx * desiredDirection.y - dy * desiredDirection.x);
+  const forward = directionScore(endpointDq, endpointDr, desiredDirection);
+  const lateral = Math.abs(
+    endpointDq * HEX_DR[desiredDirection]! - endpointDr * HEX_DQ[desiredDirection]!,
+  );
   const initialIds = new Set(fullCatalog.slice(0, 4).map((entry) => entry.typeId));
   const usesAdvancedMachine = disease > 0 && reference.steps.some((step) => !initialIds.has(step.typeId));
   const quality =
@@ -601,7 +660,17 @@ function makeProgramCandidate(
     Math.min(totalPathLength, 99) * 20 -
     (candidateWord & 0xff) -
     ordinal;
-  return { ordinal, reference, endpoint, difficulty, cost, quality, signature, region };
+  return {
+    ordinal,
+    reference,
+    endpoint,
+    difficulty,
+    cost,
+    quality,
+    signature,
+    region,
+    strictPrefixCells: outcome.strictPrefixCells,
+  };
 }
 
 function singleStepCureExclusions(
@@ -617,7 +686,7 @@ function singleStepCureExclusions(
     const outcome = simulateReference(terrain, start, reference);
     if (outcome.failed) continue;
     const position = outcome.final[mapIndex]!;
-    excluded.add(idx(map.width, position.x, position.y));
+    excluded.add(idx(map.width, position.q, position.r));
   }
   return excluded;
 }
@@ -646,10 +715,11 @@ function constructDiseases(
         forbiddenCures.add(cellIndex);
       }
       const protectedRadius = 2;
-      for (let y = map.start.y - protectedRadius; y <= map.start.y + protectedRadius; y++) {
-        for (let x = map.start.x - protectedRadius; x <= map.start.x + protectedRadius; x++) {
-          if (x < 0 || y < 0 || x >= map.width || y >= map.height) continue;
-          forbiddenCures.add(idx(map.width, x, y));
+      for (let r = map.start.r - protectedRadius; r <= map.start.r + protectedRadius; r++) {
+        for (let q = map.start.q - protectedRadius; q <= map.start.q + protectedRadius; q++) {
+          if (q < 0 || r < 0 || q >= map.width || r >= map.height) continue;
+          if (hexDistance(map.start.q, map.start.r, q, r) > protectedRadius) continue;
+          forbiddenCures.add(idx(map.width, q, r));
         }
       }
     }
@@ -698,6 +768,7 @@ function constructDiseases(
       cost: best.cost,
       reference: best.reference,
       region: seededVisibleCureRegion(map, best.region, shapeWord),
+      strictPrefixCells: best.strictPrefixCells,
     });
     usedSignatures.add(best.signature);
   }
@@ -710,9 +781,9 @@ function placeCureRegions(
   diseases: readonly BuiltDisease[],
   sideEffectBase: number,
 ): number {
-  const start = idx(map.width, map.start.x, map.start.y);
+  const start = idx(map.width, map.start.q, map.start.r);
   for (const disease of diseases) {
-    const seed = idx(map.width, disease.node.x, disease.node.y);
+    const seed = idx(map.width, disease.node.q, disease.node.r);
     if (seed === start || !availableForCure(map, seed)) {
       throw new Error(`mapgen.generate: disease ${disease.id} has no distinct empty endpoint`);
     }
@@ -722,7 +793,7 @@ function placeCureRegions(
 
   let nextSideEffect = sideEffectBase;
   for (const disease of diseases) {
-    const seed = idx(map.width, disease.node.x, disease.node.y);
+    const seed = idx(map.width, disease.node.q, disease.node.r);
     const target = Math.min(5, disease.region.length);
     const region = disease.region.slice(0, target);
     for (const cellIndex of region) {
@@ -762,39 +833,39 @@ function makeBands(map: ScratchMap): readonly TerrainBand[] {
   ];
 }
 
-function rotateLocal(x: number, y: number, rotation: number): Vec2 {
-  switch (rotation & 3) {
-    case 1: return { x: -y, y: x };
-    case 2: return { x: -x, y: -y };
-    case 3: return { x: y, y: -x };
-    default: return { x, y };
-  }
+function rotateLocal(q: number, r: number, rotation: number): HexCoord {
+  return rotateHexCoord({ q, r }, (rotation % 6) as HexDir);
 }
 
-function motifDistance(placement: MotifPlacement, x: number, y: number): number {
-  const rotated = rotateLocal(x - placement.x, y - placement.y, (4 - placement.rotation) & 3);
-  const ax = Math.abs(rotated.x);
-  const ay = Math.abs(rotated.y);
+function motifDistance(placement: MotifPlacement, q: number, r: number): number {
+  const rotated = rotateLocal(
+    q - placement.q,
+    r - placement.r,
+    (6 - placement.rotation) % 6,
+  );
+  const ax = Math.abs(rotated.q);
+  const ay = Math.abs(rotated.r);
+  const radial = hexDistance(0, 0, rotated.q, rotated.r);
   const size = Math.max(2, placement.size);
   switch (placement.name) {
     case "ridge":
       return ay * 3 + Math.max(0, ax - size) * 7;
     case "canyon": {
-      const bend = ((ax % 7) - 3) * (rotated.x < 0 ? -1 : 1);
-      return Math.abs(rotated.y - bend) * 3 + Math.max(0, ax - size) * 8;
+      const bend = ((ax % 7) - 3) * (rotated.q < 0 ? -1 : 1);
+      return Math.abs(rotated.r - bend) * 3 + Math.max(0, ax - size) * 8;
     }
     case "crescent":
-      return Math.abs(Math.max(ax, ay) - Math.max(2, Math.floor(size / 2))) * 4 +
-        (rotated.x < -Math.floor(size / 3) ? size * 3 : 0);
+      return Math.abs(radial - Math.max(2, Math.floor(size / 2))) * 4 +
+        (rotated.q < -Math.floor(size / 3) ? size * 3 : 0);
     case "basin":
       return ax * 2 + ay * 3;
     case "swamp-fan": {
-      const behind = rotated.x < 0 ? size * 6 : 0;
-      const ray = Math.min(Math.abs(rotated.y * 2 - rotated.x), Math.abs(rotated.y * 2 + rotated.x));
+      const behind = rotated.q < 0 ? size * 6 : 0;
+      const ray = Math.min(Math.abs(rotated.r * 2 - rotated.q), Math.abs(rotated.r * 2 + rotated.q));
       return behind + ray + Math.max(0, ax - size) * 7;
     }
     case "pocket":
-      return Math.abs(Math.max(ax, ay) - Math.max(2, Math.floor(size / 3))) * 5;
+      return Math.abs(radial - Math.max(2, Math.floor(size / 3))) * 5;
     case "portal-bypass":
       return ax + ay * 2;
   }
@@ -806,19 +877,19 @@ function placementsFor(
   names: readonly MotifName[],
   seedWord: number,
 ): readonly MotifPlacement[] {
-  const base = Math.max(1, Math.floor((Math.min(map.width, map.height) - 1) / 2));
+  const base = mapRadius(map);
   const normalizedMid = Math.floor((band.min + band.max) / 2);
   const radius = Math.max(1, Math.floor((normalizedMid * base) / 31));
   const size = Math.max(3, Math.floor(((band.max - band.min + 2) * base) / 31));
   const placements: MotifPlacement[] = [];
   const count = Math.max(4, names.length + band.id + 2);
   for (let index = 0; index < count; index++) {
-    const direction = DIRECTIONS[(index * 3 + seedWord + band.id) & 7]!;
+    const direction = HEX_DIRS[(index * 3 + seedWord + band.id) % HEX_DIRS.length]!;
     placements.push({
       name: names[index % names.length]!,
-      x: map.origin.x + direction.x * radius,
-      y: map.origin.y + direction.y * radius,
-      rotation: (seedWord + index + band.id) & 3,
+      q: map.origin.q + HEX_DQ[direction]! * radius,
+      r: map.origin.r + HEX_DR[direction]! * radius,
+      rotation: (seedWord + index + band.id) % 6,
       size: size + ((seedWord >>> (index & 7)) & 1),
     });
   }
@@ -853,22 +924,26 @@ function targetCount(total: number, low: number, high: number, rng: Rng): number
 function placeInnerRouteTerrain(rng: Rng, map: ScratchMap): void {
   if (map.width < 5 || map.height < 5) return;
   const ring = [
-    { x: -2, y: 0 },
-    { x: -1, y: -1 },
-    { x: 0, y: -2 },
-    { x: 1, y: -1 },
-    { x: 2, y: 0 },
-    { x: 1, y: 1 },
-    { x: 0, y: 2 },
-    { x: -1, y: 1 },
+    { q: 2, r: 0 },
+    { q: 1, r: 1 },
+    { q: 0, r: 2 },
+    { q: -1, r: 2 },
+    { q: -2, r: 2 },
+    { q: -2, r: 1 },
+    { q: -2, r: 0 },
+    { q: -1, r: -1 },
+    { q: 0, r: -2 },
+    { q: 1, r: -2 },
+    { q: 2, r: -2 },
+    { q: 2, r: -1 },
   ] as const;
   const firstGap = rng.int(ring.length);
   const secondGap = (firstGap + 3 + rng.int(3)) % ring.length;
   for (let index = 0; index < ring.length; index++) {
     if (index === firstGap || index === secondGap) continue;
     const delta = ring[index]!;
-    const x = map.start.x + delta.x;
-    const y = map.start.y + delta.y;
+    const x = map.start.q + delta.q;
+    const y = map.start.r + delta.r;
     const cellIndex = idx(map.width, x, y);
     if (availableForTerrain(map, cellIndex)) map.cell[cellIndex] = CellKind.Swamp;
   }
@@ -1097,14 +1172,14 @@ function validateCatalog(catalog: readonly MachineCatalogEntry[]): void {
       throw new Error(`mapgen.generate: ${path}.path length must be in 1..${MAX_PATH_LENGTH}`);
     }
     for (let pathIndex = 0; pathIndex < entry.path.length; pathIndex++) {
-      const delta = entry.path[pathIndex];
+      const dir = entry.path[pathIndex];
       if (
-        delta === undefined ||
-        !Number.isSafeInteger(delta.x) ||
-        !Number.isSafeInteger(delta.y) ||
-        Math.abs(delta.x) + Math.abs(delta.y) !== 1
+        dir === undefined ||
+        !Number.isSafeInteger(dir) ||
+        dir < 0 ||
+        dir > 5
       ) {
-        throw new Error(`mapgen.generate: ${path}.path[${pathIndex}] must be a cardinal unit delta`);
+        throw new Error(`mapgen.generate: ${path}.path[${pathIndex}] must be a hex direction in 0..5`);
       }
     }
   }
@@ -1195,13 +1270,13 @@ export const generate: GenerateFn = (opts) => {
     if (
       outcome.failed ||
       endpoint === undefined ||
-      map.cureId[idx(map.width, endpoint.x, endpoint.y)] !== disease.id
+      map.cureId[idx(map.width, endpoint.q, endpoint.r)] !== disease.id
     ) {
       throw new Error(`mapgen invariant violation: reference does not cure disease ${disease.id}`);
     }
     if (
-      endpoint.x !== disease.node.x ||
-      endpoint.y !== disease.node.y
+      endpoint.q !== disease.node.q ||
+      endpoint.r !== disease.node.r
     ) {
       throw new Error(`mapgen invariant violation: disease ${disease.id} endpoint drifted`);
     }

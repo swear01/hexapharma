@@ -18,6 +18,7 @@ import type {
   PatentState,
   ShippingContractProgress,
   Template,
+  HexCoord,
 } from "./phase0_interfaces";
 import {
   DEFAULT_CATALOG,
@@ -53,6 +54,7 @@ import { hashInit, hashU32 } from "./hash";
 import { worldCells } from "./factory-geom";
 import { estimateGameReplayWork } from "./replay-work";
 import { quoteProductionBuild } from "./construction";
+import { hexDistance, hexIndex, hexInBounds } from "./hex";
 
 export const SIDE_EFFECT_PENALTY = 25;
 export const DEFAULT_STARTING_CASH = 1_000;
@@ -67,11 +69,8 @@ function canonicalNumber(value: number): number {
   return Object.is(value, -0) ? 0 : value;
 }
 
-function ownPath<T extends readonly { readonly x: number; readonly y: number }[]>(path: T): T {
-  return Object.freeze(path.map((delta) => Object.freeze({
-    x: canonicalNumber(delta.x),
-    y: canonicalNumber(delta.y),
-  }))) as T;
+function ownPath<T extends readonly number[]>(path: T): T {
+  return Object.freeze(path.map(canonicalNumber)) as T;
 }
 
 function ownMachine(machine: Machine): Machine {
@@ -91,8 +90,8 @@ function ownTemplate(template: Template): Template {
 function ownDrugState(drug: DrugState): DrugState {
   return Object.freeze({
     pos: Object.freeze(drug.pos.map((pos) => Object.freeze({
-      x: canonicalNumber(pos.x),
-      y: canonicalNumber(pos.y),
+      q: canonicalNumber(pos.q),
+      r: canonicalNumber(pos.r),
     }))),
     failed: drug.failed,
   });
@@ -102,8 +101,8 @@ function ownOutcome(outcome: Outcome): Outcome {
   return Object.freeze({
     failed: outcome.failed,
     final: Object.freeze(outcome.final.map((pos) => Object.freeze({
-      x: canonicalNumber(pos.x),
-      y: canonicalNumber(pos.y),
+      q: canonicalNumber(pos.q),
+      r: canonicalNumber(pos.r),
     }))),
     cured: Object.freeze(outcome.cured.map(canonicalNumber)),
     sideEffects: Object.freeze(outcome.sideEffects.map(canonicalNumber)),
@@ -232,8 +231,8 @@ function ownFactoryLayout(layout: FactoryLayout): FactoryLayout {
           period: canonicalNumber(tile.period),
         });
       case "splitter":
-        if (!Array.isArray(tile.outDirs) || tile.outDirs.length < 1 || tile.outDirs.length > 4) {
-          throw new Error("game intent: factory splitter fan-out must contain 1..4 directions");
+        if (!Array.isArray(tile.outDirs) || tile.outDirs.length < 1 || tile.outDirs.length > 6) {
+          throw new Error("game intent: factory splitter fan-out must contain 1..6 directions");
         }
         return Object.freeze({
           kind: "splitter",
@@ -241,8 +240,8 @@ function ownFactoryLayout(layout: FactoryLayout): FactoryLayout {
           outDirs: Object.freeze(tile.outDirs.map((dir: number) => canonicalNumber(dir) as Dir)),
         });
       case "merger":
-        if (!Array.isArray(tile.inDirs) || tile.inDirs.length < 1 || tile.inDirs.length > 4) {
-          throw new Error("game intent: factory merger fan-in must contain 1..4 directions");
+        if (!Array.isArray(tile.inDirs) || tile.inDirs.length < 1 || tile.inDirs.length > 6) {
+          throw new Error("game intent: factory merger fan-in must contain 1..6 directions");
         }
         return Object.freeze({
           kind: "merger",
@@ -261,26 +260,26 @@ function ownFactoryLayout(layout: FactoryLayout): FactoryLayout {
       speed: canonicalNumber(placed.def.speed),
     }),
     anchor: Object.freeze({
-      x: canonicalNumber(placed.anchor.x),
-      y: canonicalNumber(placed.anchor.y),
+      q: canonicalNumber(placed.anchor.q),
+      r: canonicalNumber(placed.anchor.r),
     }),
     footRot: canonicalNumber(placed.footRot) as typeof placed.footRot,
     shape: Object.freeze({
-      cells: Object.freeze(placed.shape.cells.map((cell: { readonly x: number; readonly y: number }) => Object.freeze({
-        x: canonicalNumber(cell.x),
-        y: canonicalNumber(cell.y),
+      cells: Object.freeze(placed.shape.cells.map((cell: HexCoord) => Object.freeze({
+        q: canonicalNumber(cell.q),
+        r: canonicalNumber(cell.r),
       }))),
-      inPorts: Object.freeze(placed.shape.inPorts.map((port: { readonly cell: { readonly x: number; readonly y: number }; readonly side: Dir }) => Object.freeze({
+      inPorts: Object.freeze(placed.shape.inPorts.map((port: { readonly cell: HexCoord; readonly side: Dir }) => Object.freeze({
         cell: Object.freeze({
-          x: canonicalNumber(port.cell.x),
-          y: canonicalNumber(port.cell.y),
+          q: canonicalNumber(port.cell.q),
+          r: canonicalNumber(port.cell.r),
         }),
         side: canonicalNumber(port.side) as typeof port.side,
       }))),
-      outPorts: Object.freeze(placed.shape.outPorts.map((port: { readonly cell: { readonly x: number; readonly y: number }; readonly side: Dir }) => Object.freeze({
+      outPorts: Object.freeze(placed.shape.outPorts.map((port: { readonly cell: HexCoord; readonly side: Dir }) => Object.freeze({
         cell: Object.freeze({
-          x: canonicalNumber(port.cell.x),
-          y: canonicalNumber(port.cell.y),
+          q: canonicalNumber(port.cell.q),
+          r: canonicalNumber(port.cell.r),
         }),
         side: canonicalNumber(port.side) as typeof port.side,
       }))),
@@ -403,8 +402,8 @@ function requireAllowedTemplate(game: GameState, template: Template): void {
 }
 
 function requireDir(value: number, path: string): void {
-  if (!Number.isSafeInteger(value) || value < 0 || value > 3) {
-    throw new Error(`game intent: ${path} direction must be an integer from 0 to 3`);
+  if (!Number.isSafeInteger(value) || value < 0 || value > 5) {
+    throw new Error(`game intent: ${path} direction must be an integer from 0 to 5`);
   }
 }
 
@@ -478,7 +477,7 @@ export function validateFactoryLayout(game: GameState, layout: FactoryLayout): v
         break;
       case "splitter":
         requireDir(tile.inDir, `factory tile ${index} input`);
-        if (!Array.isArray(tile.outDirs) || tile.outDirs.length === 0 || tile.outDirs.length > 4) {
+        if (!Array.isArray(tile.outDirs) || tile.outDirs.length === 0 || tile.outDirs.length > 6) {
           throw new Error(`game intent: factory splitter ${index} requires an output direction`);
         }
         for (let output = 0; output < tile.outDirs.length; output++) {
@@ -490,7 +489,7 @@ export function validateFactoryLayout(game: GameState, layout: FactoryLayout): v
         }
         break;
       case "merger":
-        if (!Array.isArray(tile.inDirs) || tile.inDirs.length === 0 || tile.inDirs.length > 4) {
+        if (!Array.isArray(tile.inDirs) || tile.inDirs.length === 0 || tile.inDirs.length > 6) {
           throw new Error(`game intent: factory merger ${index} requires an input direction`);
         }
         for (let input = 0; input < tile.inDirs.length; input++) {
@@ -518,11 +517,11 @@ export function validateFactoryLayout(game: GameState, layout: FactoryLayout): v
     }
     machineIds.add(placed.id);
     if (
-      !Number.isSafeInteger(placed.anchor.x) ||
-      !Number.isSafeInteger(placed.anchor.y) ||
+      !Number.isSafeInteger(placed.anchor.q) ||
+      !Number.isSafeInteger(placed.anchor.r) ||
       !Number.isSafeInteger(placed.footRot) ||
       placed.footRot < 0 ||
-      placed.footRot > 3
+      placed.footRot > 5
     ) {
       throw new Error(`game intent: machine ${placed.id} placement is invalid`);
     }
@@ -548,16 +547,13 @@ export function validateFactoryLayout(game: GameState, layout: FactoryLayout): v
     }
     for (const cell of worldCells(placed)) {
       if (
-        !Number.isSafeInteger(cell.x) ||
-        !Number.isSafeInteger(cell.y) ||
-        cell.x < 0 ||
-        cell.y < 0 ||
-        cell.x >= layout.width ||
-        cell.y >= layout.height
+        !Number.isSafeInteger(cell.q) ||
+        !Number.isSafeInteger(cell.r) ||
+        !hexInBounds(layout.width, layout.height, cell.q, cell.r)
       ) {
         throw new Error(`game intent: machine ${placed.id} footprint is out of bounds`);
       }
-      const index = cell.y * layout.width + cell.x;
+      const index = hexIndex(layout.width, cell.q, cell.r);
       if ((occupied[index] ?? -1) >= 0) {
         throw new Error(`game intent: machine ${placed.id} footprint overlaps another machine`);
       }
@@ -573,12 +569,18 @@ const BASE_LAB_VISIBILITY_RADIUS = 2;
 
 function revealStartRadius(map: MultiMap["maps"][number], radius: number): Uint8Array {
   const fog = new Uint8Array(map.width * map.height);
-  for (let dy = -radius; dy <= radius; dy++) {
-    const y = map.start.y + dy;
-    if (y < 0 || y >= map.height) continue;
-    for (let dx = -radius; dx <= radius; dx++) {
-      const x = map.start.x + dx;
-      if (x >= 0 && x < map.width) fog[y * map.width + x] = 1;
+  for (let dr = -radius; dr <= radius; dr++) {
+    const r = map.start.r + dr;
+    if (r < 0 || r >= map.height) continue;
+    for (let dq = -radius; dq <= radius; dq++) {
+      const q = map.start.q + dq;
+      if (
+        q >= 0 &&
+        q < map.width &&
+        hexDistance(map.start.q, map.start.r, q, r) <= radius
+      ) {
+        fog[hexIndex(map.width, q, r)] = 1;
+      }
     }
   }
   return fog;
@@ -593,8 +595,8 @@ const RESEARCH_SENSOR_RADIUS = 1;
 function revealResearchTrails(
   dst: readonly Uint8Array[],
   mm: MultiMap,
-  trails: readonly (readonly { readonly x: number; readonly y: number }[])[],
-  endpoints: readonly { readonly x: number; readonly y: number }[],
+  trails: readonly (readonly HexCoord[])[],
+  endpoints: readonly HexCoord[],
   radius: number,
 ): readonly Uint8Array[] {
   let result: Uint8Array[] | null = null;
@@ -605,14 +607,18 @@ function revealResearchTrails(
     const endpoint = endpoints[mapIndex];
     if (current === undefined || map === undefined || trail === undefined || endpoint === undefined) continue;
     let next: Uint8Array | null = null;
-    const revealPoint = (point: { readonly x: number; readonly y: number }): void => {
-      for (let dy = -radius; dy <= radius; dy++) {
-        const y = point.y + dy;
-        if (y < 0 || y >= map.height) continue;
-        for (let dx = -radius; dx <= radius; dx++) {
-          const x = point.x + dx;
-          if (x < 0 || x >= map.width) continue;
-          const target = y * map.width + x;
+    const revealPoint = (point: HexCoord): void => {
+      for (let dr = -radius; dr <= radius; dr++) {
+        const r = point.r + dr;
+        if (r < 0 || r >= map.height) continue;
+        for (let dq = -radius; dq <= radius; dq++) {
+          const q = point.q + dq;
+          if (
+            q < 0 ||
+            q >= map.width ||
+            hexDistance(point.q, point.r, q, r) > radius
+          ) continue;
+          const target = hexIndex(map.width, q, r);
           if ((next ?? current)[target] === 1) continue;
           if (next === null) next = Uint8Array.from(current);
           next[target] = 1;
@@ -695,10 +701,10 @@ function expandFactory(layout: FactoryLayout, dw: number, dh: number): FactoryLa
   const width = layout.width + dw;
   const height = layout.height + dh;
   const tiles: FactoryTile[] = new Array<FactoryTile>(width * height).fill({ kind: "empty" });
-  for (let y = 0; y < layout.height; y++) {
-    for (let x = 0; x < layout.width; x++) {
-      const tile = layout.tiles[y * layout.width + x];
-      if (tile !== undefined) tiles[y * width + x] = tile;
+  for (let r = 0; r < layout.height; r++) {
+    for (let q = 0; q < layout.width; q++) {
+      const tile = layout.tiles[hexIndex(layout.width, q, r)];
+      if (tile !== undefined) tiles[hexIndex(width, q, r)] = tile;
     }
   }
   return ownFactoryLayout({ width, height, tiles, machines: layout.machines });
@@ -719,12 +725,12 @@ function drainProducts(
   const events = runtime.producedEvents;
   if (events.count === 0) return;
   for (let eventIndex = 0; eventIndex < events.count; eventIndex++) {
-    const pos: { x: number; y: number }[] = [];
+    const pos: HexCoord[] = [];
     const base = eventIndex * events.mapCount;
     for (let mapIndex = 0; mapIndex < events.mapCount; mapIndex++) {
       pos.push({
-        x: events.drugX[base + mapIndex] ?? 0,
-        y: events.drugY[base + mapIndex] ?? 0,
+        q: events.drugX[base + mapIndex] ?? 0,
+        r: events.drugY[base + mapIndex] ?? 0,
       });
     }
     const drug = { pos, failed: (events.failed[eventIndex] ?? 0) !== 0 };
@@ -1381,7 +1387,7 @@ function comparableGame(game: GameState): unknown {
 }
 
 function validateDrugState(
-  drug: { readonly pos: readonly { readonly x: number; readonly y: number }[]; readonly failed: boolean },
+  drug: DrugState,
   level: GeneratedLevel,
   path: string,
 ): void {
@@ -1394,12 +1400,9 @@ function validateDrugState(
     if (
       pos === undefined ||
       map === undefined ||
-      !Number.isSafeInteger(pos.x) ||
-      !Number.isSafeInteger(pos.y) ||
-      pos.x < 0 ||
-      pos.y < 0 ||
-      pos.x >= map.width ||
-      pos.y >= map.height
+      !Number.isSafeInteger(pos.q) ||
+      !Number.isSafeInteger(pos.r) ||
+      !hexInBounds(map.width, map.height, pos.q, pos.r)
     ) {
       throw new Error(`${path}.pos[${mapIndex}] is outside its effect map`);
     }

@@ -1,7 +1,28 @@
 import { expect, test } from "@playwright/test";
+import { BASE_GAME_FACTORY_HEIGHT, BASE_GAME_FACTORY_WIDTH } from "../../src/sim/phase0_interfaces";
+import { hexBoardBounds, hexToPixel } from "../../src/render/hexProjection";
 import { machineName } from "../../src/ui/machineLabels";
 
 test.setTimeout(60_000);
+
+async function factoryCellPoint(
+  canvas: import("@playwright/test").Locator,
+  q: number,
+  r: number,
+): Promise<{ readonly x: number; readonly y: number }> {
+  const box = await canvas.boundingBox();
+  if (box === null) throw new Error("Factory canvas has no bounds");
+  const intrinsic = await canvas.evaluate((element) => ({
+    width: (element as HTMLCanvasElement).width,
+    height: (element as HTMLCanvasElement).height,
+  }));
+  const bounds = hexBoardBounds(BASE_GAME_FACTORY_WIDTH, BASE_GAME_FACTORY_HEIGHT, 21);
+  const projected = hexToPixel(q, r, 21);
+  return {
+    x: box.x + (12 - bounds.minX + projected.x) * box.width / intrinsic.width,
+    y: box.y + (12 - bounds.minY + projected.y) * box.height / intrinsic.height,
+  };
+}
 
 test("a default run starts with a viable budget and four independent disease markets", async ({ page }) => {
   await page.goto("/");
@@ -166,20 +187,20 @@ test("Pilot spatial editing supports palette, rotate, drag paint, erase, undo, r
       .map((label) => label.textContent),
   );
   expect(clippedTools).toEqual([]);
-  const box = await canvas.boundingBox();
-  if (box === null) throw new Error("Pilot canvas has no bounds");
   await pilot.getByTestId("brush-belt").click();
   await page.keyboard.press("r");
   await expect(pilot.getByTestId("brush-direction")).toContainText("S");
-  const x = box.x + 12 + 10 * 42 + 21;
-  const y = box.y + 12 + 6 * 42 + 21;
+  const beltStart = await factoryCellPoint(canvas, 10, 6);
+  const beltEnd = await factoryCellPoint(canvas, 12, 6);
+  const x = beltStart.x;
+  const y = beltStart.y;
   await page.mouse.move(x, y);
   const ghostBox = await frame.locator(".factory-ghost").first().boundingBox();
   if (ghostBox === null) throw new Error("Factory placement preview has no bounds");
-  expect(ghostBox.width).toBeCloseTo(42, 0);
+  expect(ghostBox.width).toBeCloseTo(Math.sqrt(3) * 21, 0);
   expect(ghostBox.height).toBeCloseTo(42, 0);
   await page.mouse.down();
-  await page.mouse.move(x + 84, y, { steps: 5 });
+  await page.mouse.move(beltEnd.x, beltEnd.y, { steps: 5 });
   await page.mouse.up();
   await expect(pilot.getByTestId("factory-undo")).toBeEnabled();
   await page.keyboard.press("Control+z");
@@ -189,9 +210,11 @@ test("Pilot spatial editing supports palette, rotate, drag paint, erase, undo, r
   await page.mouse.down({ button: "right" });
   await page.mouse.up({ button: "right" });
 
-  const machineX = box.x + 12 + 3 * 42 + 21;
-  const machineY = box.y + 12 + 3 * 42 + 21;
-  const movedX = machineX + 3 * 42;
+  const machine = await factoryCellPoint(canvas, 3, 3);
+  const moved = await factoryCellPoint(canvas, 6, 3);
+  const machineX = machine.x;
+  const machineY = machine.y;
+  const movedX = moved.x;
   await pilot.getByTestId("brush-machine-push").click();
   await page.mouse.click(machineX, machineY);
   await expect(pilot.getByTestId("factory-hover-kind")).toHaveText(machineName("push"));

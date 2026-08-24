@@ -31,9 +31,8 @@ import {
   walkValidatedPathInto,
 } from "../drug-graph";
 import { worldCells, worldInPorts, worldOutPorts } from "../factory-geom";
+import { HEX_DQ, HEX_DR, hexInBounds, hexIndex, oppositeHexDir } from "../hex";
 
-const DIR_DX: readonly number[] = [1, 0, -1, 0];
-const DIR_DY: readonly number[] = [0, 1, 0, -1];
 const ACCEPT_NONE = -3;
 const ACCEPT_TILE = -2;
 const ACCEPT_SINK = -1;
@@ -165,15 +164,15 @@ export function requireFactoryAnalysisBudget(
 }
 
 function opposite(d: Dir): Dir {
-  return ((d + 2) & 3) as Dir;
+  return oppositeHexDir(d);
 }
 
-function inBounds(layout: FactoryLayout, x: number, y: number): boolean {
-  return x >= 0 && y >= 0 && x < layout.width && y < layout.height;
+function inBounds(layout: FactoryLayout, q: number, r: number): boolean {
+  return hexInBounds(layout.width, layout.height, q, r);
 }
 
 function validDir(value: number): value is Dir {
-  return Number.isInteger(value) && value >= 0 && value <= 3;
+  return Number.isInteger(value) && value >= 0 && value <= 5;
 }
 
 function freezeLayoutAuthority(layout: FactoryLayout): void {
@@ -183,7 +182,6 @@ function freezeLayoutAuthority(layout: FactoryLayout): void {
     Object.freeze(tile);
   }
   for (const machine of layout.machines) {
-    for (const delta of machine.def.path) Object.freeze(delta);
     Object.freeze(machine.def.path);
     Object.freeze(machine.def);
     for (const cell of machine.shape.cells) Object.freeze(cell);
@@ -298,7 +296,7 @@ function compileLayout(layout: FactoryLayout): CompiledLayout {
     } else if (tile.kind === "belt") {
       if (!validDir(tile.dir)) throw new Error(`factory layout: invalid belt at tile ${cell}`);
     } else if (tile.kind === "splitter") {
-      if (!validDir(tile.inDir) || tile.outDirs.length === 0 || tile.outDirs.length > 4) {
+      if (!validDir(tile.inDir) || tile.outDirs.length === 0 || tile.outDirs.length > 6) {
         throw new Error(`factory layout: invalid splitter at tile ${cell}`);
       }
       for (let i = 0; i < tile.outDirs.length; i++) {
@@ -313,7 +311,7 @@ function compileLayout(layout: FactoryLayout): CompiledLayout {
       }
       splitterCount += 1;
     } else if (tile.kind === "merger") {
-      if (!validDir(tile.outDir) || tile.inDirs.length === 0 || tile.inDirs.length > 4) {
+      if (!validDir(tile.outDir) || tile.inDirs.length === 0 || tile.inDirs.length > 6) {
         throw new Error(`factory layout: invalid merger at tile ${cell}`);
       }
       for (let i = 0; i < tile.inDirs.length; i++) {
@@ -352,11 +350,11 @@ function compileLayout(layout: FactoryLayout): CompiledLayout {
       !Number.isSafeInteger(machine.id) ||
       machine.id < 0 ||
       machine.id > 0x7fffffff ||
-      !Number.isSafeInteger(machine.anchor.x) ||
-      !Number.isSafeInteger(machine.anchor.y) ||
+      !Number.isSafeInteger(machine.anchor.q) ||
+      !Number.isSafeInteger(machine.anchor.r) ||
       !Number.isInteger(machine.footRot) ||
       machine.footRot < 0 ||
-      machine.footRot > 3
+      machine.footRot > 5
     ) {
       throw new Error(`factory layout: invalid placement for machine ${machine.id}`);
     }
@@ -377,14 +375,14 @@ function compileLayout(layout: FactoryLayout): CompiledLayout {
       const cell = machine.shape.cells[cellIndex];
       if (
         cell === undefined ||
-        !Number.isSafeInteger(cell.x) ||
-        !Number.isSafeInteger(cell.y)
+        !Number.isSafeInteger(cell.q) ||
+        !Number.isSafeInteger(cell.r)
       ) {
         throw new Error(`factory layout: invalid footprint for machine ${machine.id}`);
       }
       for (let previous = 0; previous < cellIndex; previous++) {
         const other = machine.shape.cells[previous];
-        if (other?.x === cell.x && other.y === cell.y) {
+        if (other?.q === cell.q && other.r === cell.r) {
           throw new Error(`factory layout: duplicate footprint cell for machine ${machine.id}`);
         }
       }
@@ -395,8 +393,8 @@ function compileLayout(layout: FactoryLayout): CompiledLayout {
         const port = ports[portIndex];
         if (
           port === undefined ||
-          !Number.isSafeInteger(port.cell.x) ||
-          !Number.isSafeInteger(port.cell.y) ||
+          !Number.isSafeInteger(port.cell.q) ||
+          !Number.isSafeInteger(port.cell.r) ||
           !validDir(port.side)
         ) {
           throw new Error(`factory layout: invalid port for machine ${machine.id}`);
@@ -404,7 +402,7 @@ function compileLayout(layout: FactoryLayout): CompiledLayout {
         let belongsToFootprint = false;
         for (let cellIndex = 0; cellIndex < machine.shape.cells.length; cellIndex++) {
           const cell = machine.shape.cells[cellIndex];
-          if (cell?.x === port.cell.x && cell.y === port.cell.y) belongsToFootprint = true;
+          if (cell?.q === port.cell.q && cell.r === port.cell.r) belongsToFootprint = true;
         }
         if (!belongsToFootprint) {
           throw new Error(`factory layout: detached port for machine ${machine.id}`);
@@ -434,12 +432,12 @@ function compileLayout(layout: FactoryLayout): CompiledLayout {
     const cells = worldCells(machine);
     for (let i = 0; i < cells.length; i++) {
       const cell = cells[i];
-      if (cell === undefined || !inBounds(layout, cell.x, cell.y)) {
+      if (cell === undefined || !inBounds(layout, cell.q, cell.r)) {
         throw new Error(`factory layout: machine ${machine.id} extends out of bounds`);
       }
-      const index = cell.y * layout.width + cell.x;
+      const index = hexIndex(layout.width, cell.q, cell.r);
       if ((cellOwner[index] ?? -1) >= 0) {
-        throw new Error(`factory layout: overlapping machine cell ${cell.x},${cell.y}`);
+        throw new Error(`factory layout: overlapping machine cell ${cell.q},${cell.r}`);
       }
       if (layout.tiles[index]?.kind !== "empty") {
         throw new Error(`factory layout: machine ${machine.id} overlaps a factory tile`);
@@ -451,12 +449,12 @@ function compileLayout(layout: FactoryLayout): CompiledLayout {
     for (let i = 0; i < inputs.length; i++) {
       const port = inputs[i];
       if (port === undefined) continue;
-      if (!inBounds(layout, port.x, port.y)) {
+      if (!inBounds(layout, port.q, port.r)) {
         throw new Error(`factory layout: machine ${machine.id} input port is out of bounds`);
       }
       inPortMachineSlot[inIndex] = slot;
       inPortSide[inIndex] = port.side;
-      const cellIndex = port.y * layout.width + port.x;
+      const cellIndex = hexIndex(layout.width, port.q, port.r);
       const tail = inPortTail[cellIndex] ?? -1;
       if (tail < 0) inPortHead[cellIndex] = inIndex;
       else inPortNext[tail] = inIndex;
@@ -470,11 +468,11 @@ function compileLayout(layout: FactoryLayout): CompiledLayout {
     for (let i = 0; i < outputs.length; i++) {
       const port = outputs[i];
       if (port === undefined) continue;
-      if (!inBounds(layout, port.x, port.y)) {
+      if (!inBounds(layout, port.q, port.r)) {
         throw new Error(`factory layout: machine ${machine.id} output port is out of bounds`);
       }
-      outPortX[outIndex] = port.x;
-      outPortY[outIndex] = port.y;
+      outPortX[outIndex] = port.q;
+      outPortY[outIndex] = port.r;
       outPortSide[outIndex] = port.side;
       outIndex += 1;
     }
@@ -634,8 +632,8 @@ function prepareUnitTargets(
       for (let portOffset = 0; portOffset < count; portOffset++) {
         const portIndex = start + portOffset;
         const side = (compiled.outPortSide[portIndex] ?? 0) as Dir;
-        const nx = (compiled.outPortX[portIndex] ?? 0) + (DIR_DX[side] ?? 0);
-        const ny = (compiled.outPortY[portIndex] ?? 0) + (DIR_DY[side] ?? 0);
+        const nx = (compiled.outPortX[portIndex] ?? 0) + HEX_DQ[side]!;
+        const ny = (compiled.outPortY[portIndex] ?? 0) + HEX_DR[side]!;
         const acceptance = targetIfFree(compiled, occupancy, machineHeld, nx, ny, side);
         if (acceptance === ACCEPT_NONE) continue;
         targetX = nx;
@@ -652,8 +650,8 @@ function prepareUnitTargets(
       if (tile === undefined) continue;
       if (tile.kind === "belt" || tile.kind === "merger") {
         const dir = tile.kind === "belt" ? tile.dir : tile.outDir;
-        const nx = x + (DIR_DX[dir] ?? 0);
-        const ny = y + (DIR_DY[dir] ?? 0);
+        const nx = x + HEX_DQ[dir]!;
+        const ny = y + HEX_DR[dir]!;
         const acceptance = targetIfFree(compiled, occupancy, machineHeld, nx, ny, dir);
         if (acceptance !== ACCEPT_NONE) {
           targetX = nx;
@@ -668,8 +666,8 @@ function prepareUnitTargets(
         for (let offset = 0; offset < outputCount; offset++) {
           const outputIndex = (cursor + offset) % outputCount;
           const dir = (tile.outDirs[outputIndex] ?? 0) as Dir;
-          const nx = x + (DIR_DX[dir] ?? 0);
-          const ny = y + (DIR_DY[dir] ?? 0);
+          const nx = x + HEX_DQ[dir]!;
+          const ny = y + HEX_DR[dir]!;
           const acceptance = targetIfFree(compiled, occupancy, machineHeld, nx, ny, dir);
           if (acceptance === ACCEPT_NONE) continue;
           targetX = nx;
@@ -742,8 +740,8 @@ function hasHigherPriorityScheduledSource(
     const sourceY = (sourceCell - sourceX) / width;
     const dir = (compiled.sourceDirs[sourceIndex] ?? 0) as Dir;
     if (
-      sourceX + (DIR_DX[dir] ?? 0) !== targetX ||
-      sourceY + (DIR_DY[dir] ?? 0) !== targetY
+      sourceX + HEX_DQ[dir]! !== targetX ||
+      sourceY + HEX_DR[dir]! !== targetY
     ) {
       continue;
     }
@@ -1143,17 +1141,17 @@ export const initFactory: InitFactoryFn = (layout, mm, start) => {
       map.cureId.length !== map.cell.length ||
       map.sideEffectId.length !== map.cell.length ||
       map.fog.length !== map.cell.length ||
-      !Number.isSafeInteger(pos.x) ||
-      !Number.isSafeInteger(pos.y) ||
-      pos.x < 0 ||
-      pos.y < 0 ||
-      pos.x >= map.width ||
-      pos.y >= map.height
+      !Number.isSafeInteger(pos.q) ||
+      !Number.isSafeInteger(pos.r) ||
+      pos.q < 0 ||
+      pos.r < 0 ||
+      pos.q >= map.width ||
+      pos.r >= map.height
     ) {
       throw new Error("factory init: invalid map or start position");
     }
-    sourceDrugX[mapIndex] = pos.x;
-    sourceDrugY[mapIndex] = pos.y;
+    sourceDrugX[mapIndex] = pos.q;
+    sourceDrugY[mapIndex] = pos.r;
   }
   const data: RuntimeInternals = {
     layout,
@@ -1333,8 +1331,8 @@ export const stepFactory: StepFactoryFn = (layout, mm, publicRuntime) => {
     const sourceX = sourceCell % width;
     const sourceY = (sourceCell - sourceX) / width;
     const dir = (compiled.sourceDirs[sourceIndex] ?? 0) as Dir;
-    const targetX = sourceX + (DIR_DX[dir] ?? 0);
-    const targetY = sourceY + (DIR_DY[dir] ?? 0);
+    const targetX = sourceX + HEX_DQ[dir]!;
+    const targetY = sourceY + HEX_DR[dir]!;
     const acceptance = targetIfFree(
       compiled,
       occupancy,
@@ -1392,10 +1390,10 @@ export const snapshotProducedEvents = (runtime: FactoryRuntime): readonly Produc
   const products: ProducedUnit[] = [];
   const events = runtime.producedEvents;
   for (let i = 0; i < events.count; i++) {
-    const pos: { x: number; y: number }[] = [];
+    const pos: { q: number; r: number }[] = [];
     const base = i * runtime.mapCount;
     for (let mapIndex = 0; mapIndex < runtime.mapCount; mapIndex++) {
-      pos.push({ x: events.drugX[base + mapIndex] ?? 0, y: events.drugY[base + mapIndex] ?? 0 });
+      pos.push({ q: events.drugX[base + mapIndex] ?? 0, r: events.drugY[base + mapIndex] ?? 0 });
     }
     products.push({
       id: events.ids[i] ?? 0,
@@ -1410,17 +1408,17 @@ export const snapshotFactory: SnapshotFactoryFn = (publicRuntime) => {
   const runtime = publicRuntime as MutableFactoryRuntime;
   const units: Unit[] = [];
   for (let i = 0; i < runtime.unitCount; i++) {
-    const pos: { x: number; y: number }[] = [];
+    const pos: { q: number; r: number }[] = [];
     const base = i * runtime.mapCount;
     for (let mapIndex = 0; mapIndex < runtime.mapCount; mapIndex++) {
       pos.push({
-        x: runtime.unitDrugX[base + mapIndex] ?? 0,
-        y: runtime.unitDrugY[base + mapIndex] ?? 0,
+        q: runtime.unitDrugX[base + mapIndex] ?? 0,
+        r: runtime.unitDrugY[base + mapIndex] ?? 0,
       });
     }
     units.push({
       id: runtime.unitIds[i] ?? 0,
-      pos: { x: runtime.unitX[i] ?? 0, y: runtime.unitY[i] ?? 0 },
+      pos: { q: runtime.unitX[i] ?? 0, r: runtime.unitY[i] ?? 0 },
       drug: { pos, failed: runtime.unitFailed[i] !== 0 },
       proc: runtime.unitProc[i] ?? 0,
       machineId: (runtime.unitMachineIds[i] ?? -1) < 0 ? null : (runtime.unitMachineIds[i] ?? -1),
@@ -1481,9 +1479,9 @@ export const restoreFactory: RestoreFactoryFn = (layout, mm, start, snapshot) =>
       !Number.isSafeInteger(unit.id) ||
       unit.id < 0 ||
       unit.id > 0x7fffffff ||
-      !Number.isSafeInteger(unit.pos.x) ||
-      !Number.isSafeInteger(unit.pos.y) ||
-      !inBounds(layout, unit.pos.x, unit.pos.y) ||
+      !Number.isSafeInteger(unit.pos.q) ||
+      !Number.isSafeInteger(unit.pos.r) ||
+      !inBounds(layout, unit.pos.q, unit.pos.r) ||
       !Number.isSafeInteger(unit.proc) ||
       unit.proc < 0 ||
       !Number.isSafeInteger(unit.productionCost) ||
@@ -1495,8 +1493,8 @@ export const restoreFactory: RestoreFactoryFn = (layout, mm, start, snapshot) =>
       throw new Error("factory restore: invalid unit drug state");
     }
     runtime.unitIds[i] = unit.id;
-    runtime.unitX[i] = unit.pos.x;
-    runtime.unitY[i] = unit.pos.y;
+    runtime.unitX[i] = unit.pos.q;
+    runtime.unitY[i] = unit.pos.r;
     runtime.unitProc[i] = unit.proc;
     runtime.unitProductionCosts[i] = unit.productionCost;
     runtime.unitFailed[i] = unit.drug.failed ? 1 : 0;
@@ -1514,17 +1512,17 @@ export const restoreFactory: RestoreFactoryFn = (layout, mm, start, snapshot) =>
       if (
         pos === undefined ||
         map === undefined ||
-        !Number.isSafeInteger(pos.x) ||
-        !Number.isSafeInteger(pos.y) ||
-        pos.x < 0 ||
-        pos.y < 0 ||
-        pos.x >= map.width ||
-        pos.y >= map.height
+        !Number.isSafeInteger(pos.q) ||
+        !Number.isSafeInteger(pos.r) ||
+        pos.q < 0 ||
+        pos.r < 0 ||
+        pos.q >= map.width ||
+        pos.r >= map.height
       ) {
         throw new Error("factory restore: invalid unit map position");
       }
-      runtime.unitDrugX[base + mapIndex] = pos.x;
-      runtime.unitDrugY[base + mapIndex] = pos.y;
+      runtime.unitDrugX[base + mapIndex] = pos.q;
+      runtime.unitDrugY[base + mapIndex] = pos.r;
     }
   }
 
@@ -1553,17 +1551,17 @@ export const restoreFactory: RestoreFactoryFn = (layout, mm, start, snapshot) =>
       if (
         pos === undefined ||
         map === undefined ||
-        !Number.isSafeInteger(pos.x) ||
-        !Number.isSafeInteger(pos.y) ||
-        pos.x < 0 ||
-        pos.y < 0 ||
-        pos.x >= map.width ||
-        pos.y >= map.height
+        !Number.isSafeInteger(pos.q) ||
+        !Number.isSafeInteger(pos.r) ||
+        pos.q < 0 ||
+        pos.r < 0 ||
+        pos.q >= map.width ||
+        pos.r >= map.height
       ) {
         throw new Error("factory restore: invalid product map position");
       }
-      runtime.producedEvents.drugX[base + mapIndex] = pos.x;
-      runtime.producedEvents.drugY[base + mapIndex] = pos.y;
+      runtime.producedEvents.drugX[base + mapIndex] = pos.q;
+      runtime.producedEvents.drugY[base + mapIndex] = pos.r;
     }
   }
   assertRuntime(runtime, data, true);

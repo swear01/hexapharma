@@ -9,6 +9,8 @@ import {
   DEFAULT_CATALOG,
 } from "../../src/sim/phase0_interfaces";
 import { defaultGenOptions, researchPlanningTrails } from "../../src/ui/Game";
+import { focusLabCamera } from "../../src/render/labCamera";
+import type { HexCoord } from "../../src/sim/hex";
 
 async function confirmLoad(page: import("@playwright/test").Page): Promise<void> {
   await page.getByTestId("load").click();
@@ -55,7 +57,7 @@ async function clickFirstCandidateEndpoint(page: import("@playwright/test").Page
   const trail = researchPlanningTrails(level.mm, game.fog, level.start, {
     steps: [DEFAULT_CATALOG[0]!],
   })[0] ?? [];
-  let endpoint: { readonly x: number; readonly y: number } | undefined;
+  let endpoint: HexCoord | undefined;
   for (let index = trail.length - 1; index >= 0; index--) {
     const point = trail[index];
     if (point !== null && point !== undefined) {
@@ -72,9 +74,10 @@ async function clickFirstCandidateEndpoint(page: import("@playwright/test").Page
   const cameraX = Number(await frame.getAttribute("data-camera-x"));
   const cameraY = Number(await frame.getAttribute("data-camera-y"));
   const zoom = Number(await frame.getAttribute("data-camera-zoom"));
+  const endpointCenter = focusLabCamera(endpoint);
   await page.mouse.click(
-    box.x + box.width / 2 + (endpoint.x + 0.5 - cameraX) * 40 * zoom * box.width / 832,
-    box.y + box.height / 2 + (endpoint.y + 0.5 - cameraY) * 40 * zoom * box.height / 512,
+    box.x + box.width / 2 + (endpointCenter.x - cameraX) * zoom * box.width / 832,
+    box.y + box.height / 2 + (endpointCenter.y - cameraY) * zoom * box.height / 512,
   );
 }
 
@@ -104,7 +107,7 @@ test("machine patents add the same fixed path to Research and Production Plan pa
   await expect(page.getByTestId("patent-unlock-skew-unlock")).toBeDisabled();
 
   await page.evaluate((checkpoint) => {
-    localStorage.setItem("hexapharma.save.checkpoint.0", checkpoint);
+    localStorage.setItem("hexapharma.save.v10.checkpoint.0", checkpoint);
   }, productionCheckpoint(true));
   await page.reload();
   await confirmLoad(page);
@@ -141,7 +144,7 @@ test("factory expansion confirms before resetting built Production", async ({ pa
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
   await page.evaluate((checkpoint) => {
-    localStorage.setItem("hexapharma.save.checkpoint.0", checkpoint);
+    localStorage.setItem("hexapharma.save.v10.checkpoint.0", checkpoint);
   }, productionCheckpoint());
   await page.reload();
   await confirmLoad(page);

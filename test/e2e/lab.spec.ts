@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { LAB_VIEWPORT, clampLabCamera, focusLabCamera } from "../../src/render/labCamera";
 import { applyGameIntent, createGameState } from "../../src/sim/game";
+import type { HexCoord } from "../../src/sim/hex";
 import { generate } from "../../src/sim/mapgen";
 import { serializeGame } from "../../src/sim/save";
 import { DEFAULT_CATALOG } from "../../src/sim/phase0_interfaces";
@@ -25,7 +26,7 @@ function known(text: string | null): number {
 function plannedEndpoint(
   typeId: string,
   stepCount = 1,
-): { readonly x: number; readonly y: number } {
+): HexCoord {
   const options = defaultGenOptions(14);
   const level = generate(options);
   const game = createGameState(options, 200, 0);
@@ -52,10 +53,14 @@ async function candidateEndpointPoint(
   if (box === null) throw new Error("Research canvas has no bounds");
   const cameraX = Number(await frame.getAttribute("data-camera-x"));
   const cameraY = Number(await frame.getAttribute("data-camera-y"));
+  const cameraZoom = Number(await frame.getAttribute("data-camera-zoom"));
   const endpoint = plannedEndpoint(typeId, stepCount);
+  const endpointCamera = focusLabCamera(endpoint);
   return {
-    x: box.x + box.width / 2 + (endpoint.x + 0.5 - cameraX) * 40 * box.width / 832,
-    y: box.y + box.height / 2 + (endpoint.y + 0.5 - cameraY) * 40 * box.height / 512,
+    x: box.x + box.width / 2
+      + (endpointCamera.x - cameraX) * cameraZoom * box.width / LAB_VIEWPORT.width,
+    y: box.y + box.height / 2
+      + (endpointCamera.y - cameraY) * cameraZoom * box.height / LAB_VIEWPORT.height,
   };
 }
 
@@ -73,14 +78,15 @@ test("Research is one large centered Atlas with no Route Floor or layer-transfer
 }) => {
   await page.goto("/");
   await expect(page.getByTestId("research-mission")).toContainText("Disease 1");
-  await expect(page.getByTestId("research-assay-sector")).toHaveText("south-east");
+  await expect(page.getByTestId("research-assay-sector")).toHaveText("east");
   const frame = page.getByTestId("lab-map-frame");
   await expect(frame).toBeVisible();
   const level = generate(defaultGenOptions(14));
   const start = level.start.pos[0]!;
+  const startCamera = focusLabCamera(start);
   expect(start).toEqual(level.mm.maps[0]!.origin);
-  await expect(frame).toHaveAttribute("data-camera-x", String(start.x + 0.5));
-  await expect(frame).toHaveAttribute("data-camera-y", String(start.y + 0.5));
+  await expect(frame).toHaveAttribute("data-camera-x", String(startCamera.x));
+  await expect(frame).toHaveAttribute("data-camera-y", String(startCamera.y));
   const generated = createGameState(defaultGenOptions(14), 200, 0);
   await expect(page.getByTestId("research-cures")).toHaveText(
     `Cure sites ${researchKnownCureCount(level.mm, generated.fog)}`,
@@ -273,17 +279,19 @@ test("Next focus follows the held candidate at the end of a growing route", asyn
 
   for (let stepCount = 1; stepCount <= 2; stepCount++) {
     const endpoint = plannedEndpoint("push2", stepCount);
+    const endpointCamera = focusLabCamera(endpoint);
     await page.getByTestId("lab-focus").click();
-    await expect(frame).toHaveAttribute("data-camera-x", String(endpoint.x + 0.5));
-    await expect(frame).toHaveAttribute("data-camera-y", String(endpoint.y + 0.5));
+    await expect(frame).toHaveAttribute("data-camera-x", String(endpointCamera.x));
+    await expect(frame).toHaveAttribute("data-camera-y", String(endpointCamera.y));
     await clickCandidateEndpoint(page, "push2", stepCount);
     await expect(page.getByTestId("research-program-count")).toHaveText(`${stepCount} tested`);
   }
 
   const held = plannedEndpoint("push2", 3);
+  const heldCamera = focusLabCamera(held);
   await page.getByTestId("lab-focus").click();
-  await expect(frame).toHaveAttribute("data-camera-x", String(held.x + 0.5));
-  await expect(frame).toHaveAttribute("data-camera-y", String(held.y + 0.5));
+  await expect(frame).toHaveAttribute("data-camera-x", String(heldCamera.x));
+  await expect(frame).toHaveAttribute("data-camera-y", String(heldCamera.y));
 });
 
 test("a resolved outcome keeps its feedback while focus returns to the next endpoint", async ({ page }) => {
@@ -295,9 +303,10 @@ test("a resolved outcome keeps its feedback while focus returns to the next endp
   await expect(focus).toHaveAttribute("aria-label", "Focus next endpoint");
   await focus.click();
   const endpoint = plannedEndpoint("push", 2);
+  const endpointCamera = focusLabCamera(endpoint);
   const frame = page.getByTestId("lab-map-frame");
-  await expect(frame).toHaveAttribute("data-camera-x", String(endpoint.x + 0.5));
-  await expect(frame).toHaveAttribute("data-camera-y", String(endpoint.y + 0.5));
+  await expect(frame).toHaveAttribute("data-camera-x", String(endpointCamera.x));
+  await expect(frame).toHaveAttribute("data-camera-y", String(endpointCamera.y));
 });
 
 test("Cure sites focuses only a Cure already present in authoritative fog", async ({ page }) => {

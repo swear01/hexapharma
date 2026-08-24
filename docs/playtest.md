@@ -30,7 +30,7 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 
 本節是玩法驗收，不是debug捷徑。不得使用`?cash=`／`?research=`、devtools改state、mapgen reference、solver、recipe/reference compiler、預製Research／Factory Blueprint或注入存檔。
 
-1. 清除本origin的Save slots與Blueprint Library後建立正常新局；確認Cash=`$1000`、Knowledge=`0`、單一Atlas有4種疾病，起點位於世界中央且只揭露中心5×5。
+1. 清除本origin的Save slots與Blueprint Library後建立正常新局；確認Cash=`$1000`、Knowledge=`0`、單一pointy-top axial Atlas有4種疾病，起點位於世界中央且只揭露hex distance radius 2的19-cell disk。
 2. 不查看source/test/reference，僅靠broad assay sector、world feedback與可用initial machines人工嘗試Research。每次只commit一個完整candidate stamp；記錄blank click是否誤提交、每步cash變化、每次揭露後是否知道如何作下一個決定、嘗試次數與剩餘cash。
 3. 找到第一個Cure後，確認結果同時報告已知Side effects，且formula ribbon自動顯示實際ordered steps、累積assay cost與副作用；若命中污染Cure，可開新session繼續尋找同區乾淨endpoint，但不能以hidden reference代替探索。
 4. 自行選擇直接Production或optional Production Plan，人工放source、完整machine sequence、belt與sink；不得呼叫layout compiler。若使用Plan，按`Commission $N`送入正式產線。確認Research支出後仍付得起有效Production build。
@@ -42,15 +42,15 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 
 ## 4. Stepwise Research／formula
 
-1. 按F1。只有一張大型Atlas；正常新局同圖4種疾病，開局camera聚焦generator start，只揭露中心5×5，正常viewport只看到整圖一小部分。
-2. mission readout顯示Active assay、疾病與local／八方向broad sector；不同方位fixture核對east、south-east、north-west、local，不得出現target座標或距離。
+1. 按F1。只有一張大型pointy-top Atlas；正常新局同圖4種疾病，開局camera聚焦generator start，只揭露中心radius-two 19-cell disk，正常viewport只看到整圖一小部分。以六個相鄰cell核對E／SE／SW／W／NW／NE picking與polygon edge一致。
+2. mission readout顯示Active assay、疾病與local／六方向broad sector；fixtures須涵蓋east、south-east、south-west、west、north-west、north-east與local，不得出現target座標或距離。
 3. 逐一選Research machines。hotbar icon與candidate ghost必須顯示不同完整奇形path，且不存在path長度、縮短、延長或只走一部分的控制。
 4. 先點candidate endpoint以外的blank map，program／cash／fog必須不變且cursor是grab；移到endpoint必須變pointer並提示短動作。單擊endpointcommit第一個stamp，不需雙擊。
 5. 第一次commit後確認session已開始、只扣該machine catalog cost、program恰多一個已執行step、actual trail立即揭霧且outcome立即可見。不得等待另一個Dispense，也不得先建立多步pending route。
 6. 以no-cure step繼續：shot保留，第二個candidate從第一步actual drug state接續；commit後只再扣第二台cost並更新fog／outcome。session readout不能提供重排或刪除已執行step的控制。
 7. 按Abort：program／shot／outcome清除，先前cash與fog保留。以Abyss再測Failure自動結束；任何Cure也自動結束。
 8. Outcome同時列Cure／No cure與已知Side effects／No side effects。Cure後formula ribbon顯示Disease、ordered icons、累積cost、Clean或side-effect count；同疾病再次Cure時覆寫為latest且不出現兩份。
-9. Blueprint drawer不得提供`Save Research program`或`Load in Research`。匯入既有v3 `research-program`後只可Download／Delete，不能直接改active program、cash、fog、outcome或formula。
+9. Blueprint drawer不得提供`Save Research program`或`Load in Research`。匯入現行v4 `research-program`後只可Download／Delete，不能直接改active program、cash、fog、outcome或formula。
 
 ## 5. Terrain / fog / portal / effects
 
@@ -83,9 +83,9 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 
 ## 8. Direct paid Production
 
-1. 新局未操作Production Plan就按F3。必須直接看到空白24×12editor與transport controls。
+1. 新局未操作Production Plan就按F3。必須直接看到空白24×12 pointy-top hex editor與transport controls。
 2. 逐項place並核對cash與ghost報價：belt 2、split/merge 8、source 12、sink 6、machine `10 × processing cost`。
-3. 改belt方向應再收belt價；移動／旋轉machine應收新機器價；只改ID的等價layout不收費。
+3. 改belt方向應再收belt價；移動／每次60°旋轉machine應收新機器價；只改ID的等價layout不收費。六次旋轉必須回到原footprint／ports。
 4. 刪除tile/machine不退款。再undo重建內容時依新增內容收費。
 5. 準備no-op、碰撞與現金不足的edit；放開後cash、layout、runtime、waste、trace與Play狀態都不變，現金不足時顯示明確錯誤。
 6. Play累積tick、unit或waste後修改layout；播放停止、runtime/tick歸零，在途unit清除，累積waste與inventory保留。
@@ -95,8 +95,8 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 
 ## 9. Connected belts
 
-1. 拖一條包含水平、垂直與轉角的Belt；格子四向連續，每格輸出朝下一格，末格沿最後切線。
-2. 驗endpoint、straight、corner、tee、cross；線接到格邊，grid在transport下方。
+1. 沿多個軸向拖一條含轉折的Belt；cell必須六鄰接連續，每格輸出朝下一格的E／SE／SW／W／NW／NE方向，末格沿最後切線。
+2. 驗endpoint、對向straight、60°／120°turn與multi-way junction；線接到六角格邊，grid在transport下方。
 3. 接source、sink、splitter、merger與不同footRot machines；branch與ports方向和sim一致。
 4. 故意把鄰格方向放錯；視覺應留下斷口，port顯示disconnected，unit不能穿越。
 5. Production Plan transport保持靜態；Production Play時markers只隨tick前進，Pause不動。
@@ -113,24 +113,24 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 8. 新局contract chip先顯示Disease 1 `0 / 3`；只讓accepted sales推進。Disease 1售滿3件後active chip移到Disease 2，全部完成後顯示最後一份completed contract。
 9. Disease 1／2／3未滿quota時分別嘗試Skew／Dilute／Settle patent，必須被對應contract gate拒絕；滿3件後仍需一般cash、Knowledge與patent prerequisites。其他patent不得被shipping contract誤擋。
 
-## 11. Blueprint v3 / cross-save
+## 11. Blueprint v4 / cross-save
 
-1. 匯入既有Research Blueprint。root version/ruleset是3，kind=`research-program`，steps恰為`{typeId}`；不含path cells、fog、seed、terrain discovery、outcome或formula。card只可Download／Delete，沒有capture／apply action。
-2. 分別由Production Plan與Production保存Blueprint。兩者kind皆為`factory-layout`，payload保存dimensions、sparse routing與`{id,typeId,anchor,footRot}`；不含來源場域、fixed content、runtime、inventory、waste或economy。
+1. 匯入現行Research Blueprint。root version/ruleset是4，kind=`research-program`，steps恰為`{typeId}`；不含path cells、fog、seed、terrain discovery、outcome或formula。card只可Download／Delete，沒有capture／apply action。
+2. 分別由Production Plan與Production保存Blueprint。兩者kind皆為`factory-layout`，payload保存dimensions、sparse routing與`{id,typeId,anchor,footRot}`；所有cell／anchor使用`{q,r}`、dense materialization使用`r * width + q`，`footRot`只允許0–5；不含來源場域、fixed content、runtime、inventory、waste或economy。
 3. Factory card可免費`Open in Production Plan`，也可顯示`Commission $N`並付費建到Production。
-4. 對兩種kind做download→import→apply；wrong kind、unknown fields、bad version/fingerprint/checksum、collision/bounds都明示拒絕且Library原子不變。
-5. 匯入舊格式必須顯示unsupported，不得猜測轉換。
+4. 對兩種kind做download→import validation，只有`factory-layout`做apply；wrong kind、unknown fields、bad version/fingerprint/checksum、collision/bounds都明示拒絕且Library原子不變。
+5. 確認Library envelope version是4且storage key為`hexapharma.blueprint-library.v4`。匯入v3或其他舊格式必須顯示unsupported，不得猜測轉換；legacy key／blob原樣保留。
 6. Save/Load/Rewind/換slot後Library內容不變；相同canonical checksum去重；oversize檔拒絕。
 7. 按Delete先顯示entry名稱與cross-save永久刪除警告；Cancel保留card，Confirm才移除Library entry。
 8. 在新局載入含未解鎖machine的跨存檔Blueprint；錯誤要顯示玩家名稱與Technology指引，不得洩漏type ID或machine數字ID。
 
-## 12. Save v9 / recovery
+## 12. Save v10 / recovery
 
 1. Save後做stepwise Research／formula discovery、Production Plan edit、shipping contract progress、兩次paid Production edit與Production ticks，再Save建立同origin history。
 2. Load不同state時先顯示「覆蓋目前遊戲」確認；Cancel不變，Confirm後恢復Atlas/fog/program/shot/outcome/formulas、內部pilot layout、non-null Production layout/runtime/waste、inventory、economy/contracts與Technology。
 3. 核對兩次paid build仍存在trace且cash重播相同；不得只保留最後layout。
 4. Rewind先警告永久丟棄最新saved checkpoint並覆蓋current state；Cancel不變，Confirm才回前snapshot，reload後較舊history仍在；Blueprint Library不受影響。
-5. 舊或unknown schema顯式拒絕，不silent migrate或部分載入。
+5. full／compact／slots都是version 10；checkpoint lineage外層version 2、內層head/history是Save v10，canonical key為`hexapharma.save.v10.checkpoint.${slot}`。Save v9或unknown schema顯式拒絕，不silent migrate、部分載入或覆寫舊blob／key。
 6. corrupt/partial/disagreeing blob顯示錯誤；Recover前不得自動刪除或覆寫raw data。
 
 ## 13. Gate、residue與回報
@@ -143,7 +143,7 @@ npm run check
 
 - active docs/source/tests residue scan沒有batch Research route、部分Research path、blank-click append、非Wall互動物穿霧可見、protected universal corridor、預設單疾病、互斥Cure/SideEffect、$200 bootstrap、永久price floor、Production需Plan、Pilot Plant玩家文案、generated lab bitmap／manifest、Blueprint舊schema或Save舊schema的active truth；
 - 以Research、Production Plan、Production各截一張desktop與compact screenshot。確認嚴格俯視2D Orbital Wet-Lab：black-blue void、graphite deck/panels、bone-white/steel structure，cyan/amber/lime/magenta/red只對應flow/selection/cure/side-effect/failure；沒有glass blur、過量glow/gradient/rounding、3D透視或generated bitmap接縫。
-- 確認Atlas與Factory仍各自是正方格，不出現六鄰接hit-test、routing或render；重建5×5 fog／stepwise reveal-decide／assay sector／formula ribbon／overlap effects、Production Plan、direct Production、contracts、finite-demand Market、connected belts與compact screenshot baselines；
+- 確認Atlas與Factory都是pointy-top axial hex；以`{q,r}`、E／SE／SW／W／NW／NE、六個60° rotations與`r * width + q` fixtures交叉核對hit-test、routing、fog edge及render，並重建radius-two fog／stepwise reveal-decide／assay sector／formula ribbon／overlap effects、Production Plan、direct Production、contracts、finite-demand Market、connected belts與compact screenshot baselines；
 - 以53346從遠端真人先完成第3節無fixture fresh loop，再走其他correctness smoke；保存human metrics並修完至少一輪UX問題。
 
 Bug回報附：URL、seed／generation options、tick或path segment、input trace/program/layout、預期/實際、第一個違反的不變式、screenshot與console error。

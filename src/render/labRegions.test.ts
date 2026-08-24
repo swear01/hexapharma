@@ -7,8 +7,8 @@ function map(): EffectMap {
   return {
     width: 4,
     height: 3,
-    origin: { x: 1, y: 1 },
-    start: { x: 1, y: 1 },
+    origin: { q: 1, r: 1 },
+    start: { q: 1, r: 1 },
     cell: new Uint8Array(12),
     cureId: new Int16Array(12).fill(-1),
     sideEffectId: new Int32Array(12).fill(-1),
@@ -26,9 +26,9 @@ describe("Lab connected region visuals", () => {
     level.cureId[6] = 3;
     level.fog[5] = 1;
     level.fog[6] = 1;
-    expect(revealedRegionEdges(level, 1, 1).right).toBe(false);
+    expect(revealedRegionEdges(level, 1, 1)[0]).toBe(false);
     level.fog[6] = 0;
-    expect(revealedRegionEdges(level, 1, 1).right).toBe(true);
+    expect(revealedRegionEdges(level, 1, 1)[0]).toBe(true);
   });
 
   it("does not let hidden cell contents change a revealed region boundary", () => {
@@ -51,14 +51,14 @@ describe("Lab connected region visuals", () => {
     const walls = map();
     walls.cell[5] = CellKind.Wall;
     walls.cell[6] = CellKind.Wall;
-    expect(revealedRegionEdges(walls, 1, 1).right).toBe(false);
+    expect(revealedRegionEdges(walls, 1, 1)[0]).toBe(false);
 
     for (const kind of [CellKind.Abyss, CellKind.Swamp]) {
       const level = map();
       level.cell[5] = kind;
-      expect(revealedRegionEdges(level, 1, 1).right).toBe(false);
+      expect(revealedRegionEdges(level, 1, 1)[0]).toBe(false);
       level.fog[5] = 1;
-      expect(revealedRegionEdges(level, 1, 1).right).toBe(true);
+      expect(revealedRegionEdges(level, 1, 1)[0]).toBe(true);
     }
   });
 
@@ -67,9 +67,9 @@ describe("Lab connected region visuals", () => {
     level.cell[5] = CellKind.SideEffect;
     level.cell[6] = CellKind.SideEffect;
     level.fog[5] = 1;
-    expect(revealedRegionEdges(level, 1, 1).right).toBe(true);
+    expect(revealedRegionEdges(level, 1, 1)[0]).toBe(true);
     level.fog[6] = 1;
-    expect(revealedRegionEdges(level, 1, 1).right).toBe(false);
+    expect(revealedRegionEdges(level, 1, 1)[0]).toBe(false);
   });
 
   it("keeps adjacent directed portal entries visually discrete", () => {
@@ -80,7 +80,7 @@ describe("Lab connected region visuals", () => {
     level.portalTo[6] = 3;
     level.fog[5] = 1;
     level.fog[6] = 1;
-    expect(revealedRegionEdges(level, 1, 1).right).toBe(true);
+    expect(revealedRegionEdges(level, 1, 1)[0]).toBe(true);
   });
 
   it("keeps a reverse-looked-up portal exit discrete from empty substrate", () => {
@@ -88,18 +88,22 @@ describe("Lab connected region visuals", () => {
     level.cell[5] = CellKind.Portal;
     level.portalTo[5] = 10;
 
-    expect(revealedRegionEdges(level, 2, 2)).toEqual({
-      top: false,
-      right: false,
-      bottom: true,
-      left: false,
-    });
+    expect(revealedRegionEdges(level, 2, 2)).toEqual([
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+    ]);
     level.fog[10] = 1;
-    expect(revealedRegionEdges(level, 2, 2)).toEqual({
-      top: true,
-      right: true,
-      bottom: true,
-      left: true,
-    });
+    expect(revealedRegionEdges(level, 2, 2)).toEqual([
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+    ]);
   });
 });

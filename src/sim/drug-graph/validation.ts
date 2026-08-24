@@ -7,14 +7,14 @@ export function validatePathStamp(path: PathStamp): void {
   }
 
   for (let index = 0; index < path.length; index++) {
-    const delta = path[index];
+    const dir = path[index];
     if (
-      delta === undefined ||
-      !Number.isSafeInteger(delta.x) ||
-      !Number.isSafeInteger(delta.y) ||
-      Math.abs(delta.x) + Math.abs(delta.y) !== 1
+      dir === undefined ||
+      !Number.isSafeInteger(dir) ||
+      dir < 0 ||
+      dir > 5
     ) {
-      throw new Error(`drug graph: path delta ${index} must be a cardinal unit delta`);
+      throw new Error(`drug graph: path direction ${index} must be a hex direction in 0..5`);
     }
   }
 }
@@ -56,12 +56,12 @@ export function validateEffectMap(map: EffectMap): void {
     if (
       point === null ||
       typeof point !== "object" ||
-      !Number.isSafeInteger(point.x) ||
-      !Number.isSafeInteger(point.y) ||
-      point.x < 0 ||
-      point.y < 0 ||
-      point.x >= map.width ||
-      point.y >= map.height
+      !Number.isSafeInteger(point.q) ||
+      !Number.isSafeInteger(point.r) ||
+      point.q < 0 ||
+      point.r < 0 ||
+      point.q >= map.width ||
+      point.r >= map.height
     ) {
       throw new Error(`drug graph: effect map ${label} must be an in-bounds integer coordinate`);
     }

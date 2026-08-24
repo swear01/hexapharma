@@ -18,7 +18,7 @@ function withTile(base: FactoryLayout, index: number, tile: FactoryTile): Factor
   return { ...base, tiles };
 }
 
-function placed(id: number, x: number, y: number, footRot: 0 | 1 | 2 | 3 = 0): PlacedMachine {
+function placed(id: number, q: number, r: number, footRot: 0 | 1 | 2 | 3 | 4 | 5 = 0): PlacedMachine {
   const entry = DEFAULT_CATALOG.find((candidate) => candidate.typeId === "push")!;
   return {
     id,
@@ -28,7 +28,7 @@ function placed(id: number, x: number, y: number, footRot: 0 | 1 | 2 | 3 = 0): P
       cost: entry.cost,
       speed: entry.speed,
     },
-    anchor: { x, y },
+    anchor: { q, r },
     footRot,
     shape: DEFAULT_SHAPES.push!,
   };

@@ -39,7 +39,7 @@ function catalog(typeId: string): MachineCatalogEntry {
 
 function machine(typeId: string) {
   const entry = catalog(typeId);
-  return { typeId, path: entry.path.map((delta) => ({ ...delta })) };
+  return { typeId, path: [...entry.path] };
 }
 
 const program: Template = {
@@ -70,7 +70,7 @@ function factoryLayout(): FactoryLayout {
         cost: entry.cost,
         speed: entry.speed,
       },
-      anchor: { x: 1, y: 1 },
+      anchor: { q: 1, r: 1 },
       footRot: 0,
       shape: DEFAULT_SHAPES.push!,
     }],
@@ -94,10 +94,10 @@ function unsignedDocument(blueprint: unknown, version: unknown = BLUEPRINT_VERSI
   });
 }
 
-describe("blueprint format v3", () => {
-  it("freezes the breaking wire and ruleset at v3", () => {
-    expect(BLUEPRINT_VERSION).toBe(3);
-    expect(BLUEPRINT_RULESET).toBe(3);
+describe("blueprint format v4", () => {
+  it("freezes the breaking wire and ruleset at v4", () => {
+    expect(BLUEPRINT_VERSION).toBe(4);
+    expect(BLUEPRINT_RULESET).toBe(4);
   });
 
   it("encodes a strict human-readable ResearchProgram without paths or private world state", async () => {
@@ -106,12 +106,12 @@ describe("blueprint format v3", () => {
 
     expect(document).toMatchObject({
       format: "hexapharma-blueprint",
-      version: 3,
+      version: 4,
       checksum: expect.stringMatching(/^sha256:[0-9a-f]{64}$/u),
       blueprint: {
         kind: "research-program",
         name: "Atlas route",
-        ruleset: 3,
+        ruleset: 4,
         content: BLUEPRINT_CONTENT_FINGERPRINT,
         program: {
           steps: [
@@ -132,10 +132,16 @@ describe("blueprint format v3", () => {
     expect(portable.layout.machines).toEqual([{
       id: 7,
       typeId: "push",
-      anchor: { x: 1, y: 1 },
+      anchor: { q: 1, r: 1 },
       footRot: 0,
     }]);
+    expect(portable.layout.tiles).toEqual([
+      { q: 0, r: 1, kind: "source", dir: 0, period: 2 },
+      { q: 3, r: 1, kind: "belt", dir: 0 },
+      { q: 4, r: 1, kind: "sink" },
+    ]);
     expect(encoded).not.toMatch(/"(?:orientation|path|stroke|seed|fog|outcome|cost|speed|shape)"\s*:/u);
+    expect(encoded).not.toMatch(/"(?:x|y)"\s*:/u);
     expect(encoded).toContain('"kind": "factory-layout"');
     expect(encoded).toContain('"kind": "source"');
   });
@@ -168,24 +174,24 @@ describe("blueprint format v3", () => {
       id: 7,
       def: {
         typeId: "push",
-        path: entry.path.map((delta) => ({ ...delta })),
+        path: [...entry.path],
         cost: entry.cost,
         speed: entry.speed,
       },
-      anchor: { x: 1, y: 1 },
+      anchor: { q: 1, r: 1 },
       footRot: 0,
       shape: DEFAULT_SHAPES.push,
     });
   });
 
-  it.each([1, 2])("rejects legacy v%s explicitly before interpreting its payload", async (version) => {
+  it.each([1, 2, 3])("rejects legacy v%s explicitly before interpreting its payload", async (version) => {
     await expect(decodeBlueprint(unsignedDocument({ kind: "research-route" }, version)))
       .rejects.toThrow(new RegExp(`legacy blueprint version ${version}|unsupported version ${version}`, "i"));
   });
 
   it("rejects unknown versions, malformed checksums, and wrong rulesets", async () => {
-    await expect(decodeBlueprint(unsignedDocument(researchBlueprint(), 4)))
-      .rejects.toThrow(/unsupported version 4/i);
+    await expect(decodeBlueprint(unsignedDocument(researchBlueprint(), 5)))
+      .rejects.toThrow(/unsupported version 5/i);
     await expect(decodeBlueprint(JSON.stringify({
       format: BLUEPRINT_FORMAT,
       version: BLUEPRINT_VERSION,
@@ -213,7 +219,7 @@ describe("blueprint format v3", () => {
     } as unknown as PortableBlueprint)],
     ["Research path duplication", () => encodeBlueprint({
       ...researchBlueprint(),
-      program: { steps: [{ typeId: "push", path: [{ x: 1, y: 0 }] }] },
+      program: { steps: [{ typeId: "push", path: [0] }] },
     } as unknown as PortableBlueprint)],
     ["Factory cross-kind program", () => encodeBlueprint({
       ...factoryBlueprint(),
@@ -276,7 +282,7 @@ describe("blueprint format v3", () => {
 
   it("rejects unknown machine types and source authorities that disagree with the catalog", () => {
     expect(() => blueprintFromProgram("Forged", {
-      steps: [{ typeId: "push", path: [{ x: -1, y: 0 }] }],
+      steps: [{ typeId: "push", path: [3] }],
     })).toThrow(/path|catalog/i);
 
     const layout = factoryLayout();
@@ -313,13 +319,13 @@ describe("blueprint format v3", () => {
     })).rejects.toThrow(/overlap/i);
     await expect(encodeBlueprint({
       ...pilot,
-      layout: { ...pilot.layout, tiles: [{ x: 1, y: 1, kind: "belt", dir: 0 }] },
+      layout: { ...pilot.layout, tiles: [{ q: 1, r: 1, kind: "belt", dir: 0 }] },
     })).rejects.toThrow(/overlap/i);
     await expect(encodeBlueprint({
       ...pilot,
       layout: {
         ...pilot.layout,
-        machines: [{ ...pilot.layout.machines[0]!, anchor: { x: 7, y: 3 } }],
+        machines: [{ ...pilot.layout.machines[0]!, anchor: { q: 7, r: 3 } }],
       },
     })).rejects.toThrow(/out of bounds/i);
     await expect(encodeBlueprint({
@@ -340,7 +346,7 @@ describe("blueprint format v3", () => {
       ...original,
       layout: {
         ...original.layout,
-        tiles: [...original.layout.tiles, { x: 7, y: 0, kind: "sink" }],
+        tiles: [...original.layout.tiles, { q: 7, r: 0, kind: "sink" }],
       },
     };
     const reordered: PortableFactoryBlueprint = {

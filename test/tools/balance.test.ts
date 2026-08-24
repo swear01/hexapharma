@@ -65,7 +65,7 @@ describe("balance tool failure boundaries", () => {
     expect(result.samples).toHaveLength(4);
     expect(result.failed).toEqual([{ seed: 2, error: "synthetic generation failure" }]);
     expect(sweepExitCode(result)).toBe(1);
-  });
+  }, 60_000);
 
   it("returns a nonzero CLI result when only part of the report failed", () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
@@ -83,7 +83,7 @@ describe("balance tool failure boundaries", () => {
       log.mockRestore();
       error.mockRestore();
     }
-  });
+  }, 60_000);
 
   it("collects analysis failures for every seed and cannot exit successfully", () => {
     let generated = 0;

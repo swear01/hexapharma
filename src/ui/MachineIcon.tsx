@@ -1,4 +1,6 @@
 import type { PathStamp } from "../sim/phase0_interfaces";
+import { HEX_DQ, HEX_DR } from "../sim/hex";
+import { hexToPixel } from "../render/hexProjection";
 
 export interface MachineIconProps {
   readonly typeId: string;
@@ -14,12 +16,12 @@ interface Point {
 
 function iconPoints(path: PathStamp): readonly Point[] {
   const raw: Point[] = [{ x: 0, y: 0 }];
-  let x = 0;
-  let y = 0;
-  for (const delta of path) {
-    x += delta.x;
-    y += delta.y;
-    raw.push({ x, y });
+  let q = 0;
+  let r = 0;
+  for (const direction of path) {
+    q += HEX_DQ[direction] ?? 0;
+    r += HEX_DR[direction] ?? 0;
+    raw.push(hexToPixel(q, r, 1));
   }
   const xs = raw.map((point) => point.x);
   const ys = raw.map((point) => point.y);

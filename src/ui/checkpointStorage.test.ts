@@ -193,7 +193,7 @@ describe("checkpoint storage budget", () => {
     const secondRun = createGameState({ ...options, seed: 15 }, 200, 0);
     const storage = new MemoryStorage();
     storage.setItem(
-      "hexapharma.save.checkpoint.0",
+      "hexapharma.save.v10.checkpoint.0",
       JSON.stringify({
         version: 2,
         head: serializeGameAuthority(secondRun),
@@ -220,16 +220,16 @@ describe("checkpoint storage budget", () => {
     expect(read.recovery?.history).toEqual([secondRun]);
   });
 
-  it("persists v9 Formula, reveal-decide Research, Plan, and paid Production authority", () => {
+  it("persists v10 Formula, reveal-decide Research, Plan, and paid Production authority", () => {
     const recipe = generate(fastOptions).diseases[0]!.reference;
     const game = withProduction(createGameState(fastOptions, PRODUCTION_CASH, 0), recipe);
     const storage = new MemoryStorage();
     saveSlot(storage, 0, [], game);
 
-    const checkpoint = JSON.parse(storage.getItem("hexapharma.save.checkpoint.0")!) as {
+    const checkpoint = JSON.parse(storage.getItem("hexapharma.save.v10.checkpoint.0")!) as {
       head: string;
     };
-    expect(checkpoint.head).toContain('"version":9');
+    expect(checkpoint.head).toContain('"version":10');
     expect(checkpoint.head).toContain('"kind":"beginResearchShot"');
     expect(checkpoint.head).toContain('"kind":"advanceResearchShot"');
     expect(checkpoint.head).toContain('"kind":"setPilotLayout"');
@@ -249,7 +249,7 @@ describe("checkpoint storage budget", () => {
     expect("contract" in loaded.production).toBe(false);
   });
 
-  it("migrates only validated v9 data from legacy storage keys and makes write failure visible", () => {
+  it("migrates only validated v10 data from legacy storage keys and makes write failure visible", () => {
     const machine = options.catalog[0]!;
     const started = applyGameIntent(createGameState(options, 200, 0), { kind: "beginResearchShot" });
     const game = applyGameIntent(started, { kind: "advanceResearchShot", machine });
@@ -263,15 +263,15 @@ describe("checkpoint storage budget", () => {
     expect(pending.error).toBeNull();
     expect(pending.notice).toMatch(/validated.*ready to migrate/i);
     expect(pending.migration).not.toBeNull();
-    expect(storage.getItem("hexapharma.save.checkpoint.0")).toBeNull();
+    expect(storage.getItem("hexapharma.save.v10.checkpoint.0")).toBeNull();
 
-    storage.failOnSet = "hexapharma.save.checkpoint.0";
+    storage.failOnSet = "hexapharma.save.v10.checkpoint.0";
     const failed = finishMigration(storage, 0, pending);
     expect(failed.error).toMatch(/migration failed.*write rejected/i);
     expect(failed.recovery?.head).toEqual(game);
     expect(failed.migration).toBeNull();
     expect(storage.getItem("hexapharma.save.slot.0")).toBe(head);
-    expect(storage.getItem("hexapharma.save.checkpoint.0")).toBeNull();
+    expect(storage.getItem("hexapharma.save.v10.checkpoint.0")).toBeNull();
     expect(storage.writes).toBe(2);
 
     storage.failOnSet = null;
@@ -283,45 +283,65 @@ describe("checkpoint storage budget", () => {
     expect(readSlot(storage, 0).head).toEqual(game);
   });
 
-  it("visibly rejects v6 legacy saves without reinterpreting or overwriting them", () => {
+  it("visibly rejects v9 legacy saves without reinterpreting or overwriting them", () => {
     const game = createGameState(options, 200, 0);
     const parsed = JSON.parse(serializeGame(game)) as { version: number };
-    parsed.version = 6;
-    const rawV6 = JSON.stringify(parsed);
+    parsed.version = 9;
+    const rawV9 = JSON.stringify(parsed);
     const storage = new MemoryStorage();
-    storage.setItem("hexapharma.save.slot.0", rawV6);
+    storage.setItem("hexapharma.save.slot.0", rawV9);
 
     const read = readSlot(storage, 0);
-    expect(read.error).toMatch(/legacy version 6.*not supported.*v9/i);
+    expect(read.error).toMatch(/legacy version 9.*not supported.*v10/i);
     expect(read.head).toBeNull();
     expect(read.recovery).toBeNull();
     expect(read.migration).toBeNull();
-    expect(storage.getItem("hexapharma.save.slot.0")).toBe(rawV6);
-    expect(storage.getItem("hexapharma.save.checkpoint.0")).toBeNull();
+    expect(storage.getItem("hexapharma.save.slot.0")).toBe(rawV9);
+    expect(storage.getItem("hexapharma.save.v10.checkpoint.0")).toBeNull();
   });
 
-  it("offers v9 history recovery when a checkpoint head is an explicitly rejected v6 authority", () => {
-    const game = createGameState(options, 200, 0);
-    const good = serializeGameAuthority(game);
-    const parsed = JSON.parse(good) as { version: number };
-    parsed.version = 6;
-    const oldHead = JSON.stringify(parsed);
-    const raw = JSON.stringify({ version: 2, head: oldHead, history: [good] });
+  it("visibly rejects an unversioned v9 checkpoint without overwriting either namespace", () => {
+    const raw = JSON.stringify({
+      version: 2,
+      head: JSON.stringify({ version: 9, authority: null }),
+      history: [],
+    });
     const storage = new MemoryStorage();
     storage.setItem("hexapharma.save.checkpoint.0", raw);
 
     const read = readSlot(storage, 0);
-    expect(read.error).toMatch(/legacy version 6.*not supported.*v9/i);
+
+    expect(read.error).toMatch(/legacy version 9.*not supported.*v10/i);
+    expect(read.head).toBeNull();
+    expect(read.recovery).toBeNull();
+    expect(read.migration).toBeNull();
+    expect(storage.getItem("hexapharma.save.checkpoint.0")).toBe(raw);
+    expect(storage.getItem("hexapharma.save.v10.checkpoint.0")).toBeNull();
+    expect(storage.writes).toBe(1);
+  });
+
+  it("offers v10 history recovery when a checkpoint head is an explicitly rejected v9 authority", () => {
+    const game = createGameState(options, 200, 0);
+    const good = serializeGameAuthority(game);
+    const parsed = JSON.parse(good) as { version: number };
+    parsed.version = 9;
+    const oldHead = JSON.stringify(parsed);
+    const raw = JSON.stringify({ version: 2, head: oldHead, history: [good] });
+    const storage = new MemoryStorage();
+    storage.setItem("hexapharma.save.v10.checkpoint.0", raw);
+
+    const read = readSlot(storage, 0);
+    expect(read.error).toMatch(/legacy version 9.*not supported.*v10/i);
     expect(read.recovery?.head).toEqual(game);
     expect(read.recovery?.history).toEqual([game]);
     expect(read.migration).toBeNull();
-    expect(storage.getItem("hexapharma.save.checkpoint.0")).toBe(raw);
+    expect(storage.getItem("hexapharma.save.v10.checkpoint.0")).toBe(raw);
   });
 
   it("rejects oversized canonical blobs without attempting recovery parsing", () => {
     const storage = new MemoryStorage();
     storage.setItem(
-      "hexapharma.save.checkpoint.0",
+      "hexapharma.save.v10.checkpoint.0",
       "x".repeat(SLOT_CHECKPOINT_CHARACTER_LIMIT + 1),
     );
     const read = readSlot(storage, 0);
@@ -338,7 +358,7 @@ describe("checkpoint storage budget", () => {
 
     const saved = saveSlot(storage, 0, new Array(20).fill(game), game);
 
-    const raw = storage.getItem("hexapharma.save.checkpoint.0")!;
+    const raw = storage.getItem("hexapharma.save.v10.checkpoint.0")!;
     expect(storage.writes).toBe(1);
     expect(raw.length).toBeLessThanOrEqual(SLOT_CHECKPOINT_CHARACTER_LIMIT);
     expect(saved.pruned).toBeGreaterThan(1);
@@ -356,7 +376,7 @@ describe("checkpoint storage budget", () => {
 
     const hostile = new MemoryStorage();
     hostile.setItem(
-      "hexapharma.save.checkpoint.0",
+      "hexapharma.save.v10.checkpoint.0",
       JSON.stringify({ version: 2, head: envelope.head, history: [envelope.head, envelope.head] }),
     );
     const hostileRead = readSlot(hostile, 0);
@@ -374,7 +394,7 @@ describe("checkpoint storage budget", () => {
     const rawAuthority = JSON.stringify(authority);
     const storage = new MemoryStorage();
     storage.setItem(
-      "hexapharma.save.checkpoint.0",
+      "hexapharma.save.v10.checkpoint.0",
       JSON.stringify({ version: 2, head: rawAuthority, history: [rawAuthority, rawAuthority] }),
     );
 
@@ -406,7 +426,7 @@ describe("checkpoint storage budget", () => {
     const rawAuthority = JSON.stringify(authority);
     const storage = new MemoryStorage();
     storage.setItem(
-      "hexapharma.save.checkpoint.0",
+      "hexapharma.save.v10.checkpoint.0",
       JSON.stringify({ version: 2, head: rawAuthority, history: [rawAuthority] }),
     );
 
@@ -426,7 +446,7 @@ describe("checkpoint storage budget", () => {
     authority.authority.replayTicks = 0;
     const storage = new MemoryStorage();
     storage.setItem(
-      "hexapharma.save.checkpoint.0",
+      "hexapharma.save.v10.checkpoint.0",
       JSON.stringify({ version: 2, head: JSON.stringify(authority), history: [] }),
     );
 
@@ -440,7 +460,7 @@ describe("checkpoint storage budget", () => {
     badHead.authority.replayTicks = SLOT_HISTORY_REPLAY_TICK_LIMIT + 1;
     const storage = new MemoryStorage();
     storage.setItem(
-      "hexapharma.save.checkpoint.0",
+      "hexapharma.save.v10.checkpoint.0",
       JSON.stringify({ version: 2, head: JSON.stringify(badHead), history: [good] }),
     );
 
@@ -458,7 +478,7 @@ describe("checkpoint storage budget", () => {
     const bad = JSON.stringify(corrupt);
     const storage = new MemoryStorage();
     storage.setItem(
-      "hexapharma.save.checkpoint.0",
+      "hexapharma.save.v10.checkpoint.0",
       JSON.stringify({ version: 2, head: bad, history: [bad, good] }),
     );
 
@@ -473,7 +493,7 @@ describe("checkpoint storage budget", () => {
     const good = serializeGameAuthority(game);
     const storage = new MemoryStorage();
     storage.setItem(
-      "hexapharma.save.checkpoint.0",
+      "hexapharma.save.v10.checkpoint.0",
       JSON.stringify({
         version: 2,
         head: "invalid authority",
@@ -495,7 +515,7 @@ describe("checkpoint storage budget", () => {
       recipe,
       BASE_GAME_FACTORY_WIDTH,
       BASE_GAME_FACTORY_HEIGHT,
-      recipe.steps.map((_, index) => ({ anchor: { x: 1 + index * 2, y: row }, footRot: 0 })),
+      recipe.steps.map((_, index) => ({ anchor: { q: 1 + index * 2, r: row }, footRot: 0 })),
     );
     game = withProduction(game, recipe, factory);
     game = applyGameIntent(game, { kind: "productionTicks", ticks: 49_022 });
@@ -511,7 +531,7 @@ describe("checkpoint storage budget", () => {
     const authority = serializeGameAuthority(game);
     const storage = new MemoryStorage();
     storage.setItem(
-      "hexapharma.save.checkpoint.0",
+      "hexapharma.save.v10.checkpoint.0",
       JSON.stringify({ version: 2, head: "invalid authority", history: [authority] }),
     );
 

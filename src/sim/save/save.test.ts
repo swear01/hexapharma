@@ -54,6 +54,7 @@ function completeResearch(game: GameState, program = researchFixture(game.genOpt
   let next = applyGameIntent(game, { kind: "beginResearchShot" });
   for (const machine of program.steps) {
     next = applyGameIntent(next, { kind: "advanceResearchShot", machine });
+    if (next.research.shot === null) break;
   }
   return next;
 }
@@ -90,7 +91,7 @@ function splitterFactory(base: FactoryLayout): FactoryLayout {
     () => ({ kind: "empty" }),
   );
   tiles[0] = { kind: "source", dir: 0, period: 1 };
-  tiles[1] = { kind: "splitter", inDir: 2, outDirs: [0, 1] };
+  tiles[1] = { kind: "splitter", inDir: 3, outDirs: [0, 1] };
   tiles[2] = { kind: "sink" };
   tiles[base.width + 1] = { kind: "sink" };
   return { width: base.width, height: base.height, tiles, machines: [] };
@@ -112,12 +113,12 @@ function expensiveRawTrace(): unknown[] {
 }
 
 describe("serializeGame / deserializeGame", () => {
-  it("uses only the breaking v9 reveal-decide schema", () => {
-    expect(SAVE_VERSION).toBe(9);
+  it("uses only the breaking v10 true-hex schema", () => {
+    expect(SAVE_VERSION).toBe(10);
     const serialized = serializeGame(baseGame());
     const parsed = JSON.parse(serialized) as { version: number; game: Record<string, any> };
 
-    expect(parsed.version).toBe(9);
+    expect(parsed.version).toBe(10);
     expect(parsed.game).toHaveProperty("research");
     expect(parsed.game).toHaveProperty("pilot");
     expect(parsed.game).toHaveProperty("production");
@@ -309,7 +310,16 @@ describe("serializeGame / deserializeGame", () => {
 });
 
 describe("deserializeGame schema validation", () => {
-  it.each([8, 7, 6, 2])(
+  it("rejects v9 envelopes before interpreting their payloads", () => {
+    expect(() => deserializeGame(JSON.stringify({ version: 9, game: null })))
+      .toThrow(/legacy version 9.*not supported.*v10/i);
+    expect(() => deserializeGameAuthority(JSON.stringify({ version: 9, authority: null })))
+      .toThrow(/legacy version 9.*not supported.*v10/i);
+    expect(() => deserializeSlots(JSON.stringify({ version: 9, slots: null })))
+      .toThrow(/legacy version 9.*not supported.*v10/i);
+  });
+
+  it.each([9, 8, 7, 6, 2])(
     "explicitly rejects legacy v%s full saves, authority, and slots without migration",
     (legacyVersion) => {
       const game = baseGame();
@@ -318,7 +328,7 @@ describe("deserializeGame schema validation", () => {
       expect(() => deserializeGame(JSON.stringify(full))).toThrow(
         new RegExp(
           `legacy.*version ${legacyVersion}|` +
-            `incompatible version ${legacyVersion}.*expected 9`,
+            `incompatible version ${legacyVersion}.*expected ${SAVE_VERSION}`,
           "i",
         ),
       );
@@ -328,7 +338,7 @@ describe("deserializeGame schema validation", () => {
       expect(() => deserializeGameAuthority(JSON.stringify(authority))).toThrow(
         new RegExp(
           `legacy.*version ${legacyVersion}|` +
-            `incompatible version ${legacyVersion}.*expected 9`,
+            `incompatible version ${legacyVersion}.*expected ${SAVE_VERSION}`,
           "i",
         ),
       );
@@ -338,7 +348,7 @@ describe("deserializeGame schema validation", () => {
       expect(() => deserializeSlots(JSON.stringify(slots))).toThrow(
         new RegExp(
           `legacy.*version ${legacyVersion}|` +
-            `incompatible version ${legacyVersion}.*expected 9`,
+            `incompatible version ${legacyVersion}.*expected ${SAVE_VERSION}`,
           "i",
         ),
       );
@@ -548,7 +558,8 @@ describe("deserializeGame semantic authority", () => {
       }
 
       const path = wire();
-      path.game[facility].layout.machines[0].def.path[0] = { x: -1, y: 0 };
+      path.game[facility].layout.machines[0].def.path[0] =
+        (path.game[facility].layout.machines[0].def.path[0] + 1) % 6;
       expect(() => deserializeGame(JSON.stringify(path))).toThrow(/path|catalog|replay mismatch/i);
 
       const stroke = wire();
@@ -557,7 +568,8 @@ describe("deserializeGame semantic authority", () => {
     }
 
     const researchPath = wire();
-    researchPath.game.research.program.steps[0].path[0] = { x: -1, y: 0 };
+    researchPath.game.research.program.steps[0].path[0] =
+      (researchPath.game.research.program.steps[0].path[0] + 1) % 6;
     expect(() => deserializeGame(JSON.stringify(researchPath))).toThrow(/path|catalog|replay mismatch/i);
 
     const researchStroke = wire();
@@ -582,7 +594,7 @@ describe("deserializeGame semantic authority", () => {
     expect(() => deserializeGame(JSON.stringify(cost))).toThrow(/Research shot cost|replay mismatch/i);
 
     const drug = wire(active);
-    drug.game.research.shot.drug.pos[0].x += 1;
+    drug.game.research.shot.drug.pos[0].q += 1;
     expect(() => deserializeGame(JSON.stringify(drug))).toThrow(/Research shot drug|replay mismatch/i);
 
     const outcome = wire(completeResearch(createGameState(OPTIONS, 10_000, 0), program));
@@ -644,7 +656,7 @@ describe("deserializeGame semantic authority", () => {
 
     const position = wire();
     const unit = position.game.production.runtime.units[0];
-    unit.drug.pos[0].x = (unit.drug.pos[0].x + 1) % position.game.genOptions.width;
+    unit.drug.pos[0].q = (unit.drug.pos[0].q + 1) % position.game.genOptions.width;
     expect(() => deserializeGame(JSON.stringify(position))).toThrow(/replay mismatch.*drug.*pos/i);
 
     const tick = wire();

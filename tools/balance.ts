@@ -63,8 +63,8 @@ export interface Sample {
   readonly referenceCostGap: number;
   readonly referenceSignature: string;
   readonly cureMap: number;
-  readonly cureX: number;
-  readonly cureY: number;
+  readonly cureQ: number;
+  readonly cureR: number;
   readonly rateNum: number;
   readonly rateDen: number;
   /** First-unit net profit/tick; float is reporting-only, never sim state. */
@@ -146,15 +146,15 @@ function generatedReferenceCures(level: GeneratedLevel, reference: Template): re
     throw new Error("balance all-pairs requires the active one-Atlas level");
   }
   const output = new Int32Array(3);
-  let x = start.x;
-  let y = start.y;
+  let q = start.q;
+  let r = start.r;
   for (const machine of reference.steps) {
-    walkValidatedPathInto(map, x, y, machine, output, 0);
+    walkValidatedPathInto(map, q, r, machine, output, 0);
     if (output[2] === 1) return [];
-    x = output[0]!;
-    y = output[1]!;
+    q = output[0]!;
+    r = output[1]!;
   }
-  const index = y * map.width + x;
+  const index = r * map.width + q;
   const disease = map.cureId[index];
   return map.cell[index] === CellKind.Cure && disease !== undefined && disease >= 0
     ? [disease]
@@ -264,8 +264,8 @@ export function sweep(count: number, overrides: SweepOverrides = {}): SweepResul
           referenceCostGap: cost - minimum.cost,
           referenceSignature: templateSignature(disease.reference),
           cureMap: disease.map,
-          cureX: disease.node.x,
-          cureY: disease.node.y,
+          cureQ: disease.node.q,
+          cureR: disease.node.r,
           rateNum: report.rateNum,
           rateDen: report.rateDen,
           profitPerTick: rate * (disease.basePrice - cost),
@@ -299,7 +299,7 @@ export function sweep(count: number, overrides: SweepOverrides = {}): SweepResul
       seedCount++;
       for (const sample of seedSamples) referenceSignatures.add(sample.referenceSignature);
       cureSets.add(seedSamples.map((sample) =>
-        `${sample.cureMap}:${sample.cureX},${sample.cureY}`,
+        `${sample.cureMap}:${sample.cureQ},${sample.cureR}`,
       ).join("|"));
       if (crossSeedLevels.length < MAX_ALL_PAIRS_LEVELS) crossSeedLevels.push(level);
       if (baselineReferences.length === 0) {
@@ -339,7 +339,7 @@ export function sweep(count: number, overrides: SweepOverrides = {}): SweepResul
           }
         }
       }
-      if (cures > worstCrossSeedCures) {
+      if (worstCrossSeedSourceSeed === -1 || cures > worstCrossSeedCures) {
         worstCrossSeedCures = cures;
         worstCrossSeedComparisons = comparisons;
         worstCrossSeedSourceSeed = source.seed;

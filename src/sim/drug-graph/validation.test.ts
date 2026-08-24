@@ -8,8 +8,8 @@ function map(width = 5, height = 3): EffectMap {
   return {
     width,
     height,
-    origin: { x: 2, y: 1 },
-    start: { x: 2, y: 1 },
+    origin: { q: 2, r: 1 },
+    start: { q: 2, r: 1 },
     cell: new Uint8Array(length),
     cureId: new Int16Array(length).fill(-1),
     sideEffectId: new Int32Array(length).fill(-1),
@@ -82,10 +82,10 @@ describe("effect map authority", () => {
   it("requires origin and start to be in-bounds integer coordinates", () => {
     const level = map();
     for (const invalid of [
-      { ...level, origin: { x: 1.5, y: 1 } },
-      { ...level, origin: { x: level.width, y: 1 } },
-      { ...level, start: { x: 1, y: -1 } },
-      { ...level, start: { x: Number.MAX_SAFE_INTEGER + 1, y: 1 } },
+      { ...level, origin: { q: 1.5, r: 1 } },
+      { ...level, origin: { q: level.width, r: 1 } },
+      { ...level, start: { q: 1, r: -1 } },
+      { ...level, start: { q: Number.MAX_SAFE_INTEGER + 1, r: 1 } },
     ]) {
       expect(() => validateEffectMap(invalid)).toThrow(/origin|start/i);
     }

@@ -1,5 +1,5 @@
 import type {
-  Vec2,
+  HexCoord,
   MultiMap,
   DrugState,
   Machine,
@@ -58,15 +58,15 @@ function expandCatalog(catalog: readonly MachineCatalogEntry[]): ConcreteMachine
  * primary key; we suffix the exact (x,y) signature so two states that merely
  * collide in the hash are never conflated — soundness must not depend on luck.
  */
-function positionKey(pos: readonly Vec2[]): string {
+function positionKey(pos: readonly HexCoord[]): string {
   const ints: number[] = [];
   for (const p of pos) {
-    ints.push(p.x, p.y);
+    ints.push(p.q, p.r);
   }
   const h = hashInts(ints);
   // Suffix the exact (x,y) signature so distinct states that merely collide in the
   // FNV hash are never conflated — soundness/minimality must not depend on luck.
-  return `${h}:${pos.map((p) => `${p.x},${p.y}`).join("|")}`;
+  return `${h}:${pos.map((p) => `${p.q},${p.r}`).join("|")}`;
 }
 
 /** True once every target is present at one of the drug's final map positions. */
@@ -78,7 +78,7 @@ function isGoal(mm: MultiMap, s: DrugState, targets: readonly DiseaseId[]): bool
       const map = mm.maps[mapIndex];
       const position = s.pos[mapIndex];
       if (map === undefined || position === undefined) continue;
-      const index = position.y * map.width + position.x;
+      const index = position.r * map.width + position.q;
       if (map.cell[index] === CellKind.Cure && map.cureId[index] === target) {
         cured = true;
         break;
@@ -156,8 +156,8 @@ function isShapedStep(machine: Machine): boolean {
   const first = machine.path[0];
   if (first === undefined) return false;
   for (let index = 1; index < machine.path.length; index++) {
-    const delta = machine.path[index];
-    if (delta !== undefined && (delta.x !== first.x || delta.y !== first.y)) return true;
+    const direction = machine.path[index];
+    if (direction !== undefined && direction !== first) return true;
   }
   return false;
 }

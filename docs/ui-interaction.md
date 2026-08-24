@@ -37,7 +37,7 @@
 - LMB click／drag place；RMB erase；一個 gesture 一筆 history。
 - Shift+LMB 或 MMB pan；wheel cursor-anchor zoom；camera 不改 sim authority。
 - touch 單指在格內 click／drag 使用目前工具，從既有 machine 開始則搬動整台；兩指 drag 或從格外開始才 pan。點既有 machine 後，畫面 Rotate control 必須旋轉該 machine，不能要求實體鍵盤。
-- `R` 在游標覆蓋既有machine時直接旋轉該footprint；否則旋轉目前Factory brush。Research path geometry不受通用 rotate 操作影響。
+- `R` 在游標覆蓋既有machine時直接將該footprint／ports順時針旋轉60°；否則旋轉目前Factory brush。六次rotation回到原向，Research path geometry不受通用 rotate 操作影響。
 - `Q` pipette、copy／cut／paste、undo／redo只處理 Factory domain payload。
 - held placement 顯示 valid／invalid world ghost；Production ghost同時顯示該次新增 cost。
 - bottom hotbar 是 cursor tool belt，不是表單。
@@ -46,8 +46,8 @@
 
 F1 只有一張大型單層 Atlas：
 
-- Research拖曳任一滑鼠鍵都可pan，與Factory的Shift+LMB／MMB手勢分開；pointer cancel只取消gesture，不得commit或erase。camera開局聚焦世界中心的generator start；fresh fog只揭露中心5×5，平常只看見大地圖的一小部分。focus command固定明示Next並聚焦橙色candidate endpoint。每個stamp在單一intent中立即resolve，UI不顯示timed Dose phase或自動camera follow；建築往返不因舊outcome重設手動camera。Cure sites是可操作的已揭露位置計數／輪播，聚焦fog已揭露的Cure，不得暗示成功治療數、顯示未知總數或讀取隱藏座標。
-- compact mission label顯示Active assay、疾病與Target signal broad sector；sector只可為local或八方向，不顯示座標、距離、reference或region大小。
+- Research拖曳任一滑鼠鍵都可pan，與Factory的Shift+LMB／MMB手勢分開；pointer cancel只取消gesture，不得commit或erase。camera開局聚焦世界中心的generator start；fresh fog只揭露中心radius-two 19-cell hex disk，平常只看見大地圖的一小部分。focus command固定明示Next並聚焦橙色candidate endpoint。每個stamp在單一intent中立即resolve，UI不顯示timed Dose phase或自動camera follow；建築往返不因舊outcome重設手動camera。Cure sites是可操作的已揭露位置計數／輪播，聚焦fog已揭露的Cure，不得暗示成功治療數、顯示未知總數或讀取隱藏座標。
+- compact mission label顯示Active assay、疾病與Target signal broad sector；sector只可為local或east／south-east／south-west／west／north-west／north-east，不顯示座標、距離、reference或region大小。
 - grid/scale與Wall在霧下仍可讀。
 - Abyss、Swamp、Portal A+B、Cure與SideEffect未揭露前不能有 motif、sprite、region edge、preview差異或 outcome洩漏。只揭露單一 Portal 端點時可顯示未配對端點，但配對標記、方向、目的座標與 preview jump 必須等兩端都揭露。
 - palette 每個 machine 以完整奇形 path silhouette 與 semantic glyph辨識；沒有 path-length control。
@@ -84,18 +84,18 @@ F1 只有一張大型單層 Atlas：
 ## 8. Connected transport visual contract
 
 - belt不是每格獨立箭頭或按鈕；連線延伸到格邊，grid在其下方。
-- isolated、endpoint、straight、corner、tee、cross由sim-derived incident mask決定。
+- isolated、endpoint、對向straight、60°／120°turn與multi-way junction由sim-derived六邊incident mask決定。
 - splitter／merger branch、source／sink與machine input/output ports使用同一edge authority。
 - 錯向相鄰格保留斷口；machine port明確顯示connected／disconnected。
-- Belt drag保持四向連續並在轉折格改方向；末格方向沿最後切線。
+- Belt drag保持E／SE／SW／W／NW／NE六鄰接連續並在轉折格改方向；末格方向沿最後切線。
 - LMB／touch從既有machine上拖曳會直接搬動整台machine，保留machine identity；被占用或越界的落點以invalid ghost顯示且不提交。
 - moving markers僅在Production依runtime tick動畫；Production Plan可以顯示靜態topology，不假裝時間流動。
 
 ## 9. Blueprint drawer
 
 - Library lifecycle與save slots分離。
-- Blueprint v3 codec可匯入既有`research-program`，但Library不提供Research capture／apply；Research card只可Download／Delete，不得寫入active session、揭霧、產生outcome或formula。
-- capture Production Plan或Production都產生通用`factory-layout`，保存routing與`{id,typeId,anchor,footRot}`。
+- Blueprint v4 codec可匯入現行`research-program`，但Library不提供Research capture／apply；Research card只可Download／Delete，不得寫入active session、揭霧、產生outcome或formula。Library namespace是`hexapharma.blueprint-library.v4`。
+- capture Production Plan或Production都產生通用`factory-layout`，以`{q,r}`保存routing與`{id,typeId,anchor,footRot}`，`footRot`為0–5。
 - Factory card提供`Open in Production Plan`與`Commission $N`；後者走正式Production construction cost。
 - floor dimensions與目前entitlement不符時card仍可讀，但目的地disabled並顯示`Build unavailable`；render不得throw。
 - 跨存檔 Blueprint若使用未解鎖或不相容machine，拒絕訊息必須使用玩家看到的machine名稱，不得顯示`skew`、`dilute`等內部type ID或machine數字ID。
@@ -113,7 +113,7 @@ F1 只有一張大型單層 Atlas：
 - Load若會覆蓋不同的current game、Rewind若會永久丟棄最新checkpoint，都必須先列出影響並可取消。
 - desktop canvas是stage主要寬度，inspector不覆蓋world；窄屏改上下配置，但canvas、hotbar與command都可達。768px 以下 HUD 改雙列，compact resource label可縮短但label與數字都不得裁切或跨chip；跨過 breakpoint 時不得讓品牌、resources 或 controls 互相覆蓋。可滾動的Factory toolbelt與inspector必須有可見方向提示；compact Research的主要指令與Next/Cure sites觸控區高度至少44px，resolved outcome要在獨立第二列完整可讀且不得與path hotbar重疊。
 - machine以silhouette、footprint、full-path glyph、ports辨識；terrain/portal不能用raw debug text冒充美術。
-- Atlas與Factory在本版都維持正方格，且geometry/validator分離；品牌中的Hexa不代表本PR改成六鄰接。
+- Atlas與Factory都顯示pointy-top axial hex；cell authority是`{q,r}`，六方向依序為E／SE／SW／W／NW／NE，dense arrays以`r * width + q`索引。hit-test、ghost、region edge、transport與renderer必須一致；兩個domain的payload／validator仍分離。
 - chrome與world採嚴格俯視Orbital Wet-Lab Schematic：black-blue void、graphite panels／deck、bone-white text／structure、steel chassis；cyan active flow、amber selection／candidate、lime cure、magenta side effect、red failure。語意色不得拿來做任意裝飾。
 - 固定小型硬陰影；禁止3D透視、glass blur、giant pill、過量gradient／glow／rounding與常駐tutorial遮world。
 

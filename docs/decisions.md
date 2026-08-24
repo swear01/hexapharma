@@ -8,7 +8,7 @@
 | D2 | TypeScript sim/core/tooling，PixiJS v8 dumb renderer，React/DOM 管理 chrome。 | 保持 headless、可 replay，且 world authority 不落入 UI。 |
 | D3 | 確定性 sim + invariant + replay。 | 是除錯、save、程序生成與多人協作的地基。 |
 | D4 | 模組 public interface 同時只有一位 owner。 | integrator 序列化共享面，避免平行修改漂移。 |
-| D5 | Atlas 與 Factory 都採正方格與相近肌肉記憶，但 authority、geometry 與 validator 分離。 | 共用手感不能變成共用 layout。 |
+| D5 | Atlas 與 Factory 都採pointy-top axial true hex：`{q,r}`、E／SE／SW／W／NW／NE、dense `r * width + q`；Factory footprint／ports有六個60° rotations，但兩個domain的payload／validator仍分離。 | 共用orientation與手感不能變成共用layout authority。 |
 | D6 | Active Research 是單層大型 Atlas；跨層互動暫停。 | 先讓固定路徑、terrain 與探索成本清楚可玩。 |
 | D7 | Research machine 永遠使用 catalog 定義的完整奇形 PathStamp。 | 截短會消解形狀組合的主要謎題；需要新形狀時新增顯式 machine content。 |
 | D8 | 只有 Wall 無需探索即可看見並影響 preview；其餘互動物都由霧保護，Portal 兩端都揭露後才公開配對。 | Wall 提供可規劃的空間骨架，未知危險與傳送關係則保留出藥試錯成本。 |
@@ -18,9 +18,9 @@
 | D12 | 玩家場域名為 Production Plan；它是免費、零時間、可選的 FactoryLayout sandbox，sample outcome 只讀 fog-masked planning map。內部 state／intent 可暫稱 pilot。 | Plan／Commission 建立清楚的玩家心智模型；它不能成為阻擋正式建造的流程頁或免費的隱藏效果探測器。 |
 | D13 | Production 新局即有 non-null 24×12 editor；所有 edit 按差異付費。 | 直接操作取代線性網站式流程；成本而非頁面順序形成風險。 |
 | D14 | 只有接受的Production layout edit停止播放並重建runtime、保留累積waste；拆除不退款。 | 避免在途authority與新幾何錯配，防止用重建洗廢料，也不讓rejected gesture干擾運作。 |
-| D15 | Factory transport 使用 sim-derived connected topology。 | 端點、轉角、T／十字與 machine ports 必須反映真實 accept／emit edge，而非看相鄰格猜圖。 |
-| D16 | Blueprint v3 codec仍識別`research-program`與通用`factory-layout`；UI不再capture/apply Research，只讓既有Research card import/download/delete。 | stepwise Research不可被藍圖批次提交；同一工廠layout仍可進Production Plan或Commission到Production，不綁來源頁面。 |
-| D17 | Save v9 是當前 full／compact／slots authority；舊開發版拒絕。 | stepwise Research、formula 與 trace schema 不可 reinterpret 舊存檔。 |
+| D15 | Factory transport 使用 sim-derived connected topology。 | 端點、對向直線、60°／120°轉折、多向junction與machine ports必須反映六邊真實accept／emit edge，而非看相鄰格猜圖。 |
+| D16 | Blueprint v4 codec識別`research-program`與通用`factory-layout`；Library envelope／namespace是v4／`hexapharma.blueprint-library.v4`，UI不capture/apply Research，只讓Research card import/download/delete。 | stepwise Research不可被藍圖批次提交；同一工廠layout仍可進Production Plan或Commission到Production，不綁來源頁面。 |
+| D17 | Save v10 是當前 full／compact／slots authority；checkpoint lineage外層仍為v2，內層使用`hexapharma.save.v10.checkpoint.${slot}`；舊開發版拒絕。 | stepwise Research、formula、hex geometry與trace schema不可reinterpret舊存檔。 |
 | D18 | release candidate 前不維護跨 build save migration。 | 早期設計變更速度優先；同 build correctness 仍必須完整。 |
 | D19 | UI 遵循 simple-is-better；詳細教學集中到玩家指南。 | world 保留給空間操作，chrome 只顯示工具、短狀態、錯誤與危險確認。 |
 | D20 | 單一大型 Atlas 正常生成 4 種獨立疾病，generator 支援最多 8 種。 | 多疾病與 tiered references 提供可持續探索；跨層仍不進 active design。 |
@@ -36,11 +36,11 @@
 ## Current authority summary
 
 - F1 Research、F2 Production Plan、F3 Production；M／T／B drawers；Plan 以 Commission 送入正式產線。
-- Research：中心 5×5 起始視野、寬廣 assay sector、逐步完整 fixed stamp／即時付費揭露；只有 Wall 始終可見，其餘互動物藏霧下；Cure 自動記錄 formula。
+- Research：中心radius-two 19-cell hex disk起始視野、寬廣 assay sector、逐步完整 fixed stamp／即時付費揭露；只有 Wall 始終可見，其餘互動物藏霧下；Cure 自動記錄 formula。
 - Atlas：正常 4 種獨立疾病；terrain-first diverse references、clean/contaminated Cure cells、最多 8 種。
 - Production Plan：free/no-clock optional sandbox；內部仍可稱 pilot。
 - Production：direct paid construction、live runtime、actual inventory/waste/economy。
 - Economy：$1000 bootstrap、linear seeded base prices、per-disease demand decay to zero、profitable clean-first shipping、quota-3 contracts與machine patent gates。
-- Blueprint：v3 codec保留ResearchProgram文件，但UI只create/apply generic FactoryLayout；Library跨存檔。
-- Save：v9 strict same-build authority；checkpoint lineage/recovery 保持獨立外層版本。
-- Geometry／visual：Atlas 與 Factory 仍各自使用正方格；Orbital Wet-Lab vector schematic，不做 true-hex／3D migration。
+- Blueprint：v4 codec保留ResearchProgram文件，但UI只create/apply generic FactoryLayout；Library跨存檔。
+- Save：v10 strict same-build authority；checkpoint lineage/recovery保持獨立外層v2。
+- Geometry／visual：Atlas 與 Factory 都使用pointy-top axial true hex與六方向／六rotation contract，但payload／validator分離；Orbital Wet-Lab維持俯視2D vector schematic，不做3D migration。

@@ -3,8 +3,10 @@ import { applyGameIntent, createGameState, DEFAULT_STARTING_CASH } from "../../s
 import { quoteProductionBuild } from "../../src/sim/construction";
 import { generate } from "../../src/sim/mapgen";
 import { compileEntitledPrototype } from "../../src/sim/recipe";
-import { deserializeGame, deserializeGameAuthority, serializeGame } from "../../src/sim/save";
+import { SAVE_VERSION, deserializeGame, deserializeGameAuthority, serializeGame } from "../../src/sim/save";
 import { worldCells } from "../../src/sim/factory-geom";
+import { hexDistance, hexIndex, type HexCoord } from "../../src/sim/hex";
+import { hexBoardBounds, hexToPixel } from "../../src/render/hexProjection";
 import { defaultGenOptions } from "../../src/ui/Game";
 import { machineName } from "../../src/ui/machineLabels";
 import {
@@ -18,6 +20,8 @@ import {
 } from "../../src/sim/phase0_interfaces";
 
 test.setTimeout(60_000);
+
+const checkpointKey = `hexapharma.save.v${SAVE_VERSION}.checkpoint.0`;
 
 function referenceLayout(seed = 14): FactoryLayout {
   const options = defaultGenOptions(seed);
@@ -53,9 +57,9 @@ function zeroCashProductionSave(): string {
 }
 
 const clipboardPayloads = [
-  { cell: { x: 8, y: 6 }, destination: { x: 8, y: 8 }, tile: { kind: "source" as const, dir: 2 as const, period: 7 } },
-  { cell: { x: 10, y: 6 }, destination: { x: 10, y: 8 }, tile: { kind: "splitter" as const, inDir: 3 as const, outDirs: [0, 1, 2] as const } },
-  { cell: { x: 12, y: 6 }, destination: { x: 12, y: 8 }, tile: { kind: "merger" as const, inDirs: [0, 2, 3] as const, outDir: 1 as const } },
+  { cell: { q: 8, r: 6 }, destination: { q: 8, r: 8 }, tile: { kind: "source" as const, dir: 2 as const, period: 7 } },
+  { cell: { q: 10, r: 6 }, destination: { q: 10, r: 8 }, tile: { kind: "splitter" as const, inDir: 3 as const, outDirs: [0, 1, 2] as const } },
+  { cell: { q: 12, r: 6 }, destination: { q: 12, r: 8 }, tile: { kind: "merger" as const, inDirs: [0, 2, 3] as const, outDir: 1 as const } },
 ];
 
 function clipboardPayloadSave(): string {
@@ -65,7 +69,7 @@ function clipboardPayloadSave(): string {
     () => ({ kind: "empty" as const }),
   );
   for (const payload of clipboardPayloads) {
-    tiles[payload.cell.y * BASE_GAME_FACTORY_WIDTH + payload.cell.x] = payload.tile;
+    tiles[hexIndex(BASE_GAME_FACTORY_WIDTH, payload.cell.q, payload.cell.r)] = payload.tile;
   }
   const layout: FactoryLayout = {
     width: BASE_GAME_FACTORY_WIDTH,
@@ -103,13 +107,13 @@ function machineGallerySave(): string {
     game = applyGameIntent(game, { kind: "unlockPatent", id });
   }
   const anchors = [
-    { x: 1, y: 1 },
-    { x: 5, y: 1 },
-    { x: 11, y: 1 },
-    { x: 15, y: 1 },
-    { x: 1, y: 6 },
-    { x: 7, y: 6 },
-    { x: 13, y: 6 },
+    { q: 1, r: 1 },
+    { q: 5, r: 1 },
+    { q: 11, r: 1 },
+    { q: 15, r: 1 },
+    { q: 1, r: 6 },
+    { q: 7, r: 6 },
+    { q: 13, r: 6 },
   ];
   const machines: PlacedMachine[] = DEFAULT_CATALOG.map((entry, index) => ({
     id: index,
@@ -155,31 +159,36 @@ async function loadProduction(page: import("@playwright/test").Page): Promise<vo
 async function factoryCellPoint(
   frame: import("@playwright/test").Locator,
   layout: FactoryLayout,
-  cell: { readonly x: number; readonly y: number },
+  cell: HexCoord,
 ): Promise<{ readonly x: number; readonly y: number }> {
-  const box = await frame.locator("canvas").boundingBox();
+  const canvas = frame.locator("canvas");
+  const box = await canvas.boundingBox();
   if (box === null) throw new Error("Factory canvas has no bounds");
-  const scaleX = box.width / (layout.width * 42 + 24);
-  const scaleY = box.height / (layout.height * 42 + 24);
+  const intrinsic = await canvas.evaluate((element) => ({
+    width: (element as HTMLCanvasElement).width,
+    height: (element as HTMLCanvasElement).height,
+  }));
+  const bounds = hexBoardBounds(layout.width, layout.height, 21);
+  const projected = hexToPixel(cell.q, cell.r, 21);
   return {
-    x: box.x + (12 + (cell.x + 0.5) * 42) * scaleX,
-    y: box.y + (12 + (cell.y + 0.5) * 42) * scaleY,
+    x: box.x + (12 - bounds.minX + projected.x) * box.width / intrinsic.width,
+    y: box.y + (12 - bounds.minY + projected.y) * box.height / intrinsic.height,
   };
 }
 
-function nearestEmptyCell(layout: FactoryLayout, origin: { readonly x: number; readonly y: number }) {
+function nearestEmptyCell(layout: FactoryLayout, origin: HexCoord): HexCoord {
   const occupied = new Set(layout.machines.flatMap((machine) =>
-    worldCells(machine).map((cell) => `${cell.x},${cell.y}`)));
-  let found: { readonly x: number; readonly y: number; readonly distance: number } | null = null;
-  for (let y = 0; y < layout.height; y++) {
-    for (let x = 0; x < layout.width; x++) {
-      if (layout.tiles[y * layout.width + x]?.kind !== "empty" || occupied.has(`${x},${y}`)) continue;
-      const distance = Math.abs(x - origin.x) + Math.abs(y - origin.y);
-      if (found === null || distance < found.distance) found = { x, y, distance };
+    worldCells(machine).map((cell) => `${cell.q},${cell.r}`)));
+  let found: { readonly q: number; readonly r: number; readonly distance: number } | null = null;
+  for (let r = 0; r < layout.height; r++) {
+    for (let q = 0; q < layout.width; q++) {
+      if (layout.tiles[hexIndex(layout.width, q, r)]?.kind !== "empty" || occupied.has(`${q},${r}`)) continue;
+      const distance = hexDistance(origin.q, origin.r, q, r);
+      if (found === null || distance < found.distance) found = { q, r, distance };
     }
   }
   if (found === null) throw new Error("Factory fixture has no empty cell");
-  return { x: found.x, y: found.y };
+  return { q: found.q, r: found.r };
 }
 
 async function expectPilotMachineAboveToolbelt(page: import("@playwright/test").Page): Promise<void> {
@@ -187,15 +196,17 @@ async function expectPilotMachineAboveToolbelt(page: import("@playwright/test").
   const canvasBox = await pilotCanvas.locator("canvas").boundingBox();
   const frameBox = await pilotCanvas.boundingBox();
   const toolbeltBox = await page.locator(".facility-pilot .toolbelt").boundingBox();
-  const machine = referenceLayout().machines[0]!;
+  const layout = referenceLayout();
+  const machine = layout.machines[0]!;
   const cells = worldCells(machine);
-  const minY = Math.min(...cells.map((cell) => cell.y));
-  const maxY = Math.max(...cells.map((cell) => cell.y));
   if (canvasBox === null || frameBox === null || toolbeltBox === null) {
     throw new Error("compact Pilot canvas chrome has no bounds");
   }
-  const canvasScale = canvasBox.height / (BASE_GAME_FACTORY_HEIGHT * 42 + 24);
-  const machineCenterY = canvasBox.y + (12 + ((minY + maxY + 1) * 42) / 2) * canvasScale;
+  const centers = await Promise.all(cells.map((cell) => factoryCellPoint(pilotCanvas, layout, cell)));
+  const machineCenterY = (
+    Math.min(...centers.map((center) => center.y)) +
+    Math.max(...centers.map((center) => center.y))
+  ) / 2;
   expect(machineCenterY).toBeGreaterThan(frameBox.y);
   expect(machineCenterY).toBeLessThan(toolbeltBox.y);
 }
@@ -359,10 +370,8 @@ test("touch Erase deletes an installed machine instead of capturing a no-op move
   const gallery = deserializeGame(layout).pilot.layout;
   if (gallery === null) throw new Error("machine gallery fixture has no Pilot layout");
   const machine = gallery.machines.reduce((closest, candidate) => {
-    const distance = Math.abs(candidate.anchor.x - gallery.width / 2) +
-      Math.abs(candidate.anchor.y - gallery.height / 2);
-    const closestDistance = Math.abs(closest.anchor.x - gallery.width / 2) +
-      Math.abs(closest.anchor.y - gallery.height / 2);
+    const distance = hexDistance(candidate.anchor.q, candidate.anchor.r, gallery.width / 2, gallery.height / 2);
+    const closestDistance = hexDistance(closest.anchor.q, closest.anchor.r, gallery.width / 2, gallery.height / 2);
     return distance < closestDistance ? candidate : closest;
   });
   const point = await factoryCellPoint(frame, gallery, machine.anchor);
@@ -402,8 +411,8 @@ test("touch paints a Belt drag and rotates the tapped installed machine", async 
     ),
     machines: [],
   };
-  const from = await factoryCellPoint(frame, emptyLayout, { x: 3, y: 8 });
-  const to = await factoryCellPoint(frame, emptyLayout, { x: 7, y: 8 });
+  const from = await factoryCellPoint(frame, emptyLayout, { q: 3, r: 8 });
+  const to = await factoryCellPoint(frame, emptyLayout, { q: 7, r: 8 });
   await frame.evaluate((element) => {
     Object.defineProperty(element, "setPointerCapture", { value: () => undefined });
   });
@@ -508,7 +517,7 @@ test("touch paints a Belt drag and rotates the tapped installed machine", async 
     .toHaveText(machineName(machine.def.typeId));
   await page.getByTestId("pilot-facility-workspace").getByTestId("brush-rotate").click();
   await page.getByTestId("save").click();
-  const raw = await page.evaluate(() => localStorage.getItem("hexapharma.save.checkpoint.0"));
+  const raw = await page.evaluate((key) => localStorage.getItem(key), checkpointKey);
   if (raw === null) throw new Error("rotated Pilot checkpoint was not saved");
   const saved = deserializeGameAuthority((JSON.parse(raw) as { readonly head: string }).head);
   const rotated = saved.pilot.layout?.machines.find((candidate) => candidate.id === machine.id);
@@ -534,15 +543,15 @@ test("Factory copy and paste preserve source, splitter, and merger payloads", as
   }
   await page.getByTestId("save").click();
 
-  const raw = await page.evaluate(() => localStorage.getItem("hexapharma.save.checkpoint.0"));
+  const raw = await page.evaluate((key) => localStorage.getItem(key), checkpointKey);
   if (raw === null) throw new Error("clipboard checkpoint was not saved");
   const saved = deserializeGameAuthority((JSON.parse(raw) as { readonly head: string }).head);
   if (saved.pilot.layout === null) throw new Error("saved Pilot layout is missing");
   for (const payload of clipboardPayloads) {
-    expect(saved.pilot.layout.tiles[payload.destination.y * saved.pilot.layout.width + payload.destination.x])
+    expect(saved.pilot.layout.tiles[hexIndex(saved.pilot.layout.width, payload.destination.q, payload.destination.r)])
       .toEqual(payload.tile);
     if (payload.tile.kind !== "source") {
-      expect(saved.pilot.layout.tiles[payload.cell.y * saved.pilot.layout.width + payload.cell.x])
+      expect(saved.pilot.layout.tiles[hexIndex(saved.pilot.layout.width, payload.cell.q, payload.cell.r)])
         .toEqual({ kind: "empty" });
     }
   }
@@ -568,7 +577,7 @@ test("focused Factory tool controls still allow R, number, and Q world hotkeys",
   await workspace.getByTestId("brush-merger").click();
   await page.keyboard.press("q");
   await expect(workspace.getByTestId("brush-selected")).toHaveText("source");
-  await expect(workspace.getByTestId("brush-direction")).toHaveText("Direction ← W");
+  await expect(workspace.getByTestId("brush-direction")).toHaveText("Direction ↙ SW");
 });
 
 test("Pilot builds without a Research contract and Production is an exact copy", async ({ page }) => {
@@ -582,7 +591,7 @@ test("Pilot builds without a Research contract and Production is an exact copy",
   await expect(page.getByRole("heading", { name: "Production" })).toBeVisible();
   await page.getByTestId("save").click();
 
-  const raw = await page.evaluate(() => localStorage.getItem("hexapharma.save.checkpoint.0"));
+  const raw = await page.evaluate((key) => localStorage.getItem(key), checkpointKey);
   if (raw === null) throw new Error("built Production checkpoint was not saved");
   const envelope = JSON.parse(raw) as { readonly head: string };
   const saved = deserializeGameAuthority(envelope.head);
@@ -605,10 +614,17 @@ test("Production previews and charges construction while removal gives no refund
   const frame = page.getByTestId("production-facility-workspace").getByTestId("factory-canvas");
   const canvas = frame.locator("canvas");
   await expect(canvas).toBeVisible({ timeout: 15_000 });
-  const box = await canvas.boundingBox();
-  if (box === null) throw new Error("Production canvas has no bounds");
-  const target = { x: box.x + 12 + 4 * 42 + 21, y: box.y + 12 + 4 * 42 + 21 };
-  const end = { x: target.x + 3 * 42, y: target.y + 2 * 42 };
+  const emptyLayout: FactoryLayout = {
+    width: BASE_GAME_FACTORY_WIDTH,
+    height: BASE_GAME_FACTORY_HEIGHT,
+    tiles: Array.from(
+      { length: BASE_GAME_FACTORY_WIDTH * BASE_GAME_FACTORY_HEIGHT },
+      () => ({ kind: "empty" as const }),
+    ),
+    machines: [],
+  };
+  const target = await factoryCellPoint(frame, emptyLayout, { q: 4, r: 4 });
+  const end = await factoryCellPoint(frame, emptyLayout, { q: 7, r: 6 });
 
   await page.mouse.move(target.x, target.y);
   await expect(page.getByTestId("factory-ghost-cost")).toHaveText("$2");
@@ -630,7 +646,7 @@ test("physical footprint rotation leaves the selected chemical path unchanged", 
   const iconPath = pilot.getByTestId("brush-machine-push").locator("[data-icon-shape='path']");
   const before = await iconPath.getAttribute("points");
   await page.keyboard.press("r");
-  await expect(pilot.getByTestId("brush-direction")).toHaveText("Footprint 90°");
+  await expect(pilot.getByTestId("brush-direction")).toHaveText("Footprint 60°");
   await expect(iconPath).toHaveAttribute("points", before ?? "");
 });
 
@@ -676,10 +692,17 @@ test("compact Pilot keeps scroll position after a local edit acknowledgement", a
     element.scrollTop = 0;
     element.scrollLeft = 0;
   });
-  const canvasBox = await frame.locator("canvas").boundingBox();
-  if (canvasBox === null) throw new Error("compact Pilot canvas has no bounds");
-
-  await page.mouse.click(canvasBox.x + 33, canvasBox.y + 33);
+  const emptyLayout: FactoryLayout = {
+    width: BASE_GAME_FACTORY_WIDTH,
+    height: BASE_GAME_FACTORY_HEIGHT,
+    tiles: Array.from(
+      { length: BASE_GAME_FACTORY_WIDTH * BASE_GAME_FACTORY_HEIGHT },
+      () => ({ kind: "empty" as const }),
+    ),
+    machines: [],
+  };
+  const target = await factoryCellPoint(frame, emptyLayout, { q: 0, r: 0 });
+  await page.mouse.click(target.x, target.y);
   await expect(page.getByTestId("pilot-facility-workspace").getByTestId("factory-undo"))
     .toBeEnabled();
   await page.waitForTimeout(250);

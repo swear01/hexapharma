@@ -11,6 +11,14 @@ function render(typeId: string, title?: string): string {
 }
 
 describe("MachineIcon", () => {
+  it("projects all six hex directions without invalid SVG coordinates", () => {
+    const markup = renderToStaticMarkup(
+      <MachineIcon typeId="six-directions" path={[0, 1, 2, 3, 4, 5]} />,
+    );
+    expect(markup).not.toContain("NaN");
+    expect(markup).toContain('data-icon-shape="path"');
+  });
+
   it("renders every authored path as geometry without letter abbreviations", () => {
     for (const entry of DEFAULT_CATALOG) {
       const markup = render(entry.typeId);

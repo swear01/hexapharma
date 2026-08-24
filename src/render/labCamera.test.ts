@@ -23,14 +23,14 @@ describe("Lab camera", () => {
   it("uses a compact 40 px atlas grid and still shows only a local map window", () => {
     expect(LAB_CELL_PIXELS).toBe(40);
     expect(LAB_VIEWPORT.width / LAB_VIEWPORT.height).toBeGreaterThan(1.6);
-    const camera = focusLabCamera({ x: 31, y: 31 });
+    const camera = focusLabCamera({ q: 31, r: 31 });
     const bounds = visibleLabCells(camera, viewport, map);
-    expect(bounds.x1 - bounds.x0).toBeGreaterThanOrEqual(21);
-    expect(bounds.x1 - bounds.x0).toBeLessThanOrEqual(24);
-    expect(bounds.y1 - bounds.y0).toBeGreaterThanOrEqual(14);
-    expect(bounds.y1 - bounds.y0).toBeLessThanOrEqual(16);
-    expect(bounds.x0).toBeGreaterThan(0);
-    expect(bounds.y0).toBeGreaterThan(0);
+    expect(bounds.q1 - bounds.q0).toBeGreaterThanOrEqual(35);
+    expect(bounds.q1 - bounds.q0).toBeLessThanOrEqual(42);
+    expect(bounds.r1 - bounds.r0).toBeGreaterThanOrEqual(20);
+    expect(bounds.r1 - bounds.r0).toBeLessThanOrEqual(24);
+    expect(bounds.q0).toBeGreaterThan(0);
+    expect(bounds.r0).toBeGreaterThan(0);
   });
 
   it("keeps major grid lines stronger than minor lines", () => {
@@ -49,8 +49,8 @@ describe("Lab camera", () => {
   });
 
   it("converts world cells to player-facing coordinates relative to the origin", () => {
-    expect(labWorldToRelativeCell({ x: 31, y: 31 }, { x: 31, y: 31 })).toEqual({ x: 0, y: 0 });
-    expect(labWorldToRelativeCell({ x: 29, y: 34 }, { x: 31, y: 31 })).toEqual({ x: -2, y: 3 });
+    expect(labWorldToRelativeCell({ q: 31, r: 31 }, { q: 31, r: 31 })).toEqual({ q: 0, r: 0 });
+    expect(labWorldToRelativeCell({ q: 29, r: 34 }, { q: 31, r: 31 })).toEqual({ q: -2, r: 3 });
   });
 
   it("fades minor grid lines when zoomed out without hiding the major grid", () => {
@@ -63,49 +63,49 @@ describe("Lab camera", () => {
   });
 
   it("focuses a grid cell at the viewport centre", () => {
-    const world = labScreenToWorld(focusLabCamera({ x: 31, y: 31 }), viewport, {
+    const world = labScreenToWorld(focusLabCamera({ q: 31, r: 31 }), viewport, {
       x: viewport.width / 2,
       y: viewport.height / 2,
     });
-    expect(world.x).toBeCloseTo(31.5);
-    expect(world.y).toBeCloseTo(31.5);
+    expect(world).toEqual({ q: 31, r: 31 });
   });
 
   it("keeps the world point below the cursor fixed while zooming", () => {
-    const camera: LabCamera = { x: 20, y: 20, zoom: 1 };
+    const camera: LabCamera = focusLabCamera({ q: 31, r: 31 });
     const pointer = { x: 120, y: 160 };
     const before = labScreenToWorld(camera, viewport, pointer);
     const zoomed = zoomLabCameraAt(camera, 1.5, pointer, viewport, map);
     const after = labScreenToWorld(zoomed, viewport, pointer);
-    expect(after.x).toBeCloseTo(before.x);
-    expect(after.y).toBeCloseTo(before.y);
+    expect(after).toEqual(before);
   });
 
   it("pans in pixels and clamps the camera to a map", () => {
-    const camera = focusLabCamera({ x: 31, y: 31 });
+    const camera = focusLabCamera({ q: 31, r: 31 });
     const moved = panLabCamera(camera, 80, 40, viewport, map);
-    expect(moved.x).toBeCloseTo(29.5);
-    expect(moved.y).toBeCloseTo(30.5);
+    expect(labScreenToWorld(moved, viewport, {
+      x: viewport.width / 2,
+      y: viewport.height / 2,
+    })).toEqual({ q: 29, r: 30 });
     expect(clampLabCamera({ x: -99, y: 99, zoom: 1 }, viewport, map)).toEqual({
-      x: 10.4,
-      y: 56.6,
+      x: 398.6794919243112,
+      y: 236,
       zoom: 1,
     });
   });
 
   it("limits zoom to the playable range", () => {
-    const camera = focusLabCamera({ x: 31, y: 31 });
+    const camera = focusLabCamera({ q: 31, r: 31 });
     expect(zoomLabCameraAt(camera, 0.01, { x: 0, y: 0 }, viewport, map).zoom).toBe(0.75);
     expect(zoomLabCameraAt(camera, 99, { x: 0, y: 0 }, viewport, map).zoom).toBe(2.25);
   });
 
   it("builds an ordered per-layer route from animated drug frames", () => {
     expect(labTrailsForFrames([
-      { pos: [{ x: 1, y: 2 }, { x: 5, y: 6 }] },
-      { pos: [{ x: 2, y: 2 }, { x: 5, y: 7 }] },
+      { pos: [{ q: 1, r: 2 }, { q: 5, r: 6 }] },
+      { pos: [{ q: 2, r: 2 }, { q: 5, r: 7 }] },
     ], 2, [false, true])).toEqual([
-      [{ x: 1, y: 2 }, null, { x: 2, y: 2 }],
-      [{ x: 5, y: 6 }, null, { x: 5, y: 7 }],
+      [{ q: 1, r: 2 }, null, { q: 2, r: 2 }],
+      [{ q: 5, r: 6 }, null, { q: 5, r: 7 }],
     ]);
   });
 });

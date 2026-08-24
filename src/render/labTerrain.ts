@@ -1,5 +1,6 @@
-import type { EffectMap, Vec2 } from "../sim/phase0_interfaces";
+import type { EffectMap, HexCoord } from "../sim/phase0_interfaces";
 import { CellKind } from "../sim/phase0_interfaces";
+import { hexInBounds, hexIndex } from "../sim/hex";
 import { SHARED_SCHEMATIC_STYLE } from "./schematicStyle";
 
 export type LabTerrainMotif =
@@ -28,8 +29,8 @@ export interface PortalTerrainVisual {
   readonly rimColor: number;
   readonly opaque: true;
   readonly pairMarker: string | null;
-  readonly destination: Vec2 | null;
-  readonly direction: Vec2 | null;
+  readonly destination: HexCoord | null;
+  readonly direction: HexCoord | null;
 }
 
 export type LabTerrainVisual = CellTerrainVisual | PortalTerrainVisual;
@@ -75,15 +76,15 @@ function portalVisual(
   }
   const role = index === entryIndex ? "entry" : "exit";
   const pairKnown = revealed(map, entryIndex) && revealed(map, destinationIndex);
-  const destination: Vec2 = {
-    x: destinationIndex % map.width,
-    y: Math.floor(destinationIndex / map.width),
+  const destination: HexCoord = {
+    q: destinationIndex % map.width,
+    r: Math.floor(destinationIndex / map.width),
   };
-  let direction: Vec2 | null = null;
-  const fromX = entryIndex % map.width;
-  const fromY = Math.floor(entryIndex / map.width);
-  if (pairKnown && (destination.x !== fromX || destination.y !== fromY)) {
-    direction = { x: Math.sign(destination.x - fromX), y: Math.sign(destination.y - fromY) };
+  let direction: HexCoord | null = null;
+  const fromQ = entryIndex % map.width;
+  const fromR = Math.floor(entryIndex / map.width);
+  if (pairKnown && (destination.q !== fromQ || destination.r !== fromR)) {
+    direction = { q: destination.q - fromQ, r: destination.r - fromR };
   }
   return {
     kind: "portal",
@@ -117,11 +118,11 @@ function portalEntryForExit(map: EffectMap, exitIndex: number): number | null {
   return entry < 0 ? null : entry;
 }
 
-export function labTerrainVisual(map: EffectMap, x: number, y: number): LabTerrainVisual {
-  if (x < 0 || y < 0 || x >= map.width || y >= map.height) {
+export function labTerrainVisual(map: EffectMap, q: number, r: number): LabTerrainVisual {
+  if (!hexInBounds(map.width, map.height, q, r)) {
     throw new Error("Lab terrain coordinate is outside the effect map");
   }
-  const index = y * map.width + x;
+  const index = hexIndex(map.width, q, r);
 
   const exitEntry = portalEntryForExit(map, index);
   if (exitEntry !== null) {

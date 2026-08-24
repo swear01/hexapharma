@@ -15,8 +15,8 @@ function hashDrug(h: number, d: DrugState): number {
   let next = hashU32(h, d.pos.length);
   for (let i = 0; i < d.pos.length; i++) {
     const pos = d.pos[i];
-    next = hashU32(next, pos?.x ?? 0);
-    next = hashU32(next, pos?.y ?? 0);
+    next = hashU32(next, pos?.q ?? 0);
+    next = hashU32(next, pos?.r ?? 0);
   }
   return hashU32(next, d.failed ? 1 : 0);
 }
@@ -73,8 +73,8 @@ function hashSnapshot(s: FactoryState): number {
     const unit = s.units[i];
     if (unit === undefined) continue;
     h = hashU32(h, unit.id | 0);
-    h = hashU32(h, unit.pos.x | 0);
-    h = hashU32(h, unit.pos.y | 0);
+    h = hashU32(h, unit.pos.q | 0);
+    h = hashU32(h, unit.pos.r | 0);
     h = hashU32(h, unit.proc | 0);
     h = hashU32(h, (unit.machineId === null ? 0 : unit.machineId + 1) | 0);
     h = hashU32(h, unit.productionCost | 0);

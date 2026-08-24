@@ -46,8 +46,8 @@ function sameInstalledMachine(
   right: FactoryLayout["machines"][number],
 ): boolean {
   return left.def.typeId === right.def.typeId &&
-    left.anchor.x === right.anchor.x &&
-    left.anchor.y === right.anchor.y &&
+    left.anchor.q === right.anchor.q &&
+    left.anchor.r === right.anchor.r &&
     left.footRot === right.footRot;
 }
 

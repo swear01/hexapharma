@@ -7,9 +7,12 @@ describe("production-scale machine catalog", () => {
     expect(Math.min(...lengths)).toBeGreaterThanOrEqual(3);
     expect(Math.max(...lengths)).toBeGreaterThanOrEqual(7);
     for (const entry of DEFAULT_CATALOG) {
-      expect(new Set(entry.path.map((delta) => `${delta.x},${delta.y}`)).size, entry.typeId)
+      expect(new Set(entry.path).size, entry.typeId)
         .toBeGreaterThanOrEqual(2);
+      expect(entry.path.every((direction) => Number.isSafeInteger(direction) && direction >= 0 && direction <= 5))
+        .toBe(true);
     }
+    expect(new Set(DEFAULT_CATALOG.flatMap((entry) => entry.path))).toEqual(new Set([0, 1, 2, 3, 4, 5]));
   });
 
   it("gives every machine a readable multi-cell physical silhouette", () => {

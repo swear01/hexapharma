@@ -18,8 +18,8 @@ function map(size: number): EffectMap {
   return {
     width: size,
     height: size,
-    origin: { x: 1, y: 1 },
-    start: { x: 1, y: 1 },
+    origin: { q: 1, r: 1 },
+    start: { q: 1, r: 1 },
     cell: new Uint8Array(size * size),
     cureId: new Int16Array(size * size).fill(-1),
     sideEffectId: new Int32Array(size * size).fill(-1),
@@ -80,8 +80,8 @@ describe("Lab fog authority", () => {
     fog[7] = 1;
 
     expect(researchKnownCureLocations({ maps: [cureMap] }, [fog])).toEqual([
-      { mapIndex: 0, cureId: 7, pos: { x: 1, y: 0 } },
-      { mapIndex: 0, cureId: 4, pos: { x: 1, y: 2 } },
+      { mapIndex: 0, cureId: 7, pos: { q: 1, r: 0 } },
+      { mapIndex: 0, cureId: 4, pos: { q: 1, r: 2 } },
     ]);
   });
 
@@ -124,31 +124,27 @@ describe("Lab pointer projection", () => {
 
   it("uses the visible candidate token as the direct commit target", () => {
     expect(researchPreviewEndpointHit(
-      { x: 12.92, y: 8.2 },
-      { x: 12, y: 8 },
+      { q: 12, r: 8 },
+      { q: 12, r: 8 },
     )).toBe(true);
     expect(researchPreviewEndpointHit(
-      { x: 12.2, y: 8.2 },
-      { x: 12, y: 8 },
-    )).toBe(true);
-    expect(researchPreviewEndpointHit(
-      { x: 11.9, y: 8.5 },
-      { x: 12, y: 8 },
+      { q: 11, r: 8 },
+      { q: 12, r: 8 },
     )).toBe(false);
-    expect(researchPreviewEndpointHit({ x: 12.5, y: 8.5 }, undefined)).toBe(false);
+    expect(researchPreviewEndpointHit({ q: 12, r: 8 }, undefined)).toBe(false);
   });
 
   it("focuses the next candidate when present and the current dose otherwise", () => {
-    const dose = { pos: [{ x: 3, y: 4 }], failed: false };
-    const candidate = { pos: [{ x: 12, y: 9 }], failed: false };
+    const dose = { pos: [{ q: 3, r: 4 }], failed: false };
+    const candidate = { pos: [{ q: 12, r: 9 }], failed: false };
 
     expect(researchFocusTarget(dose, candidate, 0)).toEqual({
       label: "Next",
-      position: { x: 12, y: 9 },
+      position: { q: 12, r: 9 },
     });
     expect(researchFocusTarget(dose, undefined, 0)).toEqual({
       label: "Dose",
-      position: { x: 3, y: 4 },
+      position: { q: 3, r: 4 },
     });
   });
 
