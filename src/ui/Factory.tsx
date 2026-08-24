@@ -1381,7 +1381,10 @@ export function Factory({
                 <output
                   className="factory-ghost-cost"
                   data-testid="factory-ghost-cost"
-                  style={factoryCellCenter(hoverCell)}
+                  style={{
+                    left: factoryCellCenter(hoverCell).x,
+                    top: factoryCellCenter(hoverCell).y,
+                  }}
                 >${hoverBuildCost}</output>
               )}
             </div>

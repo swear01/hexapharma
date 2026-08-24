@@ -627,7 +627,12 @@ test("Production previews and charges construction while removal gives no refund
   const end = await factoryCellPoint(frame, emptyLayout, { q: 7, r: 6 });
 
   await page.mouse.move(target.x, target.y);
-  await expect(page.getByTestId("factory-ghost-cost")).toHaveText("$2");
+  const ghostCost = page.getByTestId("factory-ghost-cost");
+  await expect(ghostCost).toHaveText("$2");
+  expect(await ghostCost.evaluate((node) => ({
+    left: node.style.left,
+    top: node.style.top,
+  }))).toMatchObject({ left: expect.stringMatching(/px$/u), top: expect.stringMatching(/px$/u) });
   await page.mouse.down();
   await page.mouse.move(end.x, end.y, { steps: 8 });
   await expect(page.getByTestId("factory-ghost-cost")).toHaveText("$12");
