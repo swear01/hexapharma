@@ -42,7 +42,7 @@
 - Production 新局即有空 24×12 editor；直接 edit 或套 Factory Blueprint 都按差異付費。
 - Production Plan 保持可選、free/no-clock，可按`Commission $N`建到Production；內部state仍可使用pilot命名。
 - 正常新局 $1000 必須能不用 hidden fixture 完成 Research → paid build → first sale。
-- base price 使用 `12 + 4×difficulty + 2×referenceCost`；各疾病 demand 按 `floor(9/10)` 衰減至 0，Market clean／cheap first且只批量出售正 net產品。
+- base price 使用 `12 + 4×difficulty + 2×referenceCost`；各疾病 demand 按 `floor(19/20)` 衰減至 0，Market clean／cheap first且只批量出售正 net產品。
 - 每疾病shipping contract quota=3；Disease 1／2／3分別gate Skew／Dilute／Settle patents。
 - transport renderer 使用 sim-derived connected topology；Belt drag 支援六鄰接連續hex route。
 - Blueprint v4 codec驗證`research-program`，但UI不capture/apply它；generic q/r `factory-layout`可正常建立／套用。Library使用`hexapharma.blueprint-library.v4`。Save v10保存stepwise Research/formulas、non-null Production與paid build trace。

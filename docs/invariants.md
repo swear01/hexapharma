@@ -83,7 +83,7 @@
 - 正常UI new game origin的starting cash恰為1000、research為0；fresh loop不得需要外部資金／Knowledge或hidden reference才能到first sale。
 - HUD New Game 只可用unsigned 32-bit seed建立標準fresh GameState；不得刪除save checkpoints或Blueprint Library。確認modal開啟期間，背景hotkeys不得產生GameIntent、Factory edit或navigation authority change。
 - mapgen每疾病base price恰為`12 + 4 × difficulty + 2 × referenceCost`，使用safe integer arithmetic。
-- 每疾病demand獨立：第0件gross=base；下一件反覆`floor(previous × 9 / 10)`直到0，無正值floor。
+- 每疾病demand獨立：第0件gross=base；下一件反覆`floor(previous × 19 / 20)`直到0，無正值floor。
 - Market 每個 inventory product 只可賣一次；收入由實際 cure、side effects、production cost 與 sold counters 決定。
 - Market的`Shipped`與Knowledge成功回饋只能由accepted `sellProducts` intent產生；rejected或stale inventory intent必須顯示錯誤，不得同時假報成功。
 - Market候選stable order為side-effect count、production cost、inventory ID；single/bulk automatic shipping必須略過non-positive候選，只出售逐件計入demand後仍有positive net的產品。略過項目不消耗demand，不得自動虧本出售。

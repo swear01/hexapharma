@@ -17,6 +17,7 @@
     "e2e": "playwright test",
     "sim": "tsx tools/headless-sim.ts",
     "balance": "tsx tools/balance.ts",
+    "progression": "tsx tools/progression-ledger.ts",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview"

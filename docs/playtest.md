@@ -36,7 +36,8 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 4. 自行選擇直接Production或optional Production Plan，人工放source、完整machine sequence、belt與sink；不得呼叫layout compiler。若使用Plan，按`Commission $N`送入正式產線。確認Research支出後仍付得起有效Production build。
 5. Play直到產生實體cure，在Market以`Ship best`出售第一件仍有正net的產品；確認stock減1、cash增加、該疾病Sold／Next更新。
 6. 對同一疾病完成3次accepted shipping，確認contract chip依序為1/3、2/3、3/3，對應machine patent gate解除；繼續觀察下一種疾病是否形成新目標，而不是同一路線跨seed／疾病直接通殺。
-7. 保存：首次理解candidate操作所需時間、Research嘗試數、first cure時間、first sale時間、最低cash、重做layout次數、三個最大困惑點，以及「是否願意再解下一種疾病／原因」。這些是human fun evidence，不得用green gate取代。
+7. 另記錄是否曾動用預留的$100 retry／小改建預算；若目前庫存沒有正net出貨，確認Market提示改善成本／品質或嘗試另一種疾病，不把current stock不賺錢誤報成整局無法恢復。
+8. 保存：首次理解candidate操作所需時間、Research嘗試數、first cure時間、first sale時間、最低cash、重做layout次數、三個最大困惑點，以及「是否願意再解下一種疾病／原因」。這些是human fun evidence，不得用green gate取代。
 
 任一步因無資訊、無錢、無法建廠、Market自動虧損或流程不知如何繼續而卡住，就是blocker，不標成「之後平衡」。
 
@@ -104,7 +105,7 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 ## 10. Market / finite demand
 
 1. 確認每個疾病base price恰為`12 + 4 × difficulty + 2 × referenceCost`，同seed重建相同。
-2. 對同疾病連續出售，Next依序為`floor(previous × 9 / 10)`直到0，沒有10%或$1永久floor；不同疾病Sold／Next互不影響。
+2. 對同疾病連續出售，Next依序為`floor(previous × 19 / 20)`直到0，沒有5%或$1永久floor；不同疾病Sold／Next互不影響。
 3. 準備同疾病的clean/tainted與不同production cost庫存；`Ship best`必須先side effects最少，再選cost最低，再用inventory ID穩定排序。
 4. 放入「排序較前但不賺錢」與「排序較後但仍賺錢」的產品；`Ship best`必須略過前者，`Ship profitable`只出售逐件計入demand後仍為正net的項目。略過項目不消耗demand，所有未選產品留在庫存，不得自動虧本。
 5. 每張卡核對Next gross、最佳庫存production cost、`$25 × effect count` penalty與net；Clean stock／Tainted stock是產品件數，不是effect總數。

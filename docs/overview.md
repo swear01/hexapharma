@@ -42,9 +42,10 @@ HexaPharma 是「程序化藥效 Atlas + 實體工廠」的確定性單人遊戲
 ## Bootstrap 與 Market
 
 - 正常新局 cash 是 $1000；fresh player 不靠注入資源、hidden reference 或 compiler，必須能完成 Research → 建廠 → first sale。
-- 疾病 base price 是 `12 + 4 × difficulty + 2 × referenceCost`。各疾病 demand 獨立；每次出售後 next gross 變成 `floor(previous × 9 / 10)`，直到 0。
+- 疾病 base price 是 `12 + 4 × difficulty + 2 × referenceCost`。各疾病 demand 獨立；每次出售後 next gross 變成 `floor(previous × 19 / 20)`，直到 0。
 - Cure 與 SideEffect 可重疊；Market 先選 side effects 較少、再選 production cost 較低的庫存，只單賣或批量出售仍有正 net 的產品。
 - 每疾病 shipping contract quota 為 3；首個未完成合約顯示在 HUD。Disease 1／2／3 合約分別 gate Skew／Dilute／Settle patents，其他成本與前置仍須滿足。
+- Settle unlock 為 $670；固定五-seed regression 與較廣代表樣本從 $1000 跑完整合法路線並保留 $100 assay retry／小改建預算。
 
 ## Blueprint 與 Save
 

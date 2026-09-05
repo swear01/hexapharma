@@ -78,12 +78,12 @@ test("Market explains Ship best economics and reports Knowledge from a sale", as
 });
 
 test("Market gives a visible reason when no stock can ship profitably", async ({ page }) => {
-  await loadMarket(page, 12);
+  await loadMarket(page, 22);
   const row = page.getByTestId("shop-row-0");
 
-  await expect(row.getByTestId("shop-next-0")).toHaveText("24");
+  await expect(row.getByTestId("shop-next-0")).toHaveText("25");
   await expect(row.getByTestId("shop-production-cost-0")).toHaveText("26");
-  await expect(row.getByTestId("shop-net-0")).toHaveText("-2");
+  await expect(row.getByTestId("shop-net-0")).toHaveText("-1");
   await expect(row.getByTestId("shop-disabled-reason-0")).toHaveText(
     "No profitable stock at next price.",
   );

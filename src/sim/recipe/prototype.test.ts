@@ -323,6 +323,28 @@ describe("compilePrototype", () => {
     }
   }, 10_000);
 
+  it("reserves later output exits while routing the seed 4 expanded entitlement", () => {
+    const level = generate({
+      seed: 4,
+      nMaps: 1,
+      width: 63,
+      height: 63,
+      catalog: DEFAULT_CATALOG,
+      diseaseCount: 4,
+      difficulty: { min: 4, max: 12 },
+    });
+    const disease = level.diseases[2]!;
+    const { layout } = compileEntitledPrototype(
+      disease.reference,
+      BASE_GAME_FACTORY_WIDTH + 2,
+      BASE_GAME_FACTORY_HEIGHT,
+    );
+    expect(derivePrototypeTemplate(layout)).toEqual(disease.reference);
+    expect(factoryOutcome(layout, level.mm, level.start)).toEqual(
+      evaluate(level.mm, level.start, disease.reference),
+    );
+  });
+
   it("rejects colliding placements instead of silently repacking them", () => {
     const template: Template = { steps: [step("push"), step("push")] };
     expect(() => compilePrototype(template, 18, 9, [

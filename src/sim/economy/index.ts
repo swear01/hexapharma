@@ -13,9 +13,9 @@
  *
  * Diminishing rule (exact):
  *   Let p_0 = basePrice.
- *   p_{k+1} = floor(p_k * 9 / 10).
+ *   p_{k+1} = floor(p_k * 19 / 20).
  *   nextUnitPrice(basePrice, alreadySold) = p_{alreadySold}.
- *   I.e. each successive unit of the same disease fetches 90% (integer-floored)
+ *   I.e. each successive unit of the same disease fetches 95% (integer-floored)
  *   of the previous unit's gross until demand reaches zero. alreadySold = 0
  *   returns basePrice exactly. Non-positive basePrice returns 0.
  */
@@ -29,7 +29,7 @@ import type {
 /**
  * Gross price the next (alreadySold-th, 0-based) unit of a disease fetches.
  * Monotonically non-increasing in `alreadySold` until reaching zero.
- * Deterministic integer geometric decay (×9/10 per prior sale, floored).
+ * Deterministic integer geometric decay (×19/20 per prior sale, floored).
  */
 export const nextUnitPrice = (basePrice: number, alreadySold: number): number => {
   if (!Number.isSafeInteger(basePrice)) {
@@ -42,9 +42,9 @@ export const nextUnitPrice = (basePrice: number, alreadySold: number): number =>
   let price = basePrice;
   for (let k = 0; k < alreadySold; k++) {
     if (price === 0) return 0;
-    const quotient = Math.floor(price / 10);
-    const remainder = price % 10;
-    price = quotient * 9 + Math.floor((remainder * 9) / 10);
+    const quotient = Math.floor(price / 20);
+    const remainder = price % 20;
+    price = quotient * 19 + Math.floor((remainder * 19) / 20);
   }
   return price;
 };

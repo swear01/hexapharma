@@ -24,7 +24,7 @@ const PATENT_DEFINITIONS = [
   { id: "dilute-unlock", cost: 180, researchCost: 3, requires: ["bench-2"], effect: { kind: "unlockMachine", typeId: "dilute" } },
   { id: "floor-depth", cost: 300, researchCost: 5, requires: ["bench-2"], effect: { kind: "expandFactory", dw: 0, dh: 2 } },
   { id: "field-survey", cost: 500, researchCost: 8, requires: ["reveal-aid"], effect: { kind: "revealAid", amount: 4 } },
-  { id: "settle-unlock", cost: 700, researchCost: 12, requires: ["dilute-unlock"], effect: { kind: "unlockMachine", typeId: "settle" } },
+  { id: "settle-unlock", cost: 670, researchCost: 12, requires: ["dilute-unlock"], effect: { kind: "unlockMachine", typeId: "settle" } },
 ] as const satisfies readonly PatentNode[];
 
 export const DEFAULT_PATENTS: readonly PatentNode[] = Object.freeze(PATENT_DEFINITIONS.map(

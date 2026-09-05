@@ -38,7 +38,7 @@
 5. **Bootstrap, economy and Market**
    - default cash改為$1000，保證人工Research後仍能直接或經optional Production Plan支付第一條有效Production line。
    - base price固定為`12 + 4 × difficulty + 2 × referenceCost`。
-   - 每疾病gross由base開始，每售一件next=`floor(previous × 9 / 10)`直到0；移除永久正值floor。
+   - 每疾病gross由base開始，每售一件next=`floor(previous × 19 / 20)`直到0；移除永久正值floor。
    - Cure與SideEffect overlap完整流入physical inventory與sale penalty。
    - Market stable order是side effects少、production cost低、inventory ID早；`Ship best`／`Ship profitable`只出售正net產品。
    - 每疾病shipping contract quota=3；Disease 1／2／3合約分別gate Skew／Dilute／Settle patents。

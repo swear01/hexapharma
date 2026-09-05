@@ -304,10 +304,12 @@ function compilePrototypeAtSink(
   }
 
   for (const entry of placed) {
-    const index = at(width, entry.inApproach.q, entry.inApproach.r);
-    if (blocked[index] === 0) {
-      blocked[index] = 1;
-      reserved[index] = 1;
+    for (const endpoint of [entry.inApproach, entry.outExit]) {
+      const index = at(width, endpoint.q, endpoint.r);
+      if (blocked[index] === 0) {
+        blocked[index] = 1;
+        reserved[index] = 1;
+      }
     }
   }
   const baseTiles = tiles.slice();

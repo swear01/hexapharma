@@ -33,6 +33,11 @@ import {
   type Template,
 } from "../src/sim/phase0_interfaces";
 import { pathToFileURL } from "node:url";
+import {
+  PROGRESSION_RETRY_BUDGET,
+  PROGRESSION_SEEDS,
+  progressionLedger,
+} from "./progression-ledger";
 
 export const MAX_BALANCE_SEEDS = 100_000;
 export const MAX_ALL_PAIRS_LEVELS = 100;
@@ -589,6 +594,17 @@ export function runBalance(count: number, overrides: SweepOverrides = {}): 0 | 1
   printDiversity(result);
   printPuzzleQuality(samples);
   printBootstrap(result.bootstraps);
+  console.log(`\nfour-disease legal progression ($${PROGRESSION_RETRY_BUDGET} retry/build allowance):`);
+  const progression = PROGRESSION_SEEDS.map((seed) => progressionLedger(seed));
+  for (const ledger of progression) {
+    console.log(
+      `  seed=${ledger.seed} completed=${ledger.completed} min-cash=${ledger.minimumCash} ` +
+        `final-cash=${ledger.finalCash} contracts=${ledger.completedContracts}/4 ` +
+        `positive-net=${ledger.everyDiseasePositiveNet} ` +
+        `sold=[${ledger.entries.map((entry) => entry.sold).join(",")}]` +
+        (ledger.blockedAction === null ? "" : ` blocked=${ledger.blockedAction}`),
+    );
+  }
   for (const failure of [
     ...diversityFailures(result),
     ...bootstrapFailures(result),
@@ -599,7 +615,9 @@ export function runBalance(count: number, overrides: SweepOverrides = {}): 0 | 1
   for (const flag of puzzleTuningFlags(result)) {
     console.error(`FLAG ${flag}`);
   }
-  return sweepExitCode(result);
+  return sweepExitCode(result) === 0 && progression.every(
+    (ledger) => ledger.completed && ledger.minimumCash >= PROGRESSION_RETRY_BUDGET,
+  ) ? 0 : 1;
 }
 
 export function parseBalanceArgs(args: readonly string[]): number {

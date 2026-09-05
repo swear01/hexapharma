@@ -32,6 +32,19 @@ describe("balance tool failure boundaries", () => {
     });
   });
 
+  it("includes the representative four-disease progression ledger", () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    try {
+      expect(runBalance(1)).toBe(0);
+      expect(log).toHaveBeenCalledWith(expect.stringMatching(/four-disease legal progression/));
+      for (const seed of [14, 15, 1, 42, 100]) {
+        expect(log).toHaveBeenCalledWith(expect.stringMatching(`seed=${seed} completed=true`));
+      }
+    } finally {
+      log.mockRestore();
+    }
+  }, 60_000);
+
   it("reports min/max for the maximum four-disease sample count without argument spreading", () => {
     const values = Array.from({ length: MAX_BALANCE_SEEDS * 4 }, (_, index) => index - 50);
     expect(minMax(values)).toEqual({ min: -50, max: MAX_BALANCE_SEEDS * 4 - 51 });
