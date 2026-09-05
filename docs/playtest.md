@@ -32,7 +32,7 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 
 1. 清除本origin的Save slots與Blueprint Library後建立正常新局；確認Cash=`$1000`、Knowledge=`0`、單一pointy-top axial Atlas有4種疾病，起點位於世界中央且只揭露hex distance radius 2的19-cell disk。
 2. 不查看source/test/reference，僅靠broad assay sector、world feedback與可用initial machines人工嘗試Research。每次只commit一個完整candidate stamp；記錄blank click是否誤提交、每步cash變化、每次揭露後是否知道如何作下一個決定、嘗試次數與剩餘cash。
-3. 找到第一個Cure後，確認結果同時報告已知Side effects，且Formulas 面板自動顯示實際ordered steps、累積assay cost與副作用；若命中污染Cure，可開新session繼續尋找同區乾淨endpoint，但不能以hidden reference代替探索。
+3. 找到第一個Cure後，確認結果同時報告已知Side effects，手動開啟Formulas 面板，確認顯示實際ordered steps、累積assay cost與副作用；若命中污染Cure，可開新session繼續尋找同區乾淨endpoint，但不能以hidden reference代替探索。
 4. 自行選擇直接Production或optional Production Plan，人工放source、完整machine sequence、belt與sink；不得呼叫layout compiler。若使用Plan，按`Commission $N`送入正式產線。確認Research支出後仍付得起有效Production build。
 5. Play直到產生實體cure，在Market以`Ship best`出售第一件仍有正net的產品；確認stock減1、cash增加、該疾病Sold／Next更新。
 6. 對同一疾病完成3次accepted shipping，確認contract chip依序為1/3、2/3、3/3，對應machine patent gate解除；繼續觀察下一種疾病是否形成新目標，而不是同一路線跨seed／疾病直接通殺。
@@ -50,7 +50,7 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 5. 第一次commit後確認session已開始、只扣該machine catalog cost、program恰多一個已執行step、actual trail立即揭霧且outcome立即可見。不得等待另一個Dispense，也不得先建立多步pending route。
 6. 以no-cure step繼續：shot保留，第二個candidate從第一步actual drug state接續；commit後只再扣第二台cost並更新fog／outcome。session readout不能提供重排或刪除已執行step的控制。
 7. 按Abort：program／shot／outcome清除，先前cash與fog保留。以Abyss再測Failure自動結束；任何Cure也自動結束。
-8. Outcome同時列Cure／No cure與已知Side effects／No side effects。Cure後Formulas 面板顯示Disease、ordered icons、累積cost、Clean或side-effect count；同疾病再次Cure時覆寫為latest且不出現兩份。
+8. Outcome同時列Cure／No cure與已知Side effects／No side effects。Cure後手動開啟Formulas 面板，確認顯示Disease、ordered icons、累積cost、Clean或side-effect count；同疾病再次Cure時覆寫為latest且不出現兩份。
 9. Blueprint drawer不得提供`Save Research program`或`Load in Research`。匯入現行v4 `research-program`後只可Download／Delete，不能直接改active program、cash、fog、outcome或formula。
 
 ## 5. Terrain / fog / portal / effects
