@@ -27,7 +27,7 @@
 | D21 | Cure 與 SideEffect 是可重疊欄位；reference endpoint 乾淨、同區部分 Cure cell 污染。 | 找到療效不等於找到最佳產品，精準路徑才有品質取捨。 |
 | D22 | Research 是 stepwise reveal–decide session：一次提交一個完整 candidate stamp，立即逐步扣款、執行、揭露與 evaluate；不預先提交 batch route。 | 每個決定都由剛揭露的地圖與結果驅動，操作與成本因果立即可讀。 |
 | D23 | 正常新局 cash 為 $1000，fresh run 必須負擔 Research → build → first sale。 | bootstrap 可達性是結構 contract，不用測試注資掩蓋。 |
-| D24 | 每疾病 demand 按 `floor(9/10)` 衰減到 0；Market 先乾淨、再低成本，且只自動出售正 net產品。 | 防止單線永久印錢，也避免 bulk action 默默虧損。 |
+| D24 | 每疾病 demand 按 `floor(19/20)` 衰減到 0；Market 先乾淨、再低成本，且只自動出售正 net產品。 | 防止單線永久印錢，也避免 bulk action 默默虧損。 |
 | D25 | 成功 Cure 自動建立／覆寫每疾病唯一的 `DiscoveredFormula`，保存實際 program、累積 Research cost 與 outcome。 | 探索成果成為可讀的配方紀錄，但不暗中自動建廠或繞過 Production。 |
 | D26 | 每疾病 shipping contract quota 固定為 3；Disease 1／2／3 分別 gate Skew／Dilute／Settle patents。 | Production 出貨回饋下一層 Research 工具，形成跨場域節奏，而非只靠抽象 currency。 |
 | D27 | 視覺採嚴格俯視 Orbital Wet-Lab Schematic，世界由 Pixi vector runtime 繪製；語意色限於 flow／selection／cure／side-effect／failure。 | 保留 2D 系統圖可讀性與原創身份，移除 generated bitmap manifest、玻璃 UI 與任意玩具色。 |

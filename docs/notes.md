@@ -28,8 +28,9 @@
 - **renderer failure 必須可見**：asset/init 失敗不能用空 canvas 或 debug fallback 冒充成功。
 - **畫面文字要克制**：常駐 UI 不放設計理由、形容詞式副標與長教學；細節寫在 [player-guide.md](player-guide.md)。
 - **bootstrap 不是作弊 fixture**：正常起始 cash 是 $1000，fresh loop 必須不用注入 cash／Knowledge、hidden reference 或 compiler 就能到第一次出售。
-- **demand 必須耗盡**：base price 是 `12 + 4×difficulty + 2×referenceCost`；各疾病 next gross 逐次 `floor(9/10)` 到 0。Market 先乾淨、再低成本，只自動出售正 net 庫存。
+- **demand 必須耗盡**：base price 是 `12 + 4×difficulty + 2×referenceCost`；各疾病 next gross 逐次 `floor(19/20)` 到 0。Market 先乾淨、再低成本，只自動出售正 net 庫存。
 - **contracts 回饋探索工具**：每疾病shipping quota=3；Disease 1／2／3分別gate Skew／Dilute／Settle patent，並且不取代一般cash／Knowledge／prerequisites。
+- **compiler routing endpoints 必須預留**：dev-only prototype compiler 在鋪前段belt前，同時預留所有machine的input approach與output exit，避免前段BFS佔用後段必需的route start；不得把compiler接進runtime自動解或自動建廠。
 - **True hex 是 authority，不只是品牌**：Atlas與Factory都使用pointy-top axial `{q,r}`、E／SE／SW／W／NW／NE與`r * width + q` dense indexing。Factory有六個60° footprint／port rotations；兩個domain仍不得互載payload或共用validator。
 - **Orbital Wet-Lab 是語意系統**：black-blue／graphite／bone-white／steel為中性基底；cyan／amber／lime／magenta／red只對應flow／selection／cure／side-effect／failure。world是vector runtime，不再依賴generated bitmap manifest。
 

@@ -35,8 +35,8 @@ describe("nextUnitPrice — diminishing returns", () => {
   it("eventually reaches zero gross demand and stays there", () => {
     fc.assert(
       fc.property(fc.integer({ min: 1, max: Number.MAX_SAFE_INTEGER }), (base) => {
-        expect(nextUnitPrice(base, 512)).toBe(0);
-        expect(nextUnitPrice(base, 513)).toBe(0);
+        expect(nextUnitPrice(base, 1024)).toBe(0);
+        expect(nextUnitPrice(base, 1025)).toBe(0);
       }),
     );
   });
@@ -45,9 +45,9 @@ describe("nextUnitPrice — diminishing returns", () => {
     fc.assert(
       fc.property(fc.integer({ min: 1, max: 1_000_000 }), (base) => {
         let total = 0;
-        for (let sold = 0; sold <= 512; sold++) total += nextUnitPrice(base, sold);
-        expect(total).toBeLessThanOrEqual(base * 10);
-        expect(nextUnitPrice(base, 512)).toBe(0);
+        for (let sold = 0; sold <= 1024; sold++) total += nextUnitPrice(base, sold);
+        expect(total).toBeLessThanOrEqual(base * 20);
+        expect(nextUnitPrice(base, 1024)).toBe(0);
       }),
     );
   });
@@ -81,7 +81,7 @@ describe("nextUnitPrice — diminishing returns", () => {
       fc.property(
         fc.integer({ min: Number.MAX_SAFE_INTEGER - 10_000, max: Number.MAX_SAFE_INTEGER }),
         (base) => {
-          const expected = Number((BigInt(base) * 9n) / 10n);
+          const expected = Number((BigInt(base) * 19n) / 20n);
           expect(nextUnitPrice(base, 1)).toBe(expected);
         },
       ),

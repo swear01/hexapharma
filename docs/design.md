@@ -127,11 +127,12 @@ Production 是唯一持續推進 factory tick 的場域。source、transport、m
 - Market demand board是公開的外部需求資訊，可列出本局所有疾病及Base／Sold／Next；它不代表Atlas上的Cure已發現，也不得提供Cure座標、region或hidden reference。
 - Market 只販售 Production 產生且仍在 inventory 的實體 cure；一顆產品只能賣一次。
 - 每個疾病的 mapgen base price 使用整數線性式 `12 + 4 × difficulty + 2 × referenceCost`；不同疾病各有獨立 demand/sold counter。
-- 某疾病第 0 件的 gross 是 base price；每次出售後下一件是 `floor(previous × 9 / 10)`，持續衰減到 0，沒有永久正值底價。net 再扣實際 production cost 與每個 side effect 的 $25 penalty。
+- 某疾病第 0 件的 gross 是 base price；每次出售後下一件是 `floor(previous × 19 / 20)`，持續衰減到 0，沒有永久正值底價。net 再扣實際 production cost 與每個 side effect 的 $25 penalty。
 - Market 對同一疾病先排 side effect 較少、再排 production cost 較低、最後排 inventory ID 較早的產品。`Ship best` 掃描此順序並賣第一件正 net產品；`Ship profitable` 依同一順序掃描全部庫存、略過不賺錢的候選，只讓實際選中的產品消耗後續demand，不得因較前面的昂貴產品而封鎖後面的正net產品，也不得自動虧本出售。
 - 每件成功出售增加1 Knowledge。Market card必須把最佳庫存的Next gross、production cost、每effect $25 penalty與net直接列出；Clean／Tainted是庫存件數。Ship disabled時顯示「沒有治療庫存」或「沒有正net庫存」的原因；只有authority接受出售後才顯示Knowledge成功回饋。
 - 每種疾病另有 shipping contract，quota 固定為 3 件；HUD 顯示首個未完成疾病的 `sold / 3`，全部完成後顯示最後一份 completed contract。合約只由 accepted sales 推進，不另行消耗庫存。
 - machine patent gates 依疾病順序綁定：Disease 1 contract 完成後才可取得 Skew，Disease 2 才可取得 Dilute，Disease 3 才可取得 Settle；cash、Knowledge 與既有 patent prerequisites 仍同時適用。其他 patents 不受 shipping contract gate 影響。
+- 四疾病必要 Technology 的 cash 成本為 Skew $100、Bench expansion $120、Dilute $180、Settle $670。五個固定 seed 與更廣代表樣本的合法 reference/compiler 白箱路線必須從 $1000 完成四病，且全程保留至少 $100 作為一次合理 assay 重試或小幅改建預算；這只證明可達性，不代表真人探索有趣。
 - Technology 可解鎖 factory machines、場地、Research PathStamps、motifs 或實際路徑的感測半徑；不能以跨層互動作現行進程。
 - 會重生 Atlas 或清除 Production authority 的解鎖，必須顯示受影響資料並要求確認。
 
@@ -230,5 +231,7 @@ Pure TS sim core  → authoritative deterministic transitions
 - `npm run check`：typecheck、lint、unit/property/integration、headless Playwright 全部通過。
 - `0.0.0.0:53346 --strictPort` 真人 smoke 必須從真正 fresh save 開始，不注入 cash／Knowledge、不讀 mapgen reference、不用 reference compiler 或預製 Blueprint，人工完成 stepwise Research → formula → affordable build／Commission → Production → first profitable sale；另覆蓋 optional Production Plan、shipping contracts、patent gates、Blueprint、Save/Load/Rewind 與 responsive reachability。
 - 自動 gate 證明 correctness，不宣稱樂趣。真人 fresh-loop 要另外記錄首次理解、嘗試次數、剩餘現金、第一次出售時間、困惑點與主觀是否願意再解下一種疾病。
+- `npm run progression` 保存 34 個 unique seeds（0..31、42、100）的四疾病白箱資金 ledger（research、build、unlock、gross/net、sold、剩餘正利潤 demand、最低 cash與第一個不可達動作）；它可使用 dev-only reference/compiler，但不得接入遊戲。
+- balance calibration 覆蓋上述34 seeds。`9/10` demand pacing 在樣本中多次阻擋後段建造，`47/50`仍有7個阻擋樣本；`19/20`配合Settle $700→$670後，全部都完成4份authority shipping contracts、每病正net且最低cash至少$100。這是白箱存在性／容錯預算，不是human-fun證據。
 - residue scan 不得把 batch route submission、截短 Research path、blank-click append、遮住 Wall、提前顯示未揭露互動物、protected universal reference、單一預設疾病、永久 demand floor、Production Plan 前置 Production、generated bitmap manifest、Blueprint 舊 schema 或 Save 舊 schema 當現行真相。
 - 平衡數值與美術內容量可後續迭代；fresh-loop 可達性、seed／疾病解法差異、有限 demand、效果 overlap、上述 authority、資料邊界、可見性、付費建造與 strict codec 不可用「之後平衡」延後。

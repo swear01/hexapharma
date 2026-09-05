@@ -142,7 +142,8 @@ Production Plan與Production使用相同editor。
 - Technology解鎖machine、場地或Research輔助。解鎖探索輔助本身不揭霧，只增加之後actual Research segment的感測半徑。
 - Technology頂部只列出已取得的非零benefits；每張卡用完整名稱列出效果、成本與實際前置Technology，沒有前置條件時不顯示空的requirement。
 - HUD contract chip顯示首個未完成疾病的`sold / 3`。Disease 1／2／3各出貨3件後，分別解除Skew／Dilute／Settle patent的合約gate；仍須支付該patent的cash／Knowledge並滿足既有Technology prerequisites。其他patent不需要合約。
-- 每個疾病的Base由mapgen以`12 + 4×difficulty + 2×referenceCost`決定。第一次出售取得Base gross；之後同疾病Next逐次為`floor(前一次 × 9 / 10)`，最後到0。不同疾病各算自己的Sold與Next。
+- 推進四種疾病所需的Technology cash依序是Skew $100、Bench expansion $120、Dilute $180、Settle $670。保留約$100可負擔一次合理assay重試或小幅改建；若目前庫存沒有正net出貨，先改善成本／品質或嘗試另一種疾病。只有整局確實沒有可行改善時才以New Game重開。
+- 每個疾病的Base由mapgen以`12 + 4×difficulty + 2×referenceCost`決定。第一次出售取得Base gross；之後同疾病Next逐次為`floor(前一次 × 19 / 20)`，最後到0。不同疾病各算自己的Sold與Next。
 - 每張需求卡以Clean stock／Tainted stock計數庫存件數；最佳可售庫存會列Next gross、production cost、每個effect `$25`的penalty算式與net。無治療庫存或沒有正net庫存時，Ship disabled並直接顯示原因。
 - Market的`Ship best`按side effects最少、production cost最低、inventory ID最早的順序，略過不賺錢的候選後出售第一件正net產品。`Ship profitable`掃描相同順序，只出售在當下demand仍為正net的項目；略過的庫存不消耗demand，也不會被自動丟棄。每件成功出售另取得1 Knowledge；畫面會顯示本次回饋。
 - 擴廠若會清除Production runtime／waste，確認視窗會先列出影響；Cancel不改任何authority。
