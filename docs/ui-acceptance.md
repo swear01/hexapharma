@@ -41,3 +41,9 @@ The native checkpoint, 61-step action log, screenshots, and two browser trace se
 The corrected frontend was captured at 1440×900, 1280×720, and 390×844. Each viewport covers fresh Research on seeds 14 and 15, empty Production, explored cures/side effects, formulas, Production with a formula reference, running Production, Market, Technology, Blueprints, import error, and confirmation. The capture completed with no page or console errors. Populated states use the earlier manually played D3 checkpoint, explicitly not a fresh D1 → D2 success.
 
 All PNGs and capture traces are in `/tmp/hexapharma-ui-acceptance/`; filenames begin with viewport width. The pre-density captures remain separately preserved in `/tmp/hexapharma-ui-acceptance-before-density/`. The corrected Research canvas matches its display pixel density, and the original world-height and Abyss-contrast regression thresholds remain intact.
+
+## PR review regressions
+
+Codex identified hidden Factory hotkeys behind mobile Formulas and map edges clamped outside the cover-cropped Research frame. Three browser regressions reproduced both bugs on the original PR head. The fixes track the mobile breakpoint for world input and use the frame’s visible logical viewport for camera pan, zoom, and focus. The regression also checks that Production continues behind mobile Formulas and desktop input returns after resizing.
+
+After ending the manual attempts, a separate developer audit confirmed that D1 is on the initial map and its cure cells agree with the displayed east sector for seeds 14 and 15. The audit did not inspect reference recipes or print hidden coordinates; it is not gameplay completion evidence.

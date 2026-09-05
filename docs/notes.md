@@ -47,3 +47,7 @@
 - **Browser harness output**：Playwright Page／Browser 物件包含 SDK internals，可能連帶印出環境資料；Node REPL 操作以 `void` 結尾，只輸出明確選取的文字、數值與檔案路徑，不 dump 整個物件。
 
 - **Stable browser verification**：Vite may reload the page when a UI module with helper exports changes, resetting unsaved game state. Finish source edits before Playwright runs or screenshot captures; use normal Save/Load to resume manual play after a development reload.
+
+- **Clipped canvas camera bounds**：CSS cover sizing changes the visible logical viewport. Camera clamping must use the clipped frame dimensions; zoom anchors must be translated from full-canvas coordinates into that centered viewport. Full-screen reference panels also suppress world input without pausing the production timer.
+
+- Headless probes should reuse repository import paths: `src/sim/mapgen` is a directory entry point, not a `mapgen.ts` file.

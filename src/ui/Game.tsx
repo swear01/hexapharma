@@ -360,6 +360,15 @@ function FormulaRibbon({ formula }: { readonly formula: DiscoveredFormula }) {
 export function Game() {
   const [building, setBuilding] = useState<Building>("research");
   const [drawer, setDrawer] = useState<Drawer>(null);
+  const [compact, setCompact] = useState(() => window.matchMedia("(max-width: 768px)").matches);
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 768px)");
+    const update = () => setCompact(media.matches);
+    media.addEventListener("change", update);
+    update();
+    return () => media.removeEventListener("change", update);
+  }, []);
+  const worldInputActive = drawer === null || (drawer === "formulas" && !compact);
   const [visited, setVisited] = useState<Record<Building, boolean>>({
     research: true,
     pilot: false,
@@ -926,7 +935,7 @@ export function Game() {
                 </button>
               </div>
               <App
-                active={building === "research" && (drawer === null || drawer === "formulas")}
+                active={building === "research" && worldInputActive}
                 level={level}
                 fog={game.fog}
                 drug={displayDrug}
@@ -960,7 +969,7 @@ export function Game() {
         <section className="view-layer" hidden={building !== "pilot"}>
           {visited.pilot && (
             <Factory
-              active={building === "pilot" && (drawer === null || drawer === "formulas")}
+              active={building === "pilot" && worldInputActive}
               mode="pilot"
               level={level}
               planningMap={knownResearchMap}
@@ -980,7 +989,7 @@ export function Game() {
         <section className="view-layer" hidden={building !== "production"}>
           {visited.production && (
             <Factory
-              active={building === "production" && (drawer === null || drawer === "formulas")}
+              active={building === "production" && worldInputActive}
               mode="production"
               level={level}
               planningMap={knownResearchMap}

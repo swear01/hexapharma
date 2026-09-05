@@ -58,7 +58,7 @@ F1 只有一張大型單層 Atlas：
 - planning／hover不改 fog；執行只畫已完成 segment。Portal jump trail斷開。
 - Cure使用綠色十字與區域邊界；SideEffect visual可在同一cell疊加，不能互相遮掉或用互斥terrain kind呈現。
 - progress、stop/failure與outcome使用短 HUD/status；outcome以一基底疾病名稱與副作用數量同時顯示已知結果，不暴露 raw effect IDs、權威座標或工廠流程提示。
-- 成功 Cure 後 Formulas 入口顯示已知配方數量；面板以疾病選擇器查全部已發現成果，列完整步驟序號／名稱／path／footprint、累積 assay cost 與 Clean／side effects。每疾病 latest 由 sim authority 提供；手動選擇跨場域保留，新成果預設最新，Save／Load 後可查所有存入成果。面板可關閉，mobile 列表可垂直 scroll。
+- 成功 Cure 後 Formulas 入口顯示已知配方數量；面板以疾病選擇器查全部已發現成果，列完整步驟序號／名稱／path／footprint、累積 assay cost 與 Clean／side effects。每疾病 latest 由 sim authority 提供；手動選擇跨場域保留，新成果預設最新，Save／Load 後可查所有存入成果。面板可關閉，mobile 列表可垂直 scroll；全寬 mobile 面板會停用被遮住的 world hotkeys，但不暂停 Production timer，放大回 desktop 後恢復 world 操作。
 
 ## 6. Production Plan
 
@@ -130,3 +130,5 @@ Market states how much the currently profitable stock can still net, and how man
 Research retains its logical camera coordinates while matching the canvas backing resolution to the displayed size and device pixel ratio. Responsive enlargement must not introduce a low-resolution blur; resizing redraws once and does not start a permanent animation loop.
 
 Research reserves at least 80% of its stage height for the world at the tested desktop size. The short mission hint overlays the world without intercepting input; compact tools and the action row keep their touch targets. Revealed Abyss interiors remain visibly darker than fog, while undiscovered terrain stays indistinguishable from hidden empty cells.
+
+Research cover canvas 的 pan／zoom／focus 依 clipped frame 實際可見的 logical viewport 限制 camera；視窗 resize 或 Formulas 開關不會把 map 邊界固定在畫面外。

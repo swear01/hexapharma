@@ -102,6 +102,31 @@ async function readProduction(page: Page): Promise<readonly (string | null)[]> {
   return Promise.all(["factory-tick", "factory-produced", "factory-waste", "cash", "research", "stock"].map((id) => page.getByTestId(id).textContent()));
 }
 
+test("full-screen formulas suppress factory input across resize without pausing Production", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await loadFixture(page, discover(createGameState(defaultGenOptions(14), 1000, 0), 0));
+  await page.getByTestId("view-production").click();
+  const box = (await page.getByTestId("production-facility-workspace").locator("canvas").boundingBox())!;
+  await page.mouse.click(box.x + 12 + Math.sqrt(3) * 21 / 2, box.y + 12 + 21);
+  await page.getByTestId("factory-play").click();
+  await page.getByTestId("view-formulas").click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("heading", { name: "Discovered formulas" }).click();
+  const direction = await page.getByTestId("brush-direction").textContent();
+  const tick = Number(await page.getByTestId("factory-tick").textContent());
+  await page.keyboard.press("2");
+  await page.keyboard.press("r");
+  await page.keyboard.press("Control+z");
+  await expect(page.getByTestId("brush-selected")).toHaveText("belt");
+  await expect(page.getByTestId("brush-direction")).toHaveText(direction!);
+  await expect(page.getByTestId("factory-undo")).toBeEnabled();
+  await expect.poll(async () => Number(await page.getByTestId("factory-tick").textContent())).toBeGreaterThan(tick);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.getByTestId("brush-belt").click();
+  await page.keyboard.press("Control+z");
+  await expect(page.getByTestId("factory-undo")).toBeDisabled();
+});
+
 for (const action of ["new", "load", "rewind", "reset", "unlock", "delete"] as const) {
   test(`running Production freezes behind ${action} confirmation and Cancel resumes`, async ({ page }) => {
     await loadFixture(page);

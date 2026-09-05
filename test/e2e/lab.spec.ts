@@ -11,6 +11,36 @@ import { defaultGenOptions, researchPlanningTrails } from "../../src/ui/Game";
 
 test.setTimeout(60_000);
 
+for (const viewport of [{ width: 1280, height: 720 }, { width: 390, height: 844 }]) {
+  test(`clipped Atlas can bring both map corners into view at ${viewport.width}px`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await page.goto("/?seed=14");
+    await expect(page.getByTestId("lab-canvas").locator("canvas")).toBeVisible();
+    const frame = page.getByTestId("lab-map-frame");
+    for (const end of [0, defaultGenOptions(14).width - 1]) {
+      const box = (await frame.boundingBox())!;
+      const near = { x: box.x + 50, y: box.y + 60 };
+      const far = { x: box.x + box.width - 50, y: box.y + box.height - 70 };
+      const from = end === 0 ? near : far;
+      const to = end === 0 ? far : near;
+      for (let drag = 0; drag < 14; drag++) {
+        await page.mouse.move(from.x, from.y);
+        await page.mouse.down();
+        await page.mouse.move(to.x, to.y, { steps: 2 });
+        await page.mouse.up();
+      }
+      const canvas = (await page.getByTestId("lab-canvas").boundingBox())!;
+      const center = focusLabCamera({ q: end, r: end });
+      const x = canvas.x + canvas.width / 2 + (center.x - Number(await frame.getAttribute("data-camera-x"))) * canvas.width / LAB_VIEWPORT.width;
+      const y = canvas.y + canvas.height / 2 + (center.y - Number(await frame.getAttribute("data-camera-y"))) * canvas.height / LAB_VIEWPORT.height;
+      expect(x).toBeGreaterThanOrEqual(box.x);
+      expect(x).toBeLessThanOrEqual(box.x + box.width);
+      expect(y).toBeGreaterThanOrEqual(box.y);
+      expect(y).toBeLessThanOrEqual(box.y + box.height);
+    }
+  });
+}
+
 async function confirmLoad(page: Page): Promise<void> {
   await openMenu(page);
   await page.getByTestId("load").click();

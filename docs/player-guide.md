@@ -162,6 +162,6 @@ Production Plan與Production使用相同editor。Details 預設收起，按下�
 
 完整手動驗收步驟見 [playtest.md](playtest.md)。
 
-Formulas stays beside the desktop world while switching rooms, so a paid Production line can be built while reading every step. On mobile, close the panel to return to the canvas. The build readout quotes the pointed placement or move through the construction authority; it does not promise a generic replacement price.
+Formulas stays beside the desktop world while switching rooms, so a paid Production line can be built while reading every step. On mobile, close the panel to return to the canvas; world hotkeys are disabled while the full-screen reference is open, but Production keeps running. The build readout quotes the pointed placement or move through the construction authority; it does not promise a generic replacement price.
 
 Market states how much the currently profitable stock can still net, and how many units that covers, with demand declining after every selected shipment. This is not a lifetime estimate for the line. Unprofitable stock suggests improving cost or quality, or another disease. Technology shows missing cash, Knowledge, and contract shipments. With no cash left, it points to Market and cheaper routes, with Menu → New Game as an optional fresh start after saving; it does not declare the run irrecoverable.

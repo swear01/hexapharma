@@ -173,6 +173,7 @@ export function App({
 }: AppProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<LabRenderer | null>(null);
+  const visibleViewportRef = useRef<{ width: number; height: number }>(LAB_VIEWPORT);
   const [rendererError, setRendererError] = useState<string | null>(null);
   const activeMap = 0;
   const { mm, start } = level;
@@ -227,6 +228,26 @@ export function App({
   }, [mm, start]);
 
   useEffect(() => {
+    const mount = mountRef.current;
+    const frame = mount?.parentElement;
+    if (mount === null || frame === undefined || frame === null) return;
+    const observer = new ResizeObserver(() => {
+      const canvas = mount.getBoundingClientRect();
+      const visible = frame.getBoundingClientRect();
+      if (canvas.width === 0 || canvas.height === 0 || visible.width === 0 || visible.height === 0) return;
+      const viewport = {
+        width: LAB_VIEWPORT.width * Math.min(1, visible.width / canvas.width),
+        height: LAB_VIEWPORT.height * Math.min(1, visible.height / canvas.height),
+      };
+      visibleViewportRef.current = viewport;
+      setCameras((current) => current.map((camera, index) => clampLabCamera(camera, viewport, mm.maps[index]!)));
+    });
+    observer.observe(mount);
+    observer.observe(frame);
+    return () => observer.disconnect();
+  }, [mm]);
+
+  useEffect(() => {
     let disposed = false;
     let renderer: LabRenderer | null = null;
     if (fogError !== null) {
@@ -271,7 +292,7 @@ export function App({
     if (position === undefined || map === undefined) return;
     setCameras((current) => {
       const next = [...current];
-      next[activeMap] = clampLabCamera(focusLabCamera(position), LAB_VIEWPORT, map);
+      next[activeMap] = clampLabCamera(focusLabCamera(position), visibleViewportRef.current, map);
       return next;
     });
   }, [activeMap, focusTarget.position, mm.maps]);
@@ -287,7 +308,7 @@ export function App({
       const next = [...current];
       next[target.mapIndex] = clampLabCamera(
         focusLabCamera(target.pos),
-        LAB_VIEWPORT,
+        visibleViewportRef.current,
         map,
       );
       return next;
@@ -349,7 +370,7 @@ export function App({
     };
     setCameras((current) => {
       const next = [...current];
-      next[activeMap] = panLabCamera(current[activeMap] ?? camera, dx, dy, LAB_VIEWPORT, map);
+      next[activeMap] = panLabCamera(current[activeMap] ?? camera, dx, dy, visibleViewportRef.current, map);
       return next;
     });
   }, [activeMap, camera, mm.maps, previewDrug?.pos]);
@@ -383,14 +404,18 @@ export function App({
     event.preventDefault();
     const rect = mountRef.current?.getBoundingClientRect() ?? event.currentTarget.getBoundingClientRect();
     const point = labPointerToViewport(event.clientX, event.clientY, rect);
+    const viewport = visibleViewportRef.current;
     setCameras((current) => {
       const next = [...current];
       const previous = current[activeMap] ?? camera;
       next[activeMap] = zoomLabCameraAt(
         previous,
         previous.zoom * (event.deltaY < 0 ? 1.12 : 1 / 1.12),
-        point,
-        LAB_VIEWPORT,
+        {
+          x: point.x - (LAB_VIEWPORT.width - viewport.width) / 2,
+          y: point.y - (LAB_VIEWPORT.height - viewport.height) / 2,
+        },
+        viewport,
         map,
       );
       return next;
