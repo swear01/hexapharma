@@ -67,7 +67,7 @@ export function patentContractRequirement(
   if (contract === undefined) return `${diseaseName(disease)} contract unavailable`;
   return contract.completed
     ? null
-    : `Complete ${diseaseName(disease)} contract (${contract.sold}/${contract.quota})`;
+    : `Ship ${Math.max(0, contract.quota - contract.sold)} more for ${diseaseName(disease)} contract (${contract.sold}/${contract.quota})`;
 }
 
 export function patentEffectSummary(effects: ReturnType<typeof activeEffects>): readonly string[] {
@@ -132,6 +132,7 @@ export function Patents({
             {effectSummary.map((summary) => <span key={summary}>{summary}</span>)}
           </div>
         )}
+      {economy.cash === 0 && <p className="recovery-guidance">No cash remains. Check Market for profitable stock and consider a cheaper route. If you choose a fresh start, use Menu → New Game; save first to keep this run.</p>}
       </header>
 
       <div className="patent-grid" data-testid="patent-grid">
@@ -156,6 +157,11 @@ export function Patents({
                 )}
                 {contractRequirement !== null && (
                   <div className="patent-requirement">{contractRequirement}</div>
+                )}
+                {!unlocked && (node.cost > economy.cash || node.researchCost > economy.research) && (
+                  <p data-testid={`patent-shortfall-${node.id}`}>
+                    Need ${Math.max(0, node.cost - economy.cash)} cash · {Math.max(0, node.researchCost - economy.research)} Knowledge
+                  </p>
                 )}
                 <div className="patent-cost">{patentCostLabel(node)}</div>
                 <button

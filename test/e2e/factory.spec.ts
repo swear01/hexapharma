@@ -1,3 +1,4 @@
+import { openMenu } from "./menu";
 import { expect, test } from "@playwright/test";
 import { applyGameIntent, createGameState, DEFAULT_STARTING_CASH } from "../../src/sim/game";
 import { quoteProductionBuild } from "../../src/sim/construction";
@@ -145,6 +146,7 @@ async function loadLegacySave(
   await page.goto("/");
   await page.evaluate((save) => localStorage.setItem("hexapharma.save.slot.0", save), blob);
   await page.reload();
+  await openMenu(page);
   await page.getByTestId("load").click();
   const dialog = page.getByRole("alertdialog", { name: "Load saved game?" });
   await expect(dialog).toBeVisible();
@@ -229,7 +231,7 @@ test("the shell exposes exactly three facility pages and drawer utilities", asyn
 
 test("Production runs continuous time, produces sink outcomes, and resets", async ({ page }) => {
   await loadProduction(page);
-  await expect(page.getByRole("heading", { name: "Production" })).toBeVisible();
+  await expect(page.getByTestId("production-facility-workspace")).toBeVisible();
   await expect(page.getByTestId("production-facility-workspace").locator("canvas")).toBeVisible();
   const tick = page.getByTestId("factory-tick");
   await expect(tick).toHaveText("0");
@@ -490,6 +492,7 @@ test("touch paints a Belt drag and rotates the tapped installed machine", async 
   const serialized = machineGallerySave();
   await page.evaluate((save) => localStorage.setItem("hexapharma.save.slot.0", save), serialized);
   await page.reload();
+  await openMenu(page);
   await page.getByTestId("load").click();
   await page.getByRole("alertdialog", { name: "Load saved game?" })
     .getByRole("button", { name: "Load saved game" })
@@ -516,6 +519,7 @@ test("touch paints a Belt drag and rotates the tapped installed machine", async 
   await expect(page.getByTestId("pilot-facility-workspace").getByTestId("factory-hover-kind"))
     .toHaveText(machineName(machine.def.typeId));
   await page.getByTestId("pilot-facility-workspace").getByTestId("brush-rotate").click();
+  await openMenu(page);
   await page.getByTestId("save").click();
   const raw = await page.evaluate((key) => localStorage.getItem(key), checkpointKey);
   if (raw === null) throw new Error("rotated Pilot checkpoint was not saved");
@@ -533,6 +537,7 @@ test("Factory copy and paste preserve source, splitter, and merger payloads", as
   const workspace = page.getByTestId("pilot-facility-workspace");
   const frame = workspace.getByTestId("factory-canvas");
 
+  await workspace.getByTestId("factory-diagnostics").click();
   for (const payload of clipboardPayloads) {
     const from = await factoryCellPoint(frame, source, payload.cell);
     const to = await factoryCellPoint(frame, source, payload.destination);
@@ -541,6 +546,7 @@ test("Factory copy and paste preserve source, splitter, and merger payloads", as
     await page.mouse.move(to.x, to.y);
     await workspace.getByTestId("factory-paste").click();
   }
+  await openMenu(page);
   await page.getByTestId("save").click();
 
   const raw = await page.evaluate((key) => localStorage.getItem(key), checkpointKey);
@@ -584,11 +590,12 @@ test("Pilot builds without a Research contract and Production is an exact copy",
   await loadLegacySave(page, pilotSave());
   await expect(page.getByTestId("research-program-count")).toHaveText("0 tested");
   await page.getByTestId("view-pilot").click();
-  await expect(page.getByRole("heading", { name: "Production Plan" })).toBeVisible();
+  await expect(page.getByTestId("pilot-facility-workspace")).toBeVisible();
   await expect(page.getByTestId("factory-play")).toHaveCount(0);
   await expect(page.getByTestId("pilot-command")).toBeEnabled();
   await page.getByTestId("pilot-command").click();
-  await expect(page.getByRole("heading", { name: "Production" })).toBeVisible();
+  await expect(page.getByTestId("production-facility-workspace")).toBeVisible();
+  await openMenu(page);
   await page.getByTestId("save").click();
 
   const raw = await page.evaluate((key) => localStorage.getItem(key), checkpointKey);
@@ -603,7 +610,7 @@ test("a fresh game opens its empty Production floor without using Pilot", async 
   await page.goto("/");
   await page.getByTestId("view-production").click();
 
-  await expect(page.getByRole("heading", { name: "Production" })).toBeVisible();
+  await expect(page.getByTestId("production-facility-workspace")).toBeVisible();
   await expect(page.getByTestId("production-facility-workspace").locator("canvas")).toBeVisible();
   await expect(page.getByTestId("factory-tick")).toHaveText("0");
 });
@@ -648,7 +655,7 @@ test("physical footprint rotation leaves the selected chemical path unchanged", 
   await page.getByTestId("view-pilot").click();
   const pilot = page.getByTestId("pilot-facility-workspace");
   await pilot.getByTestId("brush-machine-push").click();
-  const iconPath = pilot.getByTestId("brush-machine-push").locator("[data-icon-shape='path']");
+  const iconPath = page.getByTestId("research-machine-push").locator("[data-icon-shape='path']");
   const before = await iconPath.getAttribute("points");
   await page.keyboard.press("r");
   await expect(pilot.getByTestId("brush-direction")).toHaveText("Footprint 60°");
@@ -673,18 +680,26 @@ test("compact Pilot controls remain reachable above the construction hotbar", as
   await expect(page.getByTestId("pilot-facility-workspace").getByTestId("toolbelt-more"))
     .toBeVisible();
   const inspector = page.getByTestId("pilot-facility-workspace").getByTestId("factory-inspector");
+  await expect(inspector).toBeHidden();
+  await page.getByTestId("pilot-facility-workspace").getByTestId("factory-diagnostics").click();
+  await expect(inspector).toBeVisible();
   expect(await inspector.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+  await inspector.getByRole("button", { name: "Close factory details" }).click();
   await expect(page.getByTestId("pilot-facility-workspace").getByTestId("inspector-more"))
-    .toBeVisible();
+    .toBeHidden();
   await expectPilotMachineAboveToolbelt(page);
 
   await page.setViewportSize({ width: 651, height: 844 });
   expect(await toolbelt.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
+  await expect(inspector).toBeHidden();
+  await page.getByTestId("pilot-facility-workspace").getByTestId("factory-diagnostics").click();
+  await expect(inspector).toBeVisible();
   expect(await inspector.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+  await inspector.getByRole("button", { name: "Close factory details" }).click();
   await expect(page.getByTestId("pilot-facility-workspace").getByTestId("toolbelt-more"))
     .toBeVisible();
   await expect(page.getByTestId("pilot-facility-workspace").getByTestId("inspector-more"))
-    .toBeVisible();
+    .toBeHidden();
 });
 
 test("compact Pilot keeps scroll position after a local edit acknowledgement", async ({ page }) => {
@@ -720,8 +735,13 @@ test("every unlocked machine family has its own path icon and factory silhouette
   await page.getByTestId("view-pilot").click();
   const pilot = page.getByTestId("pilot-facility-workspace");
   await expect(pilot.getByTestId("factory-canvas").locator("canvas")).toBeVisible({ timeout: 15_000 });
-  const points = await pilot.locator("[data-machine-icon] [data-icon-shape='path']")
-    .evaluateAll((icons) => icons.map((icon) => icon.getAttribute("points")));
-  expect(new Set(points).size).toBe(DEFAULT_CATALOG.length);
+  const footprints = await pilot.locator("[data-machine-icon] [data-icon-shape='footprint']")
+    .evaluateAll((icons) => icons.map((icon) => icon.innerHTML));
+  expect(new Set(footprints).size).toBe(DEFAULT_CATALOG.length);
+  await pilot.getByTestId("factory-diagnostics").click();
   await expect(pilot.getByText("Machines").locator("..")).toContainText(String(DEFAULT_CATALOG.length));
+  await page.getByTestId("view-research").click();
+  const paths = await page.locator("[data-testid='research-path-hotbar'] [data-icon-shape='path']")
+    .evaluateAll((icons) => icons.map((icon) => icon.getAttribute("points")));
+  expect(new Set(paths).size).toBe(DEFAULT_CATALOG.length);
 });

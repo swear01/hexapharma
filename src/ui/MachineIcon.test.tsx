@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { DEFAULT_CATALOG } from "../sim/phase0_interfaces";
+import { DEFAULT_CATALOG, DEFAULT_SHAPES } from "../sim/phase0_interfaces";
 import { MachineIcon } from "./MachineIcon";
 
 function render(typeId: string, title?: string): string {
@@ -35,6 +35,17 @@ describe("MachineIcon", () => {
     expect(markup).not.toContain('opacity="0.25"');
     expect(markup).not.toContain("rotate(");
     expect(markup).not.toContain("scale(-1");
+  });
+
+  it("uses the canonical physical cells and ports for Factory tools", () => {
+    for (const entry of DEFAULT_CATALOG) {
+      const shape = DEFAULT_SHAPES[entry.typeId]!;
+      const markup = renderToStaticMarkup(<MachineIcon typeId={entry.typeId} path={entry.path} footprint />);
+      expect(markup.match(/<polygon/g)).toHaveLength(shape.cells.length);
+      expect(markup.match(/<rect/g)).toHaveLength(shape.inPorts.length);
+      expect(markup.match(/<circle/g)).toHaveLength(shape.outPorts.length);
+      expect(markup).not.toContain("NaN");
+    }
   });
 
   it("uses accessible names only when titled", () => {

@@ -1,8 +1,10 @@
+import { openMenu } from "./menu";
 import { expect, test } from "@playwright/test";
 
 test("a player can start a different seeded run without deleting saved checkpoints", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByTestId("seed")).toHaveText("14");
+  await openMenu(page);
   await page.getByTestId("save").click();
   await page.getByTestId("view-blueprints").click();
   await page.getByTestId("blueprint-name").fill("Cross-seed floor");
@@ -11,6 +13,7 @@ test("a player can start a different seeded run without deleting saved checkpoin
   await page.keyboard.press("Escape");
 
   const trigger = page.getByTestId("new-game");
+  await openMenu(page);
   await trigger.click();
   const dialog = page.getByRole("alertdialog", { name: "Start new game?" });
   await expect(dialog).toBeVisible();
@@ -19,6 +22,7 @@ test("a player can start a different seeded run without deleting saved checkpoin
   await expect(page.getByTestId("seed")).toHaveText("14");
   await expect(trigger).toBeFocused();
 
+  await openMenu(page);
   await trigger.click();
   await dialog.getByLabel("Seed").fill("16");
   await dialog.getByRole("button", { name: "Start" }).click();
@@ -29,6 +33,7 @@ test("a player can start a different seeded run without deleting saved checkpoin
   await expect(page.getByTestId("blueprint-library")).toContainText("Cross-seed floor");
   await page.keyboard.press("Escape");
 
+  await openMenu(page);
   await page.getByTestId("load").click();
   await page.getByRole("alertdialog", { name: "Load saved game?" })
     .getByRole("button", { name: "Load" })
@@ -38,6 +43,7 @@ test("a player can start a different seeded run without deleting saved checkpoin
 
 test("new-game validation and confirmation freeze the background", async ({ page }) => {
   await page.goto("/");
+  await openMenu(page);
   await page.getByTestId("new-game").click();
   const dialog = page.getByRole("alertdialog", { name: "Start new game?" });
   const seed = dialog.getByLabel("Seed");

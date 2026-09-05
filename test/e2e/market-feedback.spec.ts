@@ -1,3 +1,4 @@
+import { openMenu } from "./menu";
 import { expect, test } from "@playwright/test";
 import { quoteProductionBuild } from "../../src/sim/construction";
 import {
@@ -47,6 +48,7 @@ async function loadMarket(
     localStorage.setItem("hexapharma.save.slot.0", save);
   }, preparedMarketSave(priorSales));
   await page.reload();
+  await openMenu(page);
   await page.getByTestId("load").click();
   await page.getByRole("alertdialog", { name: "Load saved game?" })
     .getByRole("button", { name: "Load saved game" })

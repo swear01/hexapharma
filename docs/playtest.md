@@ -18,13 +18,13 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 
 ## 2. Shell / simple UI
 
-1. 以1440×900、1280×720、390×844各開一次。另在430、560與651px寬驗HUD breakpoint；以6位Cash與6位Knowledge壓力測試品牌、resource chips與save controls不得裁切、跨欄或重疊，`+ New`必須不靠hover就看得懂。中央world應是主體；HUD、rail、hotbar、inspector都可達。
+1. 以1440×900、1280×720、390×844各開一次。另在430、560與651px寬驗HUD breakpoint；以6位Cash與6位Knowledge壓力測試頂部導航與 resources 不裁切或重疊；Menu 的 New／Save／Load／Rewind 使用文字。中央 world 應是主體；Details 預設關閉，展開／關閉可達。
 2. 確認F1/F2/F3是Research/Production Plan/Production，Plan送廠按鈕使用`Commission`；M/T/B drawers可toggle，Escape與×可關。玩家UI不得再顯示Pilot Plant。
-3. 畫面不得出現設計註解、形容詞式副標、常駐教學段落或流程解釋；詳細操作只在玩家指南。
+3. 畫面不得出現設計註解、形容詞式副標、常駐教學段落或流程解釋；詳細操作放按需 Help 與玩家指南。
 4. hidden page不吃keys/pointers；切回已造訪頁保留camera與tool。
 5. 觸發intent/storage/renderer error時必須可見，且不以空白world冒充成功。
-6. 在Reset、Delete、Unlock、Load、Rewind或New Game確認開啟時按`.`、`R`、F1–F3、M／T／B；modal與背景authority都必須保持不變。
-7. 用HUD New Game從seed 14建立seed 15；確認Cash／Knowledge回預設、原save仍可Load、Blueprint Library不變。超出unsigned 32-bit的seed必須明示拒絕。
+6. 在Reset、Delete、Unlock、Load、Rewind或New Game確認開啟時按`.`、`R`、F1–F3、M／T／B；先 Play 再開 modal，跨至少 700ms 確認 tick、inventory、cash、waste 不變；Cancel 恢復先前播放，原本 paused 不會啟動。確認 Load／New／Rewind／Reset／擴廠後舊 timer 停止。
+7. 用Menu → New從seed 14建立seed 15；確認Cash／Knowledge回預設、原save仍可Load、Blueprint Library不變。超出unsigned 32-bit的seed必須明示拒絕。
 
 ## 3. Mandatory fresh-save core loop
 
@@ -32,7 +32,7 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 
 1. 清除本origin的Save slots與Blueprint Library後建立正常新局；確認Cash=`$1000`、Knowledge=`0`、單一pointy-top axial Atlas有4種疾病，起點位於世界中央且只揭露hex distance radius 2的19-cell disk。
 2. 不查看source/test/reference，僅靠broad assay sector、world feedback與可用initial machines人工嘗試Research。每次只commit一個完整candidate stamp；記錄blank click是否誤提交、每步cash變化、每次揭露後是否知道如何作下一個決定、嘗試次數與剩餘cash。
-3. 找到第一個Cure後，確認結果同時報告已知Side effects，且formula ribbon自動顯示實際ordered steps、累積assay cost與副作用；若命中污染Cure，可開新session繼續尋找同區乾淨endpoint，但不能以hidden reference代替探索。
+3. 找到第一個Cure後，確認結果同時報告已知Side effects，手動開啟Formulas 面板，確認顯示實際ordered steps、累積assay cost與副作用；若命中污染Cure，可開新session繼續尋找同區乾淨endpoint，但不能以hidden reference代替探索。
 4. 自行選擇直接Production或optional Production Plan，人工放source、完整machine sequence、belt與sink；不得呼叫layout compiler。若使用Plan，按`Commission $N`送入正式產線。確認Research支出後仍付得起有效Production build。
 5. Play直到產生實體cure，在Market以`Ship best`出售第一件仍有正net的產品；確認stock減1、cash增加、該疾病Sold／Next更新。
 6. 對同一疾病完成3次accepted shipping，確認contract chip依序為1/3、2/3、3/3，對應machine patent gate解除；繼續觀察下一種疾病是否形成新目標，而不是同一路線跨seed／疾病直接通殺。
@@ -44,13 +44,13 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 ## 4. Stepwise Research／formula
 
 1. 按F1。只有一張大型pointy-top Atlas；正常新局同圖4種疾病，開局camera聚焦generator start，只揭露中心radius-two 19-cell disk，正常viewport只看到整圖一小部分。以六個相鄰cell核對E／SE／SW／W／NW／NE picking與polygon edge一致。
-2. mission readout顯示Active assay、疾病與local／六方向broad sector；fixtures須涵蓋east、south-east、south-west、west、north-west、north-east與local，不得出現target座標或距離。
+2. mission readout桌面顯示Assay、疾病與Look local／六方向broad sector；≤768px隱藏Assay，但疾病與Look仍可見；accessible name為Active assay；fixtures須涵蓋east、south-east、south-west、west、north-west、north-east與local，不得出現target座標或距離。
 3. 逐一選Research machines。hotbar icon與candidate ghost必須顯示不同完整奇形path，且不存在path長度、縮短、延長或只走一部分的控制。
 4. 先點candidate endpoint以外的blank map，program／cash／fog必須不變且cursor是grab；移到endpoint必須變pointer並提示短動作。單擊endpointcommit第一個stamp，不需雙擊。
 5. 第一次commit後確認session已開始、只扣該machine catalog cost、program恰多一個已執行step、actual trail立即揭霧且outcome立即可見。不得等待另一個Dispense，也不得先建立多步pending route。
 6. 以no-cure step繼續：shot保留，第二個candidate從第一步actual drug state接續；commit後只再扣第二台cost並更新fog／outcome。session readout不能提供重排或刪除已執行step的控制。
 7. 按Abort：program／shot／outcome清除，先前cash與fog保留。以Abyss再測Failure自動結束；任何Cure也自動結束。
-8. Outcome同時列Cure／No cure與已知Side effects／No side effects。Cure後formula ribbon顯示Disease、ordered icons、累積cost、Clean或side-effect count；同疾病再次Cure時覆寫為latest且不出現兩份。
+8. Outcome同時列Cure／No cure與已知Side effects／No side effects。Cure後手動開啟Formulas 面板，確認顯示Disease、ordered icons、累積cost、Clean或side-effect count；同疾病再次Cure時覆寫為latest且不出現兩份。
 9. Blueprint drawer不得提供`Save Research program`或`Load in Research`。匯入現行v4 `research-program`後只可Download／Delete，不能直接改active program、cash、fog、outcome或formula。
 
 ## 5. Terrain / fog / portal / effects
@@ -77,7 +77,7 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 ## 7. Production Plan
 
 1. 新局直接按F2；應有可編輯空場地，不要求Research狀態。
-2. 放source/belt/machine/splitter/merger/sink，測rotate、drag、pipette、copy/cut/paste、undo/redo。Touch單指drag要能連續畫Belt，tap machine後畫面Rotate要旋轉該machine，Erase要刪整台，兩指drag仍可pan。compact畫面必須看得出hotbar可向右滾動、inspector尚可向下滾動；Research主要commit／Abort／Next／Cure sites的觸控高度至少44px，outcome與formula ribbon完整可讀。非Erase tile drag跨過machine不得拆機；copy/paste要保留Source period與split/merge branch payload。
+2. 放source/belt/machine/splitter/merger/sink，測rotate、drag、pipette、copy/cut/paste、undo/redo。Touch單指drag要能連續畫Belt，tap machine後畫面Rotate要旋轉該machine，Erase要刪整台，兩指drag仍可pan。compact畫面必須看得出hotbar可向右滾動、inspector尚可向下滾動；Research主要commit／Abort／Next／Cure sites的觸控高度至少44px，outcome與Formulas 面板完整可讀。非Erase tile drag跨過machine不得拆機；copy/paste要保留Source period與split/merge branch payload。
 3. 確認edit不扣cash、沒有clock、inventory或waste；diagnostics可更新但不擋layout。使用會命中未揭露Cure／SideEffect／Portal的layout時，Sample不得顯示隱藏結果；Research揭露後才可顯示已知結果。
 4. 切換Research/Production來回，Plan layout保持owned且不alias其他場域。
 5. 建一個no-cure或deadlocked但geometry合法的layout，`Commission $N`仍可按；只由現金與layout legality決定成功。
@@ -143,8 +143,8 @@ npm run check
 完成前另外確認：
 
 - active docs/source/tests residue scan沒有batch Research route、部分Research path、blank-click append、非Wall互動物穿霧可見、protected universal corridor、預設單疾病、互斥Cure/SideEffect、$200 bootstrap、永久price floor、Production需Plan、Pilot Plant玩家文案、generated lab bitmap／manifest、Blueprint舊schema或Save舊schema的active truth；
-- 以Research、Production Plan、Production各截一張desktop與compact screenshot。確認嚴格俯視2D Orbital Wet-Lab：black-blue void、graphite deck/panels、bone-white/steel structure，cyan/amber/lime/magenta/red只對應flow/selection/cure/side-effect/failure；沒有glass blur、過量glow/gradient/rounding、3D透視或generated bitmap接縫。
-- 確認Atlas與Factory都是pointy-top axial hex；以`{q,r}`、E／SE／SW／W／NW／NE、六個60° rotations與`r * width + q` fixtures交叉核對hit-test、routing、fog edge及render，並重建radius-two fog／stepwise reveal-decide／assay sector／formula ribbon／overlap effects、Production Plan、direct Production、contracts、finite-demand Market、connected belts與compact screenshot baselines；
+- 極簡、偏 pixel 的俯視 2D：中性炭灰／冷灰底、近白文字與機身；青藍僅標流動、白／淡藍標選取與 candidate、綠標 cure、紫紅標副作用、紅標失敗。平塗硬邊，無黃光、青色 halo、裝飾圈環或全表面亮邊；Pixi vector runtime 保留 canonical true hex。
+- 確認Atlas與Factory都是pointy-top axial hex；以`{q,r}`、E／SE／SW／W／NW／NE、六個60° rotations與`r * width + q` fixtures交叉核對hit-test、routing、fog edge及render，並重建radius-two fog／stepwise reveal-decide／assay sector／Formulas 面板／overlap effects、Production Plan、direct Production、contracts、finite-demand Market、connected belts與compact screenshot baselines；
 - 以53346從遠端真人先完成第3節無fixture fresh loop，再走其他correctness smoke；保存human metrics並修完至少一輪UX問題。
 
 Bug回報附：URL、seed／generation options、tick或path segment、input trace/program/layout、預期/實際、第一個違反的不變式、screenshot與console error。

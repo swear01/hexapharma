@@ -81,7 +81,7 @@
 
 - GameState 同時 own `research`、內部 `pilot`、`production`，三者不得 alias layout 或以隱藏 token 耦合；玩家文案必須稱 Production Plan／Commission。
 - 正常UI new game origin的starting cash恰為1000、research為0；fresh loop不得需要外部資金／Knowledge或hidden reference才能到first sale。
-- HUD New Game 只可用unsigned 32-bit seed建立標準fresh GameState；不得刪除save checkpoints或Blueprint Library。確認modal開啟期間，背景hotkeys不得產生GameIntent、Factory edit或navigation authority change。
+- Menu → New Game 只可用unsigned 32-bit seed建立標準fresh GameState；不得刪除save checkpoints或Blueprint Library。確認modal開啟期間，背景hotkeys不得產生GameIntent、Factory edit或navigation authority change。
 - mapgen每疾病base price恰為`12 + 4 × difficulty + 2 × referenceCost`，使用safe integer arithmetic。
 - 每疾病demand獨立：第0件gross=base；下一件反覆`floor(previous × 19 / 20)`直到0，無正值floor。
 - Market 每個 inventory product 只可賣一次；收入由實際 cure、side effects、production cost 與 sold counters 決定。
@@ -118,4 +118,4 @@
 - Factory footprint／ports 的 `footRot` 只允許 0–5 個順時針 60° turns，並以 `(side + footRot) % 6` 旋轉 port；不得把 chemical `PathStamp` 一起旋轉。
 - Atlas PathStamp geometry 與 FactoryLayout geometry 仍使用獨立 payload／validator；共用 axial orientation 不代表能互相載入或 alias authority。
 - world renderer 必須是嚴格俯視 2D vector schematic；不得依賴 generated lab bitmap、runtime manifest或3D透視。
-- black-blue／graphite／bone-white／steel構成中性世界；cyan／amber／lime／magenta／red只分別表達active flow／selection-candidate／cure／side effect／failure。裝飾不得挪用語意色造成假狀態。
+- 中性炭灰／冷灰與近白構成世界；青藍／白或淡藍／綠／紫紅／紅只分別表達active flow／selection-candidate／cure／side effect／failure。裝飾不得挪用語意色造成假狀態。

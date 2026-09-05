@@ -25,7 +25,7 @@ Market / Technology / Blueprints
 - 每種疾病都有出貨合約，quota 固定為 3；依序完成 Disease 1／2／3 的合約，才可分別取得 Skew／Dilute／Settle 的 machine patent。
 - Save v10 僅保證同 content build 內正確；舊開發版存檔直接拒絕，不做 migration。
 - 正常新局有 $1000，必須能從人工 Research 經付費建廠走到第一次出售。每種疾病的需求獨立並逐次按 `floor(19/20)` 衰減至 0；Market 優先出售乾淨、低成本且仍有利潤的實體產品。
-- Atlas 與 Factory 都是 pointy-top axial true hex：離散 cell 使用 `{q,r}`，六方向依序為 E／SE／SW／W／NW／NE，Factory footprint／ports 有六個 60° rotations。兩個場域仍保有獨立 payload 與 validator；dense arrays 一律以 `r * width + q` 索引。本版視覺是嚴格俯視的 **Orbital Wet-Lab Schematic**：black-blue void、graphite deck、bone-white／steel structure；cyan、amber、lime、magenta、red 只表示 flow、selection、cure、side effect、failure。世界圖形由 Pixi vector runtime 繪製，沒有生成 bitmap／runtime manifest contract。
+- Atlas 與 Factory 都是 pointy-top axial true hex：離散 cell 使用 `{q,r}`，六方向依序為 E／SE／SW／W／NW／NE，Factory footprint／ports 有六個 60° rotations。兩個場域仍保有獨立 payload 與 validator；dense arrays 一律以 `r * width + q` 索引。本版視覺為極簡、偏 pixel 的俯視 2D：中性炭灰／冷灰底、近白文字與機身；青藍僅標流動、白／淡藍標選取與 candidate、綠標 cure、紫紅標副作用、紅標失敗。平塗硬邊，無黃光、青色 halo、裝飾圈環或全表面亮邊。世界由 Pixi vector runtime 繪製，無 bitmap／manifest contract。
 
 詳細操作見 [玩家指南](docs/player-guide.md)，設計與正確性規格見 [docs/design.md](docs/design.md) 與 [docs/invariants.md](docs/invariants.md)。
 

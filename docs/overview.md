@@ -60,6 +60,6 @@ HexaPharma 是「程序化藥效 Atlas + 實體工廠」的確定性單人遊戲
 - Research path／mapgen 與 Production sim 都確定性；Production 熱 tick 使用固定容量資料結構。
 - UI／renderer 只讀 sim 並送 intent，不能持有第二份 terrain、path、layout 或 transport authority。
 - Atlas 與 Factory 使用同一 pointy-top axial orientation、`{q,r}` direction order與 `r * width + q` dense indexing；Research PathStamp 與 FactoryLayout 的 payload／validator 仍分離。
-- Orbital Wet-Lab Schematic 使用 black-blue void、graphite field、bone-white／steel structure，以及嚴格限用於 flow／selection／cure／side-effect／failure 的 cyan／amber／lime／magenta／red。Pixi vector runtime 取代 generated bitmap／manifest contract，全程保持嚴格俯視 2D。
+- 極簡、偏 pixel 的俯視 2D：中性炭灰／冷灰底、近白文字與機身；青藍僅標流動、白／淡藍標選取與 candidate、綠標 cure、紫紅標副作用、紅標失敗。平塗硬邊，無黃光、青色 halo、裝飾圈環或全表面亮邊；Pixi vector runtime 保留 canonical true hex。
 
 Canonical 規格見 [design.md](design.md)，詳細操作見 [player-guide.md](player-guide.md)，互動契約見 [ui-interaction.md](ui-interaction.md)。

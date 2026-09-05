@@ -1,41 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { LAB_SCHEMATIC_STYLE, labFeatureStyle, labPreviewTargetBadge } from "./labRenderer";
+import { LAB_SCHEMATIC_STYLE } from "./labRenderer";
 
-describe("Orbital wet-lab schematic", () => {
-  it("uses one restrained semantic palette instead of asset-local colors", () => {
-    expect(LAB_SCHEMATIC_STYLE).toEqual({
-      background: 0x050a12,
-      deck: 0x18242b,
-      structure: 0xe7e1d2,
-      flow: 0x48d7e5,
-      candidate: 0xf3b45d,
-      cure: 0xb8e06c,
-      sideEffect: 0xde5fb1,
-      failure: 0xef6862,
-      fogGrid: 0x1f313d,
-      wallDetail: 0x637078,
-      abyssDetail: 0x24343d,
-      sideEffectOutline: 0x51223f,
-    });
-  });
-});
-
-describe("Lab feature emphasis", () => {
-  it("requests a target ring only for a revealed Cure", () => {
-    const cure = labFeatureStyle("cure");
-    const sideEffect = labFeatureStyle("sideEffect");
-
-    expect(cure).toEqual({ targetRing: true });
-    expect(sideEffect).toEqual({ targetRing: false });
-  });
-
-  it("keeps an add-path badge legible on the preview endpoint", () => {
-    expect(labPreviewTargetBadge(40)).toEqual({
-      dx: 12,
-      dy: -12,
-      radius: 5.2,
-      strokeWidth: 2,
-    });
-    expect(labPreviewTargetBadge(20).radius).toBe(4);
+describe("flat atlas palette", () => {
+  it("separates candidate, active flow, and failure", () => {
+    expect(new Set([LAB_SCHEMATIC_STYLE.candidate, LAB_SCHEMATIC_STYLE.flow, LAB_SCHEMATIC_STYLE.failure]).size).toBe(3);
+    const channels = [16, 8, 0].map((shift) => (LAB_SCHEMATIC_STYLE.background >> shift) & 255);
+    expect(Math.max(...channels) - Math.min(...channels)).toBeLessThan(16);
   });
 });

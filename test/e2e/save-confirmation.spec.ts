@@ -1,3 +1,4 @@
+import { openMenu } from "./menu";
 import { expect, test } from "@playwright/test";
 
 test("Ctrl+S saves the game while text entry keeps its native keys", async ({ page }) => {
@@ -18,6 +19,7 @@ test("Ctrl+S saves the game while text entry keeps its native keys", async ({ pa
 
 test("Load confirms before replacing a different current game and remains cancelable", async ({ page }) => {
   await page.goto("/?cash=9999&research=9999");
+  await openMenu(page);
   await page.getByTestId("save").click();
   await page.getByTestId("view-technology").click();
   await page.getByTestId("patent-unlock-reveal-aid").click();
@@ -31,6 +33,7 @@ test("Load confirms before replacing a different current game and remains cancel
 
   const checkpointBefore = await page.evaluate(() =>
     localStorage.getItem("hexapharma.save.v10.checkpoint.0"));
+  await openMenu(page);
   await page.getByTestId("load").click();
   const dialog = page.getByRole("alertdialog", { name: "Load saved game?" });
   await expect(dialog).toBeVisible();
@@ -63,6 +66,7 @@ test("Load confirms before replacing a different current game and remains cancel
   expect(await page.evaluate(() => localStorage.getItem("hexapharma.save.v10.checkpoint.0")))
     .toBe(checkpointBefore);
 
+  await openMenu(page);
   await page.getByTestId("load").click();
   await dialog.getByRole("button", { name: "Cancel" }).click();
   await expect(dialog).toHaveCount(0);
@@ -70,26 +74,31 @@ test("Load confirms before replacing a different current game and remains cancel
   expect(await page.evaluate(() => localStorage.getItem("hexapharma.save.v10.checkpoint.0")))
     .toBe(checkpointBefore);
 
+  await openMenu(page);
   await page.getByTestId("load").click();
   await dialog.getByRole("button", { name: "Load saved game" }).click();
   await expect(dialog).toHaveCount(0);
   await expect(page.getByTestId("cash")).toHaveText("9999");
 
+  await openMenu(page);
   await page.getByTestId("load").click();
   await expect(dialog).toHaveCount(0);
 });
 
 test("Rewind confirms before dropping the latest checkpoint and restoring the older game", async ({ page }) => {
   await page.goto("/?cash=9999&research=9999");
+  await openMenu(page);
   await page.getByTestId("save").click();
   await page.getByTestId("view-technology").click();
   await page.getByTestId("patent-unlock-reveal-aid").click();
   await expect(page.getByTestId("cash")).toHaveText("9919");
+  await openMenu(page);
   await page.getByTestId("save").click();
   await expect(page.getByTestId("rewind")).toBeEnabled();
 
   const checkpointBefore = await page.evaluate(() =>
     localStorage.getItem("hexapharma.save.v10.checkpoint.0"));
+  await openMenu(page);
   await page.getByTestId("rewind").click();
   const dialog = page.getByRole("alertdialog", { name: "Rewind save history?" });
   await expect(dialog).toBeVisible();
@@ -102,6 +111,7 @@ test("Rewind confirms before dropping the latest checkpoint and restoring the ol
   expect(await page.evaluate(() => localStorage.getItem("hexapharma.save.v10.checkpoint.0")))
     .toBe(checkpointBefore);
 
+  await openMenu(page);
   await page.getByTestId("rewind").click();
   await dialog.getByRole("button", { name: "Rewind" }).click();
   await expect(dialog).toHaveCount(0);

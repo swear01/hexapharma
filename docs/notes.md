@@ -32,7 +32,7 @@
 - **contracts 回饋探索工具**：每疾病shipping quota=3；Disease 1／2／3分別gate Skew／Dilute／Settle patent，並且不取代一般cash／Knowledge／prerequisites。
 - **compiler routing endpoints 必須預留**：dev-only prototype compiler 在鋪前段belt前，同時預留所有machine的input approach與output exit，避免前段BFS佔用後段必需的route start；不得把compiler接進runtime自動解或自動建廠。
 - **True hex 是 authority，不只是品牌**：Atlas與Factory都使用pointy-top axial `{q,r}`、E／SE／SW／W／NW／NE與`r * width + q` dense indexing。Factory有六個60° footprint／port rotations；兩個domain仍不得互載payload或共用validator。
-- **Orbital Wet-Lab 是語意系統**：black-blue／graphite／bone-white／steel為中性基底；cyan／amber／lime／magenta／red只對應flow／selection／cure／side-effect／failure。world是vector runtime，不再依賴generated bitmap manifest。
+- 極簡、偏 pixel 的俯視 2D：中性炭灰／冷灰底、近白文字與機身；青藍僅標流動、白／淡藍標選取與 candidate、綠標 cure、紫紅標副作用、紅標失敗。平塗硬邊，無黃光、青色 halo、裝飾圈環或全表面亮邊；Pixi vector runtime 保留 canonical true hex。
 
 ## Why
 
@@ -43,3 +43,13 @@
 - 多疾病獨立有限需求把 Research、工廠重建與市場輪替接成循環，避免一條產線永久印錢。
 - connected topology 讓 factory 一眼可讀，也讓拖曳轉彎、split／merge 與 machine ports 使用一致視覺語言。
 - `research-program`與`factory-layout`仍是兩個明確Blueprint payload，但只有FactoryLayout可由目前UI capture/apply；Research由stepwise session與auto formula承擔玩家流程。
+
+- **Browser harness output**：Playwright Page／Browser 物件包含 SDK internals，可能連帶印出環境資料；Node REPL 操作以 `void` 結尾，只輸出明確選取的文字、數值與檔案路徑，不 dump 整個物件。
+
+- **Stable browser verification**：Vite may reload the page when a UI module with helper exports changes, resetting unsaved game state. Finish source edits before Playwright runs or screenshot captures; use normal Save/Load to resume manual play after a development reload.
+
+- **Clipped canvas camera bounds**：CSS cover sizing changes the visible logical viewport. Camera clamping must use the clipped frame dimensions; zoom anchors must be translated from full-canvas coordinates into that centered viewport. Full-screen reference panels also suppress world input without pausing the production timer.
+
+- Headless probes should reuse repository import paths: `src/sim/mapgen` is a directory entry point, not a `mapgen.ts` file.
+
+- Formula reference 的桌面／行動 breakpoint 必須同時套用 component world input 與 Game 的 Research cartridge／Enter hotkeys；resize 後可見 world 與鍵盤 authority 使用同一個 `worldInputActive`。

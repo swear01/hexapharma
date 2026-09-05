@@ -1,3 +1,4 @@
+import { openMenu } from "./menu";
 import { expect, test } from "@playwright/test";
 import { applyGameIntent, createGameState } from "../../src/sim/game";
 import { generate } from "../../src/sim/mapgen";
@@ -13,6 +14,7 @@ import { focusLabCamera } from "../../src/render/labCamera";
 import type { HexCoord } from "../../src/sim/hex";
 
 async function confirmLoad(page: import("@playwright/test").Page): Promise<void> {
+  await openMenu(page);
   await page.getByTestId("load").click();
   const dialog = page.getByRole("alertdialog", { name: "Load saved game?" });
   await expect(dialog).toBeVisible();
@@ -103,7 +105,7 @@ test("machine patents add the same fixed path to Research and Production Plan pa
   await expect(page.getByTestId("research-machine-skew")).toHaveCount(0);
   await page.getByTestId("view-technology").click();
   await expect(page.getByTestId("patent-row-skew-unlock"))
-    .toContainText("Complete Disease 1 contract (0/3)");
+    .toContainText("Ship 3 more for Disease 1 contract (0/3)");
   await expect(page.getByTestId("patent-unlock-skew-unlock")).toBeDisabled();
 
   await page.evaluate((checkpoint) => {
@@ -113,7 +115,7 @@ test("machine patents add the same fixed path to Research and Production Plan pa
   await confirmLoad(page);
   await page.getByTestId("view-technology").click();
   await expect(page.getByTestId("patent-row-skew-unlock"))
-    .not.toContainText("Complete Disease 1 contract");
+    .not.toContainText("Disease 1 contract");
   await expect(page.getByTestId("patent-unlock-skew-unlock")).toBeEnabled();
   await page.getByTestId("patent-unlock-skew-unlock").click();
   await expect(page.getByTestId("patent-unlock-skew-unlock")).toHaveText("Owned");
@@ -131,7 +133,7 @@ test("factory prerequisites do not bypass contract gates or introduce map layers
   await expect(page.getByTestId("patent-unlock-dilute-unlock")).toBeDisabled();
   await page.getByTestId("patent-unlock-bench-2").click();
   await expect(page.getByTestId("patent-row-dilute-unlock"))
-    .toContainText("Complete Disease 2 contract (0/3)");
+    .toContainText("Ship 3 more for Disease 2 contract (0/3)");
   await expect(page.getByTestId("patent-unlock-dilute-unlock")).toBeDisabled();
   await expect(page.getByTestId("cash")).toHaveText(String(9999 - 120));
   await expect(page.getByTestId("research")).toHaveText(String(9999 - 2));

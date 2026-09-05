@@ -4,6 +4,7 @@ import {
   bestMarketQuote,
   marketDisabledReason,
   marketProducts,
+  marketLineReadout,
   marketSaleFeedback,
   profitableMarketProducts,
 } from "./Shop";
@@ -107,4 +108,16 @@ describe("Market product choice", () => {
     expect(marketSaleFeedback(true, 4)).toBe("Shipped 4 · +1 Knowledge each");
   });
 
+});
+
+it("stock readout sums only profitable units at their successive demand prices", () => {
+  const inventory = [product(1, [0], [], 60), product(2, [0], [9], 0), product(3, [0], [9], 19)];
+  const selected = profitableMarketProducts(inventory, 0, 50, 0);
+  const quotes = selected.map((item, index) => bestMarketQuote([item], 0, 50, index)!);
+  expect(marketLineReadout(inventory, 0, 50, 0)).toEqual({
+    units: selected.length,
+    gross: quotes.reduce((sum, quote) => sum + quote.gross, 0),
+    net: quotes.reduce((sum, quote) => sum + quote.net, 0),
+  });
+  expect(marketLineReadout([], 0, 50, 0)).toEqual({ units: 0, gross: 0, net: 0 });
 });
