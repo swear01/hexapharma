@@ -805,13 +805,13 @@ export function Game() {
       if (view !== undefined) {
         event.preventDefault();
         openBuilding(view);
-      } else if (building === "research" && drawer === null && /^Digit[1-9]$/.test(event.code)) {
+      } else if (building === "research" && worldInputActive && /^Digit[1-9]$/.test(event.code)) {
         const entry = catalog[Number(event.code.slice(5)) - 1];
         if (entry !== undefined) {
           event.preventDefault();
           setResearchMachineType(entry.typeId);
         }
-      } else if (building === "research" && drawer === null && researchKeyboardAction(event.key) !== null) {
+      } else if (building === "research" && worldInputActive && researchKeyboardAction(event.key) !== null) {
         event.preventDefault();
         if (researchKeyboardAction(event.key) === "apply") researchAction();
         else abortResearch();
@@ -842,6 +842,7 @@ export function Game() {
     researchAction,
     save,
     selectedResearchEntry,
+    worldInputActive,
   ]);
 
   const buildingButton = (id: Building, label: string, hotkey: string) => (

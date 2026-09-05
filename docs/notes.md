@@ -51,3 +51,5 @@
 - **Clipped canvas camera bounds**：CSS cover sizing changes the visible logical viewport. Camera clamping must use the clipped frame dimensions; zoom anchors must be translated from full-canvas coordinates into that centered viewport. Full-screen reference panels also suppress world input without pausing the production timer.
 
 - Headless probes should reuse repository import paths: `src/sim/mapgen` is a directory entry point, not a `mapgen.ts` file.
+
+- Formula reference 的桌面／行動 breakpoint 必須同時套用 component world input 與 Game 的 Research cartridge／Enter hotkeys；resize 後可見 world 與鍵盤 authority 使用同一個 `worldInputActive`。

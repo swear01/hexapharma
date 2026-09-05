@@ -1221,7 +1221,7 @@ export function Factory({
   const brushLabel = brush.kind === "machine" ? machineName(brush.typeId) : brush.kind;
   const rate = throughput === null
     ? "unavailable"
-    : throughput.rateDen === 0 ? "0" : (throughput.rateNum / throughput.rateDen).toLocaleString(undefined, { maximumFractionDigits: 3 });
+    : throughput.rateDen === 0 ? "0" : (throughput.rateNum / throughput.rateDen).toLocaleString(undefined, { maximumSignificantDigits: 3 });
   const sampleSummary = sampleAnalysis.outcome === null
     ? "not runnable"
     : formatFacilityOutcome(sampleAnalysis.outcome);

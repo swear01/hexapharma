@@ -100,6 +100,7 @@ Production Plan與Production使用相同editor。Details 預設收起，按下�
 ## Production Plan
 
 - Production Plan沒有clock、建造費、inventory或waste；適合從空地反覆排列layout。
+- Throughput以三位有效數字顯示，保留很低但非零的速率。
 - inspector的Sample、Throughput與Bottleneck只幫你判讀，不限制layout；Sample只依Research已揭露地圖計算，不能用來偷看霧下Cure、SideEffect或Portal配對。無法分析時會顯示可見錯誤。
 - 可在Blueprint drawer用`Save Production Plan`保存通用Factory Blueprint。
 - `Commission $N`會以Production現況計算差異費用。現金足夠時建到Production並切換F3；現金不足時Plan保持不變。

@@ -127,6 +127,29 @@ test("full-screen formulas suppress factory input across resize without pausing 
   await expect(page.getByTestId("factory-undo")).toBeDisabled();
 });
 
+test("formula reference restores Research hotkeys only when the world is visible", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await loadFixture(page, discover(createGameState(defaultGenOptions(14), 1000, 0), 0));
+  await page.getByTestId("view-formulas").click();
+  await page.getByRole("heading", { name: "Discovered formulas" }).click();
+  const cartridges = page.getByTestId("research-path-hotbar").locator("button");
+  const cash = await page.getByTestId("cash").textContent();
+  const tested = await page.getByTestId("research-program-count").textContent();
+  await page.keyboard.press("2");
+  await page.keyboard.press("Enter");
+  await expect(cartridges.nth(0)).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("cash")).toHaveText(cash!);
+  await expect(page.getByTestId("research-program-count")).toHaveText(tested!);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.getByTestId("lab-map-frame").click({ position: { x: 20, y: 80 } });
+  await page.keyboard.press("2");
+  await expect(cartridges.nth(1)).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("research-program-count")).toHaveText("1 tested");
+  await expect(page.getByTestId("cash")).not.toHaveText(cash!);
+  await expect(page.getByTestId("formula-ribbon")).toBeVisible();
+});
+
 for (const action of ["new", "load", "rewind", "reset", "unlock", "delete"] as const) {
   test(`running Production freezes behind ${action} confirmation and Cancel resumes`, async ({ page }) => {
     await loadFixture(page);

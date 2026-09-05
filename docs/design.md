@@ -49,7 +49,7 @@ Atlas 起點位於 generator 宣告的世界中心附近；新局只揭露以起
 
 每次 assay 的 mission readout 只提供目標相對起點的寬廣sector：local，或east／south-east／south-west／west／north-west／north-east。它不公開目標座標、距離、reference path、region大小或霧下內容；sector是方向線索，不是導航答案。
 
-Cure 與 SideEffect 是同一格上的獨立效果欄位，不是互斥 cell kind。已揭露Cure使用明顯receptor與target ring；constructed reference 精確命中的 cure endpoint 必須乾淨；同一治療區的部分其他格可同時帶有副作用，讓玩家在「碰到療效」與「命中乾淨位置」之間繼續最佳化。
+Cure 與 SideEffect 是同一格上的獨立效果欄位，不是互斥 cell kind。已揭露Cure使用綠色十字標記；constructed reference 精確命中的 cure endpoint 必須乾淨；同一治療區的部分其他格可同時帶有副作用，讓玩家在「碰到療效」與「命中乾淨位置」之間繼續最佳化。
 
 ## 1.3 Reveal–decide Research session 與完整 PathStamp
 
