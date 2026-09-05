@@ -51,14 +51,14 @@ const PAD = 12; // outer padding
 export const FACTORY_SCHEMATIC_STYLE = Object.freeze({
   ...SHARED_SCHEMATIC_STYLE,
   shadow: 0x000000,
-  gridLine: 0x35454e,
+  gridLine: 0x30383e,
   belt: 0x40515a,
   beltRail: 0x101920,
   merge: 0x303a3f,
   source: 0x173d45,
   sink: 0x2b3d27,
   chassis: 0x28343b,
-  selection: 0xf3b45d,
+  selection: 0xc0d5e2,
   portFrame: 0x19242d,
   portDisconnected: 0x7b858d,
   portInput: SHARED_SCHEMATIC_STYLE.flow,
@@ -87,11 +87,11 @@ const GRID_LINE = FACTORY_SCHEMATIC_STYLE.gridLine;
 const EMPTY_COLOR = FACTORY_SCHEMATIC_STYLE.deck;
 const BELT_COLOR = FACTORY_SCHEMATIC_STYLE.belt;
 const BELT_RAIL = FACTORY_SCHEMATIC_STYLE.beltRail;
-const BELT_ARROW = FACTORY_SCHEMATIC_STYLE.flow;
+const BELT_ARROW = FACTORY_SCHEMATIC_STYLE.portDisconnected;
 const SPLIT_COLOR = FACTORY_SCHEMATIC_STYLE.chassis;
-const SPLIT_MARK = FACTORY_SCHEMATIC_STYLE.flow;
+const SPLIT_MARK = FACTORY_SCHEMATIC_STYLE.structure;
 const MERGE_COLOR = FACTORY_SCHEMATIC_STYLE.merge;
-const MERGE_MARK = FACTORY_SCHEMATIC_STYLE.flow;
+const MERGE_MARK = FACTORY_SCHEMATIC_STYLE.structure;
 const SOURCE_COLOR = FACTORY_SCHEMATIC_STYLE.source;
 const SINK_COLOR = FACTORY_SCHEMATIC_STYLE.sink;
 const PORT_IN = FACTORY_SCHEMATIC_STYLE.portInput;
@@ -227,11 +227,11 @@ function drawPortNotch(
   const offset = hexToPixel(HEX_DQ[side]!, HEX_DR[side]!, FACTORY_HEX_SIZE);
   const ex = cx + offset.x * 0.42;
   const ey = cy + offset.y * 0.42;
-  g.circle(ex, ey, 7).fill({ color: FACTORY_SCHEMATIC_STYLE.portFrame });
-  g.circle(ex, ey, 5).fill({
-    color: connected ? color : FACTORY_SCHEMATIC_STYLE.portDisconnected,
-    alpha: connected ? 1 : 0.7,
-  });
+  g.rect(ex - 5, ey - 5, 10, 10).fill({ color: FACTORY_SCHEMATIC_STYLE.portFrame });
+  if (color === PORT_IN) g.rect(ex - 3, ey - 3, 6, 6);
+  else g.circle(ex, ey, 3.5);
+  if (connected) g.fill({ color });
+  else g.stroke({ color: FACTORY_SCHEMATIC_STYLE.portDisconnected, width: 1.5 });
 }
 
 interface DrawCtx {
@@ -265,21 +265,21 @@ function drawTransportBase(
     const dx = offset.x / Math.hypot(offset.x, offset.y);
     const dy = offset.y / Math.hypot(offset.x, offset.y);
     cells.moveTo(cx - dx * 4, cy - dy * 4).lineTo(cx + offset.x / 2, cy + offset.y / 2)
-      .stroke({ color: BELT_RAIL, width: 22 });
+      .stroke({ color: BELT_RAIL, width: 15 });
     cells.moveTo(cx - dx * 4, cy - dy * 4).lineTo(cx + offset.x / 2, cy + offset.y / 2)
-      .stroke({ color: BELT_COLOR, width: 16 });
+      .stroke({ color: BELT_COLOR, width: 10 });
     return;
   }
   for (const arm of arms) {
     cells.moveTo(px + arm.from.x, py + arm.from.y).lineTo(px + arm.to.x, py + arm.to.y);
   }
-  cells.stroke({ color: BELT_RAIL, width: 22 });
-  cells.circle(cx, cy, 11).fill({ color: BELT_RAIL });
+  cells.stroke({ color: BELT_RAIL, width: 15 });
+  cells.circle(cx, cy, 7.5).fill({ color: BELT_RAIL });
   for (const arm of arms) {
     cells.moveTo(px + arm.from.x, py + arm.from.y).lineTo(px + arm.to.x, py + arm.to.y);
   }
-  cells.stroke({ color: BELT_COLOR, width: 16 });
-  cells.circle(cx, cy, 8).fill({ color: BELT_COLOR });
+  cells.stroke({ color: BELT_COLOR, width: 10 });
+  cells.circle(cx, cy, 5).fill({ color: BELT_COLOR });
 }
 
 /** Draw one transport structure after the shared connection arms. */
@@ -328,7 +328,7 @@ function drawTileBody(
     }
     case "source": {
       cells.poly([...body(3)], true).fill({ color: SOURCE_COLOR })
-        .stroke({ color: FACTORY_SCHEMATIC_STYLE.flow, width: 3 });
+        .stroke({ color: FACTORY_SCHEMATIC_STYLE.portDisconnected, width: 2 });
       const offset = hexToPixel(HEX_DQ[tile.dir]!, HEX_DR[tile.dir]!, 5 / Math.sqrt(3));
       cells.circle(cx - offset.x, cy - offset.y, CELL * 0.24)
         .stroke({ color: FACTORY_SCHEMATIC_STYLE.structure, width: 3 });
@@ -428,13 +428,8 @@ function drawMachineGlyph(
 function drawMachine(m: PlacedMachine, isBottleneck: boolean, ctx: DrawCtx): void {
   const { cells, topology } = ctx;
   const baseStyle = machineVisualStyle(m.def.typeId);
-  const style = isBottleneck
-    ? {
-        body: FACTORY_SCHEMATIC_STYLE.bottleneckBody,
-        face: FACTORY_SCHEMATIC_STYLE.bottleneckFace,
-      }
-    : baseStyle;
-  const accent = isBottleneck ? FACTORY_SCHEMATIC_STYLE.selection : FACTORY_SCHEMATIC_STYLE.flow;
+  const style = baseStyle;
+  const accent = style.face;
   const occupiedCells = worldCells(m);
 
   let minX = Infinity;
@@ -444,27 +439,20 @@ function drawMachine(m: PlacedMachine, isBottleneck: boolean, ctx: DrawCtx): voi
   for (const wc of occupiedCells) {
     const center = factoryCellCenter(wc.q, wc.r);
     const shadow = hexPolygon(center.x + 3, center.y + 4, FACTORY_HEX_SIZE - 3);
-    const body = hexPolygon(center.x, center.y, FACTORY_HEX_SIZE - 3);
+    const body = hexPolygon(center.x, center.y, FACTORY_HEX_SIZE);
     cells.poly([...shadow], true)
       .fill({ color: FACTORY_SCHEMATIC_STYLE.shadow, alpha: FACTORY_MACHINE_SHADOW_ALPHA });
-    cells.poly([...body], true).fill({ color: style.body })
-      .stroke({ color: accent, width: isBottleneck ? 4 : 3 });
-    cells.circle(center.x, center.y, 2.5).fill({ color: style.face, alpha: 0.58 });
+    cells.poly([...body], true).fill({ color: style.body });
+    for (const side of HEX_DIRS) {
+      if (occupiedCells.some((neighbor) => neighbor.q === wc.q + HEX_DQ[side]! && neighbor.r === wc.r + HEX_DR[side]!)) continue;
+      const from = body[(side + 1) % 6]!;
+      const to = body[(side + 2) % 6]!;
+      cells.moveTo(from.x, from.y).lineTo(to.x, to.y).stroke({ color: accent, width: 1.5, alpha: .7 });
+    }
     if (center.x < minX) minX = center.x;
     if (center.y < minY) minY = center.y;
     if (center.x > maxX) maxX = center.x;
     if (center.y > maxY) maxY = center.y;
-  }
-
-  const input = worldInPorts(m)[0];
-  const output = worldOutPorts(m)[0];
-  if (minX !== Infinity && input !== undefined && output !== undefined) {
-    const cx = (minX + maxX) / 2;
-    const cy = (minY + maxY) / 2;
-    const inCenter = factoryCellCenter(input.q, input.r);
-    const outCenter = factoryCellCenter(output.q, output.r);
-    cells.moveTo(inCenter.x, inCenter.y).lineTo(cx, cy).lineTo(outCenter.x, outCenter.y)
-      .stroke({ color: style.face, width: 6, alpha: 0.46 });
   }
 
   for (const wp of worldInPorts(m)) {
@@ -507,10 +495,9 @@ function drawMachine(m: PlacedMachine, isBottleneck: boolean, ctx: DrawCtx): voi
   if (minX !== Infinity) {
     const cx = (minX + maxX) / 2;
     const cy = (minY + maxY) / 2;
-    cells.circle(cx, cy, 19).fill({ color: style.face })
-      .stroke({ color: accent, width: 3 });
-    cells.circle(cx, cy, 13).stroke({ color: style.body, width: 2, alpha: 0.6 });
+    cells.rect(cx - 15, cy - 15, 30, 30).fill({ color: style.body });
     drawMachineGlyph(cells, m, cx, cy, accent);
+    if (isBottleneck) cells.rect(cx + 11, cy - 18, 5, 5).fill({ color: FACTORY_SCHEMATIC_STYLE.failure });
   }
 }
 
@@ -611,13 +598,13 @@ export async function createFactoryRenderer(layout: FactoryLayout): Promise<Fact
       const cx = center.x;
       const cy = center.y;
       const r = CELL * 0.2;
-      tokens.circle(cx, cy, r + 2).fill({ color: TOKEN_RING });
-      tokens.circle(cx, cy, r).fill({
+      tokens.rect(cx - r * .65 - 1, cy - r - 1, r * 1.3 + 2, r * 2 + 2).fill({ color: TOKEN_RING });
+      tokens.rect(cx - r * .65, cy - r, r * 1.3, r * 2).fill({
         color: runtime.unitFailed[unitIndex] === 0 ? TOKEN_COLOR : TOKEN_FAILED,
       });
       // proc ring while a unit is being processed inside a machine.
       if ((runtime.unitMachineIds[unitIndex] ?? -1) >= 0 && (runtime.unitProc[unitIndex] ?? 0) > 0) {
-        tokens.circle(cx, cy, r + 4).stroke({ color: TOKEN_PROC, width: 2 });
+        tokens.rect(cx - r, cy + r + 3, r * 2, 2).fill({ color: TOKEN_PROC });
       }
     }
     app.render();

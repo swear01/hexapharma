@@ -45,14 +45,14 @@ const EMPTY_TERRAIN_VISUAL: CellTerrainVisual = {
 };
 
 const CURE_PALETTE = [
-  { baseColor: 0x314326, rimColor: SHARED_SCHEMATIC_STYLE.cure },
-  { baseColor: 0x354a2a, rimColor: 0xc5e983 },
-  { baseColor: 0x3d4928, rimColor: 0xd0e86f },
-  { baseColor: 0x2d482e, rimColor: 0xa8dc78 },
-  { baseColor: 0x3e4525, rimColor: 0xd7df68 },
-  { baseColor: 0x294532, rimColor: 0x9ee28a },
-  { baseColor: 0x394829, rimColor: 0xc0e275 },
-  { baseColor: 0x33462c, rimColor: 0xafe07f },
+  { baseColor: 0x2b4032, rimColor: SHARED_SCHEMATIC_STYLE.cure },
+  { baseColor: 0x2e4036, rimColor: 0x9dd3b1 },
+  { baseColor: 0x283b34, rimColor: 0x86bcac },
+  { baseColor: 0x304438, rimColor: 0xa1c6ac },
+  { baseColor: 0x293e32, rimColor: 0x8fc9aa },
+  { baseColor: 0x2c423a, rimColor: 0x97cfbb },
+  { baseColor: 0x304238, rimColor: 0xa6d3b3 },
+  { baseColor: 0x2b3c30, rimColor: 0x9bc8a7 },
 ] as const;
 
 function cureColors(id: number): (typeof CURE_PALETTE)[number] {
@@ -140,8 +140,8 @@ export function labTerrainVisual(map: EffectMap, q: number, r: number): LabTerra
       return {
         kind: "wall",
         motif: "solid-masonry",
-        baseColor: 0x242e34,
-        rimColor: SHARED_SCHEMATIC_STYLE.structure,
+        baseColor: 0x3a4248,
+        rimColor: 0x727f88,
         opaque: true,
         sideEffectOverlay: false,
       };
@@ -149,7 +149,7 @@ export function labTerrainVisual(map: EffectMap, q: number, r: number): LabTerra
       return {
         kind: "abyss",
         motif: "void-rim",
-        baseColor: 0x03070d,
+        baseColor: 0x0e1115,
         rimColor: 0x617785,
         opaque: true,
         sideEffectOverlay: false,
@@ -158,8 +158,8 @@ export function labTerrainVisual(map: EffectMap, q: number, r: number): LabTerra
       return {
         kind: "swamp",
         motif: "viscous-drag",
-        baseColor: 0x39352a,
-        rimColor: 0xa49367,
+        baseColor: 0x303f3d,
+        rimColor: 0x819a92,
         opaque: true,
         sideEffectOverlay: false,
       };

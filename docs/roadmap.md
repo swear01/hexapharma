@@ -34,7 +34,7 @@
 - Research與Factory authority採pointy-top axial `{q,r}`，direction順序是E／SE／SW／W／NW／NE，dense arrays使用`r * width + q`；Factory footprint／ports有六個60° rotations。
 - Research 是stepwise reveal–decide session：一次commit一個完整candidate stamp，當步立即扣款／執行／揭露／evaluate，再決定下一步；不提交batch route。
 - 新局只揭露中心radius-two 19-cell hex disk；assay只透露寬廣方向sector，每個stamp立即resolve，結果同時顯示已知 Cure 與 SideEffect。
-- Cure自動建立／覆寫每疾病唯一的DiscoveredFormula，formula ribbon顯示實際steps、累積cost與side effects。
+- Cure自動建立／覆寫每疾病唯一的DiscoveredFormula，Formulas 面板顯示實際steps、累積cost與side effects。
 - 只有 Wall 在霧下仍可見並影響 preview；Abyss、Swamp、Portal、Cure與SideEffect揭露後才影響 preview。
 - 單一 Atlas 正常產生 4 種獨立疾病，generator 上限 8 種；default references 依 initial／`skew`／`dilute`／`settle` 分 tier。
 - mapgen 先完成 seeded terrain，再 constructive 地尋找 diverse reference／endpoint；沒有 protected universal corridor。reference endpoint 乾淨，部分同區 Cure cell 帶 SideEffect overlay。
@@ -46,7 +46,7 @@
 - 每疾病shipping contract quota=3；Disease 1／2／3分別gate Skew／Dilute／Settle patents。
 - transport renderer 使用 sim-derived connected topology；Belt drag 支援六鄰接連續hex route。
 - Blueprint v4 codec驗證`research-program`，但UI不capture/apply它；generic q/r `factory-layout`可正常建立／套用。Library使用`hexapharma.blueprint-library.v4`。Save v10保存stepwise Research/formulas、non-null Production與paid build trace。
-- Orbital Wet-Lab Schematic使用vector-only嚴格俯視2D，移除generated lab bitmap／runtime manifest contract；Atlas與Factory都render pointy-top hex，但仍保有分離的domain payload／validator。
+- minimal flat hex schematic使用vector-only嚴格俯視2D，移除generated lab bitmap／runtime manifest contract；Atlas與Factory都render pointy-top hex，但仍保有分離的domain payload／validator。
 - UI 刪除不必要常駐文案；詳細操作移到玩家指南。
 - 自動 gate只證明 correctness；53346 必須另做人類 fresh-save loop，記錄理解、嘗試、資金、first-sale time與主觀樂趣。
 - 完成標準與執行次序見 [plan.md](plan.md)。

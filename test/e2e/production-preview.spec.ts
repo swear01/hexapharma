@@ -1,3 +1,4 @@
+import { openMenu } from "./menu";
 import { expect, test } from "@playwright/test";
 import { createGameState } from "../../src/sim/game";
 import { LAB_VIEWPORT } from "../../src/render/labCamera";
@@ -16,6 +17,7 @@ const maximumGameMapCheckpoint = JSON.stringify({
 });
 
 async function confirmLoad(page: import("@playwright/test").Page): Promise<void> {
+  await openMenu(page);
   await page.getByTestId("load").click();
   const dialog = page.getByRole("alertdialog", { name: "Load saved game?" });
   await expect(dialog).toBeVisible();
@@ -75,11 +77,13 @@ test("production preview renders the maximum Game-authorized map dimensions", as
     width: (element as HTMLCanvasElement).width,
     height: (element as HTMLCanvasElement).height,
   }));
-  expect(size).toEqual(LAB_VIEWPORT);
+  expect(size.width / size.height).toBeCloseTo(LAB_VIEWPORT.width / LAB_VIEWPORT.height, 2);
+  const displayedWidth = await canvas.evaluate((element) => element.getBoundingClientRect().width * window.devicePixelRatio);
+  expect(size.width).toBeLessThanOrEqual(Math.ceil(Math.max(LAB_VIEWPORT.width, displayedWidth)) + 1);
   expect(errors).toEqual([]);
 });
 
-test("the maximum Game map stays inside the Atlas content width", async ({ page }) => {
+test("the maximum Game map fills the clipped Atlas frame without distorting hexes", async ({ page }) => {
   await page.goto("/");
   await page.evaluate((checkpoint) => {
     localStorage.setItem("hexapharma.save.v10.checkpoint.0", checkpoint);
@@ -91,6 +95,8 @@ test("the maximum Game map stays inside the Atlas content width", async ({ page 
   const canvasBox = await canvas.boundingBox();
   const frameBox = await page.getByTestId("lab-map-frame").boundingBox();
   if (canvasBox === null || frameBox === null) throw new Error("Atlas canvas has no bounds");
-  expect(canvasBox.width).toBeLessThanOrEqual(frameBox.width + 1);
-  expect(canvasBox.height).toBeLessThanOrEqual(frameBox.height + 1);
+  expect(canvasBox.width).toBeGreaterThanOrEqual(frameBox.width - 1);
+  expect(canvasBox.height).toBeGreaterThanOrEqual(frameBox.height - 1);
+  expect(canvasBox.width / canvasBox.height).toBeCloseTo(13 / 8, 2);
+  await expect(page.getByTestId("lab-map-frame")).toHaveCSS("overflow", "hidden");
 });

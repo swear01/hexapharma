@@ -1,6 +1,6 @@
 # 玩家指南
 
-這份文件保存完整操作；遊戲內只保留短標籤、hotkey、狀態與錯誤。
+這份文件保存完整操作；遊戲內 ? Help 提供核心操作指南，常駐介面只保留短標籤、hotkey、狀態與錯誤。
 
 ## 啟動與連線
 
@@ -20,10 +20,10 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 | Research / Production Plan / Production | `F1` / `F2` / `F3` |
 | Market / Technology / Blueprints | `M` / `T` / `B` |
 | 關閉 drawer | `Escape` 或 `×` |
-| New Game | HUD `+ New`；輸入 0–4294967295 的 seed 後確認 |
-| Save | `Ctrl+S`／`⌘S` 或 HUD save icon |
-| 選存檔 | HUD slot selector；每個 slot 有獨立 rewind history |
-| Load / Rewind / Recover | HUD 對應 icons；覆蓋目前遊戲或丟棄checkpoint前會確認，錯誤不會靜默換成新局 |
+| New Game | Menu → New；輸入 0–4294967295 的 seed 後確認 |
+| Save | `Ctrl+S`／`⌘S` 或 Menu → Save |
+| 選存檔 | Menu slot selector；每個 slot 有獨立 rewind history |
+| Load / Rewind / Recover | Menu 對應文字按鈕；覆蓋目前遊戲或丟棄checkpoint前會確認，錯誤不會靜默換成新局 |
 
 Blueprint Library 與 save slot 分離；New Game、Load、Rewind、換 slot 都不會移除藍圖。New Game 只取代目前未保存狀態，既有 save checkpoints 仍可 Load 回來。
 
@@ -37,7 +37,7 @@ Blueprint Library 與 save slot 分離；New Game、Load、Rewind、換 slot 都
 
 - Atlas 遠大於 viewport；開局 camera 聚焦世界中心的 generator start，只有以起點為中心、hex distance radius 2 的19-cell disk已揭露，畫面只顯示整張圖的一小部分。地圖是pointy-top hex，六個相鄰方向為E／SE／SW／W／NW／NE。
 - mission label只顯示目前疾病與Target signal的寬廣sector：local，或east／south-east／south-west／west／north-west／north-east。它不是精確座標、距離或reference route。
-- 拖曳任一滑鼠鍵可平移；滾輪以游標位置縮放。`F`或Next會聚焦橙色candidate endpoint，方便接續離屏路線。每個stamp立即resolve，沒有等待動畫結束的Dose階段或自動camera跟隨；切到其他建築再回來不會重設手動camera。
+- 拖曳任一滑鼠鍵可平移；滾輪以游標位置縮放。`F`或Next會聚焦淡藍空心candidate endpoint，方便接續離屏路線。每個stamp立即resolve，沒有等待動畫結束的Dose階段或自動camera跟隨；切到其他建築再回來不會重設手動camera。
 - 找到Cure位置後可點底部的`Cure sites x`逐一聚焦已揭露的位置；這是**已發現位置數**，不是已成功治療數。`Cure sites 0`時不可操作，HUD不顯示未知總數或霧下位置。
 - 格線與**Wall**不需要先探索；Wall會取消該步，但機器繼續走剩餘 path。
 - 其他互動物揭露後才可辨識：
@@ -46,23 +46,23 @@ Blueprint Library 與 save slot 分離；New Game、Load、Rewind、換 slot 都
   - **Portal A→B**：進入口後跳到固定出口，從出口繼續；不能由B反向進入。
 - 單獨看見 Portal 一端時不會顯示隱藏配對或讓 preview 跳躍；實際探索到兩端後才會顯示配對方向。
 - Abyss、Swamp、Portal、Cure與SideEffect在揭露前都顯示為普通地面；不要把霧下空白當成沒有內容。
-- Cure以亮色receptor與雙圈target標示。Cure與SideEffect可在同一格重疊：抵達污染的Cure會同時治療疾病並帶來副作用；同一區的constructed reference endpoint是乾淨Cure。
+- Cure以綠色十字與區域邊界標示。Cure與SideEffect可在同一格重疊：抵達污染的Cure會同時治療疾病並帶來副作用；同一區的constructed reference endpoint是乾淨Cure。
 
 ### 逐步 assay
 
 1. 用數字鍵`1`–`9`或底部hotbar選擇**下一台**機器。icon顯示完整奇形path；world從目前actual drug position畫出完整candidate ghost。不能截短或只取其中一段。
-2. 橙色candidate endpoint與`+`是本次commit目標；`Next`／`F`可把它重新置中。滑鼠命中後提示`Test cartridge`；也可用command bar的`Test cartridge`。blank map只負責pan，不會提交action。
+2. 淡藍空心candidate endpoint與`+`是本次commit目標；`Next`／`F`可把它重新置中。滑鼠命中後提示`Test cartridge`；也可用command bar的`Test · $N`。blank map只負責pan，不會提交action。
 3. 第一次commit以一個原子動作從step 0／cost 0開始並立即執行所選machine。系統當下扣除**這一台**的catalog費用、走完整stamp、揭露actual trail並顯示本步outcome；沒有空session中間態，也沒有先排整批route再一次Dispense。
 4. 若沒有Cure也沒有Failure，session保持active。根據剛揭露的Wall／Abyss／Swamp／Portal／effects與目前drug位置，選擇下一台machine並再次commit。
 5. Failure或任何Cure會結束session。`Abort`會清掉這輪active steps與outcome；已付費用不退、已揭露fog不回滾。
 6. 結果同時列出Cure與已知Side effects；不能只看`Cure`而忽略同一endpoint的污染。
-7. 成功Cure會自動把這輪實際執行的ordered steps、累積assay cost與outcome保存成該疾病的`DiscoveredFormula`。每疾病保留最新一份，formula ribbon可隨時讀取；它不會自動建造Production。
+7. 成功Cure會自動把這輪實際執行的ordered steps、累積assay cost與outcome保存成該疾病的`DiscoveredFormula`。每疾病保留最新一份；Research／Plan／Production 都可開 Formulas，以 Disease 選擇器查較早疾病的完整順序、機器名稱／footprint、assay 成本與副作用。手動選擇跨場域保留，新成果預設選最新；Save／Load 後仍能選所有保存成果。它不會自動建造 Production。
 
 正常Atlas預設4種疾病：第一種reference只需要初始machine；後續疾病逐步可能需要Technology解鎖Zigzag still、Loop vat與Settling spiral。地圖的hidden reference不會在遊戲中顯示，玩家要以sector與逐步揭露結果自行決定下一個stamp。
 
 ## Factory共同操作
 
-Production Plan與Production使用相同editor。
+Production Plan與Production使用相同editor。Details 預設收起，按下才顯示診斷；底部提供工具、報價、旋轉與播放。機器工具顯示實體 hex footprint，Research 工具顯示完整 path。
 
 ### Camera與工具
 
@@ -121,7 +121,7 @@ Production Plan與Production使用相同editor。
 - machine按鈕tooltip會分別列出處理速度`ticks/unit`與持續發生的`Processing $N/unit`；ghost `$N`仍是這次layout edit的一次性建造費。
 - 拆除免費但沒有退款；之後重建仍要再次付費。
 - 接受layout變更會停止播放並重建runtime：在途unit、tick與runtime counters清除；已累積waste保留。no-op、invalid或現金不足的變更不改layout，也不會暫停正在運作的Production。
-- `Space`切換Play/Pause；`.`在Pause時前進一tick。上方buttons也可Play、Pause、Step、Reset。
+- `Space`切換Play/Pause；`.`在Pause時前進一tick。底部buttons也可Play、Pause、Step、Reset。
 - Sink送出的cure進Stock；failed/no-cure增加Waste；side effects跟著實體產品影響售價。
 - Market的疾病需求卡是公開資訊，但只有Production產生且仍在Stock的實體cure可以販售；需求卡不代表Atlas Cure已揭露，也不提供位置。同一產品只能賣一次。正常新局$1000必須足以在Research支出後建出第一條有效產線並到達第一次出售。
 
@@ -147,6 +147,7 @@ Production Plan與Production使用相同editor。
 - 每張需求卡以Clean stock／Tainted stock計數庫存件數；最佳可售庫存會列Next gross、production cost、每個effect `$25`的penalty算式與net。無治療庫存或沒有正net庫存時，Ship disabled並直接顯示原因。
 - Market的`Ship best`按side effects最少、production cost最低、inventory ID最早的順序，略過不賺錢的候選後出售第一件正net產品。`Ship profitable`掃描相同順序，只出售在當下demand仍為正net的項目；略過的庫存不消耗demand，也不會被自動丟棄。每件成功出售另取得1 Knowledge；畫面會顯示本次回饋。
 - 擴廠若會清除Production runtime／waste，確認視窗會先列出影響；Cancel不改任何authority。
+- blocking confirmation 開啟期間 Production timer 不增加 tick、inventory、cash、waste 或 trace；Cancel 恢復原播放狀態，原本 Pause 不會自動 Play。確認 New／Load／Rewind／Reset／擴廠後舊 timer 停止。一般 drawer 與場域切換不暂停生產。
 - Reset Production有進度時先確認；確認後只重建目前layout的runtime，不把建造費退回，也不清inventory／累積waste。
 
 ## 回報問題
@@ -160,3 +161,7 @@ Production Plan與Production使用相同editor。
 - screenshot與console error。
 
 完整手動驗收步驟見 [playtest.md](playtest.md)。
+
+Formulas stays beside the desktop world while switching rooms, so a paid Production line can be built while reading every step. On mobile, close the panel to return to the canvas. The build readout quotes the pointed placement or move through the construction authority; it does not promise a generic replacement price.
+
+Market states how much the currently profitable stock can still net, and how many units that covers, with demand declining after every selected shipment. This is not a lifetime estimate for the line. Unprofitable stock suggests improving cost or quality, or another disease. Technology shows missing cash, Knowledge, and contract shipments. With no cash left, it points to Market and cheaper routes, with Menu → New Game as an optional fresh start after saving; it does not declare the run irrecoverable.

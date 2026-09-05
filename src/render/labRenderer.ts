@@ -19,11 +19,11 @@ import { SHARED_SCHEMATIC_STYLE } from "./schematicStyle";
 
 export const LAB_SCHEMATIC_STYLE = Object.freeze({
   ...SHARED_SCHEMATIC_STYLE,
-  candidate: 0xf3b45d,
+  candidate: 0xc0d5e2,
   sideEffect: 0xde5fb1,
-  fogGrid: 0x1f313d,
+  fogGrid: 0x30383e,
   wallDetail: 0x637078,
-  abyssDetail: 0x24343d,
+  abyssDetail: 0x06090c,
   sideEffectOutline: 0x51223f,
 });
 
@@ -44,16 +44,6 @@ export interface LabRenderer {
 function isRevealed(map: EffectMap, q: number, r: number): boolean {
   if (!hexInBounds(map.width, map.height, q, r)) return false;
   return map.fog[hexIndex(map.width, q, r)] === 1;
-}
-
-export interface LabFeatureStyle {
-  readonly targetRing: boolean;
-}
-
-export function labFeatureStyle(
-  kind: CellTerrainVisual["kind"] | PortalTerrainVisual["kind"],
-): LabFeatureStyle {
-  return { targetRing: kind === "cure" };
 }
 
 function drawGridKind(
@@ -107,23 +97,9 @@ function drawPortalMotif(
   const marker = visual.pairMarker ?? `unpaired-${visual.role}`;
   const markerColor = portalMarkerColor(marker);
   terrain.poly([...polygon], true).fill({ color: visual.baseColor, alpha: 1 });
-  terrain.circle(cx, cy, cell * 0.34).fill({ color: LAB_SCHEMATIC_STYLE.background, alpha: 1 });
-  terrain.circle(cx, cy, cell * 0.34).stroke({ color: markerColor, width: Math.max(3, cell * 0.08) });
-  terrain.circle(cx, cy, cell * 0.2).stroke({ color: visual.rimColor, width: Math.max(2, cell * 0.045), alpha: 0.9 });
-
-  let hash = visual.role === "entry" ? 0x1357 : 0x2468;
-  for (let index = 0; index < marker.length; index++) {
-    hash = ((hash * 33) + marker.charCodeAt(index)) >>> 0;
-  }
-  const notchCount = 2 + (hash % 4);
-  for (let index = 0; index < notchCount; index++) {
-    const angle = ((index + (hash % 7) / 7) / notchCount) * Math.PI * 2;
-    const dx = Math.cos(angle);
-    const dy = Math.sin(angle);
-    terrain.moveTo(cx + dx * cell * 0.27, cy + dy * cell * 0.27)
-      .lineTo(cx + dx * cell * 0.39, cy + dy * cell * 0.39)
-      .stroke({ color: markerColor, width: Math.max(2, cell * 0.055) });
-  }
+  terrain.rect(cx - cell * .24, cy - cell * .3, cell * .48, cell * .6)
+    .fill({ color: LAB_SCHEMATIC_STYLE.background })
+    .stroke({ color: markerColor, width: 2 });
 
   if (visual.direction === null) {
     if (visual.role === "entry") {
@@ -192,30 +168,20 @@ function drawTerrainMotif(
   }
   if (visual.kind === "abyss") {
     terrain.poly([...polygon], true).fill({ color: visual.baseColor, alpha: 1 });
-    terrain.circle(x + cell / 2, y + cell / 2, cell * 0.37).fill({ color: LAB_SCHEMATIC_STYLE.background, alpha: 1 });
-    terrain.circle(x + cell / 2, y + cell / 2, cell * 0.4)
-      .stroke({ color: visual.rimColor, width: Math.max(3, cell * 0.075), alpha: 0.95 });
-    terrain.circle(x + cell / 2, y + cell / 2, cell * 0.27)
-      .stroke({ color: LAB_SCHEMATIC_STYLE.abyssDetail, width: Math.max(2, cell * 0.04), alpha: 0.8 });
-    terrain.circle(x + cell / 2, y + cell / 2, cell * 0.1)
-      .fill({ color: LAB_SCHEMATIC_STYLE.flow, alpha: 0.28 });
+    terrain.poly([
+      x + cell * .2, y + cell * .2, x + cell * .65, y + cell * .16,
+      x + cell * .84, y + cell * .5, x + cell * .6, y + cell * .82,
+      x + cell * .23, y + cell * .72, x + cell * .35, y + cell * .45,
+    ], true).fill({ color: LAB_SCHEMATIC_STYLE.abyssDetail })
+      .stroke({ color: visual.rimColor, width: 2 });
     return;
   }
   terrain.poly([...polygon], true).fill({ color: visual.baseColor, alpha: 0.82 });
   if (visual.kind === "swamp") {
     for (let line = 0; line < 3; line++) {
-      const lineY = y + cell * (0.25 + line * 0.25);
-      const offset = line % 2 === 0 ? 0 : cell * 0.12;
-      terrain.moveTo(x + cell * 0.08 + offset, lineY)
-        .bezierCurveTo(
-          x + cell * 0.3 + offset,
-          lineY - cell * 0.1,
-          x + cell * 0.55 + offset,
-          lineY + cell * 0.1,
-          x + cell * 0.88,
-          lineY,
-        )
-        .stroke({ color: visual.rimColor, width: Math.max(2, cell * 0.055), alpha: 0.78 });
+      const offset = line % 2 * cell * .14;
+      terrain.rect(x + cell * .18 + offset, y + cell * (.25 + line * .2), cell * .35, cell * .045)
+        .fill({ color: visual.rimColor, alpha: .8 });
     }
     return;
   }
@@ -237,12 +203,9 @@ function drawTerrainMotif(
   if (visual.kind === "cure") {
     const cx = x + cell / 2;
     const cy = y + cell / 2;
-    terrain.circle(cx, cy, cell * 0.27)
-      .stroke({ color: visual.rimColor, width: Math.max(2, cell * 0.055), alpha: 0.96 });
-    terrain.circle(cx, cy, cell * 0.1).fill({ color: visual.rimColor, alpha: 0.96 });
-    terrain.moveTo(cx - cell * 0.17, cy).lineTo(cx + cell * 0.17, cy)
-      .moveTo(cx, cy - cell * 0.17).lineTo(cx, cy + cell * 0.17)
-      .stroke({ color: LAB_SCHEMATIC_STYLE.structure, width: Math.max(1.5, cell * 0.035), alpha: 0.9 });
+    terrain.rect(cx - cell * .07, cy - cell * .22, cell * .14, cell * .44)
+      .rect(cx - cell * .22, cy - cell * .07, cell * .44, cell * .14)
+      .fill({ color: visual.rimColor });
   }
 }
 
@@ -262,15 +225,9 @@ function drawVisibleMap(
       const revealed = isRevealed(map, q, r);
       terrain.poly([...polygon], true)
         .fill({ color: revealed ? LAB_SCHEMATIC_STYLE.deck : LAB_SCHEMATIC_STYLE.background });
-      if (!revealed) terrain.poly([...polygon], true)
-        .stroke({ color: LAB_SCHEMATIC_STYLE.fogGrid, width: 1, alpha: 0.32 });
 
       const visual = labTerrainVisual(map, q, r);
       drawTerrainMotif(terrain, visual, center, polygon, cell);
-      if (labFeatureStyle(visual.kind).targetRing) {
-        featureOverlay.circle(center.x, center.y, cell * 0.37)
-          .stroke({ color: LAB_SCHEMATIC_STYLE.structure, width: Math.max(2, cell * 0.04), alpha: 0.9 });
-      }
       if (visual.kind !== "portal" && visual.sideEffectOverlay) {
         featureOverlay.circle(center.x + cell * 0.28, center.y - cell * 0.28, cell * 0.12)
           .fill({ color: LAB_SCHEMATIC_STYLE.sideEffect, alpha: 0.98 });
@@ -303,15 +260,12 @@ function drawToken(
 ): void {
   const cell = LAB_CELL_PIXELS * camera.zoom;
   const { x: cx, y: cy } = labCellCenter(camera, pos);
-  const color = failed ? LAB_SCHEMATIC_STYLE.failure : LAB_SCHEMATIC_STYLE.flow;
-  token.circle(cx, cy, cell * 0.42).stroke({ color, width: 2, alpha: 0.28 });
-  token.circle(cx, cy, cell * 0.31).fill({ color: LAB_SCHEMATIC_STYLE.background, alpha: 0.96 })
-    .stroke({ color: LAB_SCHEMATIC_STYLE.structure, width: Math.max(2, cell * 0.045), alpha: 0.96 });
-  token.roundRect(cx - cell * 0.11, cy - cell * 0.22, cell * 0.22, cell * 0.44, cell * 0.11)
-    .fill({ color, alpha: failed ? 0.35 : 0.9 })
-    .stroke({ color: LAB_SCHEMATIC_STYLE.structure, width: Math.max(1.5, cell * 0.035), alpha: 0.96 });
-  token.moveTo(cx - cell * 0.1, cy).lineTo(cx + cell * 0.1, cy)
-    .stroke({ color: LAB_SCHEMATIC_STYLE.structure, width: Math.max(1.5, cell * 0.03), alpha: 0.9 });
+  const color = failed ? LAB_SCHEMATIC_STYLE.failure : LAB_SCHEMATIC_STYLE.structure;
+  token.rect(cx - cell * .1, cy - cell * .26, cell * .2, cell * .1)
+    .rect(cx - cell * .16, cy - cell * .16, cell * .32, cell * .4)
+    .fill({ color });
+  token.rect(cx - cell * .1, cy + cell * .02, cell * .2, cell * .15)
+    .fill({ color: failed ? LAB_SCHEMATIC_STYLE.background : LAB_SCHEMATIC_STYLE.flow });
 }
 
 function drawTrail(
@@ -354,25 +308,9 @@ function drawTrail(
   }
   route.stroke({
     color: preview ? LAB_SCHEMATIC_STYLE.candidate : LAB_SCHEMATIC_STYLE.flow,
-    width: Math.max(3, cell * (preview ? 0.075 : 0.09)),
+    width: Math.max(2, cell * (preview ? 0.045 : 0.06)),
     alpha: preview ? 0.94 : 0.62,
   });
-}
-
-export interface LabPreviewTargetBadge {
-  readonly dx: number;
-  readonly dy: number;
-  readonly radius: number;
-  readonly strokeWidth: number;
-}
-
-export function labPreviewTargetBadge(cell: number): LabPreviewTargetBadge {
-  return {
-    dx: cell * 0.3,
-    dy: cell * -0.3,
-    radius: Math.max(4, cell * 0.13),
-    strokeWidth: Math.max(2, cell * 0.045),
-  };
 }
 
 function drawPreviewToken(
@@ -384,21 +322,8 @@ function drawPreviewToken(
   const cell = LAB_CELL_PIXELS * camera.zoom;
   const { x: cx, y: cy } = labCellCenter(camera, pos);
   const color = failed ? LAB_SCHEMATIC_STYLE.failure : LAB_SCHEMATIC_STYLE.candidate;
-  token.circle(cx, cy, cell * 0.38).fill({ color, alpha: 0.18 });
-  token.circle(cx, cy, cell * 0.34).stroke({ color, width: 3, alpha: 0.96 });
-  const badge = labPreviewTargetBadge(cell);
-  const badgeX = cx + badge.dx;
-  const badgeY = cy + badge.dy;
-  const arm = badge.radius * 0.48;
-  token.circle(badgeX, badgeY, badge.radius)
-    .fill({ color: LAB_SCHEMATIC_STYLE.background, alpha: 0.96 })
-    .stroke({ color, width: badge.strokeWidth, alpha: 1 });
-  token.moveTo(badgeX - arm, badgeY).lineTo(badgeX + arm, badgeY)
-    .moveTo(badgeX, badgeY - arm).lineTo(badgeX, badgeY + arm)
-    .stroke({ color, width: badge.strokeWidth, alpha: 1 });
-  token.roundRect(cx - cell * 0.1, cy - cell * 0.2, cell * 0.2, cell * 0.4, cell * 0.1)
-    .fill({ color, alpha: 0.35 })
-    .stroke({ color: LAB_SCHEMATIC_STYLE.structure, width: Math.max(1.5, cell * 0.03), alpha: 0.7 });
+  token.circle(cx, cy, cell * 0.22).stroke({ color, width: 2, alpha: 1 });
+
 }
 
 export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
@@ -429,6 +354,15 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
     token,
     previewToken,
   );
+  const densityObserver = new ResizeObserver(() => {
+    const width = app.canvas.getBoundingClientRect().width;
+    if (width === 0) return;
+    const resolution = window.devicePixelRatio * Math.max(1, width / LAB_VIEWPORT.width);
+    if (Math.abs(app.renderer.resolution - resolution) < .001) return;
+    app.renderer.resize(LAB_VIEWPORT.width, LAB_VIEWPORT.height, resolution);
+    app.render();
+  });
+  densityObserver.observe(app.canvas);
   let destroyed = false;
 
   return {
@@ -458,6 +392,7 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
     destroy: () => {
       if (destroyed) return;
       destroyed = true;
+      densityObserver.disconnect();
       app.stage.removeChildren();
       grid.destroy();
       terrain.destroy();

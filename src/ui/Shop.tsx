@@ -59,6 +59,23 @@ export function profitableMarketProducts(
   return profitable;
 }
 
+export function marketLineReadout(
+  inventory: readonly InventoryProduct[],
+  disease: DiseaseId,
+  basePrice: number,
+  alreadySold: number,
+): { readonly units: number; readonly gross: number; readonly net: number } {
+  const products = profitableMarketProducts(inventory, disease, basePrice, alreadySold);
+  let gross = 0;
+  let net = 0;
+  for (const [index, product] of products.entries()) {
+    const quote = quoteMarketProduct(product, nextUnitPrice(basePrice, alreadySold + index));
+    gross += quote.gross;
+    net += quote.net;
+  }
+  return { units: products.length, gross, net };
+}
+
 export interface MarketQuote {
   readonly productId: number;
   readonly gross: number;
@@ -177,6 +194,7 @@ export function Shop({ level, economy, inventory, onSell }: ShopProps) {
               disease.basePrice,
               sold,
             );
+            const remaining = marketLineReadout(inventory, disease.id, disease.basePrice, sold);
             const disabledReason = marketDisabledReason(have, quote);
             const disabledReasonId = `shop-disabled-reason-${disease.id}`;
             return (
@@ -195,6 +213,9 @@ export function Shop({ level, economy, inventory, onSell }: ShopProps) {
                   <div><span>Best effect penalty</span><strong className="market-value-tainted" data-testid={`shop-side-effect-penalty-${disease.id}`}>{quote === null ? "—" : `$${quote.sideEffectPenaltyEach} × ${quote.sideEffectCount} = $${quote.sideEffectPenalty}`}</strong></div>
                   <div><span>Best net</span><strong data-testid={`shop-net-${disease.id}`}>{quote?.net ?? "—"}</strong></div>
                 </div>
+                <p data-testid={`shop-stock-net-${disease.id}`}>This stock can still net ${remaining.net} across {remaining.units} units.</p>
+                <p>Demand is finite: each shipment lowers this disease’s next price.</p>
+                {have > 0 && remaining.units === 0 && <p>Improve processing cost or side effects, or try another disease.</p>}
                 <div className="market-actions">
                   <button
                     type="button"

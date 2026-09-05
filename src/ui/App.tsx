@@ -19,6 +19,7 @@ import {
   zoomLabCameraAt,
   type LabCamera,
 } from "../render/labCamera";
+import { blockingDialogOpen } from "./blockingDialog";
 import { outcomeEffectText } from "./effectLabels";
 
 interface LabSurfaceRect {
@@ -399,7 +400,7 @@ export function App({
   useEffect(() => {
     if (!active) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (document.querySelector('[role="alertdialog"][aria-modal="true"]') !== null) return;
+      if (blockingDialogOpen()) return;
       const target = event.target;
       if (
         target instanceof HTMLInputElement ||

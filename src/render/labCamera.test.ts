@@ -59,7 +59,8 @@ describe("Lab camera", () => {
     const zoomedOutMajor = labGridLineStyle("major", LAB_MIN_ZOOM);
     expect(zoomedOutMinor.alpha).toBeLessThan(defaultMinor.alpha);
     expect(zoomedOutMajor.alpha).toBeGreaterThan(zoomedOutMinor.alpha);
-    expect(zoomedOutMajor.alpha).toBeGreaterThanOrEqual(0.18);
+    expect(defaultMinor.alpha).toBeLessThan(0.1);
+    expect(zoomedOutMajor.alpha).toBeLessThan(0.15);
   });
 
   it("focuses a grid cell at the viewport centre", () => {

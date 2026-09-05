@@ -1,3 +1,4 @@
+import { openMenu } from "./menu";
 import { expect, test, type Page } from "@playwright/test";
 import { applyGameIntent, createGameState } from "../../src/sim/game";
 import { generate } from "../../src/sim/mapgen";
@@ -10,6 +11,7 @@ import type { HexCoord } from "../../src/sim/hex";
 test.setTimeout(60_000);
 
 async function confirmLoad(page: import("@playwright/test").Page): Promise<void> {
+  await openMenu(page);
   await page.getByTestId("load").click();
   const dialog = page.getByRole("alertdialog", { name: "Load saved game?" });
   await expect(dialog).toBeVisible();
@@ -69,7 +71,7 @@ test("loading a finished Research shot preserves fog and its independent outcome
   await confirmLoad(page);
   await expect(page.getByTestId("research-program-count")).not.toHaveText("0 tested");
   await expect(page.getByTestId("research-atlas-outcome")).toBeVisible();
-  await expect(page.getByTestId("research-command")).toHaveText("Test cartridge");
+  await expect(page.getByTestId("research-command")).toHaveText("Test · $2");
   await expect(page.getByRole("button", { name: /send.*pilot|transfer/i })).toHaveCount(0);
   await page.getByTestId("view-pilot").click();
   await expect(page.getByTestId("pilot-command")).toBeDisabled();
@@ -111,6 +113,7 @@ test("a corrupt old-build save is reported instead of silently migrated", async 
     localStorage.setItem("hexapharma.save.slot.0", JSON.stringify({ version: 5, game: {} }));
   });
   await page.reload();
+  await openMenu(page);
   await page.getByTestId("load").click();
   await expect(page.getByTestId("save-msg")).toContainText(/version|save|could not|invalid/i);
 });

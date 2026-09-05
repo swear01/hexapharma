@@ -45,7 +45,7 @@ Atlas 採 pointy-top axial true hex。離散位置是整數 `{q,r}`；六鄰接�
 - **Swamp**：該步消耗 2 energy；一般可進入格消耗 1。
 - **Portal A→B**：從入口立即到同圖的配對出口，剩餘 path 從 B 繼續。B 不可反向當入口；trail 必須在跳躍處斷開。
 
-Atlas 起點位於 generator 宣告的世界中心附近；新局只揭露以起點為中心、hex distance radius 2 的 19-cell disk。camera 開局聚焦起點，地圖只顯示 viewport 覆蓋的一小部分。一般 pan／zoom 不改 authority；contextual focus固定明示Next並移到橙色candidate endpoint。每個stamp在單一intent中立即resolve，UI不呈現timed Dose phase或自動camera follow；resolved outcome可保留，但建築重新啟用不能因stale outcome強制聚焦。Cure sites HUD只顯示已揭露位置的數量並可輪播已知Cure，不能讓玩家誤以為是已成功治療數，也不能以總數、disabled state、輪播順序或camera洩漏未知Cure。
+Atlas 起點位於 generator 宣告的世界中心附近；新局只揭露以起點為中心、hex distance radius 2 的 19-cell disk。camera 開局聚焦起點，地圖只顯示 viewport 覆蓋的一小部分。一般 pan／zoom 不改 authority；contextual focus固定明示Next並移到淡藍空心candidate endpoint。每個stamp在單一intent中立即resolve，UI不呈現timed Dose phase或自動camera follow；resolved outcome可保留，但建築重新啟用不能因stale outcome強制聚焦。Cure sites HUD只顯示已揭露位置的數量並可輪播已知Cure，不能讓玩家誤以為是已成功治療數，也不能以總數、disabled state、輪播順序或camera洩漏未知Cure。
 
 每次 assay 的 mission readout 只提供目標相對起點的寬廣sector：local，或east／south-east／south-west／west／north-west／north-east。它不公開目標座標、距離、reference path、region大小或霧下內容；sector是方向線索，不是導航答案。
 
@@ -63,7 +63,7 @@ Research 不使用 FactoryLayout、source／belt／sink、線性 route descripto
 - UI 只預覽由當前 fog-masked knowledge 算出的下一個 stamp。執行與 preview 共用 pure traversal；renderer 不自行近似、auto-route、修路或呼叫 solver。
 - session program 是**已實際執行**的 ordered stamps，不是待提交的 batch。每步 cost 在該步提交時原子扣除，累積 cost 只是已付金額的讀數。
 - 每個完成 segment 以基礎 radius 1 揭露，Technology 只能增加這個實際 segment 的感測半徑。結果同時顯示 cure 與已揭露的 side effects；不能只報 Cure 而隱藏同一終點的已知污染。
-- 成功 Cure 自動建立該疾病的不可變 `DiscoveredFormula {disease, program, researchCost, outcome}`。每種疾病最多一份；再次治癒會以最新完整 session 覆寫並移到 latest。formula ribbon 顯示 ordered steps、累積 assay cost 與副作用，但不自動建造或驗證 Production layout。
+- 成功 Cure 自動建立該疾病的不可變 `DiscoveredFormula {disease, program, researchCost, outcome}`。每種疾病最多一份；再次治癒會以最新完整 session 覆寫並移到 latest。Formulas 面板以疾病選擇器查全部已發現成果，顯示完整 ordered steps／名稱、累積 assay cost 與副作用，但不自動建造或驗證 Production layout。
 
 ## 1.4 程序地圖
 
@@ -166,16 +166,16 @@ Blueprint 與 save slot 完全分離，Library envelope version 是 4，使用 `
 
 ## 1.10 UI 與直接操作
 
-- viewport-filling shell 以中央 world 為主；HUD、rail、hotbar、inspector 只留下可操作控制與必要狀態。
+- viewport-filling shell 以中央 world 為主；頂部導航、hotbar、按需 inspector 只留下可操作控制與必要狀態。
 - 遊戲畫面不放設計註解、形容詞式副標或常駐教學段落。錯誤與危險確認仍必須清楚可見。
-- 正常 HUD 提供 New Game seed 入口；確認後只建立新的目前 GameState，不刪 save checkpoints 或跨局 Blueprint Library。所有 modal 開啟時必須凍結背景指令與建築快捷鍵。
+- Menu 提供 New Game seed 入口；確認後只建立新的目前 GameState，不刪 save checkpoints 或跨局 Blueprint Library。所有 modal 開啟時必須凍結背景指令與建築快捷鍵。
 - touch 單指在 Factory 格內執行目前工具，可畫連續 Belt 或直接搬機；兩指才是 pan。點選既有 machine 後，畫面 Rotate 與鍵盤 `R` 都要旋轉該 footprint。
 - F1 Research、F2 Production Plan、F3 Production；M／T／B 是可關閉 drawers。把 Plan 送進正式產線的玩家動詞固定為 `Commission`。
 - Research 與 Factory 共用 pick／place／erase／pan／zoom 的肌肉記憶，但維持不同 authority 與 validators。
 - Research 的 place target 是下一個完整 candidate 的 endpoint，不是任意 canvas click；session readout 只投影已執行 program，不是可重排或批次送出的第二份 route authority。
 - Atlas 與 Factory 都使用 pointy-top axial true hex、`{q,r}` 與 E／SE／SW／W／NW／NE；兩者共用投影慣例，但 geometry payload 與 validator 仍分離。不得重新引入 Cartesian tile authority 或四方向 packing。
-- 視覺語言固定為嚴格俯視的 **Orbital Wet-Lab Schematic**：black-blue void、graphite deck／field、bone-white／steel chassis。cyan 只表示 active flow，amber 表示 selection／candidate，lime 表示 cure，magenta 表示 side effect，red 表示 failure；其他結構保持中性。
-- 世界使用 Pixi `Graphics` 的 vector runtime 與固定小型硬陰影，不使用 3D 透視、glass blur、過量 glow／gradient／rounding，也不依賴 generated lab bitmap 或 runtime asset manifest。
+- 極簡、偏 pixel 的俯視 2D：中性炭灰／冷灰底、近白文字與機身；青藍僅標流動、白／淡藍標選取與 candidate、綠標 cure、紫紅標副作用、紅標失敗。平塗硬邊，無黃光、青色 halo、裝飾圈環或全表面亮邊；Pixi vector runtime 保留 canonical true hex。
+- 世界使用 Pixi `Graphics` 的平塗 vector runtime，不使用 3D 透視、glass blur、過量 glow／gradient／rounding，也不依賴 generated lab bitmap 或 runtime asset manifest。
 - 詳細按鍵、建造費與驗證步驟集中在 [player-guide.md](player-guide.md)；畫面只提供短 label、icon、hotkey 與 tooltip。
 - 完整視覺與互動規格見 [ui-interaction.md](ui-interaction.md)。
 
@@ -214,7 +214,7 @@ Pure TS sim core  → authoritative deterministic transitions
 - `game`：三場域、stepwise Research session、formula、shipping contracts、paid Production build、inventory／economy。
 - `blueprint`：Blueprint v4 strict codec 與跨存檔 Library。
 - `save`／`replay-work`：Save v10、raw-work preflight、replay/hash。
-- `render`：vector-only Orbital Wet-Lab Atlas 與 connected factory topology。
+- `render`：vector-only minimal flat hex Atlas 與 connected factory topology。
 - `ui`：world-first shell、shared Factory editor、drawers/checkpoints。
 
 ## 2.3 Ownership 與確定性

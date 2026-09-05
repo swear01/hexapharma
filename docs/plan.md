@@ -31,7 +31,7 @@
    - 第一個`advanceResearchShot`原子建立並執行reveal–decide session；selected machine只產生從目前actual drug state接續的完整candidate ghost。
    - 一次commit一個canonical完整stamp；當步立即扣款、執行、揭露與evaluate。blank map click不改program，沒有batch route submission或editable pending queue。
    - no-cure保留session供下一次決定；Failure／Cure結束，Abort不退款也不回滾fog。
-   - 成功Cure自動建立或覆寫每疾病唯一的`DiscoveredFormula`；formula ribbon顯示已執行steps、累積cost與side effects。
+   - 成功Cure自動建立或覆寫每疾病唯一的`DiscoveredFormula`；Formulas 面板顯示已執行steps、累積cost與side effects。
    - assay mission只提示local或canonical六方向的寬廣sector；不暴露座標、距離或reference。
    - 保持complete fixed PathStamp、no partial path、planning不揭霧、actual segments才揭霧。
 
@@ -48,7 +48,7 @@
    - focused unit/property → typecheck/lint → integration/E2E → full `npm run check`。
    - residue scan：batch Research route、partial path、blank-click append、非Wall穿霧、universal corridor、default one disease、互斥effects、$200 start、permanent price floor、Pilot Plant玩家文案、generated bitmap manifest與fixture-only full loop都不得留作active truth。
    - 更新README、design、overview、notes、decisions、invariants、structure、UI contract、player guide、roadmap與playtest。
-   - Orbital Wet-Lab Schematic收斂為black-blue／graphite／bone-white／steel基底，語意色只用cyan／amber／lime／magenta／red；vector runtime不再依賴generated lab bitmap manifest。
+   - 極簡、偏 pixel 的俯視 2D：中性炭灰／冷灰底、近白文字與機身；青藍僅標流動、白／淡藍標選取與 candidate、綠標 cure、紫紅標副作用、紅標失敗。平塗硬邊，無黃光、青色 halo、裝飾圈環或全表面亮邊；Pixi vector runtime 保留 canonical true hex。
    - 重建Research／Factory／effects／Market screenshots，做至少一輪邏輯、視覺與文件audit；確認pointy-top polygon、q/r picking、六鄰接routing與六個60° rotations在sim／renderer／UI一致。
 
 7. **Human fun validation on 53346**

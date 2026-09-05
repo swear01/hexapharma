@@ -1,3 +1,4 @@
+import { openMenu } from "./menu";
 import { expect, test, type Page } from "@playwright/test";
 import { LAB_VIEWPORT, clampLabCamera, focusLabCamera } from "../../src/render/labCamera";
 import { applyGameIntent, createGameState } from "../../src/sim/game";
@@ -11,6 +12,7 @@ import { defaultGenOptions, researchPlanningTrails } from "../../src/ui/Game";
 test.setTimeout(60_000);
 
 async function confirmLoad(page: Page): Promise<void> {
+  await openMenu(page);
   await page.getByTestId("load").click();
   const dialog = page.getByRole("alertdialog", { name: "Load saved game?" });
   await expect(dialog).toBeVisible();
@@ -165,7 +167,7 @@ test("fixed cartridges execute at the endpoint and reveal before the next decisi
   expect(await stepName.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   await expect(page.getByTestId("research-program-strip").getByRole("listitem").first())
     .toContainText("$2");
-  await expect(page.getByTestId("research-shot-cost")).toHaveText("$2");
+  await expect(page.getByTestId("research-shot-cost")).toHaveText("$2 spent");
   await expect(cash).toHaveText(String(cashBefore - 2));
   expect(known(await revealed.textContent())).toBeGreaterThan(revealedBefore);
   await expect(page.getByRole("button", { name: /Remove Hook pump/i })).toHaveCount(0);
@@ -173,7 +175,7 @@ test("fixed cartridges execute at the endpoint and reveal before the next decisi
 
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("research-program-count")).toHaveText("2 tested");
-  await expect(page.getByTestId("research-shot-cost")).toHaveText("$4");
+  await expect(page.getByTestId("research-shot-cost")).toHaveText("$4 spent");
   await expect(cash).toHaveText(String(cashBefore - 4));
 });
 
@@ -196,7 +198,7 @@ test("machine hotkeys select cartridges while Enter tests one and Backspace ends
   const selectedName = page.getByTestId("research-program-strip").locator(".research-step-name").first();
   await expect(selectedName).toHaveAttribute("title", "Wave reactor");
   expect(await selectedName.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
-  await expect(page.getByTestId("research-shot-cost")).toHaveText(`$${available[1]!.cost}`);
+  await expect(page.getByTestId("research-shot-cost")).toHaveText(`$${available[1]!.cost} spent`);
   await expect(page.getByTestId("cash")).toHaveText(String(200 - available[1]!.cost));
   await page.keyboard.press("Backspace");
   await expect(page.getByTestId("research-program-count")).toHaveText("0 tested");
@@ -370,7 +372,7 @@ test("compact Research keeps every command and path control reachable", async ({
     expect(control.x + control.width).toBeLessThanOrEqual(stage.x + stage.width + 1);
     expect(control.y).toBeGreaterThanOrEqual(stage.y);
     expect(control.y + control.height).toBeLessThanOrEqual(stage.y + stage.height + 1);
-    expect(control.y + control.height).toBeLessThanOrEqual(nav.y + 1);
+    expect(control.y).toBeGreaterThanOrEqual(nav.y + nav.height);
   }
   for (const testId of ["research-command", "lab-focus", "research-cures"]) {
     const target = await page.getByTestId(testId).boundingBox();
@@ -379,7 +381,7 @@ test("compact Research keeps every command and path control reachable", async ({
   }
 });
 
-test("compact Research keeps the resolved outcome visible below its path controls", async ({ page }) => {
+test("compact Research keeps resolved feedback separate from its path controls", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/?cash=200");
   await expect(page.getByTestId("lab-map-frame").locator("canvas")).toBeVisible({ timeout: 15_000 });
@@ -393,14 +395,14 @@ test("compact Research keeps the resolved outcome visible below its path control
   if (outcomeBox === null || hotbarBox === null || navBox === null) {
     throw new Error("compact Research outcome chrome has no bounds");
   }
-  for (const testId of ["lab-focus", "lab-zoom", "revealed-count", "research-cures"]) {
+  for (const testId of ["lab-focus", "lab-zoom", "research-cures"]) {
     const statusControl = await page.getByTestId(testId).boundingBox();
     if (statusControl === null) throw new Error(`${testId} has no compact outcome bounds`);
-    expect(statusControl.y, `${testId} must stay below the path hotbar`)
-      .toBeGreaterThanOrEqual(hotbarBox.y + hotbarBox.height);
+    expect(statusControl.y + statusControl.height, `${testId} must stay above the path hotbar`)
+      .toBeLessThanOrEqual(hotbarBox.y + 1);
   }
-  expect(outcomeBox.y).toBeGreaterThanOrEqual(hotbarBox.y + hotbarBox.height);
-  expect(outcomeBox.y + outcomeBox.height).toBeLessThanOrEqual(navBox.y);
+  expect(outcomeBox.y + outcomeBox.height).toBeLessThanOrEqual(hotbarBox.y + 1);
+  expect(outcomeBox.y).toBeGreaterThanOrEqual(navBox.y + navBox.height);
 });
 
 test("the Research Atlas has no recipe timeline or unclosable Pilot Bench", async ({ page }) => {

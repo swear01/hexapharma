@@ -63,7 +63,7 @@ describe("Technology copy", () => {
   it("names an incomplete shipping contract that gates a machine patent", () => {
     expect(patentContractRequirement("skew-unlock", [
       { disease: 0, sold: 2, quota: 3, completed: false },
-    ])).toBe("Complete Disease 1 contract (2/3)");
+    ])).toBe("Ship 1 more for Disease 1 contract (2/3)");
     expect(patentContractRequirement("skew-unlock", [
       { disease: 0, sold: 3, quota: 3, completed: true },
     ])).toBeNull();

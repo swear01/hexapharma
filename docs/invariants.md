@@ -118,4 +118,4 @@
 - Factory footprint／ports 的 `footRot` 只允許 0–5 個順時針 60° turns，並以 `(side + footRot) % 6` 旋轉 port；不得把 chemical `PathStamp` 一起旋轉。
 - Atlas PathStamp geometry 與 FactoryLayout geometry 仍使用獨立 payload／validator；共用 axial orientation 不代表能互相載入或 alias authority。
 - world renderer 必須是嚴格俯視 2D vector schematic；不得依賴 generated lab bitmap、runtime manifest或3D透視。
-- black-blue／graphite／bone-white／steel構成中性世界；cyan／amber／lime／magenta／red只分別表達active flow／selection-candidate／cure／side effect／failure。裝飾不得挪用語意色造成假狀態。
+- 中性炭灰／冷灰與近白構成世界；青藍／白或淡藍／綠／紫紅／紅只分別表達active flow／selection-candidate／cure／side effect／failure。裝飾不得挪用語意色造成假狀態。

@@ -27,7 +27,6 @@ import {
   applyGameIntent,
   availableCatalog,
   createGameState,
-  currentDiscoveredFormula,
   DEFAULT_STARTING_CASH,
   shippingContracts,
   type GameIntent,
@@ -40,6 +39,7 @@ import { Factory } from "./Factory";
 import { Patents } from "./Patents";
 import { Shop } from "./Shop";
 import { MachineIcon } from "./MachineIcon";
+import { blockingDialogOpen } from "./blockingDialog";
 import { hexToPixel } from "../render/hexProjection";
 import { machineName, machineShortName } from "./machineLabels";
 import {
@@ -318,7 +318,7 @@ export function parseNewGameSeed(value: string): number | null {
 }
 
 type Building = "research" | "pilot" | "production";
-type Drawer = "market" | "technology" | "blueprints" | null;
+type Drawer = "market" | "technology" | "blueprints" | "menu" | "formulas" | "help" | null;
 type PendingSaveAction =
   | {
       readonly kind: "load";
@@ -339,20 +339,21 @@ function sameGameState(first: GameState, second: GameState): boolean {
 
 function FormulaRibbon({ formula }: { readonly formula: DiscoveredFormula }) {
   return (
-    <aside className="formula-ribbon" data-testid="formula-ribbon" aria-label={`Discovered formula for Disease ${formula.disease + 1}`}>
-      <span className="formula-ribbon-label">Formula</span>
-      <strong>Disease {formula.disease + 1}</strong>
+    <section className="formula-ribbon" data-testid="formula-ribbon" aria-label={`Discovered formula for Disease ${formula.disease + 1}`}>
+      <h2>Disease {formula.disease + 1}</h2>
+      <p><strong className="formula-ribbon-cost">${formula.researchCost} assay</strong> · {formula.outcome.sideEffects.length === 0 ? "Clean" : `${formula.outcome.sideEffects.length} side effect${formula.outcome.sideEffects.length === 1 ? "" : "s"}`}</p>
       <ol>
         {formula.program.steps.map((step, index) => (
-          <li key={`${index}-${step.typeId}`} title={machineName(step.typeId)}>
-            <MachineIcon typeId={step.typeId} path={step.path} size={24} />
-            <span className="sr-only">{machineName(step.typeId)}</span>
+          <li key={`${index}-${step.typeId}`}>
+            <span>{index + 1}</span>
+            <MachineIcon typeId={step.typeId} path={step.path} size={32} />
+            <span>{machineName(step.typeId)}</span>
+            <MachineIcon typeId={step.typeId} path={step.path} size={40} footprint />
           </li>
         ))}
       </ol>
-      <span className="formula-ribbon-cost">${formula.researchCost} assay</span>
-      <span>{formula.outcome.sideEffects.length === 0 ? "Clean" : `${formula.outcome.sideEffects.length} side effects`}</span>
-    </aside>
+      <p>Build these machines in order, with belts between their ports.</p>
+    </section>
   );
 }
 
@@ -367,7 +368,7 @@ export function Game() {
   const openBuilding = useCallback((next: Building) => {
     setVisited((current) => current[next] ? current : { ...current, [next]: true });
     setBuilding(next);
-    setDrawer(null);
+    setDrawer((current) => current === "formulas" ? current : null);
   }, []);
 
   const [game, setGame] = useState<GameState>(() =>
@@ -486,10 +487,16 @@ export function Game() {
     [game.economy.sold, game.genOptions],
   );
   const activeContract = contracts.find((contract) => !contract.completed) ?? contracts[contracts.length - 1]!;
-  const currentFormula = useMemo(
-    () => currentDiscoveredFormula(game),
-    [game.research.discoveredFormulas],
-  );
+  const formulas = game.research.discoveredFormulas;
+  const [formulaDisease, setFormulaDisease] = useState<DiseaseId | null>(null);
+  const newestFormula = formulas.at(-1);
+  const currentFormula = formulas.find((formula) => formula.disease === formulaDisease) ?? newestFormula;
+  const previousFormulas = useRef(formulas);
+  useEffect(() => {
+    if (formulas === previousFormulas.current) return;
+    previousFormulas.current = formulas;
+    if (newestFormula !== undefined) setFormulaDisease(newestFormula.disease);
+  }, [formulas, newestFormula]);
   const researchMission = level.diseases.find((disease) => disease.id === activeContract.disease)!;
   const researchMissionStart = level.start.pos[researchMission.map]!;
   const researchMissionSector = researchAssaySector(researchMissionStart, researchMission.node);
@@ -535,6 +542,7 @@ export function Game() {
     setSaveMsg(`Started seed ${seed}. Saved checkpoints and Blueprints were kept.`);
   }, [closeNewGameConfirmation, newGameSeed, replaceGame]);
   const dispatch = useCallback((intent: GameIntent) => {
+    if (intent.kind === "productionTicks" && blockingDialogOpen()) return false;
     try {
       const next = applyGameIntent(gameRef.current, intent);
       gameRef.current = next;
@@ -655,7 +663,10 @@ export function Game() {
     recovery: SlotRecovery | null,
     replaceCurrent: boolean,
   ) => {
-    if (replaceCurrent) replaceGame(head);
+    if (replaceCurrent) {
+      replaceGame(head);
+      setDrawer(null);
+    }
     setHistoryCount(savedHistoryCount);
     setSlotRecovery(recovery);
     setCanRecover(false);
@@ -695,6 +706,7 @@ export function Game() {
     try {
       const recalled = rewindSlot(localStorage, slot, history);
       replaceGame(recalled.head);
+      setDrawer(null);
       setHistoryCount(recalled.history.length);
       setSlotRecovery(recalled);
       setCanRecover(false);
@@ -748,7 +760,7 @@ export function Game() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (document.querySelector('[role="alertdialog"][aria-modal="true"]') !== null) {
+      if (blockingDialogOpen()) {
         if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
           event.preventDefault();
         }
@@ -823,32 +835,23 @@ export function Game() {
     selectedResearchEntry,
   ]);
 
-  const buildingButton = (
-    id: Building,
-    label: string,
-    compactLabel: string,
-    glyph: string,
-    hotkey: string,
-  ) => (
-    <button
-      type="button"
-      onClick={() => openBuilding(id)}
-      className={`nav-button facility-nav-button${building === id ? " is-active" : ""}`}
-      data-testid={`view-${id}`}
-      aria-current={building === id ? "page" : undefined}
-      aria-label={`${label} (${hotkey})`}
-      title={`${label} (${hotkey})`}
-    >
-      <span className="nav-glyph" aria-hidden="true">{glyph}</span>
-      <span className="nav-label" aria-hidden="true">{compactLabel}</span>
-      <span className="hotkey">{hotkey}</span>
+  const buildingButton = (id: Building, label: string, hotkey: string) => (
+    <button type="button" onClick={() => openBuilding(id)}
+      className={`nav-button${building === id ? " is-active" : ""}`}
+      data-testid={`view-${id}`} aria-current={building === id ? "page" : undefined}
+      aria-label={`${label === "Plan" ? "Production Plan" : label} (${hotkey})`} title={`${label} (${hotkey})`}>
+      {label}<kbd>{hotkey}</kbd>
     </button>
   );
 
   return (
     <div className="game-shell" data-testid="game-shell">
       <header className="top-hud" data-testid="top-hud">
-        <div className="brand-mark">HexaPharma</div>
+        <nav className="nav-rail" data-testid="nav-rail" aria-label="Facilities">
+          {buildingButton("research", "Research", "F1")}
+          {buildingButton("pilot", "Plan", "F2")}
+          {buildingButton("production", "Production", "F3")}
+        </nav>
         <div className="resource-strip" aria-label="Company resources">
           <span className="resource-chip" aria-label={`Cash ${game.economy.cash}`} title={`Cash ${game.economy.cash}`}>
             <span className="resource-label" aria-hidden="true"><span className="resource-label-full">Cash</span><span className="resource-label-compact">$</span></span>
@@ -860,69 +863,32 @@ export function Game() {
           </span>
           <span className="resource-chip" aria-label={`Stock ${game.inventory.length}`} title={`Stock ${game.inventory.length}`}>
             <span className="resource-label" aria-hidden="true"><span className="resource-label-full">Stock</span><span className="resource-label-compact">S</span></span>
-            <strong>{game.inventory.length}</strong>
+            <strong data-testid="stock">{game.inventory.length}</strong>
           </span>
           <span className="resource-chip contract-chip" data-testid="shipping-contract" aria-label={`Disease ${activeContract.disease + 1} shipping contract ${activeContract.sold} of ${activeContract.quota}`}>
             <span className="resource-label"><span className="resource-label-full">D{activeContract.disease + 1} contract</span><span className="resource-label-compact">D{activeContract.disease + 1}</span></span>
             <strong>{activeContract.sold} / {activeContract.quota}</strong>
           </span>
-          <span className="resource-chip" aria-label={`Seed ${game.genOptions.seed}`} title={`Seed ${game.genOptions.seed}`}>
-            <span className="resource-label" aria-hidden="true"><span className="resource-label-full">Seed</span><span className="resource-label-compact">#</span></span>
-            <strong data-testid="seed">{game.genOptions.seed}</strong>
-          </span>
-        </div>
-        <div className="system-strip" aria-label="Game controls">
-          <button ref={newGameTriggerRef} type="button" onClick={openNewGameConfirmation} className="hud-button new-game-button" data-testid="new-game" title="New game" aria-label="New game"><span aria-hidden="true">+</span><span>New</span></button>
-          <label className="save-slot-control" title="Save slot">
-            <span className="sr-only">Slot</span>
-            <select
-              data-testid="save-slot"
-              defaultValue={0}
-              onChange={(event) => {
-                const slot = Number(event.target.value);
-                selectedSlotRef.current = slot;
-                showSlotRead(resolvedSlot(slot));
-              }}
-            >
-              {Array.from({ length: SAVE_SLOTS }, (_, slot) => (
-                <option key={slot} value={slot}>{slot + 1}</option>
-              ))}
-            </select>
-          </label>
-          <button type="button" onClick={save} className="hud-button" data-testid="save" title="Save (Ctrl+S)" aria-label="Save game">▣</button>
-          <button ref={loadButtonRef} type="button" onClick={load} className="hud-button" data-testid="load" title="Load" aria-label="Load game">↥</button>
-          <button ref={rewindButtonRef} type="button" onClick={doRewind} className="hud-button" data-testid="rewind" disabled={historyCount < 2} title="Rewind" aria-label="Rewind save history">↶</button>
-          {canRecover && (
-            <button type="button" onClick={recoverStorage} className="hud-button is-warning" data-testid="recover-storage" title="Recover slot" aria-label="Recover save slot">!</button>
-          )}
-        </div>
-      </header>
 
-      <nav className="nav-rail" data-testid="nav-rail" aria-label="Facilities">
-        {buildingButton("research", "Research", "Research", "⌬", "F1")}
-        {buildingButton("pilot", "Production Plan", "Plan", "◇", "F2")}
-        {buildingButton("production", "Production", "Production", "▦", "F3")}
-        <span className="nav-spacer" />
-        <button type="button" className={`nav-button utility-nav-button${drawer === "market" ? " is-active" : ""}`} onClick={() => setDrawer((current) => current === "market" ? null : "market")} data-testid="view-market" aria-label="Market (M)" title="Market (M)">
-          <span className="nav-glyph">¤</span><span className="nav-label">Market</span><span className="hotkey">M</span>
-        </button>
-        <button type="button" className={`nav-button utility-nav-button${drawer === "technology" ? " is-active" : ""}`} onClick={() => setDrawer((current) => current === "technology" ? null : "technology")} data-testid="view-technology" aria-label="Technology (T)" title="Technology (T)">
-          <span className="nav-glyph">⌁</span><span className="nav-label">Tech</span><span className="hotkey">T</span>
-        </button>
-        <button type="button" className={`nav-button utility-nav-button${drawer === "blueprints" ? " is-active" : ""}`} onClick={() => setDrawer((current) => current === "blueprints" ? null : "blueprints")} data-testid="view-blueprints" aria-label="Blueprints (B)" title="Blueprints (B)">
-          <span className="nav-glyph">▧</span><span className="nav-label">Plans</span><span className="hotkey">B</span>
-        </button>
+        </div>
+        <button type="button" className="menu-trigger" data-testid="view-menu" aria-expanded={drawer === "menu"} onClick={() => setDrawer((current) => current === "menu" ? null : "menu")}>Menu</button>
+      </header>
+      <nav className="utility-nav" aria-label="Management">
+        <button type="button" data-testid="view-market" onClick={() => setDrawer((current) => current === "market" ? null : "market")}>Market <kbd>M</kbd></button>
+        <button type="button" data-testid="view-technology" onClick={() => setDrawer((current) => current === "technology" ? null : "technology")}>Technology <kbd>T</kbd></button>
+        <button type="button" data-testid="view-blueprints" onClick={() => setDrawer((current) => current === "blueprints" ? null : "blueprints")}>Blueprints <kbd>B</kbd></button>
+        <button type="button" data-testid="view-formulas" disabled={formulas.length === 0} aria-expanded={drawer === "formulas"} onClick={() => setDrawer((current) => current === "formulas" ? null : "formulas")}>Formulas {formulas.length}</button>
+        <button type="button" data-testid="view-help" aria-label="Help" onClick={() => setDrawer((current) => current === "help" ? null : "help")}>?</button>
       </nav>
 
-      <main className="game-stage" data-testid="game-stage">
-        {currentFormula !== null && <FormulaRibbon formula={currentFormula} />}
+      <main className={`game-stage${drawer === "formulas" ? " has-formula-reference" : ""}`} data-testid="game-stage">
         <section className="view-layer" hidden={building !== "research"}>
           {visited.research && (
             <div className="research-workspace" data-testid="research-workspace">
               <section className="research-mission" data-testid="research-mission" aria-label="Active assay">
-                <span>Active assay</span>
+                <span>Assay</span>
                 <strong>Disease {researchMission.id + 1}</strong>
-                <span>Target signal <output data-testid="research-assay-sector">{researchMissionSector}</output></span>
+                <span>Look <output data-testid="research-assay-sector">{researchMissionSector}</output></span>
               </section>
               {game.research.program.steps.length > 0 && (
                 <div
@@ -944,9 +910,9 @@ export function Game() {
               )}
               <div className="research-commandbar" role="toolbar" aria-label="Research program controls">
                 <strong data-testid="research-program-count">{game.research.program.steps.length} tested</strong>
-                <output className="research-shot-cost" data-testid="research-shot-cost">${researchShotCost}</output>
+                <output className="research-shot-cost" data-testid="research-shot-cost">${researchShotCost} spent</output>
                 {game.research.shot !== null && (
-                  <button type="button" className="is-warning" onClick={abortResearch} data-testid="research-abort">End assay · no refund</button>
+                  <button type="button" className="is-warning" title="End assay. No refund; revealed terrain stays." onClick={abortResearch} data-testid="research-abort">End assay</button>
                 )}
                 <button
                   type="button"
@@ -956,11 +922,11 @@ export function Game() {
                   data-testid="research-command"
                   title={researchBlockReason ?? "Test cartridge (Enter)"}
                 >
-                  Test cartridge
+                  Test · ${selectedResearchEntry?.cost ?? 0}
                 </button>
               </div>
               <App
-                active={building === "research" && drawer === null}
+                active={building === "research" && (drawer === null || drawer === "formulas")}
                 level={level}
                 fog={game.fog}
                 drug={displayDrug}
@@ -994,7 +960,7 @@ export function Game() {
         <section className="view-layer" hidden={building !== "pilot"}>
           {visited.pilot && (
             <Factory
-              active={building === "pilot" && drawer === null}
+              active={building === "pilot" && (drawer === null || drawer === "formulas")}
               mode="pilot"
               level={level}
               planningMap={knownResearchMap}
@@ -1014,7 +980,7 @@ export function Game() {
         <section className="view-layer" hidden={building !== "production"}>
           {visited.production && (
             <Factory
-              active={building === "production" && drawer === null}
+              active={building === "production" && (drawer === null || drawer === "formulas")}
               mode="production"
               level={level}
               planningMap={knownResearchMap}
@@ -1031,8 +997,43 @@ export function Game() {
           )}
         </section>
 
-        {drawer !== null && (
-          <aside className="game-drawer" data-testid={`${drawer}-drawer`}>
+        <aside className="game-drawer" data-testid="menu-drawer" hidden={drawer !== "menu"}>
+          <button type="button" className="drawer-close" onClick={() => setDrawer(null)} aria-label="Close menu">×</button>
+          <section className="menu-panel">
+            <h1>HexaPharma</h1>
+            <span className="resource-chip" aria-label={`Seed ${game.genOptions.seed}`} title={`Seed ${game.genOptions.seed}`}>
+              <span className="resource-label" aria-hidden="true"><span className="resource-label-full">Seed</span><span className="resource-label-compact">#</span></span>
+              <strong data-testid="seed">{game.genOptions.seed}</strong>
+            </span>
+          <div className="system-strip" aria-label="Game controls">
+            <button ref={newGameTriggerRef} type="button" onClick={openNewGameConfirmation} className="hud-button new-game-button" data-testid="new-game" title="New game" aria-label="New game"><span aria-hidden="true">+</span><span>New</span></button>
+            <label className="save-slot-control" title="Save slot">
+              <span>Slot </span>
+              <select
+                data-testid="save-slot"
+                defaultValue={selectedSlotRef.current}
+                onChange={(event) => {
+                  const slot = Number(event.target.value);
+                  selectedSlotRef.current = slot;
+                  showSlotRead(resolvedSlot(slot));
+                }}
+              >
+                {Array.from({ length: SAVE_SLOTS }, (_, slot) => (
+                  <option key={slot} value={slot}>{slot + 1}</option>
+                ))}
+              </select>
+            </label>
+            <button type="button" onClick={save} className="hud-button" data-testid="save" title="Save (Ctrl+S)" aria-label="Save game">Save</button>
+            <button ref={loadButtonRef} type="button" onClick={load} className="hud-button" data-testid="load" title="Load" aria-label="Load game">Load</button>
+            <button ref={rewindButtonRef} type="button" onClick={doRewind} className="hud-button" data-testid="rewind" disabled={historyCount < 2} title="Rewind" aria-label="Rewind save history">Rewind</button>
+            {canRecover && (
+              <button type="button" onClick={recoverStorage} className="hud-button is-warning" data-testid="recover-storage" title="Recover slot" aria-label="Recover save slot">Recover</button>
+            )}
+          </div>
+          </section>
+        </aside>
+        {drawer !== null && drawer !== "menu" && (
+          <aside className={`game-drawer${drawer === "formulas" ? " formula-reference" : ""}`} data-testid={`${drawer}-drawer`}>
             <button type="button" className="drawer-close" onClick={() => setDrawer(null)} aria-label={`Close ${drawer}`}>×</button>
             {drawer === "market" ? (
               <Shop level={level} economy={game.economy} inventory={game.inventory} onSell={sellProducts} />
@@ -1044,7 +1045,7 @@ export function Game() {
                 expansionResetsProduction={game.production.runtime.tick > 0 || game.production.runtime.unitCount > 0 || game.production.waste > 0}
                 onUnlock={unlock}
               />
-            ) : (
+            ) : drawer === "blueprints" ? (
               <BlueprintLibrary
                 pilotLayout={game.pilot.layout}
                 productionLayout={game.production.layout}
@@ -1052,6 +1053,30 @@ export function Game() {
                 onBuildProduction={changeProduction}
                 quoteProduction={(layout) => quoteProductionBuild(game.production.layout, layout)}
               />
+            ) : drawer === "formulas" ? (
+              <section className="formula-library">
+                <h1>Discovered formulas</h1>
+                <label>Disease
+                  <select data-testid="formula-select" value={currentFormula?.disease ?? ""} onChange={(event) => setFormulaDisease(Number(event.target.value) as DiseaseId)}>
+                    {formulas.map((formula) => <option key={formula.disease} value={formula.disease}>Disease {formula.disease + 1}</option>)}
+                  </select>
+                </label>
+                {currentFormula !== undefined && <FormulaRibbon formula={currentFormula} />}
+              </section>
+            ) : (
+              <section className="help-panel">
+                <h1>Field guide</h1>
+                <h2>Research</h2>
+                <p>Follow the broad target signal. Choose a cartridge to preview its complete path, then click the hollow endpoint or press Enter to test it. Each test costs cash and reveals the path you actually travel.</p>
+                <p>The solid bottle is your current dose. Dashed lines show the next test. Green crosses mark known cures; magenta colonies mark side effects. Only walls are visible through fog.</p>
+                <p>Drag to pan, scroll to zoom, F to find the next endpoint. End assay returns to the start without a refund; revealed terrain stays known.</p>
+                <h2>Build & ship</h2>
+                <p>Successful formulas stay in Formulas. Build a Source → machines in formula order → Sink, joining ports with belts. Rotate with R; Q picks a tool. Drag a machine to move it. Right-click erases.</p>
+                <p>Plan is free and has no clock. Commission shows the price to build it in Production. Direct Production construction also costs cash; demolition gives no refund.</p>
+                <p>Play runs Production even while visiting other rooms. Blocking confirmations pause it. Sell curative stock in Market to earn cash and Knowledge, then unlock machines in Technology.</p>
+                <h2>Controls</h2>
+                <p>F1–F3 rooms · M Market · T Technology · B Blueprints · Esc close · Ctrl+S save. Factory: Space play/pause · . single tick · Ctrl+Z undo · Ctrl+Y redo · Ctrl+C/X/V copy/cut/paste. Touch: one finger builds or moves; two fingers pan.</p>
+              </section>
             )}
           </aside>
         )}

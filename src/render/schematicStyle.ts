@@ -1,8 +1,8 @@
 export const SHARED_SCHEMATIC_STYLE = Object.freeze({
-  background: 0x050a12,
-  deck: 0x18242b,
-  structure: 0xe7e1d2,
-  flow: 0x48d7e5,
-  cure: 0xb8e06c,
-  failure: 0xef6862,
+  background: 0x15191d,
+  deck: 0x20262b,
+  structure: 0xe5ebed,
+  flow: 0x69b9c9,
+  cure: 0x8dcb9b,
+  failure: 0xe8777b,
 });

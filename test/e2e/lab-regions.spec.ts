@@ -1,3 +1,4 @@
+import { openMenu } from "./menu";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
   LAB_CELL_PIXELS,
@@ -15,6 +16,7 @@ import { CellKind } from "../../src/sim/phase0_interfaces";
 import { defaultGenOptions } from "../../src/ui/Game";
 
 async function confirmLoad(page: Page): Promise<void> {
+  await openMenu(page);
   await page.getByTestId("load").click();
   const dialog = page.getByRole("alertdialog", { name: "Load saved game?" });
   await expect(dialog).toBeVisible();

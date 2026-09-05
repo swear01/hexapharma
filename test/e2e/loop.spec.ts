@@ -1,3 +1,4 @@
+import { openMenu } from "./menu";
 import { expect, test } from "@playwright/test";
 import {
   DEFAULT_STARTING_CASH,
@@ -13,6 +14,7 @@ import { BASE_GAME_FACTORY_HEIGHT, BASE_GAME_FACTORY_WIDTH } from "../../src/sim
 test.setTimeout(60_000);
 
 async function confirmLoad(page: import("@playwright/test").Page): Promise<void> {
+  await openMenu(page);
   await page.getByTestId("load").click();
   const dialog = page.getByRole("alertdialog", { name: "Load saved game?" });
   await expect(dialog).toBeVisible();
@@ -49,15 +51,17 @@ test("full loop: paid Research → Formula → Production Plan → Production �
 }) => {
   await loadPrepared(page);
   await expect(page.getByTestId("research-atlas-outcome")).toBeVisible();
+  await page.getByTestId("view-formulas").click();
   await expect(page.getByTestId("formula-ribbon")).toContainText("Disease 1");
   await expect(page.getByTestId("formula-ribbon").locator(".formula-ribbon-cost")).toContainText("assay");
   await expect(page.getByTestId("shipping-contract")).toContainText("0 / 3");
 
   await page.getByTestId("view-pilot").click();
-  await expect(page.getByRole("heading", { name: "Production Plan" })).toBeVisible();
+  await expect(page.getByTestId("pilot-facility-workspace")).toBeVisible();
   await expect(page.getByTestId("formula-ribbon")).toBeVisible();
+  await page.keyboard.press("Escape");
   await page.getByTestId("pilot-command").click();
-  await expect(page.getByRole("heading", { name: "Production" })).toBeVisible();
+  await expect(page.getByTestId("production-facility-workspace")).toBeVisible();
   await page.getByTestId("factory-play").click();
   await expect(page.getByTestId("factory-produced")).not.toHaveText("0", { timeout: 10_000 });
   await page.getByTestId("factory-pause").click();
@@ -98,6 +102,7 @@ test("Blueprint Library persists Pilot layouts independently of save-slot loadin
   }, preparedFacilitiesSave(15));
   await confirmLoad(page);
   await expect(page.getByTestId("seed")).toHaveText("15");
+  await page.getByTestId("view-blueprints").click();
   await expect(page.getByText("Starter plant", { exact: true })).toBeVisible();
   await page.reload();
   await page.getByTestId("view-blueprints").click();

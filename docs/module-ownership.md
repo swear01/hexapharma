@@ -26,7 +26,7 @@
 | patent | `src/sim/patent/` | integrator（agent 交付） | ✅ cash+Knowledge、機器／擴廠／actual-trail sensor；無layer progression |
 | render | `src/render/` | integrator（agent 交付） | ✅ shared projection／Lab／Factory pointy-top renderers |
 | ui shell/workspaces | `src/ui/Game.tsx`、`src/ui/App.tsx` | integrator | ✅ q/r Research camera／picking／six-sector caller |
-| UI chrome | `src/ui/game.css` | integrator（agent 交付） | ✅ Orbital Wet-Lab stylesheet |
+| UI chrome | `src/ui/game.css` | integrator（agent 交付） | ✅ flat neutral pixel-adjacent stylesheet |
 | factory UI | `src/ui/Factory.tsx`、`src/ui/factoryEditor.ts` | integrator | ✅ pointy-top picking／hex-line gestures／six rotations |
 | checkpoint storage | `src/ui/checkpointStorage.ts`, `src/ui/checkpointStorage.test.ts` | integrator（agent 交付） | ✅ outer v2／inner Save v10 versioned checkpoints |
 | blueprint portable format | `src/blueprint/` | integrator（agent 交付） | ✅ v4 ResearchProgram／generic q/r FactoryLayout codec |

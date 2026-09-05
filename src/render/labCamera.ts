@@ -47,9 +47,9 @@ export function labGridKindForBoundary(coordinate: number, originCoordinate: num
 export function labGridLineStyle(kind: LabGridLineKind, zoom: number): LabGridLineStyle {
   const normalizedZoom = Math.min(1, Math.max(0, (zoom - LAB_MIN_ZOOM) / (1 - LAB_MIN_ZOOM)));
   if (kind === "major") {
-    return { color: 0xb2c9c4, alpha: 0.2 + normalizedZoom * 0.05, width: 1.4 };
+    return { color: 0x89959d, alpha: 0.07 + normalizedZoom * 0.03, width: 1 };
   }
-  return { color: 0xa4b6b2, alpha: 0.055 + normalizedZoom * 0.055, width: 1 };
+  return { color: 0x89959d, alpha: 0.025 + normalizedZoom * 0.025, width: 1 };
 }
 
 export function labWorldToRelativeCell(cell: HexCoord, origin: HexCoord): HexCoord {
