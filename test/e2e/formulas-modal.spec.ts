@@ -127,6 +127,18 @@ test("full-screen formulas suppress factory input across resize without pausing 
   await expect(page.getByTestId("factory-undo")).toBeDisabled();
 });
 
+test("Escape closes Formulas and Menu after their selectors receive focus", async ({ page }) => {
+  await loadFixture(page);
+  await page.getByTestId("view-formulas").click();
+  await page.getByTestId("formula-select").focus();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("formula-ribbon")).toBeHidden();
+  await openMenu(page);
+  await page.getByTestId("save-slot").focus();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("save-slot")).toBeHidden();
+});
+
 test("formula reference restores Research hotkeys only when the world is visible", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await loadFixture(page, discover(createGameState(defaultGenOptions(14), 1000, 0), 0));

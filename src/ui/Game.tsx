@@ -786,6 +786,11 @@ export function Game() {
         save();
         return;
       }
+      if (event.key === "Escape" && drawer !== null) {
+        event.preventDefault();
+        setDrawer(null);
+        return;
+      }
       const target = event.target;
       if (
         target instanceof HTMLInputElement ||
@@ -824,9 +829,6 @@ export function Game() {
       } else if (event.key.toLowerCase() === "b") {
         event.preventDefault();
         setDrawer((current) => current === "blueprints" ? null : "blueprints");
-      } else if (event.key === "Escape" && drawer !== null) {
-        event.preventDefault();
-        setDrawer(null);
       }
     };
     window.addEventListener("keydown", onKeyDown);

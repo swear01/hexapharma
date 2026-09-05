@@ -44,7 +44,7 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 ## 4. Stepwise Research／formula
 
 1. 按F1。只有一張大型pointy-top Atlas；正常新局同圖4種疾病，開局camera聚焦generator start，只揭露中心radius-two 19-cell disk，正常viewport只看到整圖一小部分。以六個相鄰cell核對E／SE／SW／W／NW／NE picking與polygon edge一致。
-2. mission readout顯示Active assay、疾病與local／六方向broad sector；fixtures須涵蓋east、south-east、south-west、west、north-west、north-east與local，不得出現target座標或距離。
+2. mission readout桌面顯示Assay、疾病與Look local／六方向broad sector；≤768px隱藏Assay，但疾病與Look仍可見；accessible name為Active assay；fixtures須涵蓋east、south-east、south-west、west、north-west、north-east與local，不得出現target座標或距離。
 3. 逐一選Research machines。hotbar icon與candidate ghost必須顯示不同完整奇形path，且不存在path長度、縮短、延長或只走一部分的控制。
 4. 先點candidate endpoint以外的blank map，program／cash／fog必須不變且cursor是grab；移到endpoint必須變pointer並提示短動作。單擊endpointcommit第一個stamp，不需雙擊。
 5. 第一次commit後確認session已開始、只扣該machine catalog cost、program恰多一個已執行step、actual trail立即揭霧且outcome立即可見。不得等待另一個Dispense，也不得先建立多步pending route。

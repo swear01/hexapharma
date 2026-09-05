@@ -497,7 +497,7 @@ function drawMachine(m: PlacedMachine, isBottleneck: boolean, ctx: DrawCtx): voi
     const cy = (minY + maxY) / 2;
     cells.rect(cx - 15, cy - 15, 30, 30).fill({ color: style.body });
     drawMachineGlyph(cells, m, cx, cy, accent);
-    if (isBottleneck) cells.rect(cx + 11, cy - 18, 5, 5).fill({ color: FACTORY_SCHEMATIC_STYLE.failure });
+    if (isBottleneck) cells.rect(cx + 11, cy - 18, 5, 5).fill({ color: accent });
   }
 }
 

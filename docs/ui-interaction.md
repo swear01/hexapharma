@@ -47,7 +47,7 @@
 F1 只有一張大型單層 Atlas：
 
 - Research拖曳任一滑鼠鍵都可pan，與Factory的Shift+LMB／MMB手勢分開；pointer cancel只取消gesture，不得commit或erase。camera開局聚焦世界中心的generator start；fresh fog只揭露中心radius-two 19-cell hex disk，平常只看見大地圖的一小部分。focus command固定明示Next並聚焦淡藍空心candidate endpoint。每個stamp在單一intent中立即resolve，UI不顯示timed Dose phase或自動camera follow；建築往返不因舊outcome重設手動camera。Cure sites是可操作的已揭露位置計數／輪播，聚焦fog已揭露的Cure，不得暗示成功治療數、顯示未知總數或讀取隱藏座標。
-- compact mission label顯示Active assay、疾病與Target signal broad sector；sector只可為local或east／south-east／south-west／west／north-west／north-east，不顯示座標、距離、reference或region大小。
+- mission label桌面顯示Assay、疾病與Look broad sector；≤768px隱藏Assay，保留疾病與Look；accessible name仍為Active assay；sector只可為local或east／south-east／south-west／west／north-west／north-east，不顯示座標、距離、reference或region大小。
 - grid/scale與Wall在霧下仍可讀。
 - Abyss、Swamp、Portal A+B、Cure與SideEffect未揭露前不能有 motif、sprite、region edge、preview差異或 outcome洩漏。只揭露單一 Portal 端點時可顯示未配對端點，但配對標記、方向、目的座標與 preview jump 必須等兩端都揭露。
 - palette 每個 machine 以完整奇形 path silhouette 與 semantic glyph辨識；沒有 path-length control。
