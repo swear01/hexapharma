@@ -1,3 +1,4 @@
+import { installSaveFixture } from "./checkpoint";
 import { openMenu } from "./menu";
 import { expect, test, type Page } from "@playwright/test";
 import { LAB_VIEWPORT, clampLabCamera, focusLabCamera } from "../../src/render/labCamera";
@@ -357,7 +358,7 @@ test("Cure sites focuses only a Cure already present in authoritative fog", asyn
   const expected = clampLabCamera(focusLabCamera(target.pos), LAB_VIEWPORT, map);
 
   await page.goto("/");
-  await page.evaluate((save) => localStorage.setItem("hexapharma.save.slot.0", save), serializeGame(game));
+  await installSaveFixture(page, serializeGame(game));
   await page.reload();
   await confirmLoad(page);
   const cures = page.getByTestId("research-cures");

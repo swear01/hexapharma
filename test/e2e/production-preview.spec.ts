@@ -2,7 +2,7 @@ import { openMenu } from "./menu";
 import { expect, test } from "@playwright/test";
 import { createGameState } from "../../src/sim/game";
 import { LAB_VIEWPORT } from "../../src/render/labCamera";
-import { serializeGameAuthority } from "../../src/sim/save";
+import { serializeSnapshot } from "../../src/sim/save";
 import { defaultGenOptions } from "../../src/ui/Game";
 
 const maximumGameMap = createGameState(
@@ -12,7 +12,7 @@ const maximumGameMap = createGameState(
 );
 const maximumGameMapCheckpoint = JSON.stringify({
   version: 2,
-  head: serializeGameAuthority(maximumGameMap),
+  head: serializeSnapshot(maximumGameMap),
   history: [],
 });
 
@@ -66,7 +66,7 @@ test("production preview renders the maximum Game-authorized map dimensions", as
 
   await page.goto("/");
   await page.evaluate((checkpoint) => {
-    localStorage.setItem("hexapharma.save.v10.checkpoint.0", checkpoint);
+    localStorage.setItem("hexapharma.save.v11.checkpoint.0", checkpoint);
   }, maximumGameMapCheckpoint);
   await page.reload();
   await confirmLoad(page);
@@ -86,7 +86,7 @@ test("production preview renders the maximum Game-authorized map dimensions", as
 test("the maximum Game map fills the clipped Atlas frame without distorting hexes", async ({ page }) => {
   await page.goto("/");
   await page.evaluate((checkpoint) => {
-    localStorage.setItem("hexapharma.save.v10.checkpoint.0", checkpoint);
+    localStorage.setItem("hexapharma.save.v11.checkpoint.0", checkpoint);
   }, maximumGameMapCheckpoint);
   await page.reload();
   await confirmLoad(page);

@@ -18,7 +18,6 @@ import type {
   Unit,
   ProducedUnit,
   InventoryProduct,
-  GameIntent,
   Dir,
   HexCoord,
   SerializeGameFn,
@@ -30,14 +29,9 @@ import {
   MAX_MACHINE_PORTS,
   MAX_MACHINE_SHAPE_CELLS,
   MAX_TEMPLATE_STEPS,
-  MAX_BULK_SALE_PRODUCTS,
   MAX_GAME_INVENTORY_PRODUCTS,
   MAX_GAME_FACTORY_CELLS,
   MAX_GAME_FACTORY_DIMENSION,
-  MAX_GAME_REPLAY_WORK,
-  MAX_REWIND_HISTORY_REPLAY_TICKS,
-  MAX_REWIND_HISTORY_REPLAY_WORK,
-  MAX_REWIND_HISTORY_TRACE_ENTRIES,
 } from "../phase0_interfaces";
 import { restoreFactory, snapshotFactory } from "../factory-sim";
 import {
@@ -47,16 +41,13 @@ import {
 } from "../mapgen";
 import { DEFAULT_PATENTS } from "../patent";
 import {
-  MAX_INTENT_TRACE,
-  MAX_REPLAY_TICKS,
-  applyGameIntent,
-  createGameState,
-  hashGame,
-  validateFactoryLayout,
+  requireEntitledFacilityLayout,
+  validateGameOptions,
   validateGameState,
 } from "../game";
 import { isJsonObject } from "../../json-guards";
-import { estimateGameReplayWork } from "../replay-work";
+import { fnv1a32Hex } from "../hash";
+import { DEFAULT_CATALOG, DEFAULT_SHAPES } from "../phase0_interfaces";
 
 // HexaPharma save/load (Phase 3).
 //
@@ -69,30 +60,17 @@ import { estimateGameReplayWork } from "../replay-work";
 // blob field-by-field and rebuilding a structurally-equal GameState — never
 // defaulting silently on missing/wrong fields.
 
-export const SAVE_VERSION = 10;
+export const SAVE_VERSION = 11;
+export const SAVE_CONTENT_BUILD = fnv1a32Hex(canonical({
+  rules: 1,
+  catalog: DEFAULT_CATALOG,
+  shapes: DEFAULT_SHAPES,
+  patents: DEFAULT_PATENTS,
+}));
 export const MAX_SLOT_STATES = 20;
 export const MAX_SAVE_CHARACTERS = 5_000_000;
 
-/** Tag carried by every serialized blob. Bump on incompatible format changes. */
-interface SaveEnvelope {
-  readonly version: number;
-  readonly game: unknown;
-}
-
-interface AuthorityPayload {
-  readonly origin: GameState["origin"];
-  readonly intentTrace: GameState["intentTrace"];
-  readonly replayTicks: number;
-  readonly stateHash: number;
-}
-
-export interface GameAuthorityWork {
-  readonly replayTicks: number;
-  readonly intentCount: number;
-  readonly replayWork: number;
-}
-
-export interface PreparedGameAuthority {
+export interface PreparedSnapshot {
   readonly game: GameState;
   readonly serialized: string;
 }
@@ -211,7 +189,7 @@ function parseGenOptions(v: unknown, path = "genOptions"): GenOptions {
     "difficulty",
   ]);
   const diff = reqExactObject(o.difficulty, `${path}.difficulty`, ["min", "max"]);
-  return {
+  const options = {
     seed: reqInt(o.seed, `${path}.seed`),
     nMaps: reqInt(o.nMaps, `${path}.nMaps`),
     width: reqInt(o.width, `${path}.width`),
@@ -223,6 +201,12 @@ function parseGenOptions(v: unknown, path = "genOptions"): GenOptions {
       max: reqNumber(diff.max, `${path}.difficulty.max`),
     },
   };
+  try {
+    validateGameOptions(options);
+  } catch (error) {
+    throw new SaveError(`${path}: ${(error as Error).message}`);
+  }
+  return options;
 }
 
 function parsePathStamp(v: unknown, path: string): Machine["path"] {
@@ -510,55 +494,6 @@ function parseNullableFactory(v: unknown, path = "factory"): FactoryLayout | nul
   return v === null ? null : parseFactory(v, path);
 }
 
-function parseGameIntent(v: unknown, index: number, tracePath = "intentTrace"): GameIntent {
-  const path = `${tracePath}[${index}]`;
-  const o = reqObject(v, path);
-  const kind = reqString(o.kind, `${path}.kind`);
-  switch (kind) {
-    case "setPilotLayout":
-    case "buildProductionLayout":
-      requireExactKeys(o, ["kind", "layout"], path);
-      return { kind, layout: parseFactory(o.layout, `${path}.layout`) };
-    case "beginResearchShot":
-    case "abortResearchShot":
-    case "resetProduction":
-      requireExactKeys(o, ["kind"], path);
-      return { kind };
-    case "advanceResearchShot":
-      requireExactKeys(o, ["kind", "machine"], path);
-      return { kind, machine: parseMachine(o.machine, `${path}.machine`) };
-    case "productionTicks":
-      requireExactKeys(o, ["kind", "ticks"], path);
-      return { kind, ticks: reqInt(o.ticks, `${path}.ticks`) };
-    case "sellProduct":
-      requireExactKeys(o, ["kind", "productId", "disease"], path);
-      return {
-        kind,
-        productId: reqInt(o.productId, `${path}.productId`),
-        disease: reqInt(o.disease, `${path}.disease`),
-      };
-    case "sellProducts": {
-      requireExactKeys(o, ["kind", "productIds", "disease"], path);
-      const productIds = reqArray(o.productIds, `${path}.productIds`);
-      if (productIds.length < 1 || productIds.length > MAX_BULK_SALE_PRODUCTS) {
-        throw new SaveError(`${path}.productIds: exceeds bulk sale bounds`);
-      }
-      return {
-        kind,
-        productIds: productIds.map((id, product) =>
-          reqInt(id, `${path}.productIds[${product}]`),
-        ),
-        disease: reqInt(o.disease, `${path}.disease`),
-      };
-    }
-    case "unlockPatent":
-      requireExactKeys(o, ["kind", "id"], path);
-      return { kind, id: reqString(o.id, `${path}.id`) };
-    default:
-      throw new SaveError(`${path}.kind: unknown GameIntent kind "${kind}"`);
-  }
-}
-
 function parseUnit(v: unknown, path: string, expectedMaps: number): Unit {
   const o = reqExactObject(v, path, [
     "id",
@@ -676,6 +611,9 @@ function validateFactorySnapshot(
     nonNegative(unit.id, `${path}.units[${index}].id`);
     nonNegative(unit.proc, `${path}.units[${index}].proc`);
     nonNegative(unit.productionCost, `${path}.units[${index}].productionCost`);
+    if (unit.proc > 0x7fff_ffff || unit.productionCost > 0x7fff_ffff) {
+      throw new SaveError(`${path}.units[${index}]: progress or production cost exceeds int32`);
+    }
     if (unit.id <= previousId) {
       throw new SaveError(`${path}.units[${index}].id: ids must be unique and sorted`);
     }
@@ -814,87 +752,8 @@ function parseProductionFacility(v: unknown, expectedMaps: number): ParsedProduc
   };
 }
 
-function parseAuthorityPayload(v: unknown, path = "authority"): AuthorityPayload {
-  const o = reqExactObject(v, path, ["origin", "intentTrace", "replayTicks", "stateHash"]);
-  const originObject = reqExactObject(
-    o.origin,
-    `${path}.origin`,
-    ["genOptions", "cash", "research"],
-  );
-  const origin = {
-    genOptions: parseGenOptions(originObject.genOptions, `${path}.origin.genOptions`),
-    cash: reqInt(originObject.cash, `${path}.origin.cash`),
-    research: reqInt(originObject.research, `${path}.origin.research`),
-  };
-  const rawIntentTrace = reqArray(o.intentTrace, `${path}.intentTrace`);
-  if (rawIntentTrace.length > MAX_INTENT_TRACE) {
-    throw new SaveError(`${path}.intentTrace: exceeds ${MAX_INTENT_TRACE} entries`);
-  }
-  return {
-    origin,
-    intentTrace: rawIntentTrace.map((intent, index) =>
-      parseGameIntent(intent, index, `${path}.intentTrace`),
-    ),
-    replayTicks: reqInt(o.replayTicks, `${path}.replayTicks`),
-    stateHash: reqInt(o.stateHash, `${path}.stateHash`),
-  };
-}
-
-function restoreAuthority(payload: AuthorityPayload): GameState {
-  let game = createGameState(
-    payload.origin.genOptions,
-    payload.origin.cash,
-    payload.origin.research,
-  );
-  for (const intent of payload.intentTrace) game = applyGameIntent(game, intent);
-  if (
-    game.replayTicks !== payload.replayTicks ||
-    canonical(game.intentTrace) !== canonical(payload.intentTrace)
-  ) {
-    throw new SaveError("authority: trace is not canonical or replay tick total does not match");
-  }
-  const canonicalGame = validateGameState(game);
-  if (
-    payload.stateHash < 0 ||
-    payload.stateHash > 0xffff_ffff ||
-    hashGame(canonicalGame) !== payload.stateHash
-  ) {
-    throw new SaveError("authority: replayed state hash does not match the saved build result");
-  }
-  return canonicalGame;
-}
-
-function parseAuthorityEnvelope(serialized: string): unknown {
-  if (serialized.length > MAX_SAVE_CHARACTERS) {
-    throw new SaveError(`authority: save exceeds ${MAX_SAVE_CHARACTERS} characters`);
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(serialized);
-  } catch (error) {
-    throw new SaveError(`malformed authority: invalid JSON (${(error as Error).message})`);
-  }
-  const envelope = reqObject(parsed, "authority save");
-  const version = reqInt(envelope.version, "authority save.version");
-  if (version >= 5 && version < SAVE_VERSION) {
-    throw new SaveError(
-      `authority save: legacy version ${version} is not supported by Save v${SAVE_VERSION}`,
-    );
-  }
-  if (version !== SAVE_VERSION) {
-    throw new SaveError(
-      `authority save: incompatible version ${version} (expected ${SAVE_VERSION})`,
-    );
-  }
-  requireExactKeys(envelope, ["version", "authority"], "authority save");
-  return envelope.authority;
-}
-
 function parseGameState(v: unknown): GameState {
   const o = reqExactObject(v, "game", [
-    "origin",
-    "intentTrace",
-    "replayTicks",
     "genOptions",
     "economy",
     "patents",
@@ -907,17 +766,6 @@ function parseGameState(v: unknown): GameState {
     "rng",
   ]);
   const genOptions = parseGenOptions(o.genOptions);
-  const originObject = reqExactObject(o.origin, "origin", ["genOptions", "cash", "research"]);
-  const origin = {
-    genOptions: parseGenOptions(originObject.genOptions, "origin.genOptions"),
-    cash: reqInt(originObject.cash, "origin.cash"),
-    research: reqInt(originObject.research, "origin.research"),
-  };
-  const rawIntentTrace = reqArray(o.intentTrace, "intentTrace");
-  if (rawIntentTrace.length > MAX_INTENT_TRACE) {
-    throw new SaveError(`intentTrace: exceeds ${MAX_INTENT_TRACE} entries`);
-  }
-  const intentTrace = rawIntentTrace.map((intent, index) => parseGameIntent(intent, index));
   const fog = parseFog(o.fog, genOptions);
   if (fog.length !== genOptions.nMaps) {
     throw new SaveError(`fog: map count ${fog.length} !== genOptions.nMaps ${genOptions.nMaps}`);
@@ -932,6 +780,9 @@ function parseGameState(v: unknown): GameState {
   const pilot = parsePilotFacility(o.pilot);
   const production = parseProductionFacility(o.production, genOptions.nMaps);
   try {
+    const patents = parsePatents(o.patents);
+    requireEntitledFacilityLayout({ patents }, production.layout, "Production");
+    if (pilot.layout !== null) requireEntitledFacilityLayout({ patents }, pilot.layout, "Pilot Plant");
     validateFactorySnapshot(
       production.snapshot,
       production.layout,
@@ -940,12 +791,9 @@ function parseGameState(v: unknown): GameState {
     );
     const level = generate(genOptions);
     const parsed: GameState = {
-      origin,
-      intentTrace,
-      replayTicks: reqInt(o.replayTicks, "replayTicks"),
       genOptions,
       economy: parseEconomy(o.economy, genOptions.diseaseCount),
-      patents: parsePatents(o.patents),
+      patents,
       research,
       pilot,
       production: {
@@ -963,7 +811,6 @@ function parseGameState(v: unknown): GameState {
       fog,
       rng: parseRng(o.rng),
     };
-    validateFactoryLayout(parsed, production.layout);
     return validateGameState(parsed);
   } catch (error) {
     if (error instanceof SaveError) throw error;
@@ -971,274 +818,130 @@ function parseGameState(v: unknown): GameState {
   }
 }
 
-// ── public API ──
-
-export const serializeGame: SerializeGameFn = (g) => {
-  try {
-    validateGameState(g);
-  } catch (error) {
-    throw new SaveError(`game: ${(error as Error).message}`);
-  }
-  const game = {
-    ...g,
-    production: {
-      ...g.production,
-      runtime: snapshotFactory(g.production.runtime),
-    },
+function snapshot(game: GameState) {
+  return {
+    ...game,
+    production: { ...game.production, runtime: snapshotFactory(game.production.runtime) },
   };
-  const envelope: SaveEnvelope = { version: SAVE_VERSION, game };
-  const serialized = canonical(envelope);
+}
+
+function encode(payload: Record<string, unknown>): string {
+  const serialized = canonical({ version: SAVE_VERSION, contentBuild: SAVE_CONTENT_BUILD, ...payload });
   if (serialized.length > MAX_SAVE_CHARACTERS) {
-    throw new SaveError(`game: save exceeds ${MAX_SAVE_CHARACTERS} characters`);
+    throw new SaveError(`save exceeds ${MAX_SAVE_CHARACTERS} characters`);
   }
   return serialized;
-};
+}
 
-export const deserializeGame: DeserializeGameFn = (s) => {
-  if (s.length > MAX_SAVE_CHARACTERS) {
-    throw new SaveError(`game: save exceeds ${MAX_SAVE_CHARACTERS} characters`);
+function decode(serialized: string, field: string): unknown {
+  if (serialized.length > MAX_SAVE_CHARACTERS) {
+    throw new SaveError(`save exceeds ${MAX_SAVE_CHARACTERS} characters`);
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(s);
-  } catch (e) {
-    throw new SaveError(`malformed save: invalid JSON (${(e as Error).message})`);
+    parsed = JSON.parse(serialized);
+  } catch (error) {
+    throw new SaveError(`malformed save: invalid JSON (${(error as Error).message})`);
   }
-  const env = reqObject(parsed, "save");
-  if (!("version" in env)) throw new SaveError("save: missing version tag");
-  const version = reqInt(env.version, "save.version");
-  if (version >= 5 && version < SAVE_VERSION) {
-    throw new SaveError(`save: legacy version ${version} is not supported by Save v${SAVE_VERSION}`);
-  }
+  const envelope = reqObject(parsed, "save");
+  if (!("version" in envelope)) throw new SaveError("save: missing version");
+  const version = reqInt(envelope.version, "save.version");
   if (version !== SAVE_VERSION) {
-    throw new SaveError(`save: incompatible version ${version} (expected ${SAVE_VERSION})`);
+    throw new SaveError(`save: incompatible version ${version} (expected ${SAVE_VERSION}); alpha saves are not migrated`);
   }
-  if (!("game" in env)) throw new SaveError("save: missing game payload");
-  requireExactKeys(env, ["version", "game"], "save");
-  inspectFullGameValue(env.game, "game");
-  return parseGameState(env.game);
-};
+  requireExactKeys(envelope, ["version", "contentBuild", field], "save");
+  if (envelope.contentBuild !== SAVE_CONTENT_BUILD) {
+    throw new SaveError("save: incompatible content build");
+  }
+  return envelope[field];
+}
 
-export function prepareGameAuthority(game: GameState): PreparedGameAuthority {
-  let canonicalGame: GameState;
+export const serializeGame: SerializeGameFn = (game) => {
   try {
-    canonicalGame = validateGameState(game);
-  } catch (error) {
-    throw new SaveError(`authority: ${(error as Error).message}`);
-  }
-  const serialized = canonical({
-    version: SAVE_VERSION,
-    authority: {
-      origin: canonicalGame.origin,
-      intentTrace: canonicalGame.intentTrace,
-      replayTicks: canonicalGame.replayTicks,
-      stateHash: hashGame(canonicalGame),
-    },
-  });
-  if (serialized.length > MAX_SAVE_CHARACTERS) {
-    throw new SaveError(`authority: save exceeds ${MAX_SAVE_CHARACTERS} characters`);
-  }
-  return Object.freeze({ game: canonicalGame, serialized });
-}
-
-export function serializeGameAuthority(game: GameState): string {
-  return prepareGameAuthority(game).serialized;
-}
-
-function computeAuthorityWork(
-  origin: GenOptions,
-  intentTrace: readonly GameIntent[],
-  replayTicks: number,
-  path: string,
-): GameAuthorityWork {
-  if (replayTicks < 0 || replayTicks > MAX_REPLAY_TICKS) {
-    throw new SaveError(
-      `${path}.replayTicks: expected 0..${MAX_REPLAY_TICKS}, got ${replayTicks}`,
-    );
-  }
-  let computedReplayTicks = 0;
-  for (let index = 0; index < intentTrace.length; index++) {
-    const intent = intentTrace[index]!;
-    if (intent.kind !== "productionTicks") continue;
-    if (intent.ticks <= 0 || intent.ticks > MAX_REPLAY_TICKS - computedReplayTicks) {
-      throw new SaveError(
-        `${path}.intentTrace[${index}].ticks: cumulative replay work exceeds ` +
-          `${MAX_REPLAY_TICKS}`,
-      );
-    }
-    computedReplayTicks += intent.ticks;
-  }
-  if (replayTicks !== computedReplayTicks) {
-    throw new SaveError(
-      `${path}.replayTicks: declared ${replayTicks} does not match computed trace total ` +
-        `${computedReplayTicks}`,
-    );
-  }
-  let replayWork: number;
-  try {
-    replayWork = estimateGameReplayWork(origin, intentTrace);
-  } catch (error) {
-    throw new SaveError(`${path} replay work: ${(error as Error).message}`);
-  }
-  if (replayWork > MAX_GAME_REPLAY_WORK) {
-    throw new SaveError(`${path} replay work exceeds ${MAX_GAME_REPLAY_WORK}`);
-  }
-  return Object.freeze({
-    replayTicks: computedReplayTicks,
-    intentCount: intentTrace.length,
-    replayWork,
-  });
-}
-
-function inspectFullGameValue(value: unknown, path: string): GameAuthorityWork {
-  const game = reqObject(value, path);
-  const origin = reqExactObject(
-    game.origin,
-    `${path}.origin`,
-    ["genOptions", "cash", "research"],
-  );
-  const genOptions = parseGenOptions(origin.genOptions, `${path}.origin.genOptions`);
-  const rawIntentTrace = reqArray(game.intentTrace, `${path}.intentTrace`);
-  if (rawIntentTrace.length > MAX_INTENT_TRACE) {
-    throw new SaveError(`${path}.intentTrace: exceeds ${MAX_INTENT_TRACE} entries`);
-  }
-  const intentTrace = rawIntentTrace.map((intent, index) =>
-    parseGameIntent(intent, index, `${path}.intentTrace`),
-  );
-  return computeAuthorityWork(
-    genOptions,
-    intentTrace,
-    reqInt(game.replayTicks, `${path}.replayTicks`),
-    path,
-  );
-}
-
-function requireAggregateHistoryWork(
-  work: readonly GameAuthorityWork[],
-  path: string,
-): void {
-  if (work.length < 2) return;
-  let replayTicks = 0;
-  let intentCount = 0;
-  let replayWork = 0;
-  for (const entry of work) {
-    replayTicks += entry.replayTicks;
-    intentCount += entry.intentCount;
-    replayWork += entry.replayWork;
-  }
-  if (replayTicks > MAX_REWIND_HISTORY_REPLAY_TICKS) {
-    throw new SaveError(
-      `${path}: aggregate replay ticks exceed ${MAX_REWIND_HISTORY_REPLAY_TICKS}`,
-    );
-  }
-  if (intentCount > MAX_REWIND_HISTORY_TRACE_ENTRIES) {
-    throw new SaveError(
-      `${path}: aggregate trace entries exceed ${MAX_REWIND_HISTORY_TRACE_ENTRIES}`,
-    );
-  }
-  if (replayWork > MAX_REWIND_HISTORY_REPLAY_WORK) {
-    throw new SaveError(
-      `${path}: aggregate replay work exceeds ${MAX_REWIND_HISTORY_REPLAY_WORK}`,
-    );
-  }
-}
-
-export function inspectGameAuthority(serialized: string): GameAuthorityWork {
-  const payload = parseAuthorityPayload(parseAuthorityEnvelope(serialized));
-  if (payload.stateHash < 0 || payload.stateHash > 0xffff_ffff) {
-    throw new SaveError("authority.stateHash: expected a uint32 checksum");
-  }
-  return computeAuthorityWork(
-    payload.origin.genOptions,
-    payload.intentTrace,
-    payload.replayTicks,
-    "authority",
-  );
-}
-
-export function deserializeGameAuthority(serialized: string): GameState {
-  try {
-    inspectGameAuthority(serialized);
-    return restoreAuthority(parseAuthorityPayload(parseAuthorityEnvelope(serialized)));
+    return encode({ game: snapshot(validateGameState(game)) });
   } catch (error) {
     if (error instanceof SaveError) throw error;
-    throw new SaveError(`authority: ${(error as Error).message}`);
+    throw new SaveError(`game: ${(error as Error).message}`);
   }
+};
+
+export const deserializeGame: DeserializeGameFn = (serialized) =>
+  parseGameState(decode(serialized, "game"));
+
+interface InventoryGroup {
+  readonly drug: DrugState;
+  readonly productionCost: number;
+  readonly outcome: Outcome;
+  readonly ids: [number, number][];
 }
 
-// ── multi-save / rewind (snapshot history) ──
-//
-// A run keeps a list of GameState snapshots; rewind = drop back to an earlier one.
-// serializeSlots/deserializeSlots persist the whole list as one versioned blob.
+export function prepareSnapshot(game: GameState): PreparedSnapshot {
+  const owned = validateGameState(game);
+  const state = snapshot(owned);
+  const inventory: InventoryGroup[] = [];
+  let previous = "";
+  for (const product of state.inventory) {
+    const payload = { drug: product.drug, productionCost: product.productionCost, outcome: product.outcome };
+    const key = canonical(payload);
+    if (key !== previous) inventory.push({ ...payload, ids: [] });
+    inventory[inventory.length - 1]!.ids.push([product.id, product.inventoryId]);
+    previous = key;
+  }
+  return { game: owned, serialized: encode({ snapshot: { ...state, inventory } }) };
+}
+
+export function deserializeSnapshot(serialized: string): GameState {
+  const state = reqObject(decode(serialized, "snapshot"), "snapshot");
+  const groups = reqArray(state.inventory, "snapshot.inventory");
+  if (groups.length > MAX_GAME_INVENTORY_PRODUCTS) {
+    throw new SaveError("snapshot.inventory: exceeds physical product limit");
+  }
+  let count = 0;
+  const parsed = groups.map((value, index) => {
+    const path = `snapshot.inventory[${index}]`;
+    const group = reqExactObject(value, path, ["drug", "productionCost", "outcome", "ids"]);
+    const ids = reqArray(group.ids, `${path}.ids`);
+    count += ids.length;
+    if (ids.length === 0 || count > MAX_GAME_INVENTORY_PRODUCTS) {
+      throw new SaveError("snapshot.inventory: empty group or exceeds physical product limit");
+    }
+    return { group, ids, path };
+  });
+  const inventory = parsed.flatMap(({ group, ids, path }) => ids.map((value, index) => {
+    const pair = reqArray(value, `${path}.ids[${index}]`);
+    if (pair.length !== 2) throw new SaveError(`${path}.ids[${index}]: expected two IDs`);
+    return {
+      id: reqInt(pair[0], `${path}.ids[${index}][0]`),
+      inventoryId: reqInt(pair[1], `${path}.ids[${index}][1]`),
+      drug: group.drug, productionCost: group.productionCost, outcome: group.outcome,
+    };
+  }));
+  return parseGameState({ ...state, inventory });
+}
+
+export function serializeSnapshot(game: GameState): string {
+  return prepareSnapshot(game).serialized;
+}
 
 export const serializeSlots = (states: readonly GameState[]): string => {
   if (states.length > MAX_SLOT_STATES) {
     throw new SaveError(`slots: state count exceeds ${MAX_SLOT_STATES}`);
   }
-  const work = states.map((state, index) =>
-    computeAuthorityWork(
-      state.origin.genOptions,
-      state.intentTrace,
-      state.replayTicks,
-      `slots[${index}]`,
-    ),
-  );
-  requireAggregateHistoryWork(work, "slots");
-  const slots = states.map((state) => {
-    try {
-      validateGameState(state);
-    } catch (error) {
-      throw new SaveError(`game: ${(error as Error).message}`);
-    }
-    return {
-      ...state,
-      production: {
-        ...state.production,
-        runtime: snapshotFactory(state.production.runtime),
-      },
-    };
-  });
-  const envelope = { version: SAVE_VERSION, slots };
-  const serialized = canonical(envelope);
-  if (serialized.length > MAX_SAVE_CHARACTERS) {
-    throw new SaveError(`slots: save exceeds ${MAX_SAVE_CHARACTERS} characters`);
-  }
-  return serialized;
+  return encode({ slots: states.map((state) => snapshot(validateGameState(state))) });
 };
 
-export const deserializeSlots = (s: string): GameState[] => {
-  if (s.length > MAX_SAVE_CHARACTERS) {
-    throw new SaveError(`slots: save exceeds ${MAX_SAVE_CHARACTERS} characters`);
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(s);
-  } catch (e) {
-    throw new SaveError(`malformed slots: invalid JSON (${(e as Error).message})`);
-  }
-  const env = reqObject(parsed, "slots");
-  if (!("version" in env)) throw new SaveError("slots: missing version tag");
-  const version = reqInt(env.version, "slots.version");
-  if (version >= 5 && version < SAVE_VERSION) {
-    throw new SaveError(`slots: legacy version ${version} is not supported by Save v${SAVE_VERSION}`);
-  }
-  if (version !== SAVE_VERSION) {
-    throw new SaveError(`slots: incompatible version ${version} (expected ${SAVE_VERSION})`);
-  }
-  requireExactKeys(env, ["version", "slots"], "slots");
-  const arr = reqArray(env.slots, "slots.slots");
-  if (arr.length > MAX_SLOT_STATES) {
+export const deserializeSlots = (serialized: string): GameState[] => {
+  const states = reqArray(decode(serialized, "slots"), "slots");
+  if (states.length > MAX_SLOT_STATES) {
     throw new SaveError(`slots: state count exceeds ${MAX_SLOT_STATES}`);
   }
-  const work = arr.map((game, index) => inspectFullGameValue(game, `slots[${index}]`));
-  requireAggregateHistoryWork(work, "slots");
-  return arr.map((g, i) => parseGameState((reqObject({ game: g }, `slots[${i}]`)).game));
+  return states.map(parseGameState);
 };
 
 /** Push a snapshot onto a rewind history (returns a new array; does not mutate). */
 export const pushSnapshot = (history: readonly GameState[], g: GameState): GameState[] => {
   try {
-    return [...history, validateGameState(g)];
+    return [...history.slice(-(MAX_SLOT_STATES - 1)), validateGameState(g)];
   } catch (error) {
     throw new SaveError(`game: ${(error as Error).message}`);
   }

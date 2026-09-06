@@ -307,9 +307,6 @@ export const BASE_GAME_FACTORY_HEIGHT = 12;
 export const MAX_GAME_MAP_CELLS = 4_096;
 export const MAX_GAME_MAP_DIMENSION = 64;
 export const MAX_GAME_REPLAY_WORK = 100_000_000;
-export const MAX_REWIND_HISTORY_REPLAY_TICKS = 12_000;
-export const MAX_REWIND_HISTORY_TRACE_ENTRIES = 8_192;
-export const MAX_REWIND_HISTORY_REPLAY_WORK = 100_000_000;
 
 /** A machine as placed in the factory: a chemical path + throughput attributes. */
 export interface FactoryMachineDef {
@@ -713,13 +710,6 @@ export interface InventoryProduct extends ProducedUnit {
   readonly outcome: Outcome;
 }
 
-/** Immutable run origin used to verify that a persisted input trace reproduces the save. */
-export interface GameOrigin {
-  readonly genOptions: GenOptions;
-  readonly cash: number;
-  readonly research: number;
-}
-
 export interface ResearchShot {
   /** Number of machine stamps executed in this active reveal-decide session. */
   readonly step: number;
@@ -760,7 +750,7 @@ export interface ProductionFacilityState {
   readonly waste: number;
 }
 
-/** Every authoritative whole-game state transition; consecutive factory ticks are normalized. */
+/** Every authoritative whole-game state transition. */
 export type GameIntent =
   | { readonly kind: "beginResearchShot" }
   | { readonly kind: "advanceResearchShot"; readonly machine: Machine }
@@ -774,10 +764,6 @@ export type GameIntent =
   | { readonly kind: "unlockPatent"; readonly id: string };
 
 export interface GameState {
-  readonly origin: GameOrigin;
-  readonly intentTrace: readonly GameIntent[];
-  /** Cumulative factory ticks represented by `intentTrace`; bounded for save replay validation. */
-  readonly replayTicks: number;
   readonly genOptions: GenOptions; // regenerates the current MultiMap + diseases
   readonly economy: EconomyState;
   readonly patents: PatentState;

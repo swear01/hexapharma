@@ -1,3 +1,4 @@
+import { installSaveFixture } from "./checkpoint";
 import { openMenu } from "./menu";
 import { expect, test } from "@playwright/test";
 import { quoteProductionBuild } from "../../src/sim/construction";
@@ -44,9 +45,7 @@ async function loadMarket(
   priorSales: number,
 ): Promise<void> {
   await page.goto("/");
-  await page.evaluate((save) => {
-    localStorage.setItem("hexapharma.save.slot.0", save);
-  }, preparedMarketSave(priorSales));
+  await installSaveFixture(page, preparedMarketSave(priorSales));
   await page.reload();
   await openMenu(page);
   await page.getByTestId("load").click();

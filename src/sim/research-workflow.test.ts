@@ -68,7 +68,6 @@ describe("ResearchProgram workflow", () => {
     const initial = createGameState(options, 500, 0);
     const advanced = dispatch(initial, { kind: "advanceResearchShot", machine });
 
-    expect(advanced.intentTrace).toHaveLength(initial.intentTrace.length + 1);
     expect(advanced.economy.cash).toBe(500 - machine.cost);
     expect(advanced.research.program.steps).toEqual([{ typeId: machine.typeId, path: machine.path }]);
     expect(advanced.research.lastOutcome).not.toBeNull();

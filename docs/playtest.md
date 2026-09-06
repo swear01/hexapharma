@@ -88,7 +88,7 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 2. 逐項place並核對cash與ghost報價：belt 2、split/merge 8、source 12、sink 6、machine `10 × processing cost`。
 3. 改belt方向應再收belt價；移動／每次60°旋轉machine應收新機器價；只改ID的等價layout不收費。六次旋轉必須回到原footprint／ports。
 4. 刪除tile/machine不退款。再undo重建內容時依新增內容收費。
-5. 準備no-op、碰撞與現金不足的edit；放開後cash、layout、runtime、waste、trace與Play狀態都不變，現金不足時顯示明確錯誤。
+5. 準備no-op、碰撞與現金不足的edit；放開後cash、layout、runtime、waste與Play狀態都不變，現金不足時顯示明確錯誤。
 6. Play累積tick、unit或waste後修改layout；播放停止、runtime/tick歸零，在途unit清除，累積waste與inventory保留。
 7. 直接Production與Plan的`Commission $N`都走相同報價。後者成功後開F3，失敗時Plan不變。
 8. 有進度時解鎖擴廠；確認modal列出runtime/waste影響。Cancel原子不變，Confirm不打斷active Research shot。
@@ -125,13 +125,13 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 7. 按Delete先顯示entry名稱與cross-save永久刪除警告；Cancel保留card，Confirm才移除Library entry。
 8. 在新局載入含未解鎖machine的跨存檔Blueprint；錯誤要顯示玩家名稱與Technology指引，不得洩漏type ID或machine數字ID。
 
-## 12. Save v10 / recovery
+## 12. Save v11 / recovery
 
-1. Save後做stepwise Research／formula discovery、Production Plan edit、shipping contract progress、兩次paid Production edit與Production ticks，再Save建立同origin history。
+1. Save後做stepwise Research／formula discovery、Production Plan edit、shipping contract progress、兩次paid Production edit與Production ticks，再Save建立同地圖的獨立快照 history。
 2. Load不同state時先顯示「覆蓋目前遊戲」確認；Cancel不變，Confirm後恢復Atlas/fog/program/shot/outcome/formulas、內部pilot layout、non-null Production layout/runtime/waste、inventory、economy/contracts與Technology。
-3. 核對兩次paid build仍存在trace且cash重播相同；不得只保留最後layout。
+3. 核對兩次 paid build 的扣款都反映在 cash，快照保留最後 layout 與完整 runtime。直接修改合法 Cash／Knowledge 後仍可 Load，不要求收入 trace。
 4. Rewind先警告永久丟棄最新saved checkpoint並覆蓋current state；Cancel不變，Confirm才回前snapshot，reload後較舊history仍在；Blueprint Library不受影響。
-5. full／compact／slots都是version 10；checkpoint lineage外層version 2、內層head/history是Save v10，canonical key為`hexapharma.save.v10.checkpoint.${slot}`。Save v9或unknown schema顯式拒絕，不silent migrate、部分載入或覆寫舊blob／key。
+5. full／compact／slots都是version 11；獨立 checkpoint/history 外層version 2、內層head/history是Save v11，canonical key為`hexapharma.save.v11.checkpoint.${slot}`。Save v10 或更早版本、不同 content build 或 unknown schema顯式拒絕，不silent migrate、部分載入或覆寫舊blob／key。
 6. corrupt/partial/disagreeing blob顯示錯誤；Recover前不得自動刪除或覆寫raw data。
 
 ## 13. Gate、residue與回報

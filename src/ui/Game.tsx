@@ -22,7 +22,7 @@ import {
 import { generate } from "../sim/mapgen";
 import { applyTemplate, previewStep } from "../sim/drug-graph";
 import { hexDistance, hexIndex } from "../sim/hex";
-import { serializeGameAuthority } from "../sim/save";
+import { serializeSnapshot } from "../sim/save";
 import {
   applyGameIntent,
   availableCatalog,
@@ -43,7 +43,6 @@ import { blockingDialogOpen } from "./blockingDialog";
 import { hexToPixel } from "../render/hexProjection";
 import { machineName, machineShortName } from "./machineLabels";
 import {
-  finishMigration,
   readSlot,
   recoverSlot,
   rewindSlot,
@@ -334,7 +333,7 @@ type PendingSaveAction =
     };
 
 function sameGameState(first: GameState, second: GameState): boolean {
-  return first === second || serializeGameAuthority(first) === serializeGameAuthority(second);
+  return first === second || serializeSnapshot(first) === serializeSnapshot(second);
 }
 
 function FormulaRibbon({ formula }: { readonly formula: DiscoveredFormula }) {
@@ -484,11 +483,9 @@ export function Game() {
     setCanRecover(read.error !== null && read.canRecover);
   }, []);
   const resolvedSlot = useCallback((slot: number): SlotRead => {
-    return finishMigration(localStorage, slot, readSlot(localStorage, slot));
+    return readSlot(localStorage, slot);
   }, []);
-  useEffect(() => {
-    if (initialSlot.migration !== null) showSlotRead(finishMigration(localStorage, 0, initialSlot));
-  }, [initialSlot, showSlotRead]);
+
 
   const level = useMemo(() => generate(game.genOptions), [game.genOptions]);
   const contracts = useMemo(

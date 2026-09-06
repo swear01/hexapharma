@@ -1,3 +1,4 @@
+import { installSaveFixture } from "./checkpoint";
 import { openMenu } from "./menu";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
@@ -313,7 +314,7 @@ test("Wall, Abyss, Swamp, and Portal use distinct renderer motifs", async ({
   expect(new Set(fixture.visuals.map((visual) => "baseColor" in visual ? visual.baseColor : -1)).size)
     .toBe(4);
   await page.goto("/");
-  await page.evaluate((save) => localStorage.setItem("hexapharma.save.slot.0", save), fixture.save);
+  await installSaveFixture(page, fixture.save);
   await page.reload();
   await confirmLoad(page);
   const frame = page.getByTestId("lab-map-frame");

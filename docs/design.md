@@ -179,16 +179,17 @@ Blueprint 與 save slot 完全分離，Library envelope version 是 4，使用 `
 - 詳細按鍵、建造費與驗證步驟集中在 [player-guide.md](player-guide.md)；畫面只提供短 label、icon、hotkey 與 tooltip。
 - 完整視覺與互動規格見 [ui-interaction.md](ui-interaction.md)。
 
-## 1.11 Save v10
+## 1.11 Save v11 — 開放、可編輯的 alpha 存檔
 
-- full envelope 是 `{version:10, game}`；Research 保存 program／shot／lastOutcome／discoveredFormulas／fog，內部 pilot 保存 nullable Plan layout，Production 永遠保存 non-null layout／cold runtime／waste，economy 的 sales 可重建 shipping contract progress。
-- compact authority 是 `{version:10, authority:{origin,intentTrace,replayTicks,stateHash}}`；reader 先作 raw-work preflight，再 semantic replay並比對 canonical trace 與 hash。
-- slots／rewind 同樣使用 v10 authority，逐欄位重建 fixed hex path、formula、FactoryLayout 與 cold runtime，不共享可變資料。
-- Load在saved head與current game不同時先以可取消確認列出會覆蓋目前遊戲；Rewind先確認會永久移除最新saved checkpoint並以較舊state取代current game。Cancel不改storage或GameState。
-- `buildProductionLayout` 是 Production edit intent；每次付費建造都保留在 trace，不能合併掉其經濟語意。
-- decoder 對 unknown／missing fields、unsafe integers、非法 path／layout／runtime、oversize 與 replay forgery 顯式失敗；Save v9與其他舊開發版顯式拒絕且不覆寫原blob／legacy key。
-- checkpointStorage 外層 lineage envelope 仍是獨立 version 2；內層 head/history 是 Save v10，canonical key 是 `hexapharma.save.v10.checkpoint.${slot}`。兩個版本不可混為同一 schema。
-- 早期開發不承諾跨 build migration，詳見 [development-policy.md](development-policy.md)。
+- 存檔是 plain JSON、可攜且可由玩家修改；不加密、不簽章、不持有 browser key，也不要求 Cash／Knowledge 的收入 trace 或 checksum。合法資源修改必須能載入。
+- full envelope 是 `{version:11, contentBuild, game}`；直接保存完整冷狀態。compact envelope 是 `{version:11, contentBuild, snapshot}`，只有 inventory 將連續相同的產品資料分組、列出各件 ID，以便滿倉 24,500 件仍可放入原有 slot 預算。兩者都不重播歷史。
+- GameState 不保存 `origin`、`intentTrace` 或 `replayTicks`。Research／formulas／fog、Plan、Production layout／cold runtime／waste、economy／sold、patents、inventory／nextInventoryId／rng 都必須完整還原；在途 unit、加工進度、分流游標與 counters 不重設。
+- replay 只供以明確 initial state + intents 重現行為；同一輸入仍須逐欄位／hash 相同。生產的 tick／work 限制只約束單次 API batch，不累積成遊戲壽命。存檔不接受或執行附帶的 trace。
+- decoder 驗 exact fields、整數與 typed-array 可表示範圍、bounded collections、canonical machine content、合法 layout／runtime、Research／formula／inventory 結果等可執行狀態不變式；不驗證資源或揭霧的歷史來源。
+- `contentBuild` 是 catalog／shapes／patents 加手動 rules revision 的確定性相容性識別，不是存檔驗真。sim／mapgen／經濟邏輯改動須明確提升 rules revision；它不自動掃描所有原始碼。不同版本／content build 顯式拒絕。
+- checkpoint 外層仍為 `{version:2, head, history}`；head/history 是 compact snapshot 字串，key 為 `hexapharma.save.v11.checkpoint.${slot}`。history 是最多 20 個獨立快照，按數量／characters（`string.length` 的 UTF-16 code units） 刪去最舊項並回報；不驗證 trace-prefix 或資源來源。同設定同 seed 的編輯狀態可保留在同一 history；不同地圖保存時替換 history。
+- Load／Rewind 維持可取消的覆蓋確認；Rewind 成功後截斷後續快照。讀取／復原檢查不寫入 storage，寫入失敗保留原 blob。舊 alpha namespace 不讀取、不 migration、不自動刪除；新版存檔不可 silent reinterpret。
+- 明確容量、數值上限及編輯方式見 [save.md](save.md)；alpha 不承諾跨 build migration，見 [development-policy.md](development-policy.md)。
 
 # 2. 技術架構
 
@@ -213,13 +214,13 @@ Pure TS sim core  → authoritative deterministic transitions
 - `factory-geom`／`factory-sim`：footprint、ports、routing、tick、throughput、cold snapshot。
 - `game`：三場域、stepwise Research session、formula、shipping contracts、paid Production build、inventory／economy。
 - `blueprint`：Blueprint v4 strict codec 與跨存檔 Library。
-- `save`／`replay-work`：Save v10、raw-work preflight、replay/hash。
+- `save`：Save v11 開放冷快照與結構驗證；`replay-work`：單次 Production batch 的 work 估算。
 - `render`：vector-only minimal flat hex Atlas 與 connected factory topology。
 - `ui`：world-first shell、shared Factory editor、drawers/checkpoints。
 
 ## 2.3 Ownership 與確定性
 
-- state、trace、program、catalog、layout 與 nested geometry 在進 authority 前 canonical validate、clone、own。
+- state、intent、program、catalog、layout 與 nested geometry 在進 authority 前 canonical validate、clone、own。
 - EffectMap入口驗exact typed-array種類／area、cell與fog值域、ID metadata，以及safe integer且在bounds內的origin/start；Cure與SideEffect overlay仍可同格共存。
 - 同 seed + 完整 options + canonical intent trace 必須逐欄位及 hash 相等。
 - 每個 bug 附 seed、tick／path segment、input trace 與第一個違反的不變式。
