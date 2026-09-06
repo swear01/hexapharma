@@ -21,6 +21,7 @@ class MemoryStorage implements Storage {
   private readonly values = new Map<string, string>();
   writes = 0;
   failOnSet: string | null = null;
+  failOnGet: string | null = null;
 
   get length(): number {
     return this.values.size;
@@ -31,6 +32,7 @@ class MemoryStorage implements Storage {
   }
 
   getItem(key: string): string | null {
+    if (key === this.failOnGet) throw new Error("storage access denied");
     return this.values.get(key) ?? null;
   }
 
@@ -163,12 +165,14 @@ describe("open snapshot checkpoint storage", () => {
     expect(applyGameIntent(loaded, intent)).toEqual(applyGameIntent(game, intent));
   });
 
-  it("bounds raw bytes and snapshot count before attempting state recovery", () => {
+  it("bounds raw characters, version and snapshot count before attempting state recovery", () => {
     const storage = new MemoryStorage();
+    const good = serializeSnapshot(createGameState(options, 200, 0));
     for (const raw of [
-      "x".repeat(SLOT_CHECKPOINT_CHARACTER_LIMIT + 1),
-      checkpoint("invalid", new Array(SLOT_HISTORY_LIMIT).fill("invalid")),
-      JSON.stringify({ version: 2, head: "invalid", history: [], extra: true }),
+      JSON.stringify({ version: 2, head: good, history: [], extra: "x".repeat(SLOT_CHECKPOINT_CHARACTER_LIMIT) }),
+      checkpoint(good, new Array(SLOT_HISTORY_LIMIT).fill(good)),
+      JSON.stringify({ version: 1, head: good, history: [] }),
+      JSON.stringify({ version: 2, head: good, history: [] }).slice(0, -1),
     ]) {
       storage.setItem(key, raw);
       const read = readSlot(storage, 0);
@@ -176,6 +180,67 @@ describe("open snapshot checkpoint storage", () => {
       expect(read.recovery).toBeNull();
       expect(storage.getItem(key)).toBe(raw);
     }
+  });
+
+  it("offers explicit recovery from bounded partial envelopes while Load remains strict", () => {
+    const game = createGameState(options, 200, 0);
+    const good = serializeSnapshot(game);
+    for (const envelope of [
+      { version: 2, head: null, history: [good] },
+      { version: 2, head: good, history: [], extra: true },
+      { version: 2, history: [false, good, null] },
+    ]) {
+      const storage = new MemoryStorage();
+      const raw = JSON.stringify(envelope);
+      storage.setItem(key, raw);
+      const read = readSlot(storage, 0);
+      expect(read.error).not.toBeNull();
+      expect(read.head).toBeNull();
+      expect(read.history).toBeNull();
+      expect(read.recovery?.history).toEqual([game]);
+      expect(storage.writes).toBe(1);
+      expect(storage.getItem(key)).toBe(raw);
+      storage.failOnSet = key;
+      expect(() => recoverSlot(storage, 0, game, read.recovery)).toThrow(/write rejected/);
+      expect(storage.getItem(key)).toBe(raw);
+      storage.failOnSet = null;
+      recoverSlot(storage, 0, game, read.recovery);
+      expect(readSlot(storage, 0).head).toEqual(game);
+      expect(readSlot(storage, 0).error).toBeNull();
+    }
+  });
+
+  it("reports storage read failures with their cause and disables overwrite recovery", () => {
+    const storage = new MemoryStorage();
+    const raw = checkpoint(serializeSnapshot(createGameState(options, 200, 0)));
+    storage.setItem(key, raw);
+    storage.failOnGet = key;
+    const read = readSlot(storage, 0);
+    expect(read.error).toMatch(/cannot read storage: storage access denied/i);
+    expect(read.canRecover).toBe(false);
+    expect(read.recovery).toBeNull();
+    expect(storage.writes).toBe(1);
+    storage.failOnGet = null;
+    expect(storage.getItem(key)).toBe(raw);
+    expect(readSlot(storage, 0).error).toBeNull();
+  });
+
+  it("does not join older snapshots across a non-string corruption gap", () => {
+    const first = createGameState(options, 200, 0);
+    const latest = applyGameIntent(first, { kind: "productionTicks", ticks: 1 });
+    const raw = JSON.stringify({
+      version: 2,
+      head: serializeSnapshot(latest),
+      history: [serializeSnapshot(first), null],
+    });
+    const storage = new MemoryStorage();
+    storage.setItem(key, raw);
+    const read = readSlot(storage, 0);
+    expect(read.head).toBeNull();
+    expect(read.error).toMatch(/entry must be a string/);
+    expect(read.recovery?.history).toEqual([latest]);
+    expect(storage.getItem(key)).toBe(raw);
+    expect(storage.writes).toBe(1);
   });
 
   it("recovers only a valid suffix after invalid snapshots without writing during read", () => {

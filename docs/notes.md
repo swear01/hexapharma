@@ -55,3 +55,5 @@
 - Formula reference 的桌面／行動 breakpoint 必須同時套用 component world input 與 Game 的 Research cartridge／Enter hotkeys；resize 後可見 world 與鍵盤 authority 使用同一個 `worldInputActive`。
 
 - **Alpha reader 移除時同步更新 E2E fixtures**：完整 Save JSON 不能再寫入已停用的 `hexapharma.save.slot.0` 期待自動 migration；fixtures 必須經公開 snapshot codec 寫入當前 versioned checkpoint envelope。舊 namespace 只保留「忽略且不覆寫」測試。
+
+- **嚴格 Load 不代表停用部分損壞 Recovery**：外層 unknown field／非字串 head 必須讓正常 Load 失敗，但同版本、可解析且大小／數量有界時仍可獨立驗證已知 snapshot 字串供明確 Recover；錯誤版本或超量 envelope 不 salvage。兩個流程都不得在讀取時覆寫原始資料。

@@ -83,22 +83,16 @@ function fitCheckpoint(history: readonly GameState[]): {
   };
 }
 
-function checkpointEntries(raw: string): string[] {
+function checkpointEnvelope(raw: string) {
   if (raw.length > SLOT_CHECKPOINT_CHARACTER_LIMIT) {
     throw new Error(`checkpoint exceeds the ${SLOT_CHECKPOINT_CHARACTER_LIMIT}-character slot budget`);
   }
   const envelope = asJsonRecord(JSON.parse(raw), "checkpoint");
   if (envelope.version !== CHECKPOINT_VERSION) throw new Error("checkpoint: incompatible version");
-  if (Object.keys(envelope).length !== 3 || !("head" in envelope) || !("history" in envelope)) {
-    throw new Error("checkpoint: unknown or missing fields");
-  }
   if (!Array.isArray(envelope.history) || envelope.history.length >= SLOT_HISTORY_LIMIT) {
     throw new Error(`checkpoint history must contain fewer than ${SLOT_HISTORY_LIMIT} entries`);
   }
-  return [...envelope.history, envelope.head].map((entry) => {
-    if (typeof entry !== "string") throw new Error("checkpoint entry must be a string");
-    return entry;
-  });
+  return { envelope, candidates: [...envelope.history, envelope.head] };
 }
 
 function recoverEntries(entries: readonly string[]): SlotRecovery | null {
@@ -133,7 +127,12 @@ export function readSlot(storage: Storage, slot: number): SlotRead {
       return { head: null, history: [], error: null, notice: null,
         recovery: null, canRecover: true };
     }
-    entries = checkpointEntries(raw);
+    const { envelope, candidates } = checkpointEnvelope(raw);
+    entries = candidates.map((entry) => typeof entry === "string" ? entry : "");
+    if (Object.keys(envelope).length !== 3 || !("head" in envelope) || !("history" in envelope)) {
+      throw new Error("checkpoint: unknown or missing fields");
+    }
+    if (!candidates.every((entry) => typeof entry === "string")) throw new Error("checkpoint entry must be a string");
     const history = entries.map(deserializeSnapshot);
     const head = history[history.length - 1]!;
     if (history.some((state) => !sameMap(state, head))) {
@@ -145,7 +144,7 @@ export function readSlot(storage: Storage, slot: number): SlotRead {
     return {
       head: null,
       history: null,
-      error: `Slot ${slot + 1} checkpoint is invalid: ${message(error)}`,
+      error: `Slot ${slot + 1} ${canRecover ? "checkpoint is invalid" : "cannot read storage"}: ${message(error)}`,
       notice: null,
       recovery: entries === null ? null : recoverEntries(entries),
       canRecover,

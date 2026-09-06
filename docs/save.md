@@ -32,7 +32,7 @@ full 與 compact 的差異只為實際容量需要：24,500 件相同產品若�
 
 key 為 `hexapharma.save.v11.checkpoint.${slot}`。外層 `{version:2, head, history}` 保存 compact JSON 字串，history 不重複 head。最多 20 個快照，按 characters（`string.length` 的 UTF-16 code units）／數量裁掉最舊項並回報；它們是獨立狀態，不驗 trace-prefix 或收入來源。同 generation options 的玩家編輯可保留在一份 history；不同地圖保存時替換 history。
 
-讀取不寫 storage；損壞時只提出可驗證的最新有效 suffix 供 Recover。成功 Rewind／Recover 才原子寫入新 blob；寫入失敗保留原 blob。舊 namespace 不讀取、不 migration、不自動刪除。Load／Rewind 的覆蓋確認及 Blueprint Library 獨立性不變。
+正常 Load 嚴格拒絕 unknown／missing fields 與非字串 entry。讀取不寫 storage；損壞時可另提出經獨立 snapshot 驗證的最新有效同地圖 suffix 供明確 Recover。即使 envelope 多了欄位、缺少 head 或 head／history entry 不是字串，仍可從已知欄位的字串候選復原；非字串候選視為損壞缺口，不把缺口兩側的歷史接起來。只有可解析的同外層 version、history 為 array 且未超過字元／數量上限的 envelope 才可復原；錯誤版本、無法解析或超量輸入不嘗試 salvage。storage 讀取失敗顯示「cannot read storage」及原始原因、停用 Recovery，但可重試 Load。成功 Rewind／Recover 才原子寫入新 blob；寫入失敗保留原 blob。舊 namespace 不讀取、不 migration、不自動刪除。Load／Rewind 的覆蓋確認及 Blueprint Library 獨立性不變。
 
 ## 有限資源，不是 replay 壽命
 

@@ -188,7 +188,7 @@ Blueprint 與 save slot 完全分離，Library envelope version 是 4，使用 `
 - decoder 驗 exact fields、整數與 typed-array 可表示範圍、bounded collections、canonical machine content、合法 layout／runtime、Research／formula／inventory 結果等可執行狀態不變式；不驗證資源或揭霧的歷史來源。
 - `contentBuild` 是 catalog／shapes／patents 加手動 rules revision 的確定性相容性識別，不是存檔驗真。sim／mapgen／經濟邏輯改動須明確提升 rules revision；它不自動掃描所有原始碼。不同版本／content build 顯式拒絕。
 - checkpoint 外層仍為 `{version:2, head, history}`；head/history 是 compact snapshot 字串，key 為 `hexapharma.save.v11.checkpoint.${slot}`。history 是最多 20 個獨立快照，按數量／characters（`string.length` 的 UTF-16 code units） 刪去最舊項並回報；不驗證 trace-prefix 或資源來源。同設定同 seed 的編輯狀態可保留在同一 history；不同地圖保存時替換 history。
-- Load／Rewind 維持可取消的覆蓋確認；Rewind 成功後截斷後續快照。讀取／復原檢查不寫入 storage，寫入失敗保留原 blob。舊 alpha namespace 不讀取、不 migration、不自動刪除；新版存檔不可 silent reinterpret。
+- Load／Rewind 維持可取消的覆蓋確認；Rewind 成功後截斷後續快照。正常 Load 嚴格驗 envelope；明確 Recover 可另從同版本、可解析且字元／history array 數量有界的部分損壞 envelope，獨立驗證已知欄位的字串快照並取最新有效同地圖 suffix。讀取／復原檢查不寫入 storage，寫入失敗保留原 blob；storage 讀取失敗顯示原始原因且停用 Recovery。舊 alpha namespace 不讀取、不 migration、不自動刪除；新版存檔不可 silent reinterpret。
 - 明確容量、數值上限及編輯方式見 [save.md](save.md)；alpha 不承諾跨 build migration，見 [development-policy.md](development-policy.md)。
 
 # 2. 技術架構

@@ -132,7 +132,7 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 3. 核對兩次 paid build 的扣款都反映在 cash，快照保留最後 layout 與完整 runtime。直接修改合法 Cash／Knowledge 後仍可 Load，不要求收入 trace。
 4. Rewind先警告永久丟棄最新saved checkpoint並覆蓋current state；Cancel不變，Confirm才回前snapshot，reload後較舊history仍在；Blueprint Library不受影響。
 5. full／compact／slots都是version 11；獨立 checkpoint/history 外層version 2、內層head/history是Save v11，canonical key為`hexapharma.save.v11.checkpoint.${slot}`。Save v10 或更早版本、不同 content build 或 unknown schema顯式拒絕，不silent migrate、部分載入或覆寫舊blob／key。
-6. corrupt/partial/disagreeing blob顯示錯誤；Recover前不得自動刪除或覆寫raw data。
+6. corrupt/partial/disagreeing blob 顯示錯誤；正常 Load 拒絕多餘欄位或非字串 head，但同版本、有界 envelope 中的有效快照仍可明確 Recover。錯誤版本、無法解析 JSON、超量輸入不 salvage。Recover 前不得自動刪除或覆寫 raw data；storage 讀取失敗顯示原始原因且不可覆寫復原。
 
 ## 13. Gate、residue與回報
 

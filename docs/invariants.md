@@ -109,6 +109,7 @@
 - decoder 在 allocation／restore 前驗 dimensions、collection counts、inventory group expansion 和 typed-array 可表示範圍；另驗合法 layout、runtime 質量守恆與容量、catalog、Research／formula／inventory 結果等可執行不變式。unknown／missing fields、unsafe integers、無效狀態、oversize 顯式失敗。
 - 版本與 `contentBuild` 不合即拒絕。content identifier 只包含 catalog／shapes／patents 與手動 rules revision；所有 sim／mapgen 邏輯變動都須提升 revision，它不是來源真實性證明。
 - 生產預算只限制單一 batch，不能累計到整局。history 最多 20 snapshots，full/slots 上限 5,000,000 characters、browser checkpoint 上限 1,250,000 characters；compact inventory 展開不得超過 24,500 products。
+- 正常 Load 嚴格驗 envelope；明確 Recover 可從同版本、可解析且字元／history array 數量有界的部分損壞 envelope 取已知欄位的字串候選，獨立驗 snapshot 並保留最新有效同地圖 suffix。讀取不覆寫；storage access 失敗須顯示原始原因並停用 Recovery。
 - checkpoint 外層 version 2、內層 Save v11；key 為 `hexapharma.save.v11.checkpoint.${slot}`。舊 alpha key 不讀取、不 migration、不自動覆寫；沒有 legacy reader 分支。
 - corrupt blob 不得被 default game 冒充；讀取不寫 storage，Recover 前保留 raw data，寫入失敗原 blob 不變。
 - Load不同saved state與Rewind丟棄最新checkpoint都先取得可取消確認；Cancel不得改GameState、slot history或Library。
