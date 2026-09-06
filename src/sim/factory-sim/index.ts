@@ -1192,12 +1192,6 @@ export const stepFactory: StepFactoryFn = (layout, mm, publicRuntime) => {
   hotTicks += 1;
   assertRuntime(runtime, data, false);
   resetProductEvents(runtime.producedEvents);
-  if (runtime.deadlocked) {
-    runtime.tick += 1;
-    assertRuntime(runtime, data, false);
-    return;
-  }
-
   const occupancy = data.occupancy;
   const machineHeld = data.machineHeld;
   const removed = data.removed;

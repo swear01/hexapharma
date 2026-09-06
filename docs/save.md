@@ -18,7 +18,9 @@ full 與 compact 的差異只為實際容量需要：24,500 件相同產品若�
 
 保存 generation options／seed、economy／sold、patents、Research program／shot／lastOutcome／formulas、Plan layout、Production layout／cold runtime／waste、inventory／nextInventoryId、fog、rng。runtime 包含 tick、在途 unit 與位置／drug／加工進度／成本、nextUnitId、producedTotal、splitter cursors、deadlocked；product events 必須已由 game 層排空。
 
-解碼拒絕 unknown／missing fields、非法數值／array sizes、非本 build 的機器定義、未解鎖／超出廠區／碰撞的 layout、不守恆或占位不合法的 runtime，以及與實際 program／drug 不一致的 Research、formula、inventory outcome。in-flight progress／cost 在轉入 Int32Array 前必須可表示，不能截斷後冒充合法值。
+`deadlocked` 是最近一次 tick 的停滯診斷，不是停止執行的開關；每個真實 tick 都照常執行並重算。修改此旗標不會凍結可運作的工廠，週期性來源可以在稍後排定的 tick 恢復產出。讀檔保留旗標，不嘗試重播歷史來證明它。此語意修正將 content-build rules revision 升至 2。
+
+解碼拒絕 unknown／missing fields、非法數值／array sizes、非本 build 的機器定義、未解鎖／超出廠區／碰撞的 layout、不守恆或占位不合法的 runtime，以及與實際 program／drug 不一致的 Research、formula、inventory outcome。目前成功的 Research outcome 必須依治癒疾病順序記錄為 formula 陣列的最新後綴，program／cost／outcome 必須一致；不要求過去收入或資源來源的 trace。in-flight progress／cost 在轉入 Int32Array 前必須可表示，不能截斷後冒充合法值。
 
 `origin`、`intentTrace`、`replayTicks` 和 `stateHash` 不屬於 state 或存檔 schema。`replayGame(initial, intents)` 仍可用來重現 bug，同 initial state + inputs 仍逐欄位／hash 相同；存檔不用證明 checkpoint 之前做過哪些事。
 

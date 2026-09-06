@@ -53,6 +53,7 @@
 - 內部 pilot layout nullable；空 Production Plan 不阻止玩家打開或編輯 Production。
 - Plan edit 不扣 cash、不推進 tick、不產生 inventory／waste，也不改 Research。
 - Plan diagnostics 是 bounded read-only analysis；no-cure、side effect、failure、deadlock 或低吞吐不是 layout rejection。
+- Runtime `deadlocked` 只診斷最近 tick 的停滯，不阻止後續 tick 執行；週期來源仍按排程嘗試產出，真正堵塞則持續停滯。
 - 從 Plan `Commission` 到 Production 必須走與直接 Production edit 相同的 paid `buildProductionLayout` authority。
 
 ## Production construction

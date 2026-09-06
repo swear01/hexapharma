@@ -636,6 +636,42 @@ describe("multi-cell + footRot routing", () => {
 // ───────────────────────────── deadlock ─────────────────────────────
 
 describe("deadlock detection", () => {
+  it("recomputes an edited deadlock flag without freezing in-flight production", () => {
+    const { layout, mm } = singleLineLayout();
+    const start = initialState(mm);
+    const runtime = initFactory(layout, mm, start);
+    stepFactory(layout, mm, runtime);
+    expect(runtime.unitCount).toBeGreaterThan(0);
+    const edited = restoreFactory(layout, mm, start, { ...snapshotFactory(runtime), deadlocked: true });
+    stepFactory(layout, mm, runtime);
+    stepFactory(layout, mm, edited);
+    expect(snapshotFactory(edited)).toEqual(snapshotFactory(runtime));
+  });
+
+  it("resumes scheduled sources after an intervening stalled tick and snapshot restore", () => {
+    const b = blank(3, 2);
+    set(b, 0, 0, { kind: "source", dir: E, period: 1 });
+    set(b, 0, 1, { kind: "source", dir: E, period: 5 });
+    set(b, 1, 1, { kind: "sink" });
+    const layout = finish(b, []);
+    const mm = twoMaps();
+    const start = initialState(mm);
+    const runtime = initFactory(layout, mm, start);
+    stepFactory(layout, mm, runtime);
+    expect(runtime.producedTotal).toBe(1);
+    stepFactory(layout, mm, runtime);
+    expect(runtime.deadlocked).toBe(true);
+    const restored = restoreFactory(layout, mm, start, snapshotFactory(runtime));
+    expect(snapshotFactory(restored)).toEqual(snapshotFactory(runtime));
+    for (let tick = 2; tick <= 5; tick++) {
+      stepFactory(layout, mm, runtime);
+      stepFactory(layout, mm, restored);
+    }
+    expect(runtime.producedTotal).toBe(2);
+    expect(runtime.deadlocked).toBe(false);
+    expect(snapshotFactory(restored)).toEqual(snapshotFactory(runtime));
+  });
+
   it("two belts pointing into each other jam and flag deadlock", () => {
     // source@(0,0)E feeds belt(1,0)E; belt(2,0)W feeds back; (1,0) and (2,0) target each other.
     const b = blank(4, 1);
@@ -655,8 +691,12 @@ describe("deadlock detection", () => {
       }
     }
     expect(deadlockedAt).toBeGreaterThanOrEqual(0);
+    const restored = restoreFactory(layout, mm, start, snapshotFactory(s));
+    expect(snapshotFactory(restored)).toEqual(snapshotFactory(s));
     stepFactory(layout, mm, s);
+    stepFactory(layout, mm, restored);
     expect(s.deadlocked).toBe(true);
+    expect(snapshotFactory(restored)).toEqual(snapshotFactory(s));
   });
 
   it("blocked source with no sink eventually deadlocks", () => {

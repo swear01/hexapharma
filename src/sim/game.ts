@@ -1467,6 +1467,15 @@ export function validateGameState(game: GameState): GameState {
     if (!expected.failed && expected.cured.length === 0) {
       throw new Error("game state: non-terminal Research outcome must keep its session active");
     }
+    const expectedFormulas = discoverFormulas(
+      game.research.discoveredFormulas,
+      game.research.program,
+      researchShotCost(game.research.program),
+      expected,
+    );
+    if (canonical(expectedFormulas) !== canonical(game.research.discoveredFormulas)) {
+      throw new Error("game state: latest successful Research outcome requires its recorded formula suffix");
+    }
   }
 
   if (game.pilot.layout !== null) requireEntitledFacilityLayout(game, game.pilot.layout, "Pilot Plant");

@@ -8,7 +8,7 @@ import {
   MAX_FACTORY_CELLS,
   MAX_TEMPLATE_STEPS,
 } from "../phase0_interfaces";
-import { applyGameIntent, createGameState, validateGameState } from "../game";
+import { applyGameIntent, availableCatalog, createGameState, validateGameState } from "../game";
 import { generate } from "../mapgen";
 import * as factorySim from "../factory-sim";
 import { compileEntitledPrototype } from "../recipe";
@@ -674,6 +674,32 @@ describe("deserializeGame executable-state validation", () => {
 });
 
 describe("snapshot safety", () => {
+  it("rejects reordered formulas that put an older discovery after the latest success", () => {
+    const options = {
+      ...OPTIONS,
+      width: 63,
+      height: 63,
+      diseaseCount: 4,
+      catalog: availableCatalog({ unlocked: [] }),
+    };
+    const level = generate(options);
+    let game = createGameState(options, 100_000, 100);
+    game = completeResearch(game, level.diseases[0]!.reference);
+    game = completeResearch(game, level.diseases[1]!.reference);
+    expect(game.research.discoveredFormulas).toHaveLength(2);
+    expect(deserializeGame(serializeGame(game))).toEqual(game);
+    const edited = wire(game);
+    edited.game.research.discoveredFormulas.reverse();
+    expect(() => deserializeGame(JSON.stringify(edited))).toThrow(/latest.*formula/i);
+  });
+
+  it("rejects a successful current Research outcome without its latest recorded formula", () => {
+    const game = completeResearch(createGameState(OPTIONS, 10_000, 100));
+    const edited = wire(game);
+    edited.game.research.discoveredFormulas = [];
+    expect(() => deserializeGame(JSON.stringify(edited))).toThrow(/latest.*formula/i);
+    expect(deserializeGame(serializeGame(game))).toEqual(game);
+  });
 
   it("keeps cloned layout identity coherent with its restored runtime", () => {
     const restore = vi.spyOn(factorySim, "restoreFactory");
