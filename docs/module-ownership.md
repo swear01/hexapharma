@@ -20,18 +20,18 @@
 | state.ts | `src/sim/state.ts` | integrator（agent 交付） | ✅ q/r hash／snapshot authority |
 | whole-game state | `src/sim/game.ts`, `src/sim/phase0_interfaces.ts` | integrator（agent 交付） | ✅ stepwise Research／Factory q/r integration |
 | whole-game migration tests | `src/sim/game.test.ts`, `src/sim/single-atlas.test.ts`, `src/sim/state.test.ts`, `test/integration/loop.test.ts` | integrator（agent 交付） | ✅ true-hex fixtures／replay／loop |
-| replay work | `src/sim/replay-work.ts` | integrator（agent 交付） | ✅ Save v10 intents/work preflight |
+| replay work | `src/sim/replay-work.ts` | integrator（agent 交付） | ✅ 單次 Production batch work preflight／獨立 replay 估算 |
 | economy | `src/sim/economy/` | integrator（agent 交付） | ✅ finite per-disease demand／eventual zero gross |
-| save | `src/sim/save/` | integrator（agent 交付） | ✅ Save v10／Formula／hex authority schema |
+| save | `src/sim/save/` | integrator（agent 交付） | ✅ Save v11 開放 cold snapshots／Formula／hex executable-state validation |
 | patent | `src/sim/patent/` | integrator（agent 交付） | ✅ cash+Knowledge、機器／擴廠／actual-trail sensor；無layer progression |
 | render | `src/render/` | integrator（agent 交付） | ✅ shared projection／Lab／Factory pointy-top renderers |
 | ui shell/workspaces | `src/ui/Game.tsx`、`src/ui/App.tsx` | integrator | ✅ q/r Research camera／picking／six-sector caller |
 | UI chrome | `src/ui/game.css` | integrator（agent 交付） | ✅ flat neutral pixel-adjacent stylesheet |
 | factory UI | `src/ui/Factory.tsx`、`src/ui/factoryEditor.ts` | integrator | ✅ pointy-top picking／hex-line gestures／six rotations |
-| checkpoint storage | `src/ui/checkpointStorage.ts`, `src/ui/checkpointStorage.test.ts` | integrator（agent 交付） | ✅ outer v2／inner Save v10 versioned checkpoints |
+| checkpoint storage | `src/ui/checkpointStorage.ts`, `src/ui/checkpointStorage.test.ts` | integrator（agent 交付） | ✅ outer v2／inner Save v11 versioned checkpoints |
 | blueprint portable format | `src/blueprint/` | integrator（agent 交付） | ✅ v4 ResearchProgram／generic q/r FactoryLayout codec |
 | browser acceptance | `test/e2e/` | integrator（agent 交付） | ✅ Research／Factory／save／Blueprint true-hex acceptance |
-| active docs | `README.md`, `docs/` | integrator | ✅ true-hex／Save v10／Blueprint v4 truth sync |
+| active docs | `README.md`, `docs/` | integrator | ✅ true-hex／Save v11／Blueprint v4 truth sync |
 
 ## 規則
 

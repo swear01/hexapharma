@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { applyGameIntent, createGameState } from "../../src/sim/game";
 import { generate } from "../../src/sim/mapgen";
 import { compileEntitledPrototype } from "../../src/sim/recipe";
-import { serializeGameAuthority } from "../../src/sim/save";
+import { serializeSnapshot } from "../../src/sim/save";
 import { BASE_GAME_FACTORY_HEIGHT, BASE_GAME_FACTORY_WIDTH, type GameState } from "../../src/sim/phase0_interfaces";
 import { defaultGenOptions } from "../../src/ui/Game";
 import { machineName } from "../../src/ui/machineLabels";
@@ -31,7 +31,7 @@ function fixture(): GameState {
 
 async function loadFixture(page: Page, game = fixture()): Promise<void> {
   await page.goto("/");
-  await page.evaluate((checkpoint) => localStorage.setItem("hexapharma.save.v10.checkpoint.0", checkpoint), JSON.stringify({ version: 2, head: serializeGameAuthority(game), history: [] }));
+  await page.evaluate((checkpoint) => localStorage.setItem("hexapharma.save.v11.checkpoint.0", checkpoint), JSON.stringify({ version: 2, head: serializeSnapshot(game), history: [] }));
   await page.reload();
   await openMenu(page);
   await page.getByTestId("load").click();
@@ -188,11 +188,11 @@ for (const action of ["new", "load", "rewind", "reset", "unlock", "delete"] as c
     const modal = page.getByRole("alertdialog");
     await expect(modal).toBeVisible();
     const before = await readProduction(page);
-    const checkpoint = await page.evaluate(() => localStorage.getItem("hexapharma.save.v10.checkpoint.0"));
+    const checkpoint = await page.evaluate(() => localStorage.getItem("hexapharma.save.v11.checkpoint.0"));
     await page.waitForTimeout(700);
     for (const key of [".", "r", "F1", "m", "Control+s"]) await page.keyboard.press(key);
     expect(await readProduction(page)).toEqual(before);
-    expect(await page.evaluate(() => localStorage.getItem("hexapharma.save.v10.checkpoint.0"))).toBe(checkpoint);
+    expect(await page.evaluate(() => localStorage.getItem("hexapharma.save.v11.checkpoint.0"))).toBe(checkpoint);
     await modal.getByRole("button", { name: "Cancel", exact: true }).click();
     await expect.poll(async () => Number(await page.getByTestId("factory-tick").textContent())).toBeGreaterThan(Number(before[0]));
     if (action === "delete") {

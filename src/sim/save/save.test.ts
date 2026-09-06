@@ -1,30 +1,30 @@
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { FactoryLayout, GameState, GenOptions, Template } from "../phase0_interfaces";
 import {
   DEFAULT_CATALOG,
   BASE_GAME_FACTORY_HEIGHT,
   BASE_GAME_FACTORY_WIDTH,
-  MAX_BULK_SALE_PRODUCTS,
   MAX_FACTORY_CELLS,
   MAX_TEMPLATE_STEPS,
 } from "../phase0_interfaces";
-import { MAX_INTENT_TRACE, applyGameIntent, createGameState } from "../game";
+import { applyGameIntent, availableCatalog, createGameState, validateGameState } from "../game";
 import { generate } from "../mapgen";
+import * as factorySim from "../factory-sim";
 import { compileEntitledPrototype } from "../recipe";
 import {
   SAVE_VERSION,
+  SAVE_CONTENT_BUILD,
   MAX_SLOT_STATES,
   MAX_SAVE_CHARACTERS,
   SaveError,
   deserializeGame,
-  deserializeGameAuthority,
+  deserializeSnapshot,
   deserializeSlots,
-  inspectGameAuthority,
   pushSnapshot,
   rewind,
   serializeGame,
-  serializeGameAuthority,
+  serializeSnapshot,
   serializeSlots,
 } from "./index";
 
@@ -101,24 +101,13 @@ function wire(game = baseGame()): { version: number; game: Record<string, any> }
   return JSON.parse(serializeGame(game)) as { version: number; game: Record<string, any> };
 }
 
-function expensiveRawTrace(): unknown[] {
-  const machine = DEFAULT_CATALOG[0]!;
-  return [
-    { kind: "beginResearchShot" },
-    ...new Array(MAX_INTENT_TRACE - 1).fill({
-      kind: "advanceResearchShot",
-      machine: { typeId: machine.typeId, path: machine.path },
-    }),
-  ];
-}
-
 describe("serializeGame / deserializeGame", () => {
-  it("uses only the breaking v10 true-hex schema", () => {
-    expect(SAVE_VERSION).toBe(10);
+  it("uses only the breaking v11 true-hex schema", () => {
+    expect(SAVE_VERSION).toBe(11);
     const serialized = serializeGame(baseGame());
     const parsed = JSON.parse(serialized) as { version: number; game: Record<string, any> };
 
-    expect(parsed.version).toBe(10);
+    expect(parsed.version).toBe(11);
     expect(parsed.game).toHaveProperty("research");
     expect(parsed.game).toHaveProperty("pilot");
     expect(parsed.game).toHaveProperty("production");
@@ -224,27 +213,21 @@ describe("serializeGame / deserializeGame", () => {
     expect(deserializeGame(serializeGame(game))).toEqual(game);
   });
 
-  it("round-trips complete state from compact replay authority", () => {
+  it("loads edited cash and Knowledge without a revenue trace or checksum", () => {
     const game = baseGame();
-    const authority = serializeGameAuthority(game);
-    expect(authority.length).toBeLessThan(serializeGame(game).length);
-    expect(deserializeGameAuthority(authority)).toEqual(game);
-
-    const forged = JSON.parse(authority) as {
-      authority: { replayTicks: number; stateHash: number };
-    };
-    forged.authority.stateHash = (forged.authority.stateHash + 1) >>> 0;
-    expect(() => deserializeGameAuthority(JSON.stringify(forged))).toThrow(/state hash/i);
-
-    forged.authority.stateHash = -1;
-    expect(() => deserializeGameAuthority(JSON.stringify(forged))).toThrow(/uint32 checksum/i);
-
-    const wrongTicks = JSON.parse(authority) as { authority: { replayTicks: number } };
-    wrongTicks.authority.replayTicks += 1;
-    expect(() => deserializeGameAuthority(JSON.stringify(wrongTicks))).toThrow(/computed trace total/i);
+    const edited = wire(game);
+    edited.game.economy.cash = 123456;
+    edited.game.economy.research = 999;
+    expect(edited.game).not.toHaveProperty("intentTrace");
+    expect(edited.game).not.toHaveProperty("origin");
+    expect(edited.game).not.toHaveProperty("stateHash");
+    const loaded = deserializeGame(JSON.stringify(edited));
+    expect(loaded.economy).toEqual({ ...game.economy, cash: 123456, research: 999 });
+    expect(loaded.production).toEqual(game.production);
+    expect(deserializeGame(serializeGame(loaded))).toEqual(loaded);
   });
 
-  it("round-trips Research start/step and contract-free Pilot/Production through compact authority", () => {
+  it("round-trips Research start/step and contract-free Pilot/Production through compact snapshots", () => {
     const { layout, program } = researchFixture();
     const started = applyGameIntent(createGameState(OPTIONS, 10_000, 0), {
       kind: "beginResearchShot",
@@ -257,42 +240,25 @@ describe("serializeGame / deserializeGame", () => {
     const production = applyGameIntent(pilot, { kind: "buildProductionLayout", layout });
 
     for (const game of [started, active, pilot, production]) {
-      const loaded = deserializeGameAuthority(serializeGameAuthority(game));
+      const loaded = deserializeSnapshot(serializeSnapshot(game));
       expect(loaded).toEqual(game);
       expect("contract" in loaded.pilot).toBe(false);
       expect("contract" in loaded.production).toBe(false);
     }
   });
 
-  it("preflights weighted raw three-facility authority work before semantic replay", () => {
-    const authority = JSON.parse(
-      serializeGameAuthority(createGameState(OPTIONS, 10_000, 0)),
-    ) as {
-      authority: {
-        origin: { genOptions: GenOptions };
-        intentTrace: unknown[];
-      };
-    };
-    authority.authority.origin.genOptions = {
-      ...OPTIONS,
-      nMaps: 4,
-      width: 32,
-      height: 32,
-      diseaseCount: 4,
-    };
-    authority.authority.intentTrace = expensiveRawTrace();
-    const raw = JSON.stringify(authority);
-
-    expect(inspectGameAuthority(raw).replayWork).toBeGreaterThan(10_000_000);
-    expect(() => deserializeGameAuthority(raw)).toThrow(/Research|canonical|replay/i);
+  it("rejects incompatible content builds before constructing state", () => {
+    const edited = wire();
+    const stale = { ...edited, contentBuild: "old-market-9/10", game: null };
+    expect(() => deserializeGame(JSON.stringify(stale))).toThrow(/incompatible content build/i);
+    expect(() => deserializeSlots(JSON.stringify({
+      version: SAVE_VERSION, contentBuild: "old-patent-prices", slots: [null],
+    }))).toThrow(/incompatible content build/i);
   });
 
   it("is stable-key deterministic and carries the current version", () => {
     const game = baseGame();
     const reordered: GameState = {
-      replayTicks: game.replayTicks,
-      intentTrace: game.intentTrace,
-      origin: game.origin,
       rng: game.rng,
       fog: game.fog,
       nextInventoryId: game.nextInventoryId,
@@ -312,15 +278,15 @@ describe("serializeGame / deserializeGame", () => {
 describe("deserializeGame schema validation", () => {
   it("rejects v9 envelopes before interpreting their payloads", () => {
     expect(() => deserializeGame(JSON.stringify({ version: 9, game: null })))
-      .toThrow(/legacy version 9.*not supported.*v10/i);
-    expect(() => deserializeGameAuthority(JSON.stringify({ version: 9, authority: null })))
-      .toThrow(/legacy version 9.*not supported.*v10/i);
+      .toThrow(/incompatible version 9.*expected 11/i);
+    expect(() => deserializeSnapshot(JSON.stringify({ version: 9, authority: null })))
+      .toThrow(/incompatible version 9.*expected 11/i);
     expect(() => deserializeSlots(JSON.stringify({ version: 9, slots: null })))
-      .toThrow(/legacy version 9.*not supported.*v10/i);
+      .toThrow(/incompatible version 9.*expected 11/i);
   });
 
-  it.each([9, 8, 7, 6, 2])(
-    "explicitly rejects legacy v%s full saves, authority, and slots without migration",
+  it.each([10, 9, 8, 7, 6, 2])(
+    "explicitly rejects legacy v%s full saves, snapshots, and slots without migration",
     (legacyVersion) => {
       const game = baseGame();
       const full = JSON.parse(serializeGame(game));
@@ -333,9 +299,9 @@ describe("deserializeGame schema validation", () => {
         ),
       );
 
-      const authority = JSON.parse(serializeGameAuthority(game));
+      const authority = JSON.parse(serializeSnapshot(game));
       authority.version = legacyVersion;
-      expect(() => deserializeGameAuthority(JSON.stringify(authority))).toThrow(
+      expect(() => deserializeSnapshot(JSON.stringify(authority))).toThrow(
         new RegExp(
           `legacy.*version ${legacyVersion}|` +
             `incompatible version ${legacyVersion}.*expected ${SAVE_VERSION}`,
@@ -371,37 +337,21 @@ describe("deserializeGame schema validation", () => {
     (kind) => {
       const parsed = wire(createGameState(OPTIONS, 0, 0));
       parsed.game.intentTrace = [{ kind }];
-      expect(() => deserializeGame(JSON.stringify(parsed))).toThrow(/unknown GameIntent kind/i);
+      expect(() => deserializeGame(JSON.stringify(parsed))).toThrow(/unknown field game.intentTrace/i);
     },
   );
 
-  it("preflights aggregate trace/work budgets for full-slot histories", () => {
-    const maximumOptions: GenOptions = {
-      ...OPTIONS,
-      width: 32,
-      height: 32,
-    };
-    const full = JSON.parse(serializeGame(createGameState(maximumOptions, 0, 0))) as {
-      game: Record<string, unknown>;
-    };
-    full.game.intentTrace = expensiveRawTrace();
-    const raw = JSON.stringify({ version: SAVE_VERSION, slots: new Array(8).fill(full.game) });
-
-    expect(() => deserializeSlots(raw)).toThrow(/aggregate.*(?:trace|replay work)|history.*work/i);
+  it("rejects oversized history before interpreting its snapshots", () => {
+    expect(() => deserializeSlots(JSON.stringify({
+      version: SAVE_VERSION, contentBuild: SAVE_CONTENT_BUILD,
+      slots: new Array(MAX_SLOT_STATES + 1).fill(null),
+    }))).toThrow(/state count exceeds/i);
   });
 
-  it("preflights one full save's raw trace before semantic replay", () => {
-    const maximumOptions: GenOptions = {
-      ...OPTIONS,
-      width: 32,
-      height: 32,
-    };
-    const full = JSON.parse(serializeGame(createGameState(maximumOptions, 0, 0))) as {
-      game: Record<string, unknown>;
-    };
-    full.game.intentTrace = expensiveRawTrace();
-
-    expect(() => deserializeGame(JSON.stringify(full))).toThrow(/input trace|replay|layout/i);
+  it("does not execute supplied save traces", () => {
+    const edited = wire();
+    edited.game.intentTrace = [{ kind: "productionTicks", ticks: Number.MAX_SAFE_INTEGER }];
+    expect(() => deserializeGame(JSON.stringify(edited))).toThrow(/unknown field game.intentTrace/i);
   });
 
   it("rejects malformed JSON, missing version, incompatible version, and missing payload", () => {
@@ -410,7 +360,7 @@ describe("deserializeGame schema validation", () => {
     expect(() => deserializeGame(JSON.stringify({ version: SAVE_VERSION + 1, game: {} }))).toThrow(
       /incompatible version/,
     );
-    expect(() => deserializeGame(JSON.stringify({ version: SAVE_VERSION }))).toThrow(/missing game/);
+    expect(() => deserializeGame(JSON.stringify({ version: SAVE_VERSION, contentBuild: SAVE_CONTENT_BUILD }))).toThrow(/missing field save.game/);
     expect(() => deserializeGame("x".repeat(MAX_SAVE_CHARACTERS + 1))).toThrow(/save exceeds/i);
   });
 
@@ -434,8 +384,8 @@ describe("deserializeGame schema validation", () => {
 
   it("fails fast on oversized traces, Research programs, layouts, and slot arrays", () => {
     const trace = wire();
-    trace.game.intentTrace = new Array(MAX_INTENT_TRACE + 1).fill({ kind: "resetProduction" });
-    expect(() => deserializeGame(JSON.stringify(trace))).toThrow(/intentTrace.*exceeds/i);
+    trace.game.intentTrace = new Array(4097).fill({ kind: "resetProduction" });
+    expect(() => deserializeGame(JSON.stringify(trace))).toThrow(/unknown field game.intentTrace/i);
 
     const program = wire();
     program.game.research.program.steps = new Array(MAX_TEMPLATE_STEPS + 1).fill(
@@ -454,19 +404,12 @@ describe("deserializeGame schema validation", () => {
 
     const oversizedSlots = {
       version: SAVE_VERSION,
+      contentBuild: SAVE_CONTENT_BUILD,
       slots: new Array(MAX_SLOT_STATES + 1).fill({}),
     };
     expect(() => deserializeSlots(JSON.stringify(oversizedSlots))).toThrow(/state count.*exceeds/i);
 
-    const authority = JSON.parse(serializeGameAuthority(baseGame()));
-    authority.authority.intentTrace = [{
-      kind: "sellProducts",
-      productIds: new Array(MAX_BULK_SALE_PRODUCTS + 1).fill(0),
-      disease: 0,
-    }];
-    expect(() => deserializeGameAuthority(JSON.stringify(authority))).toThrow(
-      /productIds.*exceeds|bulk sale.*bounds/i,
-    );
+
   });
 
   it("requires a non-null Production layout and runtime", () => {
@@ -522,15 +465,15 @@ describe("deserializeGame schema validation", () => {
     full.game.legacy = true;
     expect(() => deserializeGame(JSON.stringify(full))).toThrow(/unknown field game\.legacy/i);
 
-    const compact = JSON.parse(serializeGameAuthority(baseGame()));
-    compact.authority.legacy = true;
-    expect(() => deserializeGameAuthority(JSON.stringify(compact))).toThrow(
-      /unknown field authority\.legacy/i,
+    const compact = JSON.parse(serializeSnapshot(baseGame()));
+    compact.snapshot.legacy = true;
+    expect(() => deserializeSnapshot(JSON.stringify(compact))).toThrow(
+      /unknown field game\.legacy/i,
     );
 
     const intent = wire();
-    intent.game.intentTrace[0].layout = {};
-    expect(() => deserializeGame(JSON.stringify(intent))).toThrow(/unknown field.*layout/i);
+    intent.game.intentTrace = [];
+    expect(() => deserializeGame(JSON.stringify(intent))).toThrow(/unknown field.*intentTrace/i);
 
     const machine = wire();
     machine.game.pilot.layout.machines[0].def.orientation = { rot: 0, flip: false };
@@ -538,7 +481,7 @@ describe("deserializeGame schema validation", () => {
   });
 });
 
-describe("deserializeGame semantic authority", () => {
+describe("deserializeGame executable-state validation", () => {
   it("shares the map generator disease limit for the discovered formula ledger", () => {
     const source = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
     const parser = source.slice(
@@ -549,7 +492,7 @@ describe("deserializeGame semantic authority", () => {
     expect(parser).not.toMatch(/discoveredFormulas\.length > \d/);
   });
 
-  it("rejects tampered catalog, Research paths, obsolete strokes, and factory authority", () => {
+  it("rejects tampered catalog, Research paths, obsolete strokes, and factory content", () => {
     for (const facility of ["pilot", "production"] as const) {
       for (const [field, value] of [["cost", -999], ["speed", 0]] as const) {
         const parsed = wire();
@@ -560,7 +503,7 @@ describe("deserializeGame semantic authority", () => {
       const path = wire();
       path.game[facility].layout.machines[0].def.path[0] =
         (path.game[facility].layout.machines[0].def.path[0] + 1) % 6;
-      expect(() => deserializeGame(JSON.stringify(path))).toThrow(/path|catalog|replay mismatch/i);
+      expect(() => deserializeGame(JSON.stringify(path))).toThrow(/path|catalog/i);
 
       const stroke = wire();
       stroke.game[facility].layout.machines[0].def.stroke = 0;
@@ -570,7 +513,7 @@ describe("deserializeGame semantic authority", () => {
     const researchPath = wire();
     researchPath.game.research.program.steps[0].path[0] =
       (researchPath.game.research.program.steps[0].path[0] + 1) % 6;
-    expect(() => deserializeGame(JSON.stringify(researchPath))).toThrow(/path|catalog|replay mismatch/i);
+    expect(() => deserializeGame(JSON.stringify(researchPath))).toThrow(/path|catalog/i);
 
     const researchStroke = wire();
     researchStroke.game.research.program.steps[0].stroke = 0;
@@ -581,39 +524,39 @@ describe("deserializeGame semantic authority", () => {
     expect(() => deserializeGame(JSON.stringify(catalog))).toThrow(/catalog|cost/i);
   });
 
-  it("rejects forged Research shot progress, cost, drug, and outcome by replay", () => {
+  it("rejects inconsistent Research shot progress, cost, drug, and outcome against the active program", () => {
     const { program } = researchFixture();
     const active = activeResearch(createGameState(OPTIONS, 10_000, 0), program);
 
     const step = wire(active);
     step.game.research.shot.step += 1;
-    expect(() => deserializeGame(JSON.stringify(step))).toThrow(/Research shot|replay mismatch/i);
+    expect(() => deserializeGame(JSON.stringify(step))).toThrow(/Research shot/i);
 
     const cost = wire(active);
     cost.game.research.shot.cost += 1;
-    expect(() => deserializeGame(JSON.stringify(cost))).toThrow(/Research shot cost|replay mismatch/i);
+    expect(() => deserializeGame(JSON.stringify(cost))).toThrow(/Research shot cost/i);
 
     const drug = wire(active);
     drug.game.research.shot.drug.pos[0].q += 1;
-    expect(() => deserializeGame(JSON.stringify(drug))).toThrow(/Research shot drug|replay mismatch/i);
+    expect(() => deserializeGame(JSON.stringify(drug))).toThrow(/Research shot drug/i);
 
     const outcome = wire(completeResearch(createGameState(OPTIONS, 10_000, 0), program));
     outcome.game.research.lastOutcome.cured = [];
-    expect(() => deserializeGame(JSON.stringify(outcome))).toThrow(/Research outcome|replay mismatch/i);
+    expect(() => deserializeGame(JSON.stringify(outcome))).toThrow(/Research outcome/i);
   });
 
-  it("rejects forged discovered formula disease, cost, and outcome", () => {
+  it("rejects inconsistent discovered formula disease, cost, and outcome", () => {
     const disease = wire();
     disease.game.research.discoveredFormulas[0].disease += 100;
-    expect(() => deserializeGame(JSON.stringify(disease))).toThrow(/formula.*disease|replay mismatch/i);
+    expect(() => deserializeGame(JSON.stringify(disease))).toThrow(/formula.*disease/i);
 
     const cost = wire();
     cost.game.research.discoveredFormulas[0].researchCost += 1;
-    expect(() => deserializeGame(JSON.stringify(cost))).toThrow(/formula.*cost|replay mismatch/i);
+    expect(() => deserializeGame(JSON.stringify(cost))).toThrow(/formula.*cost/i);
 
     const outcome = wire();
     outcome.game.research.discoveredFormulas[0].outcome.cured = [];
-    expect(() => deserializeGame(JSON.stringify(outcome))).toThrow(/formula.*outcome|replay mismatch/i);
+    expect(() => deserializeGame(JSON.stringify(outcome))).toThrow(/formula.*outcome/i);
   });
 
   it("rejects unknown, duplicate, and prerequisite-skipping patents", () => {
@@ -624,7 +567,7 @@ describe("deserializeGame semantic authority", () => {
     }
   });
 
-  it("rejects forged inventory outcomes and duplicate inventory ids", () => {
+  it("rejects inconsistent inventory outcomes and duplicate inventory ids", () => {
     const forged = wire();
     forged.game.inventory[0].outcome.cured = [];
     expect(() => deserializeGame(JSON.stringify(forged))).toThrow(/inventory.*outcome/i);
@@ -635,40 +578,18 @@ describe("deserializeGame semantic authority", () => {
     expect(() => deserializeGame(JSON.stringify(duplicate))).toThrow(/inventory id/i);
   });
 
-  it("rejects locally plausible Production cost, progress, position, and counter forgery by replay", () => {
-    const inventoryCost = wire();
-    inventoryCost.game.inventory[0].productionCost += 777;
-    expect(() => deserializeGame(JSON.stringify(inventoryCost))).toThrow(
-      /replay mismatch.*productionCost/i,
-    );
-
-    const minted = wire();
-    const clone = structuredClone(minted.game.inventory[0]);
-    clone.inventoryId = minted.game.nextInventoryId;
-    minted.game.nextInventoryId += 1;
-    minted.game.inventory.push(clone);
-    expect(() => deserializeGame(JSON.stringify(minted))).toThrow(/replay mismatch.*inventory/i);
-
-    const progress = wire();
-    expect(progress.game.production.runtime.units.length).toBeGreaterThan(0);
-    progress.game.production.runtime.units[0].proc += 1;
-    expect(() => deserializeGame(JSON.stringify(progress))).toThrow(/replay mismatch.*proc/i);
-
-    const position = wire();
-    const unit = position.game.production.runtime.units[0];
-    unit.drug.pos[0].q = (unit.drug.pos[0].q + 1) % position.game.genOptions.width;
-    expect(() => deserializeGame(JSON.stringify(position))).toThrow(/replay mismatch.*drug.*pos/i);
-
-    const tick = wire();
-    tick.game.production.runtime.tick += 1;
-    expect(() => deserializeGame(JSON.stringify(tick))).toThrow(/replay mismatch.*tick/i);
-
-    const counters = wire();
-    counters.game.production.runtime.nextUnitId += 100;
-    counters.game.production.runtime.producedTotal += 100;
-    expect(() => deserializeGame(JSON.stringify(counters))).toThrow(
-      /replay mismatch.*nextUnitId|producedTotal/i,
-    );
+  it("accepts player-edited inventory and runtime counters that satisfy executable invariants", () => {
+    const edited = wire();
+    edited.game.inventory[0].productionCost += 777;
+    const clone = structuredClone(edited.game.inventory[0]);
+    clone.inventoryId = edited.game.nextInventoryId++;
+    edited.game.inventory.push(clone);
+    edited.game.production.runtime.tick = 1_000_000;
+    edited.game.production.runtime.nextUnitId += 100;
+    edited.game.production.runtime.producedTotal += 100;
+    const loaded = deserializeGame(JSON.stringify(edited));
+    expect(loaded.inventory).toEqual(edited.game.inventory);
+    expect(loaded.production.runtime.tick).toBe(1_000_000);
   });
 
   it("rejects negative sale counts, costs, progress, and invalid Production mass", () => {
@@ -708,7 +629,7 @@ describe("deserializeGame semantic authority", () => {
     expect(() => deserializeGame(JSON.stringify(parsed))).toThrow(/drained|product event/i);
   });
 
-  it("rejects forged or out-of-range Production splitter cursors", () => {
+  it("accepts edited in-range splitter cursors and rejects out-of-range cursors", () => {
     let game = reachProduction();
     game = applyGameIntent(game, {
       kind: "buildProductionLayout",
@@ -721,7 +642,7 @@ describe("deserializeGame semantic authority", () => {
 
     const forged = wire(game);
     forged.game.production.runtime.splitterCursors[0] = 0;
-    expect(() => deserializeGame(JSON.stringify(forged))).toThrow(/replay mismatch.*splitterCursors/i);
+    expect(deserializeGame(JSON.stringify(forged)).production.runtime.splitterCursors[0]).toBe(0);
   });
 
   it("rejects invalid source periods and duplicate machine ids", () => {
@@ -749,6 +670,70 @@ describe("deserializeGame semantic authority", () => {
     expect(unused).toBeGreaterThanOrEqual(runtime.unitCount);
     runtime.unitX[unused] = 1;
     expect(() => serializeGame(game)).toThrow(/unused.*slot|canonical/i);
+  });
+});
+
+describe("snapshot safety", () => {
+  it("rejects reordered formulas that put an older discovery after the latest success", () => {
+    const options = {
+      ...OPTIONS,
+      width: 63,
+      height: 63,
+      diseaseCount: 4,
+      catalog: availableCatalog({ unlocked: [] }),
+    };
+    const level = generate(options);
+    let game = createGameState(options, 100_000, 100);
+    game = completeResearch(game, level.diseases[0]!.reference);
+    game = completeResearch(game, level.diseases[1]!.reference);
+    expect(game.research.discoveredFormulas).toHaveLength(2);
+    expect(deserializeGame(serializeGame(game))).toEqual(game);
+    const edited = wire(game);
+    edited.game.research.discoveredFormulas.reverse();
+    expect(() => deserializeGame(JSON.stringify(edited))).toThrow(/latest.*formula/i);
+  });
+
+  it("rejects a successful current Research outcome without its latest recorded formula", () => {
+    const game = completeResearch(createGameState(OPTIONS, 10_000, 100));
+    const edited = wire(game);
+    edited.game.research.discoveredFormulas = [];
+    expect(() => deserializeGame(JSON.stringify(edited))).toThrow(/latest.*formula/i);
+    expect(deserializeGame(serializeGame(game))).toEqual(game);
+  });
+
+  it("keeps cloned layout identity coherent with its restored runtime", () => {
+    const restore = vi.spyOn(factorySim, "restoreFactory");
+    try {
+      const game = validateGameState(createGameState(OPTIONS, 1000, 0));
+      const map = restore.mock.calls.at(-1)![1];
+      factorySim.stepFactory(game.production.layout, map, game.production.runtime);
+      expect(game.production.runtime.tick).toBe(1);
+    } finally {
+      restore.mockRestore();
+    }
+  });
+
+  it("rejects progress and production costs that would wrap when restored into int32 buffers", () => {
+    for (const field of ["proc", "productionCost"]) {
+      const edited = wire();
+      edited.game.production.runtime.units[0][field] = 0x1_0000_0001;
+      expect(() => deserializeGame(JSON.stringify(edited))).toThrow(/int32/i);
+    }
+  });
+
+  it("preflights compact inventory expansion and rejects unknown group fields", () => {
+    const edited = JSON.parse(serializeSnapshot(baseGame()));
+    edited.snapshot.inventory[0].ids = new Array(24501).fill([0, 0]);
+    expect(() => deserializeSnapshot(JSON.stringify(edited))).toThrow(/physical product limit/i);
+    const unknown = JSON.parse(serializeSnapshot(baseGame()));
+    unknown.snapshot.inventory[0].extra = true;
+    expect(() => deserializeSnapshot(JSON.stringify(unknown))).toThrow(/unknown field/i);
+  });
+
+  it("preserves compact inventory order when product kinds alternate", () => {
+    const game = baseGame();
+    const inventory = game.inventory.map((product, index) => ({ ...product, productionCost: index % 2 }));
+    expect(deserializeSnapshot(serializeSnapshot({ ...game, inventory })).inventory).toEqual(inventory);
   });
 });
 

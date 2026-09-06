@@ -69,4 +69,4 @@
 - final art/audio polish、帳戶、雲端Blueprint repository。
 - release candidate前的跨build save migration。
 
-平衡可逐步調整；fresh-loop可達性、stepwise reveal–decide、auto formula、quota-3 contracts／patent gates、seed／disease解法差異、finite demand、overlap effects、完整PathStamp、Wall-only穿霧、direct paid Production、optional Production Plan、true-hex geometry、Blueprint v4、Save v10與strict gate不能後置。
+平衡可逐步調整；fresh-loop可達性、stepwise reveal–decide、auto formula、quota-3 contracts／patent gates、seed／disease解法差異、finite demand、overlap effects、完整PathStamp、Wall-only穿霧、direct paid Production、optional Production Plan、true-hex geometry、Blueprint v4、Save v11與strict gate不能後置。

@@ -1,10 +1,11 @@
+import { installSaveFixture } from "./checkpoint";
 import { openMenu } from "./menu";
 import { expect, test } from "@playwright/test";
 import { applyGameIntent, createGameState, DEFAULT_STARTING_CASH } from "../../src/sim/game";
 import { quoteProductionBuild } from "../../src/sim/construction";
 import { generate } from "../../src/sim/mapgen";
 import { compileEntitledPrototype } from "../../src/sim/recipe";
-import { SAVE_VERSION, deserializeGame, deserializeGameAuthority, serializeGame } from "../../src/sim/save";
+import { SAVE_VERSION, deserializeGame, deserializeSnapshot, serializeGame } from "../../src/sim/save";
 import { worldCells } from "../../src/sim/factory-geom";
 import { hexDistance, hexIndex, type HexCoord } from "../../src/sim/hex";
 import { hexBoardBounds, hexToPixel } from "../../src/render/hexProjection";
@@ -139,12 +140,12 @@ function machineGallerySave(): string {
   return serializeGame(game);
 }
 
-async function loadLegacySave(
+async function loadSaveFixture(
   page: import("@playwright/test").Page,
   blob: string,
 ): Promise<void> {
   await page.goto("/");
-  await page.evaluate((save) => localStorage.setItem("hexapharma.save.slot.0", save), blob);
+  await installSaveFixture(page, blob);
   await page.reload();
   await openMenu(page);
   await page.getByTestId("load").click();
@@ -154,7 +155,7 @@ async function loadLegacySave(
 }
 
 async function loadProduction(page: import("@playwright/test").Page): Promise<void> {
-  await loadLegacySave(page, productionSave());
+  await loadSaveFixture(page, productionSave());
   await page.getByTestId("view-production").click();
 }
 
@@ -344,7 +345,7 @@ test("a rejected Production edit keeps playback running atomically", async ({ pa
   const layout = referenceLayout();
   const origin = layout.machines[0]!.anchor;
   const empty = nearestEmptyCell(layout, origin);
-  await loadLegacySave(page, zeroCashProductionSave());
+  await loadSaveFixture(page, zeroCashProductionSave());
   await page.getByTestId("view-production").click();
   const workspace = page.getByTestId("production-facility-workspace");
   const frame = workspace.getByTestId("factory-canvas");
@@ -365,7 +366,7 @@ test("a rejected Production edit keeps playback running atomically", async ({ pa
 
 test("touch Erase deletes an installed machine instead of capturing a no-op move", async ({ page }) => {
   const layout = machineGallerySave();
-  await loadLegacySave(page, layout);
+  await loadSaveFixture(page, layout);
   await page.getByTestId("view-pilot").click();
   const workspace = page.getByTestId("pilot-facility-workspace");
   const frame = workspace.getByTestId("factory-canvas");
@@ -490,7 +491,7 @@ test("touch paints a Belt drag and rotates the tapped installed machine", async 
   await expect.poll(() => transform.getAttribute("style")).not.toBe(cameraBefore);
 
   const serialized = machineGallerySave();
-  await page.evaluate((save) => localStorage.setItem("hexapharma.save.slot.0", save), serialized);
+  await installSaveFixture(page, serialized);
   await page.reload();
   await openMenu(page);
   await page.getByTestId("load").click();
@@ -523,7 +524,7 @@ test("touch paints a Belt drag and rotates the tapped installed machine", async 
   await page.getByTestId("save").click();
   const raw = await page.evaluate((key) => localStorage.getItem(key), checkpointKey);
   if (raw === null) throw new Error("rotated Pilot checkpoint was not saved");
-  const saved = deserializeGameAuthority((JSON.parse(raw) as { readonly head: string }).head);
+  const saved = deserializeSnapshot((JSON.parse(raw) as { readonly head: string }).head);
   const rotated = saved.pilot.layout?.machines.find((candidate) => candidate.id === machine.id);
   expect(rotated?.footRot).toBe(1);
 });
@@ -532,7 +533,7 @@ test("Factory copy and paste preserve source, splitter, and merger payloads", as
   const serialized = clipboardPayloadSave();
   const source = deserializeGame(serialized).pilot.layout;
   if (source === null) throw new Error("clipboard fixture has no Pilot layout");
-  await loadLegacySave(page, serialized);
+  await loadSaveFixture(page, serialized);
   await page.getByTestId("view-pilot").click();
   const workspace = page.getByTestId("pilot-facility-workspace");
   const frame = workspace.getByTestId("factory-canvas");
@@ -551,7 +552,7 @@ test("Factory copy and paste preserve source, splitter, and merger payloads", as
 
   const raw = await page.evaluate((key) => localStorage.getItem(key), checkpointKey);
   if (raw === null) throw new Error("clipboard checkpoint was not saved");
-  const saved = deserializeGameAuthority((JSON.parse(raw) as { readonly head: string }).head);
+  const saved = deserializeSnapshot((JSON.parse(raw) as { readonly head: string }).head);
   if (saved.pilot.layout === null) throw new Error("saved Pilot layout is missing");
   for (const payload of clipboardPayloads) {
     expect(saved.pilot.layout.tiles[hexIndex(saved.pilot.layout.width, payload.destination.q, payload.destination.r)])
@@ -567,7 +568,7 @@ test("focused Factory tool controls still allow R, number, and Q world hotkeys",
   const serialized = clipboardPayloadSave();
   const layout = deserializeGame(serialized).pilot.layout;
   if (layout === null) throw new Error("hotkey fixture has no Pilot layout");
-  await loadLegacySave(page, serialized);
+  await loadSaveFixture(page, serialized);
   await page.getByTestId("view-pilot").click();
   const workspace = page.getByTestId("pilot-facility-workspace");
   const frame = workspace.getByTestId("factory-canvas");
@@ -587,7 +588,7 @@ test("focused Factory tool controls still allow R, number, and Q world hotkeys",
 });
 
 test("Pilot builds without a Research contract and Production is an exact copy", async ({ page }) => {
-  await loadLegacySave(page, pilotSave());
+  await loadSaveFixture(page, pilotSave());
   await expect(page.getByTestId("research-program-count")).toHaveText("0 tested");
   await page.getByTestId("view-pilot").click();
   await expect(page.getByTestId("pilot-facility-workspace")).toBeVisible();
@@ -601,7 +602,7 @@ test("Pilot builds without a Research contract and Production is an exact copy",
   const raw = await page.evaluate((key) => localStorage.getItem(key), checkpointKey);
   if (raw === null) throw new Error("built Production checkpoint was not saved");
   const envelope = JSON.parse(raw) as { readonly head: string };
-  const saved = deserializeGameAuthority(envelope.head);
+  const saved = deserializeSnapshot(envelope.head);
   expect(saved.research.program.steps).toHaveLength(0);
   expect(saved.production.layout).toEqual(saved.pilot.layout);
 });
@@ -664,7 +665,7 @@ test("physical footprint rotation leaves the selected chemical path unchanged", 
 
 test("compact Pilot controls remain reachable above the construction hotbar", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await loadLegacySave(page, pilotSave());
+  await loadSaveFixture(page, pilotSave());
   await page.getByTestId("view-pilot").click();
 
   const bar = await page.locator(".facility-pilot .transport-bar").boundingBox();
@@ -704,7 +705,7 @@ test("compact Pilot controls remain reachable above the construction hotbar", as
 
 test("compact Pilot keeps scroll position after a local edit acknowledgement", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await loadLegacySave(page, pilotSave());
+  await loadSaveFixture(page, pilotSave());
   await page.getByTestId("view-pilot").click();
   const frame = page.getByTestId("pilot-facility-workspace").getByTestId("factory-canvas");
   await expect(frame.locator("canvas")).toBeVisible({ timeout: 15_000 });
@@ -731,7 +732,7 @@ test("compact Pilot keeps scroll position after a local edit acknowledgement", a
 
 test("every unlocked machine family has its own path icon and factory silhouette", async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 900 });
-  await loadLegacySave(page, machineGallerySave());
+  await loadSaveFixture(page, machineGallerySave());
   await page.getByTestId("view-pilot").click();
   const pilot = page.getByTestId("pilot-facility-workspace");
   await expect(pilot.getByTestId("factory-canvas").locator("canvas")).toBeVisible({ timeout: 15_000 });

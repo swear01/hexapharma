@@ -8,7 +8,6 @@ import {
   type GameIntent,
   type GenOptions,
 } from "./phase0_interfaces";
-import { MAX_INTENT_TRACE } from "./game";
 import { generate } from "./mapgen";
 import { compileEntitledPrototype } from "./recipe";
 import { estimateGameReplayWork } from "./replay-work";
@@ -71,7 +70,7 @@ describe("game replay work", () => {
     const maximumMaps = { ...options, nMaps: 4, diseaseCount: 4 };
     const machine = DEFAULT_CATALOG[0]!;
     const trace: GameIntent[] = [{ kind: "beginResearchShot" }];
-    for (let index = 1; index < MAX_INTENT_TRACE; index++) {
+    for (let index = 1; index < 4096; index++) {
       trace.push(index % 3 === 0
         ? { kind: "beginResearchShot" }
         : index % 3 === 1

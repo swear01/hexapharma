@@ -1,3 +1,4 @@
+import { installSaveFixture } from "./checkpoint";
 import { openMenu } from "./menu";
 import { expect, test } from "@playwright/test";
 import {
@@ -41,7 +42,7 @@ function preparedFacilitiesSave(seed = 14): string {
 
 async function loadPrepared(page: import("@playwright/test").Page, seed = 14): Promise<void> {
   await page.goto("/");
-  await page.evaluate((save) => localStorage.setItem("hexapharma.save.slot.0", save), preparedFacilitiesSave(seed));
+  await installSaveFixture(page, preparedFacilitiesSave(seed));
   await page.reload();
   await confirmLoad(page);
 }
@@ -96,10 +97,7 @@ test("Blueprint Library persists Pilot layouts independently of save-slot loadin
   await page.getByTestId("blueprint-import").click();
   await expect(page.getByTestId("blueprint-status")).toContainText(/invalid JSON|Could not import/i);
 
-  await page.evaluate((save) => {
-    localStorage.removeItem("hexapharma.save.v10.checkpoint.0");
-    localStorage.setItem("hexapharma.save.slot.0", save);
-  }, preparedFacilitiesSave(15));
+  await installSaveFixture(page, preparedFacilitiesSave(15));
   await confirmLoad(page);
   await expect(page.getByTestId("seed")).toHaveText("15");
   await page.getByTestId("view-blueprints").click();

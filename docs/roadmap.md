@@ -18,7 +18,7 @@
 
 ### Phase 3 — Economy / Technology / save
 
-完成 Market、Knowledge、shipping contracts、patents、intent replay/checkpoint。當前 wire 是 Save v10，早期 schema 不再支援。
+完成 Market、Knowledge、shipping contracts、patents、獨立 intent replay debug／開放 checkpoint。當前 wire 是 Save v11，早期 schema 不再支援。
 
 ### Phase 4 — Direct-operation shell
 
@@ -45,7 +45,7 @@
 - base price 使用 `12 + 4×difficulty + 2×referenceCost`；各疾病 demand 按 `floor(19/20)` 衰減至 0，Market clean／cheap first且只批量出售正 net產品。
 - 每疾病shipping contract quota=3；Disease 1／2／3分別gate Skew／Dilute／Settle patents。
 - transport renderer 使用 sim-derived connected topology；Belt drag 支援六鄰接連續hex route。
-- Blueprint v4 codec驗證`research-program`，但UI不capture/apply它；generic q/r `factory-layout`可正常建立／套用。Library使用`hexapharma.blueprint-library.v4`。Save v10保存stepwise Research/formulas、non-null Production與paid build trace。
+- Blueprint v4 codec驗證`research-program`，但UI不capture/apply它；generic q/r `factory-layout`可正常建立／套用。Library使用`hexapharma.blueprint-library.v4`。Save v11保存stepwise Research/formulas、non-null Production與結算後 cash。
 - minimal flat hex schematic使用vector-only嚴格俯視2D，移除generated lab bitmap／runtime manifest contract；Atlas與Factory都render pointy-top hex，但仍保有分離的domain payload／validator。
 - UI 刪除不必要常駐文案；詳細操作移到玩家指南。
 - 自動 gate只證明 correctness；53346 必須另做人類 fresh-save loop，記錄理解、嘗試、資金、first-sale time與主觀樂趣。

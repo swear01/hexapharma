@@ -6,13 +6,13 @@
 - UI、GameIntent、Save 與 Blueprint 都不得表示「只走完整 path 的一部分」。Research 每次只提交一台完整 machine。
 - 同 program、start 與 terrain 下，planning preview 和 execution 使用同一 pure traversal，逐 cell 與 portal discontinuity 相同。
 - active `ResearchProgram` 是本 session **已實際執行**的 ordered machines；下一步從 shot 的實際 drug state 繼續。不得另存待執行 batch、任意 anchor、auto-route 結果或 FactoryLayout。
-- program 進 state、trace、save 前必須 canonical validate、own 與 freeze。
+- program 進 state、save 前必須 canonical validate、own 與 freeze。
 - 選Research machine只建立下一個完整candidate；只有candidate endpoint hit可提交step。blank world click不改program、cash或fog。
 - `advanceResearchShot` 每次恰接受一個 canonical完整 `Machine`，並在同一原子 transition 中扣該 machine catalog cost、執行、揭露、evaluate 與 append。沒有一次提交多步 route 或先編輯後結算。
 
 ## Terrain、portal 與 fog
 
-- Active Research 只有單層 pointy-top axial `{q,r}` 座標；跨層位置或交換層操作不得出現在 active program、palette、mapgen、Blueprint 或 Save v10 authority。
+- Active Research 只有單層 pointy-top axial `{q,r}` 座標；跨層位置或交換層操作不得出現在 active program、palette、mapgen、Blueprint 或 Save v11 authority。
 - Wall／OOB、Abyss、Swamp 與 Portal 各有 pure、deterministic、共享於 preview／execution 的語意。
 - 每個 portal entry 恰有一個同層 destination；每個 destination 最多一個 entry。B 不可反向作 A；trail 在 jump 處斷開。
 - Wall 不受探索遮罩隱藏，未揭露時仍必須可讀並影響 preview。
@@ -53,6 +53,7 @@
 - 內部 pilot layout nullable；空 Production Plan 不阻止玩家打開或編輯 Production。
 - Plan edit 不扣 cash、不推進 tick、不產生 inventory／waste，也不改 Research。
 - Plan diagnostics 是 bounded read-only analysis；no-cure、side effect、failure、deadlock 或低吞吐不是 layout rejection。
+- Runtime `deadlocked` 只診斷最近 tick 的停滯，不阻止後續 tick 執行；週期來源仍按排程嘗試產出，真正堵塞則持續停滯。
 - 從 Plan `Commission` 到 Production 必須走與直接 Production edit 相同的 paid `buildProductionLayout` authority。
 
 ## Production construction
@@ -62,10 +63,10 @@
 - `quoteProductionBuild(current, proposed)` 必須只按新增／改建內容計費：belt 2、splitter／merger 8、source 12、sink 6、machine `10 × def.cost`。
 - 相同 tile 方向不收費；方向改變按新 tile 收費。機器 type／anchor／footRot 相同即已安裝，ID 差異不收費；移動／旋轉／換 type 按新機器收費。
 - removal 不收費、不退款；報價必須是 non-negative safe integer。
-- 現金不足或 layout 無效時，cash、layout、runtime、waste、trace 原子不變。
+- 現金不足或 layout 無效時，cash、layout、runtime、waste 原子不變。
 - no-op、碰撞、越界或現金不足的UI edit也不得停止Production播放或寫入editor history；只有authority接受的layout edit才停止並重建runtime。
 - 接受 edit 時只扣一次報價、own layout、建立相符的 initial runtime，保留累積 waste 與既有 inventory。
-- paid build intent 不得與相鄰 layout intent 合併或從 replay trace 消失。
+- 每次 accepted paid build 都獨立扣款；後續 snapshot 保存結算後 cash 與 layout，不保留 lifetime trace。
 
 ## Factory runtime 與 transport
 
@@ -80,7 +81,7 @@
 ## Whole-game authority 與 economy
 
 - GameState 同時 own `research`、內部 `pilot`、`production`，三者不得 alias layout 或以隱藏 token 耦合；玩家文案必須稱 Production Plan／Commission。
-- 正常UI new game origin的starting cash恰為1000、research為0；fresh loop不得需要外部資金／Knowledge或hidden reference才能到first sale。
+- 正常UI new game 的starting cash恰為1000、research為0；fresh loop不得需要外部資金／Knowledge或hidden reference才能到first sale。
 - Menu → New Game 只可用unsigned 32-bit seed建立標準fresh GameState；不得刪除save checkpoints或Blueprint Library。確認modal開啟期間，背景hotkeys不得產生GameIntent、Factory edit或navigation authority change。
 - mapgen每疾病base price恰為`12 + 4 × difficulty + 2 × referenceCost`，使用safe integer arithmetic。
 - 每疾病demand獨立：第0件gross=base；下一件反覆`floor(previous × 19 / 20)`直到0，無正值floor。
@@ -89,7 +90,7 @@
 - Market候選stable order為side-effect count、production cost、inventory ID；single/bulk automatic shipping必須略過non-positive候選，只出售逐件計入demand後仍有positive net的產品。略過項目不消耗demand，不得自動虧本出售。
 - 每疾病 shipping contract quota 恰為3；progress只由該疾病 accepted sales 的sold count推導。active contract是首個未完成疾病；全部完成時是最後一個completed contract。
 - `skew-unlock`／`dilute-unlock`／`settle-unlock`除一般cash、Knowledge與patent prerequisites外，還分別要求Disease 0／1／2 contract completed；其他patent不得被合約誤擋。
-- 同 origin + canonical intent trace replay 必須逐欄位與 hash 相同。
+- 同 initial GameState + 明確提供的 intents replay 必須逐欄位與 hash 相同。
 - 擴廠若清 runtime／waste，確認前全部 authority 原子不變；解鎖不得中止 active Research shot。
 
 ## Blueprint v4
@@ -101,14 +102,17 @@
 - strict decoder 必須拒絕 unknown／missing fields、wrong kind/version/content/checksum、unknown type、duplicate IDs/tiles、collision、越界與 quota violation。
 - Library envelope version 固定為 4，namespace 是 `hexapharma.blueprint-library.v4`；lifecycle 與 save slots 分離，Load／Rewind／換 slot 不改 Library。舊 v3 document／Library 不得 silent reinterpret，reader 拒絕時不得覆寫原 blob／legacy key。
 
-## Save v10 與 checkpoints
+## Save v11 與 checkpoints
 
-- full／compact／slots／rewind 都使用 Save v10，逐欄位重建 stepwise Research／formulas、nullable內部pilot、non-null Production、fixed hex path、layout 與 cold runtime；typed/runtime data 不得 alias。
-- compact reader 在 semantic replay 前先驗 raw ticks／intent count／work caps，之後比對 canonical trace 與 state hash。
-- `buildProductionLayout` 的費用與次序是 replay authority；不能只保存最後 layout 而漏掉 cash 歷史。
-- decoder 對 unknown／missing fields、unsafe integers、invalid path/layout/runtime、oversize 與 replay forgery 顯式失敗；舊 schema 不 migration。
-- checkpoint lineage 外層 version 2 與內層 Save v10 是兩個獨立版本；canonical key 是 `hexapharma.save.v10.checkpoint.${slot}`，不得交叉 reinterpret。舊 v9 payload／versioned key 被拒絕時必須原樣保留。
-- corrupt blob 不得被空/default game 偷換；Recover 前保留 raw data，且 recovery 原子。
+- full／compact／slots／rewind 都是開放、可攜、可編輯的 plain JSON 冷快照；合法 Cash／Knowledge／sold／fog 編輯不要求操作或收入證明，不加密、簽章或驗資源 checksum。
+- loader 不 replay；`origin`／`intentTrace`／`replayTicks`／`stateHash` 不是存檔欄位。`replayGame(initial, intents)` 的逐欄位／hash determinism 是獨立除錯契約。
+- 在途 unit／進度／cost、splitter cursors、runtime counters、inventory／nextInventoryId、waste、Research／formulas、economy、patents、fog、rng 必須完整保存。返回 layout 與 runtime 綁定同一 owned layout，nested typed/runtime data 不得 alias。
+- decoder 在 allocation／restore 前驗 dimensions、collection counts、inventory group expansion 和 typed-array 可表示範圍；另驗合法 layout、runtime 質量守恆與容量、catalog、Research／formula／inventory 結果等可執行不變式。unknown／missing fields、unsafe integers、無效狀態、oversize 顯式失敗。
+- 版本與 `contentBuild` 不合即拒絕。content identifier 只包含 catalog／shapes／patents 與手動 rules revision；所有 sim／mapgen 邏輯變動都須提升 revision，它不是來源真實性證明。
+- 生產預算只限制單一 batch，不能累計到整局。history 最多 20 snapshots，full/slots 上限 5,000,000 characters、browser checkpoint 上限 1,250,000 characters；compact inventory 展開不得超過 24,500 products。
+- 正常 Load 嚴格驗 envelope；明確 Recover 可從同版本、可解析且字元／history array 數量有界的部分損壞 envelope 取已知欄位的字串候選，獨立驗 snapshot 並保留最新有效同地圖 suffix。讀取不覆寫；storage access 失敗須顯示原始原因並停用 Recovery。
+- checkpoint 外層 version 2、內層 Save v11；key 為 `hexapharma.save.v11.checkpoint.${slot}`。舊 alpha key 不讀取、不 migration、不自動覆寫；沒有 legacy reader 分支。
+- corrupt blob 不得被 default game 冒充；讀取不寫 storage，Recover 前保留 raw data，寫入失敗原 blob 不變。
 - Load不同saved state與Rewind丟棄最新checkpoint都先取得可取消確認；Cancel不得改GameState、slot history或Library。
 
 ## Geometry 與 visual semantics

@@ -27,7 +27,7 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 
 Blueprint Library 與 save slot 分離；New Game、Load、Rewind、換 slot 都不會移除藍圖。New Game 只取代目前未保存狀態，既有 save checkpoints 仍可 Load 回來。
 
-目前存檔格式是Save v10。checkpoint history的外層lineage仍是v2，內層使用Save v10；舊開發版不會自動升級。
+目前 [Save v11](save.md) 是開放、可編輯的 plain JSON。獨立 checkpoint/history 外層仍是 v2，內層使用 Save v11；舊開發版不會自動升級。
 
 正常新局從 $1000 cash、0 Knowledge開始，同一張 Atlas 預設有4種疾病。全新 origin 的 Blueprint Library 為空；之後換 seed 會保留既有藍圖。URL query注入的cash／research只供開發驗證，不是正常玩法。
 
@@ -148,7 +148,7 @@ Production Plan與Production使用相同editor。Details 預設收起，按下�
 - 每張需求卡以Clean stock／Tainted stock計數庫存件數；最佳可售庫存會列Next gross、production cost、每個effect `$25`的penalty算式與net。無治療庫存或沒有正net庫存時，Ship disabled並直接顯示原因。
 - Market的`Ship best`按side effects最少、production cost最低、inventory ID最早的順序，略過不賺錢的候選後出售第一件正net產品。`Ship profitable`掃描相同順序，只出售在當下demand仍為正net的項目；略過的庫存不消耗demand，也不會被自動丟棄。每件成功出售另取得1 Knowledge；畫面會顯示本次回饋。
 - 擴廠若會清除Production runtime／waste，確認視窗會先列出影響；Cancel不改任何authority。
-- blocking confirmation 開啟期間 Production timer 不增加 tick、inventory、cash、waste 或 trace；Cancel 恢復原播放狀態，原本 Pause 不會自動 Play。確認 New／Load／Rewind／Reset／擴廠後舊 timer 停止。一般 drawer 與場域切換不暂停生產。
+- blocking confirmation 開啟期間 Production timer 不增加 tick、inventory、cash 或 waste；Cancel 恢復原播放狀態，原本 Pause 不會自動 Play。確認 New／Load／Rewind／Reset／擴廠後舊 timer 停止。一般 drawer 與場域切換不暂停生產。
 - Reset Production有進度時先確認；確認後只重建目前layout的runtime，不把建造費退回，也不清inventory／累積waste。
 
 ## 回報問題

@@ -8,7 +8,7 @@
 | `.github/workflows/check.yml` | push/PR 到 `main` 時執行 `npm run check`（tsc、eslint、vitest、e2e）。 |
 | `vitest.config.ts`、`test/vitest.setup.ts` | Node test runner 與最小 browser-global setup，讓 Pixi renderer 純函式在 CI Node 20 可載入。 |
 | `docs/` | canonical design、invariants、player guide、plan 與 playtest。 |
-| `src/json-guards.ts` | 共用 JSON object guard；Save v10 與 checkpoint slot envelope 共用。 |
+| `src/json-guards.ts` | 共用 JSON object guard；Save v11 與 checkpoint slot envelope 共用。 |
 | `src/sim/hex.ts` | pointy-top axial `{q,r}`、E／SE／SW／W／NW／NE、六鄰接、60° rotation與`r * width + q`索引 authority。 |
 | `src/sim/phase0_interfaces.ts` | 完整 `PathStamp` machine、terrain/portal、三場域 state、non-null Production、Game intents。 |
 | `src/sim/drug-graph/` | strict EffectMap validation、fixed path traversal、single-layer terrain/portal、preview/execution authority。 |
@@ -20,9 +20,9 @@
 | `src/sim/construction/` | `quoteProductionBuild` paid layout-diff authority。 |
 | `src/sim/recipe/` | Factory prototype compilation與bounded diagnostics；不作Research authority。 |
 | `src/sim/game.ts` | stepwise Research session/fog/formulas、shipping contracts、free Production Plan（內部 pilot）、direct paid Production、products/economy/reset。 |
-| `src/sim/replay-work.ts` | Save v10 intents與raw-work preflight。 |
+| `src/sim/replay-work.ts` | Production 單次 batch 的 bounded work estimate；獨立 replay 的工作量估算。 |
 | `src/sim/economy/`, `patent/` | per-disease finite demand、quota-3 shipping contracts、machine patent gates與tiered單層Technology。 |
-| `src/sim/save/` | Save v10 full/compact/slots/rewind、strict parser、replay/hash、formula、cold runtime、legacy rejection。 |
+| `src/sim/save/` | Save v11 full/compact/slots/rewind、plain cold snapshots、bounded strict parser、可執行狀態驗證與舊版本拒絕。 |
 | `src/blueprint/format.ts` | Blueprint v4 `research-program`／`factory-layout` schema、checksum/content/bounds/hex-geometry validators與materializers。 |
 | `src/blueprint/storage.ts` | v4 save-independent Library、`hexapharma.blueprint-library.v4` namespace、quota/dedupe/import/export/delete atomicity。 |
 | `src/render/hexProjection.ts` | Research／Factory共用pointy-top axial pixel projection；不擁有sim座標。 |
@@ -37,7 +37,7 @@
 | `src/ui/machineLabels.ts`, `effectLabels.ts` | 玩家可讀的machine／一基底disease／outcome文字；不暴露internal IDs或座標。 |
 | `src/ui/Shop.tsx` | clean/cheap stable product ranking、positive-net single/bulk shipping與finite-demand顯示。 |
 | `src/ui/BlueprintLibrary.tsx` | capture Production Plan／Production、open Factory in Production Plan或paid Commission、strict import/export；既有Research cards只可download/delete，不可capture/apply。 |
-| `src/ui/checkpointStorage.ts` | outer lineage v2、inner Save v10 compact checkpoint、`hexapharma.save.v10.checkpoint.${slot}` key、rewind/recovery。 |
+| `src/ui/checkpointStorage.ts` | 獨立 checkpoint/history outer v2、inner Save v11 compact checkpoint、`hexapharma.save.v11.checkpoint.${slot}` key、rewind/recovery。 |
 | `test/integration/` | stepwise Research/formula、mapgen diversity、fresh-start affordability、shipping gates、optional Production Plan、paid Production、finite Market/Technology loop。 |
 | `test/e2e/` | world UI、radius-two hex visibility、reveal–decide Research、assay/formula、touch/direct construction、Market/contracts、Blueprint、Save/New Game、modal freeze與responsive acceptance。 |
 | `tools/` | headless sim與whole-region solver minima／mapgen quality/balance sweeps；不進遊戲內自動解。 |
@@ -55,6 +55,6 @@ Pure TS sim core  → authoritative deterministic transitions
 - Research Atlas 與 Factory 都使用pointy-top axial `{q,r}`、E／SE／SW／W／NW／NE與dense `r * width + q`索引。PathStamp geometry 與 Production Plan／Production FactoryLayout geometry 仍是兩個domain；共用projection慣例與操作手感，不共用payload或validator。
 - Production Plan 與 Production 各 own layout；把 Plan Commission 到 Production 仍走 paid Production intent，不 alias。內部 schema 暫保留 `pilot` 命名。
 - transport topology 是 layout 的純 derived view；renderer 不得回寫或虛構 edge。
-- Blueprint Library 不是 GameState，也不在 Save/Rewind lineage 內。
+- Blueprint Library 不是 GameState，也不在 Save/Rewind history 內。
 - Pixi Application停用auto ticker；React／sim狀態變化才明確要求一幀，隱藏workspace不得持續idle redraw。
 - 模組擁有權見 [module-ownership.md](module-ownership.md)。

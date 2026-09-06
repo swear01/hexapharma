@@ -36,8 +36,8 @@ import {
   MAX_TEMPLATE_STEPS,
   MAX_FACTORY_REPLAY_TICKS,
   MAX_GAME_INVENTORY_PRODUCTS,
-  MAX_GAME_REPLAY_WORK,
   MAX_BULK_SALE_PRODUCTS,
+  MAX_GAME_REPLAY_WORK,
 } from "./phase0_interfaces";
 import { applyTemplate, evaluate, previewStep } from "./drug-graph";
 import { sellUnit } from "./economy";
@@ -63,7 +63,6 @@ export const SHIPPING_CONTRACT_QUOTA = 3;
 export type GameIntent = GameIntentContract;
 
 export const MAX_REPLAY_TICKS = MAX_FACTORY_REPLAY_TICKS;
-export const MAX_INTENT_TRACE = 4_096;
 
 function canonicalNumber(value: number): number {
   return Object.is(value, -0) ? 0 : value;
@@ -384,7 +383,7 @@ export function currentDiscoveredFormula(game: GameState): DiscoveredFormula | n
   return game.research.discoveredFormulas[game.research.discoveredFormulas.length - 1] ?? null;
 }
 
-function requireAllowedMachine(game: GameState, machine: Machine): MachineCatalogEntry {
+function requireAllowedMachine(game: Pick<GameState, "patents">, machine: Machine): MachineCatalogEntry {
   const entry = availableCatalog(game.patents).find((candidate) => candidate.typeId === machine.typeId);
   if (entry === undefined) throw new Error(`game intent: machine "${machine.typeId}" is locked`);
   if (canonical(machine.path) !== canonical(entry.path)) {
@@ -407,7 +406,7 @@ function requireDir(value: number, path: string): void {
   }
 }
 
-export function validateFactoryLayout(game: GameState, layout: FactoryLayout): void {
+export function validateFactoryLayout(game: Pick<GameState, "patents">, layout: FactoryLayout): void {
   if (
     !Number.isSafeInteger(layout.width) ||
     !Number.isSafeInteger(layout.height) ||
@@ -650,14 +649,18 @@ function validateGameCatalog(catalog: readonly MachineCatalogEntry[]): void {
   }
 }
 
+export function validateGameOptions(genOptions: GenOptions): void {
+  validateGameMapOptions(genOptions);
+  validateGameCatalog(genOptions.catalog);
+}
+
 export function createGameState(genOptions: GenOptions, cash: number, research: number): GameState {
   requireSafeInteger(cash, "game state: starting cash");
   requireSafeInteger(research, "game state: starting research", 0);
   const ownedOptions = ownGenOptions(genOptions);
   const ownedCash = canonicalNumber(cash);
   const ownedResearch = canonicalNumber(research);
-  validateGameMapOptions(ownedOptions);
-  validateGameCatalog(ownedOptions.catalog);
+  validateGameOptions(ownedOptions);
   const level = levelFor(ownedOptions);
   const productionLayout = ownFactoryLayout({
     width: BASE_GAME_FACTORY_WIDTH,
@@ -667,13 +670,6 @@ export function createGameState(genOptions: GenOptions, cash: number, research: 
     machines: [],
   });
   return {
-    origin: Object.freeze({
-      genOptions: ownedOptions,
-      cash: ownedCash,
-      research: ownedResearch,
-    }),
-    intentTrace: Object.freeze([]),
-    replayTicks: 0,
     genOptions: ownedOptions,
     economy: { cash: ownedCash, research: ownedResearch, sold: [] },
     patents: { unlocked: [] },
@@ -736,6 +732,9 @@ function drainProducts(
     const drug = { pos, failed: (events.failed[eventIndex] ?? 0) !== 0 };
     const outcome = evaluate(level.mm, drug, { steps: [] });
     if (outcome.failed || outcome.cured.length === 0) {
+      if (current.factoryWaste === Number.MAX_SAFE_INTEGER) {
+        throw new Error("game intent: waste exceeds safe-integer range");
+      }
       current.factoryWaste += 1;
       continue;
     }
@@ -744,6 +743,9 @@ function drainProducts(
       throw new Error(
         `game intent: inventory exceeds ${MAX_GAME_INVENTORY_PRODUCTS} physical products`,
       );
+    }
+    if (current.nextInventoryId === Number.MAX_SAFE_INTEGER) {
+      throw new Error("game intent: inventory id exceeds safe-integer range");
     }
     if (current.inventory === null) current.inventory = [...current.sourceInventory];
     current.inventory.push({
@@ -822,7 +824,7 @@ function factoryRuntimeIsInitial(game: GameState): boolean {
   );
 }
 
-function requireEntitledFacilityLayout(game: GameState, layout: FactoryLayout, facility: string): void {
+export function requireEntitledFacilityLayout(game: Pick<GameState, "patents">, layout: FactoryLayout, facility: string): void {
   validateFactoryLayout(game, layout);
   const effects = activeEffects(DEFAULT_PATENTS, game.patents);
   const entitledWidth = BASE_GAME_FACTORY_WIDTH + effects.factoryDw;
@@ -1094,108 +1096,21 @@ function reduceGameIntent(game: GameState, intent: GameIntent): GameState {
   }
 }
 
-function appendIntentTrace(game: GameState, intent: GameIntent, next: GameState): GameState {
-  if (next === game) return game;
-  if (intent.kind === "productionTicks") {
-    const replayTicks = game.replayTicks + intent.ticks;
-    if (!Number.isSafeInteger(replayTicks) || replayTicks > MAX_REPLAY_TICKS) {
-      throw new Error(`game intent: cumulative factory ticks exceed ${MAX_REPLAY_TICKS}`);
-    }
-    const previous = game.intentTrace[game.intentTrace.length - 1];
-    if (previous?.kind === "productionTicks") {
-      const ticks = previous.ticks + intent.ticks;
-      if (!Number.isSafeInteger(ticks)) {
-        throw new Error("game intent: normalized factory tick batch exceeds safe integer range");
-      }
-      return {
-        ...next,
-        intentTrace: Object.freeze([
-          ...game.intentTrace.slice(0, -1),
-          Object.freeze({ kind: "productionTicks" as const, ticks }),
-        ]),
-        replayTicks,
-      };
-    }
-    if (game.intentTrace.length >= MAX_INTENT_TRACE) {
-      throw new Error(`game intent: input trace exceeds ${MAX_INTENT_TRACE} entries`);
-    }
-    return { ...next, intentTrace: Object.freeze([...game.intentTrace, intent]), replayTicks };
-  }
-  const previous = game.intentTrace[game.intentTrace.length - 1];
-  if (
-    intent.kind === "setPilotLayout" &&
-    previous?.kind === intent.kind
-  ) {
-    return {
-      ...next,
-      intentTrace: Object.freeze([...game.intentTrace.slice(0, -1), intent]),
-    };
-  }
-  if (
-    (intent.kind === "sellProduct" || intent.kind === "sellProducts") &&
-    (previous?.kind === "sellProduct" || previous?.kind === "sellProducts") &&
-    intent.disease === previous.disease
-  ) {
-    const previousIds = previous.kind === "sellProduct" ? [previous.productId] : previous.productIds;
-    const currentIds = intent.kind === "sellProduct" ? [intent.productId] : intent.productIds;
-    if (previousIds.length + currentIds.length > MAX_BULK_SALE_PRODUCTS) {
-      throw new Error(`game intent: normalized bulk sale exceeds ${MAX_BULK_SALE_PRODUCTS} products`);
-    }
-    const merged = Object.freeze({
-      kind: "sellProducts" as const,
-      productIds: Object.freeze([...previousIds, ...currentIds]),
-      disease: intent.disease,
-    });
-    return {
-      ...next,
-      intentTrace: Object.freeze([...game.intentTrace.slice(0, -1), merged]),
-    };
-  }
-  if (game.intentTrace.length >= MAX_INTENT_TRACE) {
-    throw new Error(`game intent: input trace exceeds ${MAX_INTENT_TRACE} entries`);
-  }
-  return { ...next, intentTrace: Object.freeze([...game.intentTrace, intent]) };
-}
-
 export function applyGameIntent(game: GameState, intent: GameIntent): GameState {
   if (intent.kind === "productionTicks") {
-    if (!Number.isSafeInteger(intent.ticks) || intent.ticks < 0) {
-      throw new Error("game intent: factory ticks must be a non-negative safe integer");
+    if (!Number.isSafeInteger(intent.ticks) || intent.ticks < 0 || intent.ticks > MAX_REPLAY_TICKS) {
+      throw new Error(`game intent: factory tick batch must use integer ticks in 0..${MAX_REPLAY_TICKS}`);
     }
-    if (
-      intent.ticks > 0 &&
-      (intent.ticks > MAX_REPLAY_TICKS || game.replayTicks > MAX_REPLAY_TICKS - intent.ticks)
-    ) {
-      throw new Error(`game intent: cumulative factory ticks exceed ${MAX_REPLAY_TICKS}`);
+    if (intent.ticks > 0 && estimateGameReplayWork(game.genOptions, [
+      { kind: "buildProductionLayout", layout: game.production.layout }, intent,
+    ]) > MAX_GAME_REPLAY_WORK) {
+      throw new Error(`game intent: factory tick batch work exceeds ${MAX_GAME_REPLAY_WORK}`);
     }
-  }
-  const ownedIntent = ownGameIntent(intent);
-  if (
-    ownedIntent.kind === "productionTicks" &&
-    ownedIntent.ticks > 0
-  ) {
-    const previous = game.intentTrace[game.intentTrace.length - 1];
-    const prospectiveTrace = previous?.kind === "productionTicks"
-      ? [
-          ...game.intentTrace.slice(0, -1),
-          Object.freeze({
-            kind: "productionTicks" as const,
-            ticks: previous.ticks + ownedIntent.ticks,
-          }),
-        ]
-      : [...game.intentTrace, ownedIntent];
-    if (estimateGameReplayWork(game.origin.genOptions, prospectiveTrace) > MAX_GAME_REPLAY_WORK) {
-      throw new Error(`game intent: replay work exceeds ${MAX_GAME_REPLAY_WORK}`);
+    if (game.production.runtime.tick > Number.MAX_SAFE_INTEGER - intent.ticks) {
+      throw new Error("game intent: factory tick exceeds safe-integer range");
     }
   }
-  const next = appendIntentTrace(game, ownedIntent, reduceGameIntent(game, ownedIntent));
-  if (
-    next !== game &&
-    estimateGameReplayWork(next.origin.genOptions, next.intentTrace) > MAX_GAME_REPLAY_WORK
-  ) {
-    throw new Error(`game intent: replay work exceeds ${MAX_GAME_REPLAY_WORK}`);
-  }
-  return next;
+  return reduceGameIntent(game, ownGameIntent(intent));
 }
 
 function canonical(value: unknown): string {
@@ -1269,121 +1184,6 @@ function requireSafeInteger(value: number, path: string, min?: number): void {
   if (!Number.isSafeInteger(value) || (min !== undefined && value < min)) {
     throw new Error(`${path} must be ${min === undefined ? "a" : `an integer >= ${min} and`} safe integer`);
   }
-}
-
-function requireObject(value: unknown, path: string): asserts value is Record<string, unknown> {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error(`${path} must be an object`);
-  }
-}
-
-function validateTraceIntent(intent: unknown, index: number): asserts intent is GameIntent {
-  const path = `game state: intent trace[${index}]`;
-  requireObject(intent, path);
-  switch (intent.kind) {
-    case "setPilotLayout":
-    case "buildProductionLayout":
-      requireObject(intent.layout, `${path}.layout`);
-      return;
-    case "beginResearchShot":
-    case "abortResearchShot":
-    case "productionTicks":
-      if (intent.kind === "productionTicks") {
-        requireSafeInteger(intent.ticks as number, `${path}.ticks`, 1);
-      }
-      return;
-    case "advanceResearchShot":
-      requireObject(intent.machine, `${path}.machine`);
-      return;
-    case "resetProduction":
-      return;
-    case "sellProduct":
-      requireSafeInteger(intent.productId as number, `${path}.productId`, 0);
-      requireSafeInteger(intent.disease as number, `${path}.disease`, 0);
-      return;
-    case "sellProducts": {
-      if (!Array.isArray(intent.productIds)) throw new Error(`${path}.productIds must be an array`);
-      if (intent.productIds.length < 1 || intent.productIds.length > MAX_BULK_SALE_PRODUCTS) {
-        throw new Error(`${path}.productIds exceeds bulk sale bounds`);
-      }
-      for (let product = 0; product < intent.productIds.length; product++) {
-        requireSafeInteger(intent.productIds[product] as number, `${path}.productIds[${product}]`, 0);
-      }
-      requireSafeInteger(intent.disease as number, `${path}.disease`, 0);
-      return;
-    }
-    case "unlockPatent":
-      if (typeof intent.id !== "string") throw new Error(`${path}.id must be a string`);
-      return;
-    default:
-      throw new Error(`${path}.kind is unknown`);
-  }
-}
-
-function typedArrayName(value: unknown): string | null {
-  if (value instanceof Uint8Array) return "Uint8Array";
-  if (value instanceof Int16Array) return "Int16Array";
-  if (value instanceof Int32Array) return "Int32Array";
-  return null;
-}
-
-function firstDifference(expected: unknown, actual: unknown, path: string): string | null {
-  if (Object.is(expected, actual)) return null;
-  const expectedTyped = typedArrayName(expected);
-  const actualTyped = typedArrayName(actual);
-  if (expectedTyped !== null || actualTyped !== null) {
-    if (expectedTyped !== actualTyped) return path;
-    const a = expected as Uint8Array | Int16Array | Int32Array;
-    const b = actual as Uint8Array | Int16Array | Int32Array;
-    if (a.length !== b.length) return `${path}.length`;
-    for (let i = 0; i < a.length; i++) {
-      if (a[i] !== b[i]) return `${path}[${i}]`;
-    }
-    return null;
-  }
-  if (Array.isArray(expected) || Array.isArray(actual)) {
-    if (!Array.isArray(expected) || !Array.isArray(actual)) return path;
-    if (expected.length !== actual.length) return `${path}.length`;
-    for (let i = 0; i < expected.length; i++) {
-      const difference = firstDifference(expected[i], actual[i], `${path}[${i}]`);
-      if (difference !== null) return difference;
-    }
-    return null;
-  }
-  if (
-    expected === null ||
-    actual === null ||
-    typeof expected !== "object" ||
-    typeof actual !== "object"
-  ) {
-    return path;
-  }
-  const expectedRecord = expected as Record<string, unknown>;
-  const actualRecord = actual as Record<string, unknown>;
-  const expectedKeys = Object.keys(expectedRecord).sort();
-  const actualKeys = Object.keys(actualRecord).sort();
-  if (expectedKeys.length !== actualKeys.length) return path;
-  for (let i = 0; i < expectedKeys.length; i++) {
-    const key = expectedKeys[i];
-    if (key === undefined || key !== actualKeys[i]) return path;
-    const difference = firstDifference(
-      expectedRecord[key],
-      actualRecord[key],
-      path.length === 0 ? key : `${path}.${key}`,
-    );
-    if (difference !== null) return difference;
-  }
-  return null;
-}
-
-function comparableGame(game: GameState): unknown {
-  return {
-    ...game,
-    production: {
-      ...game.production,
-      runtime: snapshotFactory(game.production.runtime),
-    },
-  };
 }
 
 function validateDrugState(
@@ -1557,75 +1357,7 @@ function validateRuntime(
 }
 
 export function validateGameState(game: GameState): GameState {
-  requireObject(game.origin, "game state: origin");
-  requireObject(game.origin.genOptions, "game state: origin.genOptions");
-  validateGameMapOptions(game.origin.genOptions);
-  validateGameCatalog(game.origin.genOptions.catalog);
-  requireSafeInteger(game.origin.cash, "game state: origin cash");
-  requireSafeInteger(game.origin.research, "game state: origin research", 0);
-  levelFor(game.origin.genOptions);
-  if (!Array.isArray(game.intentTrace)) {
-    throw new Error("game state: intent trace must be an array");
-  }
-  if (game.intentTrace.length > MAX_INTENT_TRACE) {
-    throw new Error(`game state: intent trace exceeds ${MAX_INTENT_TRACE} entries`);
-  }
-  requireSafeInteger(game.replayTicks, "game state: replay ticks", 0);
-  let traceTicks = 0;
-  let previousWasTicks = false;
-  let previousLayoutKind: "setPilotLayout" | null = null;
-  let previousSaleDisease: number | null = null;
-  for (let index = 0; index < game.intentTrace.length; index++) {
-    const intent: unknown = game.intentTrace[index];
-    validateTraceIntent(intent, index);
-    if (intent.kind === "productionTicks") {
-      if (previousWasTicks) {
-        throw new Error("game state: consecutive factory tick intents must be normalized");
-      }
-      if (intent.ticks > MAX_REPLAY_TICKS - traceTicks) {
-        throw new Error(`game state: replay ticks exceed ${MAX_REPLAY_TICKS}`);
-      }
-      traceTicks += intent.ticks;
-      previousWasTicks = true;
-      previousLayoutKind = null;
-      previousSaleDisease = null;
-    } else {
-      previousWasTicks = false;
-      if (
-        intent.kind === "setPilotLayout" &&
-        previousLayoutKind === intent.kind
-      ) {
-        throw new Error("game state: consecutive same-facility layouts must be normalized");
-      }
-      previousLayoutKind = intent.kind === "setPilotLayout" ? intent.kind : null;
-      if (intent.kind === "sellProduct" || intent.kind === "sellProducts") {
-        if (previousSaleDisease === intent.disease) {
-          throw new Error("game state: consecutive same-disease sales must be normalized");
-        }
-        previousSaleDisease = intent.disease;
-      } else {
-        previousSaleDisease = null;
-      }
-    }
-  }
-  if (traceTicks !== game.replayTicks) {
-    throw new Error("game state: replay tick total does not match intent trace");
-  }
-  let replayWork: number;
-  try {
-    replayWork = estimateGameReplayWork(game.origin.genOptions, game.intentTrace);
-  } catch (error) {
-    throw new Error(
-      `game state: replay work cannot be estimated: ${(error as Error).message}`,
-      { cause: error },
-    );
-  }
-  if (replayWork > MAX_GAME_REPLAY_WORK) {
-    throw new Error(`game state: replay work exceeds ${MAX_GAME_REPLAY_WORK}`);
-  }
-
-  validateGameMapOptions(game.genOptions);
-  validateGameCatalog(game.genOptions.catalog);
+  validateGameOptions(game.genOptions);
   const level = levelFor(game.genOptions);
   requireSafeInteger(game.economy.cash, "game state: cash");
   requireSafeInteger(game.economy.research, "game state: research", 0);
@@ -1735,6 +1467,15 @@ export function validateGameState(game: GameState): GameState {
     if (!expected.failed && expected.cured.length === 0) {
       throw new Error("game state: non-terminal Research outcome must keep its session active");
     }
+    const expectedFormulas = discoverFormulas(
+      game.research.discoveredFormulas,
+      game.research.program,
+      researchShotCost(game.research.program),
+      expected,
+    );
+    if (canonical(expectedFormulas) !== canonical(game.research.discoveredFormulas)) {
+      throw new Error("game state: latest successful Research outcome requires its recorded formula suffix");
+    }
   }
 
   if (game.pilot.layout !== null) requireEntitledFacilityLayout(game, game.pilot.layout, "Pilot Plant");
@@ -1776,7 +1517,7 @@ export function validateGameState(game: GameState): GameState {
   for (let mapIndex = 0; mapIndex < game.fog.length; mapIndex++) {
     const fog = game.fog[mapIndex];
     const map = level.mm.maps[mapIndex];
-    if (fog === undefined || map === undefined || fog.length !== map.width * map.height) {
+    if (!(fog instanceof Uint8Array) || map === undefined || fog.length !== map.width * map.height) {
       throw new Error(`game state: fog[${mapIndex}] has invalid length`);
     }
     for (let cell = 0; cell < fog.length; cell++) {
@@ -1788,34 +1529,38 @@ export function validateGameState(game: GameState): GameState {
   requireSafeInteger(game.rng.s, "game state: rng state", 0);
   if (game.rng.s > 0xffff_ffff) throw new Error("game state: rng state exceeds uint32");
 
-  let replayed: GameState;
-  const canonicalTrace: GameIntent[] = [];
-  try {
-    replayed = createGameState(game.origin.genOptions, game.origin.cash, game.origin.research);
-    for (const intent of game.intentTrace) {
-      const ownedIntent = ownGameIntent(intent);
-      const next = reduceGameIntent(replayed, ownedIntent);
-      if (next === replayed) {
-        throw new Error(`non-authoritative no-op intent "${ownedIntent.kind}"`);
-      }
-      replayed = next;
-      canonicalTrace.push(ownedIntent);
-    }
-  } catch (error) {
-    throw new Error(`game state: input trace cannot be replayed: ${(error as Error).message}`, {
-      cause: error,
-    });
-  }
-  replayed = {
-    ...replayed,
-    intentTrace: Object.freeze(canonicalTrace),
-    replayTicks: traceTicks,
+  const genOptions = ownGenOptions(game.genOptions);
+  levelCache.set(genOptions, level);
+  const productionLayout = ownFactoryLayout(game.production.layout);
+  return {
+    genOptions,
+    economy: { ...game.economy, sold: game.economy.sold.map((sold) => ({ ...sold })) },
+    patents: { unlocked: [...game.patents.unlocked] },
+    research: Object.freeze({
+      program: ownTemplate(game.research.program),
+      shot: game.research.shot === null ? null : Object.freeze({
+        ...game.research.shot,
+        drug: ownDrugState(game.research.shot.drug),
+      }),
+      lastOutcome: game.research.lastOutcome === null ? null : ownOutcome(game.research.lastOutcome),
+      discoveredFormulas: Object.freeze(game.research.discoveredFormulas.map(ownDiscoveredFormula)),
+    }),
+    pilot: Object.freeze({
+      layout: game.pilot.layout === null ? null : ownFactoryLayout(game.pilot.layout),
+    }),
+    production: Object.freeze({
+      layout: productionLayout,
+      runtime: restoreFactory(productionLayout, level.mm, level.start,
+        snapshotFactory(game.production.runtime)),
+      waste: game.production.waste,
+    }),
+    inventory: game.inventory.map((product) => ({
+      ...product, drug: ownDrugState(product.drug), outcome: ownOutcome(product.outcome),
+    })),
+    nextInventoryId: game.nextInventoryId,
+    fog: game.fog.map((fog) => fog.slice()),
+    rng: { ...game.rng },
   };
-  const difference = firstDifference(comparableGame(replayed), comparableGame(game), "");
-  if (difference !== null) {
-    throw new Error(`game state: input trace replay mismatch at ${difference || "root"}`);
-  }
-  return replayed;
 }
 
 export function hashGame(game: GameState): number {

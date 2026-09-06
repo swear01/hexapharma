@@ -20,7 +20,7 @@
 | D14 | 只有接受的Production layout edit停止播放並重建runtime、保留累積waste；拆除不退款。 | 避免在途authority與新幾何錯配，防止用重建洗廢料，也不讓rejected gesture干擾運作。 |
 | D15 | Factory transport 使用 sim-derived connected topology。 | 端點、對向直線、60°／120°轉折、多向junction與machine ports必須反映六邊真實accept／emit edge，而非看相鄰格猜圖。 |
 | D16 | Blueprint v4 codec識別`research-program`與通用`factory-layout`；Library envelope／namespace是v4／`hexapharma.blueprint-library.v4`，UI不capture/apply Research，只讓Research card import/download/delete。 | stepwise Research不可被藍圖批次提交；同一工廠layout仍可進Production Plan或Commission到Production，不綁來源頁面。 |
-| D17 | Save v10 是當前 full／compact／slots authority；checkpoint lineage外層仍為v2，內層使用`hexapharma.save.v10.checkpoint.${slot}`；舊開發版拒絕。 | stepwise Research、formula、hex geometry與trace schema不可reinterpret舊存檔。 |
+| D17 | Save v11 使用開放、可編輯的 plain cold snapshots；full／compact／slots 不要求收入 trace；獨立 checkpoint/history 外層仍為 v2，key 為 `hexapharma.save.v11.checkpoint.${slot}`。 | alpha 舊版本直接拒絕；只驗結構、資源容量、可執行狀態與同 content build 相容性。 |
 | D18 | release candidate 前不維護跨 build save migration。 | 早期設計變更速度優先；同 build correctness 仍必須完整。 |
 | D19 | UI 遵循 simple-is-better；詳細教學集中到玩家指南。 | world 保留給空間操作，chrome 只顯示工具、短狀態、錯誤與危險確認。 |
 | D20 | 單一大型 Atlas 正常生成 4 種獨立疾病，generator 支援最多 8 種。 | 多疾病與 tiered references 提供可持續探索；跨層仍不進 active design。 |
@@ -42,5 +42,5 @@
 - Production：direct paid construction、live runtime、actual inventory/waste/economy。
 - Economy：$1000 bootstrap、linear seeded base prices、per-disease demand decay to zero、profitable clean-first shipping、quota-3 contracts與machine patent gates。
 - Blueprint：v4 codec保留ResearchProgram文件，但UI只create/apply generic FactoryLayout；Library跨存檔。
-- Save：v10 strict same-build authority；checkpoint lineage/recovery保持獨立外層v2。
+- Save：v11 plain、開放、可編輯的同 build cold state；checkpoint history/recovery 保持獨立外層 v2。
 - Geometry／visual：Atlas 與 Factory 都使用pointy-top axial true hex與六方向／六rotation contract，但payload／validator分離；minimal flat hex維持俯視2D vector schematic，不做3D migration。

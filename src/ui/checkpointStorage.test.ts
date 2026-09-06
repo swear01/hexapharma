@@ -1,31 +1,27 @@
 import { describe, expect, it } from "vitest";
 import {
-  BASE_GAME_FACTORY_HEIGHT,
-  BASE_GAME_FACTORY_WIDTH,
-  DEFAULT_CATALOG,
-  type FactoryLayout,
-  type GameState,
-  type GenOptions,
-  type Template,
+  BASE_GAME_FACTORY_HEIGHT, BASE_GAME_FACTORY_WIDTH, DEFAULT_CATALOG,
+  type FactoryLayout, type GameState, type GenOptions, type Template,
 } from "../sim/phase0_interfaces";
 import { applyGameIntent, availableCatalog, createGameState, hashGame } from "../sim/game";
 import { generate } from "../sim/mapgen";
 import { compileEntitledPrototype, compilePrototype } from "../sim/recipe";
-import { serializeGame, serializeGameAuthority, serializeSlots } from "../sim/save";
+import { SAVE_VERSION, serializeGame, serializeSnapshot } from "../sim/save";
 import {
-  SLOT_CHECKPOINT_CHARACTER_LIMIT,
-  SLOT_HISTORY_REPLAY_TICK_LIMIT,
-  SLOT_HISTORY_REPLAY_WORK_LIMIT,
-  SLOT_HISTORY_TRACE_ENTRY_LIMIT,
-  finishMigration,
-  readSlot,
-  saveSlot,
+  SLOT_CHECKPOINT_CHARACTER_LIMIT, SLOT_HISTORY_LIMIT,
+  readSlot, saveSlot, rewindSlot, recoverSlot,
 } from "./checkpointStorage";
+
+const key = `hexapharma.save.v${SAVE_VERSION}.checkpoint.0`;
+function checkpoint(head: string, history: readonly string[] = []): string {
+  return JSON.stringify({ version: 2, head, history });
+}
 
 class MemoryStorage implements Storage {
   private readonly values = new Map<string, string>();
   writes = 0;
   failOnSet: string | null = null;
+  failOnGet: string | null = null;
 
   get length(): number {
     return this.values.size;
@@ -36,6 +32,7 @@ class MemoryStorage implements Storage {
   }
 
   getItem(key: string): string | null {
+    if (key === this.failOnGet) throw new Error("storage access denied");
     return this.values.get(key) ?? null;
   }
 
@@ -93,473 +90,239 @@ function withProduction(
   return applyGameIntent(next, { kind: "buildProductionLayout", layout });
 }
 
-describe("checkpoint storage budget", () => {
-  it("retains rewind lineage across normalized tick, sale, and layout extensions", () => {
-    const recipe = generate(options).diseases[0]!.reference;
-    const layout = compileEntitledPrototype(
-      recipe,
-      BASE_GAME_FACTORY_WIDTH,
-      BASE_GAME_FACTORY_HEIGHT,
-    ).layout;
-    let ticksEarlier = withProduction(
-      createGameState(options, PRODUCTION_CASH, 0),
-      recipe,
-      layout,
-    );
-    ticksEarlier = applyGameIntent(ticksEarlier, { kind: "productionTicks", ticks: 500 });
-    const ticksLater = applyGameIntent(ticksEarlier, { kind: "productionTicks", ticks: 5 });
-
-    const tickWrite = saveSlot(new MemoryStorage(), 0, [ticksEarlier], ticksLater);
-    expect(tickWrite.replacedTimeline).toBe(false);
-    expect(tickWrite.history).toHaveLength(2);
-
-    const first = ticksEarlier.inventory[0]!;
-    const second = ticksEarlier.inventory[1]!;
-    const disease = first.outcome.cured[0]!;
-    const saleEarlier = applyGameIntent(ticksEarlier, {
-      kind: "sellProduct",
-      productId: first.inventoryId,
-      disease,
-    });
-    const saleLater = applyGameIntent(saleEarlier, {
-      kind: "sellProduct",
-      productId: second.inventoryId,
-      disease,
-    });
-    const saleWrite = saveSlot(new MemoryStorage(), 0, [saleEarlier], saleLater);
-    expect(saleWrite.replacedTimeline).toBe(false);
-    expect(saleWrite.history).toHaveLength(2);
-
-    const firstTiles = layout.tiles.slice();
-    const sourceCell = firstTiles.findIndex((tile) => tile.kind === "source");
-    firstTiles[sourceCell] = { kind: "source", dir: 0, period: 2 };
-    const firstLayout = { ...layout, tiles: firstTiles };
-    const secondTiles = firstTiles.slice();
-    secondTiles[sourceCell] = { kind: "source", dir: 0, period: 3 };
-    const secondLayout = { ...firstLayout, tiles: secondTiles };
-    const pilotEarlier = applyGameIntent(createGameState(options, 200, 0), {
-      kind: "setPilotLayout",
-      layout: firstLayout,
-    });
-    const pilotLater = applyGameIntent(pilotEarlier, {
-      kind: "setPilotLayout",
-      layout: secondLayout,
-    });
-    const pilotWrite = saveSlot(new MemoryStorage(), 0, [pilotEarlier], pilotLater);
-    expect(pilotWrite.replacedTimeline).toBe(false);
-    expect(pilotWrite.history).toHaveLength(2);
-
-    const productionOrigin = createGameState(options, PRODUCTION_CASH, 0);
-    const productionEarlier = applyGameIntent(productionOrigin, {
-      kind: "buildProductionLayout",
-      layout: firstLayout,
-    });
-    const productionLater = applyGameIntent(productionEarlier, {
-      kind: "buildProductionLayout",
-      layout: secondLayout,
-    });
-    expect(productionLater.intentTrace.slice(-2).map((intent) => intent.kind)).toEqual([
-      "buildProductionLayout",
-      "buildProductionLayout",
-    ]);
-    const productionWrite = saveSlot(
-      new MemoryStorage(),
-      0,
-      [productionEarlier],
-      productionLater,
-    );
-    expect(productionWrite.replacedTimeline).toBe(false);
-    expect(productionWrite.history).toHaveLength(2);
+describe("open snapshot checkpoint storage", () => {
+  it("continues saving and rewinding beyond the old lifetime budgets with bounded history", () => {
+    const storage = new MemoryStorage();
+    let game = createGameState(options, 1000, 0);
+    let history: readonly GameState[] = [];
+    for (let index = 0; index < 41; index++) {
+      game = applyGameIntent(game, { kind: "productionTicks", ticks: 5000 });
+      history = saveSlot(storage, 0, history, game).history;
+    }
+    expect(game.production.runtime.tick).toBe(205000);
+    expect(history).toHaveLength(SLOT_HISTORY_LIMIT);
+    const loaded = readSlot(storage, 0);
+    expect(loaded.error).toBeNull();
+    expect(hashGame(loaded.head!)).toBe(hashGame(game));
+    const recalled = rewindSlot(storage, 0, loaded.history!);
+    expect(recalled.head.production.runtime.tick).toBe(200000);
+    expect(readSlot(storage, 0).history).toHaveLength(SLOT_HISTORY_LIMIT - 1);
+    expect(readSlot(storage, 0).head).toEqual(recalled.head);
   });
 
-  it("replaces an occupied slot timeline instead of mixing a different run into rewind", () => {
+  it("preserves edited resource values without proving a trace-prefix lineage", () => {
     const storage = new MemoryStorage();
-    const firstRun = createGameState(options, 200, 0);
-    const secondRun = createGameState({ ...options, seed: 15 }, 200, 0);
-    saveSlot(storage, 0, [], firstRun);
+    const first = createGameState(options, 1000, 0);
+    const edited = { ...first, economy: { ...first.economy, cash: 999999, research: 500 } };
+    const saved = saveSlot(storage, 0, [first], edited);
+    expect(saved.replacedTimeline).toBe(false);
+    expect(readSlot(storage, 0).head!.economy).toEqual(edited.economy);
+    expect(rewindSlot(storage, 0, saved.history).head).toEqual(first);
+    const raw = JSON.parse(storage.getItem(key)!) as { head: string; history: string[] };
+    const head = JSON.parse(raw.head);
+    head.snapshot.economy.cash = 123;
+    storage.setItem(key, checkpoint(JSON.stringify(head), raw.history));
+    expect(readSlot(storage, 0).head!.economy.cash).toBe(123);
+  });
 
-    const saved = saveSlot(storage, 0, [firstRun], secondRun);
-
+  it("replaces a different map when saving and preserves old namespaces without migration", () => {
+    const storage = new MemoryStorage();
+    storage.setItem("hexapharma.save.v10.checkpoint.0", "old alpha save");
+    expect(readSlot(storage, 0).head).toBeNull();
+    const first = createGameState(options, 200, 0);
+    const second = createGameState({ ...options, seed: 15 }, 200, 0);
+    const saved = saveSlot(storage, 0, [first], second);
     expect(saved.replacedTimeline).toBe(true);
-    expect(saved.history).toEqual([secondRun]);
     expect(saved.pruned).toBe(1);
-    const loaded = readSlot(storage, 0);
-    expect(loaded.error).toBeNull();
-    expect(loaded.history).toEqual([secondRun]);
+    expect(readSlot(storage, 0).history).toEqual([second]);
+    expect(storage.getItem("hexapharma.save.v10.checkpoint.0")).toBe("old alpha save");
   });
 
-  it("rejects a persisted history whose snapshots are not one trace-prefix timeline", () => {
-    const firstRun = createGameState(options, 200, 0);
-    const secondRun = createGameState({ ...options, seed: 15 }, 200, 0);
+  it("rejects mixed-map stored history and offers the current map's valid suffix", () => {
     const storage = new MemoryStorage();
-    storage.setItem(
-      "hexapharma.save.v10.checkpoint.0",
-      JSON.stringify({
-        version: 2,
-        head: serializeGameAuthority(secondRun),
-        history: [serializeGameAuthority(firstRun)],
-      }),
-    );
-
+    const first = createGameState(options, 200, 0);
+    const second = createGameState({ ...options, seed: 15 }, 200, 0);
+    storage.setItem(key, checkpoint(serializeSnapshot(second), [serializeSnapshot(first)]));
     const read = readSlot(storage, 0);
-    expect(read.error).toMatch(/timeline|origin|prefix/i);
-    expect(read.recovery?.history).toEqual([secondRun]);
+    expect(read.error).toMatch(/different maps/i);
+    expect(read.recovery?.history).toEqual([second]);
   });
 
-  it("reports mixed legacy timelines instead of throwing during migration", () => {
-    const firstRun = createGameState(options, 200, 0);
-    const secondRun = createGameState({ ...options, seed: 15 }, 200, 0);
-    const storage = new MemoryStorage();
-    storage.setItem("hexapharma.save.slot.0", serializeGame(secondRun));
-    storage.setItem("hexapharma.save.history.0", serializeSlots([firstRun, secondRun]));
-
-    const read = readSlot(storage, 0);
-
-    expect(read.error).toMatch(/timeline|origin|prefix/i);
-    expect(read.recovery?.head).toEqual(secondRun);
-    expect(read.recovery?.history).toEqual([secondRun]);
-  });
-
-  it("persists v10 Formula, reveal-decide Research, Plan, and paid Production authority", () => {
-    const recipe = generate(fastOptions).diseases[0]!.reference;
-    const game = withProduction(createGameState(fastOptions, PRODUCTION_CASH, 0), recipe);
-    const storage = new MemoryStorage();
-    saveSlot(storage, 0, [], game);
-
-    const checkpoint = JSON.parse(storage.getItem("hexapharma.save.v10.checkpoint.0")!) as {
-      head: string;
-    };
-    expect(checkpoint.head).toContain('"version":10');
-    expect(checkpoint.head).toContain('"kind":"beginResearchShot"');
-    expect(checkpoint.head).toContain('"kind":"advanceResearchShot"');
-    expect(checkpoint.head).toContain('"kind":"setPilotLayout"');
-    expect(checkpoint.head).toContain('"kind":"buildProductionLayout"');
-    expect(checkpoint.head).not.toContain("sendPilotToProduction");
-    expect(checkpoint.head).not.toContain("setProductionLayout");
-    expect(checkpoint.head).not.toContain("setResearchLayout");
-    expect(checkpoint.head).not.toContain("sendResearchToPilot");
-    expect(checkpoint.head).not.toContain('"contract"');
-
-    const loaded = readSlot(storage, 0).head!;
-    expect(loaded.research.program).toEqual(recipe);
-    expect(loaded.research.discoveredFormulas).toHaveLength(1);
-    expect(loaded.production.layout).toEqual(loaded.pilot.layout);
-    expect(loaded.production.layout).not.toBe(loaded.pilot.layout);
-    expect("contract" in loaded.pilot).toBe(false);
-    expect("contract" in loaded.production).toBe(false);
-  });
-
-  it("migrates only validated v10 data from legacy storage keys and makes write failure visible", () => {
-    const machine = options.catalog[0]!;
-    const started = applyGameIntent(createGameState(options, 200, 0), { kind: "beginResearchShot" });
-    const game = applyGameIntent(started, { kind: "advanceResearchShot", machine });
-    const head = serializeGame(game);
-    const history = serializeSlots([game]);
-    const storage = new MemoryStorage();
-    storage.setItem("hexapharma.save.slot.0", head);
-    storage.setItem("hexapharma.save.history.0", history);
-
-    const pending = readSlot(storage, 0);
-    expect(pending.error).toBeNull();
-    expect(pending.notice).toMatch(/validated.*ready to migrate/i);
-    expect(pending.migration).not.toBeNull();
-    expect(storage.getItem("hexapharma.save.v10.checkpoint.0")).toBeNull();
-
-    storage.failOnSet = "hexapharma.save.v10.checkpoint.0";
-    const failed = finishMigration(storage, 0, pending);
-    expect(failed.error).toMatch(/migration failed.*write rejected/i);
-    expect(failed.recovery?.head).toEqual(game);
-    expect(failed.migration).toBeNull();
-    expect(storage.getItem("hexapharma.save.slot.0")).toBe(head);
-    expect(storage.getItem("hexapharma.save.v10.checkpoint.0")).toBeNull();
-    expect(storage.writes).toBe(2);
-
-    storage.failOnSet = null;
-    const migrated = finishMigration(storage, 0, pending);
-    expect(migrated.error).toBeNull();
-    expect(migrated.notice).toMatch(/migrated slot 1/i);
-    expect(migrated.migration).toBeNull();
-    expect(storage.writes).toBe(3);
-    expect(readSlot(storage, 0).head).toEqual(game);
-  });
-
-  it("visibly rejects v9 legacy saves without reinterpreting or overwriting them", () => {
-    const game = createGameState(options, 200, 0);
-    const parsed = JSON.parse(serializeGame(game)) as { version: number };
-    parsed.version = 9;
-    const rawV9 = JSON.stringify(parsed);
-    const storage = new MemoryStorage();
-    storage.setItem("hexapharma.save.slot.0", rawV9);
-
-    const read = readSlot(storage, 0);
-    expect(read.error).toMatch(/legacy version 9.*not supported.*v10/i);
-    expect(read.head).toBeNull();
-    expect(read.recovery).toBeNull();
-    expect(read.migration).toBeNull();
-    expect(storage.getItem("hexapharma.save.slot.0")).toBe(rawV9);
-    expect(storage.getItem("hexapharma.save.v10.checkpoint.0")).toBeNull();
-  });
-
-  it("visibly rejects an unversioned v9 checkpoint without overwriting either namespace", () => {
-    const raw = JSON.stringify({
-      version: 2,
-      head: JSON.stringify({ version: 9, authority: null }),
-      history: [],
-    });
-    const storage = new MemoryStorage();
-    storage.setItem("hexapharma.save.checkpoint.0", raw);
-
-    const read = readSlot(storage, 0);
-
-    expect(read.error).toMatch(/legacy version 9.*not supported.*v10/i);
-    expect(read.head).toBeNull();
-    expect(read.recovery).toBeNull();
-    expect(read.migration).toBeNull();
-    expect(storage.getItem("hexapharma.save.checkpoint.0")).toBe(raw);
-    expect(storage.getItem("hexapharma.save.v10.checkpoint.0")).toBeNull();
-    expect(storage.writes).toBe(1);
-  });
-
-  it("offers v10 history recovery when a checkpoint head is an explicitly rejected v9 authority", () => {
-    const game = createGameState(options, 200, 0);
-    const good = serializeGameAuthority(game);
-    const parsed = JSON.parse(good) as { version: number };
-    parsed.version = 9;
-    const oldHead = JSON.stringify(parsed);
-    const raw = JSON.stringify({ version: 2, head: oldHead, history: [good] });
-    const storage = new MemoryStorage();
-    storage.setItem("hexapharma.save.v10.checkpoint.0", raw);
-
-    const read = readSlot(storage, 0);
-    expect(read.error).toMatch(/legacy version 9.*not supported.*v10/i);
-    expect(read.recovery?.head).toEqual(game);
-    expect(read.recovery?.history).toEqual([game]);
-    expect(read.migration).toBeNull();
-    expect(storage.getItem("hexapharma.save.v10.checkpoint.0")).toBe(raw);
-  });
-
-  it("rejects oversized canonical blobs without attempting recovery parsing", () => {
-    const storage = new MemoryStorage();
-    storage.setItem(
-      "hexapharma.save.v10.checkpoint.0",
-      "x".repeat(SLOT_CHECKPOINT_CHARACTER_LIMIT + 1),
-    );
-    const read = readSlot(storage, 0);
-    expect(read.error).toMatch(/exceeds.*slot budget/i);
-    expect(read.recovery).toBeNull();
-  });
-
-  it("atomically persists long-run physical inventory as compact replay authority", () => {
-    const recipe = generate(fastOptions).diseases[0]!.reference;
-    let game = withProduction(createGameState(fastOptions, PRODUCTION_CASH, 0), recipe);
-    game = applyGameIntent(game, { kind: "productionTicks", ticks: 12_000 });
-    expect(game.inventory.length).toBeGreaterThan(5_000);
-    const storage = new MemoryStorage();
-
-    const saved = saveSlot(storage, 0, new Array(20).fill(game), game);
-
-    const raw = storage.getItem("hexapharma.save.v10.checkpoint.0")!;
-    expect(storage.writes).toBe(1);
-    expect(raw.length).toBeLessThanOrEqual(SLOT_CHECKPOINT_CHARACTER_LIMIT);
-    expect(saved.pruned).toBeGreaterThan(1);
-    expect(
-      saved.history.reduce((total, state) => total + state.replayTicks, 0),
-    ).toBeLessThanOrEqual(SLOT_HISTORY_REPLAY_TICK_LIMIT);
-    const envelope = JSON.parse(raw) as { head: string; history: string[] };
-    expect(envelope.history).toHaveLength(saved.history.length - 1);
-    expect(envelope.head).toBeTruthy();
-
-    const loaded = readSlot(storage, 0);
-    expect(loaded.error).toBeNull();
-    expect(loaded.head).toEqual(saved.head);
-    expect(loaded.history).toEqual(saved.history);
-
-    const hostile = new MemoryStorage();
-    hostile.setItem(
-      "hexapharma.save.v10.checkpoint.0",
-      JSON.stringify({ version: 2, head: envelope.head, history: [envelope.head, envelope.head] }),
-    );
-    const hostileRead = readSlot(hostile, 0);
-    expect(hostileRead.error).toMatch(/replay.*budget|12000/i);
-    expect(hostileRead.recovery?.head).toEqual(game);
-    expect(hostileRead.recovery?.history).toHaveLength(1);
-  }, 15_000);
-
-  it("preflights cumulative trace work before replaying checkpoint history", () => {
-    const authority = JSON.parse(serializeGameAuthority(createGameState(options, 200, 0))) as {
-      authority: { intentTrace: unknown[]; replayTicks: number };
-    };
-    authority.authority.intentTrace = new Array(4_096).fill({ kind: "resetProduction" });
-    authority.authority.replayTicks = 0;
-    const rawAuthority = JSON.stringify(authority);
-    const storage = new MemoryStorage();
-    storage.setItem(
-      "hexapharma.save.v10.checkpoint.0",
-      JSON.stringify({ version: 2, head: rawAuthority, history: [rawAuthority, rawAuthority] }),
-    );
-
-    const read = readSlot(storage, 0);
-    expect(read.error).toMatch(new RegExp(`trace.*${SLOT_HISTORY_TRACE_ENTRY_LIMIT}|trace.*budget`, "i"));
-  });
-
-  it("preflights cumulative weighted work before replaying checkpoint history", () => {
-    const authority = JSON.parse(
-      serializeGameAuthority(createGameState(options, 200, 0)),
-    ) as {
-      authority: {
-        origin: { genOptions: GenOptions };
-        intentTrace: unknown[];
-      };
-    };
-    authority.authority.origin.genOptions = {
-      ...options,
-      nMaps: 4,
-      width: 32,
-      height: 32,
-      diseaseCount: 4,
-    };
-    const recipe = generate(authority.authority.origin.genOptions).diseases[0]!.reference;
-    authority.authority.intentTrace = [
-      { kind: "beginResearchShot" },
-      ...new Array(3_000).fill({ kind: "advanceResearchShot", machine: recipe.steps[0] }),
-    ];
-    const rawAuthority = JSON.stringify(authority);
-    const storage = new MemoryStorage();
-    storage.setItem(
-      "hexapharma.save.v10.checkpoint.0",
-      JSON.stringify({ version: 2, head: rawAuthority, history: [rawAuthority] }),
-    );
-
-    const read = readSlot(storage, 0);
-    expect(read.error).toMatch(
-      new RegExp(`weighted.*${SLOT_HISTORY_REPLAY_WORK_LIMIT}|weighted.*budget`, "i"),
-    );
-  });
-
-  it("computes replay ticks from the raw trace instead of trusting declared metadata", () => {
+  it("preserves Research, Plan, paid Production and in-flight state without replay", () => {
     const recipe = generate(options).diseases[0]!.reference;
     let game = withProduction(createGameState(options, PRODUCTION_CASH, 0), recipe);
-    game = applyGameIntent(game, { kind: "productionTicks", ticks: 20 });
-    const authority = JSON.parse(serializeGameAuthority(game)) as {
-      authority: { replayTicks: number };
-    };
-    authority.authority.replayTicks = 0;
+    game = applyGameIntent(game, { kind: "productionTicks", ticks: 80 });
+    expect(game.production.runtime.unitCount).toBeGreaterThan(0);
     const storage = new MemoryStorage();
-    storage.setItem(
-      "hexapharma.save.v10.checkpoint.0",
-      JSON.stringify({ version: 2, head: JSON.stringify(authority), history: [] }),
-    );
-
-    expect(readSlot(storage, 0).error).toMatch(/computed trace total/i);
+    saveSlot(storage, 0, [], game);
+    const raw = storage.getItem(key)!;
+    expect(raw).not.toContain("intentTrace");
+    expect(raw).not.toContain("stateHash");
+    const loaded = readSlot(storage, 0).head!;
+    expect(loaded).toEqual(game);
+    expect(loaded.production.runtime).not.toBe(game.production.runtime);
+    const intent = { kind: "productionTicks", ticks: 100 } as const;
+    expect(applyGameIntent(loaded, intent)).toEqual(applyGameIntent(game, intent));
   });
 
-  it("offers valid earlier-history recovery when the checkpoint head is unusable", () => {
+  it("bounds raw characters, version and snapshot count before attempting state recovery", () => {
+    const storage = new MemoryStorage();
+    const good = serializeSnapshot(createGameState(options, 200, 0));
+    for (const raw of [
+      JSON.stringify({ version: 2, head: good, history: [], extra: "x".repeat(SLOT_CHECKPOINT_CHARACTER_LIMIT) }),
+      checkpoint(good, new Array(SLOT_HISTORY_LIMIT).fill(good)),
+      JSON.stringify({ version: 1, head: good, history: [] }),
+      JSON.stringify({ version: 2, head: good, history: [] }).slice(0, -1),
+    ]) {
+      storage.setItem(key, raw);
+      const read = readSlot(storage, 0);
+      expect(read.error).not.toBeNull();
+      expect(read.recovery).toBeNull();
+      expect(storage.getItem(key)).toBe(raw);
+    }
+  });
+
+  it("offers explicit recovery from bounded partial envelopes while Load remains strict", () => {
     const game = createGameState(options, 200, 0);
-    const good = serializeGameAuthority(game);
-    const badHead = JSON.parse(good) as { authority: { replayTicks: number } };
-    badHead.authority.replayTicks = SLOT_HISTORY_REPLAY_TICK_LIMIT + 1;
-    const storage = new MemoryStorage();
-    storage.setItem(
-      "hexapharma.save.v10.checkpoint.0",
-      JSON.stringify({ version: 2, head: JSON.stringify(badHead), history: [good] }),
-    );
-
-    const read = readSlot(storage, 0);
-    expect(read.error).not.toBeNull();
-    expect(read.recovery?.head).toEqual(game);
-    expect(read.recovery?.history).toEqual([game]);
+    const good = serializeSnapshot(game);
+    for (const envelope of [
+      { version: 2, head: null, history: [good] },
+      { version: 2, head: good, history: [], extra: true },
+      { version: 2, history: [false, good, null] },
+    ]) {
+      const storage = new MemoryStorage();
+      const raw = JSON.stringify(envelope);
+      storage.setItem(key, raw);
+      const read = readSlot(storage, 0);
+      expect(read.error).not.toBeNull();
+      expect(read.head).toBeNull();
+      expect(read.history).toBeNull();
+      expect(read.recovery?.history).toEqual([game]);
+      expect(storage.writes).toBe(1);
+      expect(storage.getItem(key)).toBe(raw);
+      storage.failOnSet = key;
+      expect(() => recoverSlot(storage, 0, game, read.recovery)).toThrow(/write rejected/);
+      expect(storage.getItem(key)).toBe(raw);
+      storage.failOnSet = null;
+      recoverSlot(storage, 0, game, read.recovery);
+      expect(readSlot(storage, 0).head).toEqual(game);
+      expect(readSlot(storage, 0).error).toBeNull();
+    }
   });
 
-  it("retains the newest valid recovery suffix when an older history entry is corrupt", () => {
+  it("reports storage read failures with their cause and disables overwrite recovery", () => {
+    const storage = new MemoryStorage();
+    const raw = checkpoint(serializeSnapshot(createGameState(options, 200, 0)));
+    storage.setItem(key, raw);
+    storage.failOnGet = key;
+    const read = readSlot(storage, 0);
+    expect(read.error).toMatch(/cannot read storage: storage access denied/i);
+    expect(read.canRecover).toBe(false);
+    expect(read.recovery).toBeNull();
+    expect(storage.writes).toBe(1);
+    storage.failOnGet = null;
+    expect(storage.getItem(key)).toBe(raw);
+    expect(readSlot(storage, 0).error).toBeNull();
+  });
+
+  it("does not join older snapshots across a non-string corruption gap", () => {
+    const first = createGameState(options, 200, 0);
+    const latest = applyGameIntent(first, { kind: "productionTicks", ticks: 1 });
+    const raw = JSON.stringify({
+      version: 2,
+      head: serializeSnapshot(latest),
+      history: [serializeSnapshot(first), null],
+    });
+    const storage = new MemoryStorage();
+    storage.setItem(key, raw);
+    const read = readSlot(storage, 0);
+    expect(read.head).toBeNull();
+    expect(read.error).toMatch(/entry must be a string/);
+    expect(read.recovery?.history).toEqual([latest]);
+    expect(storage.getItem(key)).toBe(raw);
+    expect(storage.writes).toBe(1);
+  });
+
+  it("recovers only a valid suffix after invalid snapshots without writing during read", () => {
     const game = createGameState(options, 200, 0);
-    const good = serializeGameAuthority(game);
-    const corrupt = JSON.parse(good) as { authority: { stateHash: number } };
-    corrupt.authority.stateHash = (corrupt.authority.stateHash + 1) >>> 0;
-    const bad = JSON.stringify(corrupt);
-    const storage = new MemoryStorage();
-    storage.setItem(
-      "hexapharma.save.v10.checkpoint.0",
-      JSON.stringify({ version: 2, head: bad, history: [bad, good] }),
-    );
-
-    const read = readSlot(storage, 0);
-    expect(read.error).not.toBeNull();
-    expect(read.recovery?.head).toEqual(game);
-    expect(read.recovery?.history).toEqual([game]);
+    const good = serializeSnapshot(game);
+    for (const earlier of [[good], ["bad", good], [good, "bad"]]) {
+      const storage = new MemoryStorage();
+      const raw = checkpoint("bad head", earlier);
+      storage.setItem(key, raw);
+      const read = readSlot(storage, 0);
+      expect(read.error).not.toBeNull();
+      expect(read.recovery?.history).toEqual([game]);
+      expect(storage.writes).toBe(1);
+      expect(storage.getItem(key)).toBe(raw);
+      recoverSlot(storage, 0, game, read.recovery);
+      expect(readSlot(storage, 0).error).toBeNull();
+      expect(readSlot(storage, 0).head).toEqual(game);
+    }
   });
 
-  it("skips a malformed history tail and recovers the newest earlier valid snapshot", () => {
-    const game = createGameState(options, 200, 0);
-    const good = serializeGameAuthority(game);
+  it("does not recover a snapshot from a different content build", () => {
+    const raw = JSON.parse(serializeSnapshot(createGameState(options, 200, 0)));
+    raw.contentBuild = "stale-economy";
     const storage = new MemoryStorage();
-    storage.setItem(
-      "hexapharma.save.v10.checkpoint.0",
-      JSON.stringify({
-        version: 2,
-        head: "invalid authority",
-        history: [good, "malformed authority"],
-      }),
-    );
-
-    const read = readSlot(storage, 0);
-    expect(read.error).not.toBeNull();
-    expect(read.recovery?.head).toEqual(game);
-    expect(read.recovery?.history).toEqual([game]);
+    storage.setItem(key, checkpoint(JSON.stringify(raw)));
+    expect(readSlot(storage, 0).error).toMatch(/incompatible content build/i);
+    expect(readSlot(storage, 0).recovery).toBeNull();
   });
 
-  it("recovers compact history whose materialized full-save wire exceeds the checkpoint slot budget", () => {
+  it("fits a full 24500-product warehouse without increasing the slot budget", () => {
     let game = createGameState(fastOptions, PRODUCTION_CASH, 0);
     const recipe = generate(fastOptions).diseases[0]!.reference;
     const row = Math.floor(BASE_GAME_FACTORY_HEIGHT / 2);
-    const factory = compilePrototype(
-      recipe,
-      BASE_GAME_FACTORY_WIDTH,
-      BASE_GAME_FACTORY_HEIGHT,
-      recipe.steps.map((_, index) => ({ anchor: { q: 1 + index * 2, r: row }, footRot: 0 })),
-    );
-    game = withProduction(game, recipe, factory);
-    game = applyGameIntent(game, { kind: "productionTicks", ticks: 49_022 });
-    expect(game.inventory).toHaveLength(24_500);
-    const beforeRejectedBatch = game;
-    const beforeRejectedHash = hashGame(game);
-    expect(() => applyGameIntent(game, { kind: "productionTicks", ticks: 200 })).toThrow(
-      /inventory exceeds/i,
-    );
-    expect(game).toBe(beforeRejectedBatch);
-    expect(hashGame(game)).toBe(beforeRejectedHash);
+    const layout = compilePrototype(recipe, BASE_GAME_FACTORY_WIDTH, BASE_GAME_FACTORY_HEIGHT,
+      recipe.steps.map((_, index) => ({ anchor: { q: 1 + index * 2, r: row }, footRot: 0 })));
+    game = withProduction(game, recipe, layout);
+    game = applyGameIntent(game, { kind: "productionTicks", ticks: 49022 });
+    expect(game.inventory).toHaveLength(24500);
     expect(serializeGame(game).length).toBeGreaterThan(SLOT_CHECKPOINT_CHARACTER_LIMIT);
-    const authority = serializeGameAuthority(game);
+    const before = hashGame(game);
+    expect(() => applyGameIntent(game, { kind: "productionTicks", ticks: 200 })).toThrow(/inventory exceeds/i);
+    expect(hashGame(game)).toBe(before);
     const storage = new MemoryStorage();
-    storage.setItem(
-      "hexapharma.save.v10.checkpoint.0",
-      JSON.stringify({ version: 2, head: "invalid authority", history: [authority] }),
-    );
+    const saved = saveSlot(storage, 0, new Array(20).fill(game), game);
+    expect(saved.pruned).toBeGreaterThan(0);
+    expect(storage.getItem(key)!.length).toBeLessThanOrEqual(SLOT_CHECKPOINT_CHARACTER_LIMIT);
+    const loaded = readSlot(storage, 0);
+    expect(loaded.error).toBeNull();
+    expect(loaded.head).toEqual(game);
+    const first = loaded.head!.inventory[0]!;
+    const sold = applyGameIntent(loaded.head!, {
+      kind: "sellProduct", productId: first.inventoryId, disease: first.outcome.cured[0]!,
+    });
+    expect(() => applyGameIntent(sold, { kind: "productionTicks", ticks: 1 })).not.toThrow();
+  }, 15000);
 
-    const read = readSlot(storage, 0);
-    expect(read.error).not.toBeNull();
-    expect(read.recovery?.head).toEqual(game);
-    expect(read.recovery?.history).toEqual([game]);
-  }, 15_000);
-
-  it("refuses invalid state before writing and cold-clones retained runtime ownership", () => {
-    const recipe = generate(options).diseases[0]!.reference;
-    const game = withProduction(createGameState(options, PRODUCTION_CASH, 0), recipe);
-    const invalid: GameState = {
-      ...game,
-      economy: { ...game.economy, cash: game.economy.cash + 1 },
-    };
-    const rejectedStorage = new MemoryStorage();
-    expect(() => saveSlot(rejectedStorage, 0, [], invalid)).toThrow(/replay mismatch|cash/i);
-    expect(rejectedStorage.writes).toBe(0);
-
+  it("keeps storage unchanged when Save, Rewind or Recover cannot write", () => {
     const storage = new MemoryStorage();
+    const first = createGameState(options, 200, 0);
+    const next = applyGameIntent(first, { kind: "productionTicks", ticks: 1 });
+    const saved = saveSlot(storage, 0, [first], next);
+    const raw = storage.getItem(key);
+    storage.failOnSet = key;
+    expect(() => saveSlot(storage, 0, saved.history, next)).toThrow(/write rejected/i);
+    expect(() => rewindSlot(storage, 0, saved.history)).toThrow(/write rejected/i);
+    expect(() => recoverSlot(storage, 0, first, null)).toThrow(/write rejected/i);
+    expect(storage.getItem(key)).toBe(raw);
+  });
+
+  it("rejects invalid state before writing and isolates saved mutable buffers", () => {
+    const game = withProduction(createGameState(options, PRODUCTION_CASH, 0), generate(options).diseases[0]!.reference);
+    const storage = new MemoryStorage();
+    expect(() => saveSlot(storage, 0, [], { ...game, economy: { ...game.economy, cash: NaN } }))
+      .toThrow(/cash/i);
+    expect(storage.writes).toBe(0);
     const saved = saveSlot(storage, 0, [], game);
     expect(saved.head).not.toBe(game);
-    expect(saved.head.production).not.toBe(game.production);
-    expect(saved.head.production.runtime).not.toBe(game.production.runtime);
+    const cell = game.fog[0]![0];
+    game.fog[0]![0] = cell === 0 ? 1 : 0;
+    expect(saved.head.fog[0]![0]).toBe(cell);
     const slot = game.production.runtime.capacity - 1;
-    const retained = saved.head.production.runtime.unitX[slot];
-    game.production.runtime.unitX[slot] = retained === 0 ? 1 : 0;
-    expect(saved.head.production.runtime.unitX[slot]).toBe(retained);
+    game.production.runtime.unitX[slot] = 1;
+    expect(saved.head.production.runtime.unitX[slot]).toBe(0);
   });
 });

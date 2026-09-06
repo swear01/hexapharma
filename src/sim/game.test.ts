@@ -13,7 +13,6 @@ import {
 import { applyTemplate, initialState } from "./drug-graph";
 import { snapshotFactory } from "./factory-sim";
 import {
-  MAX_INTENT_TRACE,
   MAX_REPLAY_TICKS,
   SHIPPING_CONTRACT_QUOTA,
   activeShippingContract,
@@ -149,7 +148,7 @@ describe("whole-game deterministic state", () => {
     expect(hashGame(initial)).toBe(beforeHash);
   });
 
-  it("keeps every paid Production build in the replay trace", () => {
+  it("charges every paid Production build", () => {
     let game = createGameState(opts, 200, 0);
     const east = { ...baseLayout(), tiles: [...baseLayout().tiles] };
     east.tiles[0] = { kind: "belt", dir: 0 };
@@ -160,10 +159,6 @@ describe("whole-game deterministic state", () => {
     game = applyGameIntent(game, { kind: "buildProductionLayout", layout: south });
 
     expect(game.economy.cash).toBe(196);
-    expect(game.intentTrace.slice(-2).map((intent) => intent.kind)).toEqual([
-      "buildProductionLayout",
-      "buildProductionLayout",
-    ]);
   });
 
   it("credits inventory from physical Production output, not merely a Research result", () => {
@@ -279,35 +274,30 @@ describe("whole-game deterministic state", () => {
     expect(requiredShippingContractForPatent("bench-2")).toBeNull();
   });
 
-  it("normalizes adjacent Production ticks but retains paid layout edits", () => {
+  it("advances adjacent Production batches without retaining a lifetime trace", () => {
     let game = buildTemplate(createGameState(opts, 500, 0));
     const first = directSinkFactory(game.production.layout);
     const second = directSinkFactory(game.production.layout, 2);
     game = applyGameIntent(game, { kind: "buildProductionLayout", layout: first });
     game = applyGameIntent(game, { kind: "buildProductionLayout", layout: second });
-    expect(game.intentTrace.slice(-2).map((intent) => intent.kind)).toEqual([
-      "buildProductionLayout",
-      "buildProductionLayout",
-    ]);
     game = applyGameIntent(game, { kind: "productionTicks", ticks: 1 });
     game = applyGameIntent(game, { kind: "productionTicks", ticks: 2 });
-    expect(game.intentTrace.at(-1)).toEqual({ kind: "productionTicks", ticks: 3 });
-    expect(game.replayTicks).toBe(3);
+    expect(game.production.runtime.tick).toBe(3);
+    expect(game).not.toHaveProperty("intentTrace");
   });
 
-  it("normalizes consecutive same-disease sales into one replayable bulk intent", () => {
+  it("settles consecutive same-disease sales identically to a bulk sale", () => {
     let game = buildTemplate(createGameState(opts, 500, 0));
     game = applyGameIntent(game, { kind: "productionTicks", ticks: 200 });
     const first = game.inventory[0]!;
     const second = game.inventory[1]!;
     const disease = first.outcome.cured[0]!;
+    const beforeSales = game;
     game = applyGameIntent(game, { kind: "sellProduct", productId: first.inventoryId, disease });
     game = applyGameIntent(game, { kind: "sellProduct", productId: second.inventoryId, disease });
-    expect(game.intentTrace.at(-1)).toEqual({
-      kind: "sellProducts",
-      productIds: [first.inventoryId, second.inventoryId],
-      disease,
-    });
+    expect(game).toEqual(applyGameIntent(beforeSales, {
+      kind: "sellProducts", productIds: [first.inventoryId, second.inventoryId], disease,
+    }));
   });
 
   it("sells more than the trace-entry cap atomically in one bulk intent", () => {
@@ -321,15 +311,15 @@ describe("whole-game deterministic state", () => {
     };
     const fastRecipe = generate(fastOptions).diseases[0]!.reference;
     let game = buildTemplate(createGameState(fastOptions, 500, 0), fastRecipe);
-    game = applyGameIntent(game, { kind: "productionTicks", ticks: MAX_INTENT_TRACE * 4 + 512 });
+    game = applyGameIntent(game, { kind: "productionTicks", ticks: 4096 * 4 + 512 });
     const disease = game.inventory[0]!.outcome.cured[0]!;
     const productIds = game.inventory
       .filter((product) => product.outcome.cured.includes(disease))
       .map((product) => product.inventoryId);
-    expect(productIds.length).toBeGreaterThan(MAX_INTENT_TRACE);
+    expect(productIds.length).toBeGreaterThan(4096);
     game = applyGameIntent(game, { kind: "sellProducts", productIds, disease });
     expect(game.inventory.some((product) => productIds.includes(product.inventoryId))).toBe(false);
-    expect(game.intentTrace.at(-1)).toMatchObject({ kind: "sellProducts", disease });
+    expect(game.economy.research).toBe(productIds.length);
   });
 
   it("does not regenerate an unchanged level on each Production tick", () => {
@@ -604,8 +594,8 @@ describe("whole-game deterministic state", () => {
     expect(() => serializeGame(oversized)).toThrow(/inventory exceeds/i);
     expect(() => applyGameIntent(game, {
       kind: "productionTicks",
-      ticks: MAX_REPLAY_TICKS,
-    })).toThrow(/cumulative.*ticks/i);
+      ticks: MAX_REPLAY_TICKS + 1,
+    })).toThrow(/tick batch/i);
   });
 
   it("keeps locked machines out of all facility palettes", () => {
@@ -634,8 +624,14 @@ describe("whole-game deterministic state", () => {
 
   it("replays and serializes the three-facility trace deterministically", () => {
     const initial = createGameState(opts, 500, 0);
-    const produced = buildTemplate(initial, recipe(), true);
-    const intents = produced.intentTrace;
+    const template = recipe();
+    const intents: GameIntent[] = [
+      { kind: "beginResearchShot" },
+      ...template.steps.map((machine): GameIntent => ({ kind: "advanceResearchShot", machine })),
+      { kind: "setPilotLayout", layout: entitledLayout(template) },
+      { kind: "buildProductionLayout", layout: entitledLayout(template) },
+      { kind: "productionTicks", ticks: 80 },
+    ];
     const a = replayGame(initial, intents);
     const b = replayGame(initial, intents);
     expect(a).toEqual(b);
@@ -675,6 +671,7 @@ describe("whole-game deterministic state", () => {
       layout,
       ignored: "not authoritative",
     } as GameIntent & { ignored: string });
-    expect(game.intentTrace[0]).not.toHaveProperty("ignored");
+    expect(game).not.toHaveProperty("ignored");
+    expect(game.pilot.layout).toEqual(layout);
   });
 });

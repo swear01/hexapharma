@@ -1,8 +1,9 @@
+import { installSaveFixture } from "./checkpoint";
 import { openMenu } from "./menu";
 import { expect, test, type Page } from "@playwright/test";
 import { applyGameIntent, createGameState } from "../../src/sim/game";
 import { generate } from "../../src/sim/mapgen";
-import { serializeGame } from "../../src/sim/save";
+import { SAVE_VERSION, serializeGame } from "../../src/sim/save";
 import { DEFAULT_CATALOG } from "../../src/sim/phase0_interfaces";
 import { defaultGenOptions, researchPlanningTrails } from "../../src/ui/Game";
 import { focusLabCamera } from "../../src/render/labCamera";
@@ -66,7 +67,7 @@ test("loading a finished Research shot preserves fog and its independent outcome
   const errors: Error[] = [];
   page.on("pageerror", (error) => errors.push(error));
   await page.goto("/");
-  await page.evaluate((save) => localStorage.setItem("hexapharma.save.slot.0", save), completedResearchSave());
+  await installSaveFixture(page, completedResearchSave());
   await page.reload();
   await confirmLoad(page);
   await expect(page.getByTestId("research-program-count")).not.toHaveText("0 tested");
@@ -107,7 +108,7 @@ test("ending an active assay does not refund tested cartridges", async ({ page }
   await expect(page.getByTestId("research-program-count")).toHaveText("0 tested");
 });
 
-test("a corrupt old-build save is reported instead of silently migrated", async ({ page }) => {
+test("an obsolete save namespace is ignored and preserved without migration", async ({ page }) => {
   await page.goto("/");
   await page.evaluate(() => {
     localStorage.setItem("hexapharma.save.slot.0", JSON.stringify({ version: 5, game: {} }));
@@ -115,5 +116,10 @@ test("a corrupt old-build save is reported instead of silently migrated", async 
   await page.reload();
   await openMenu(page);
   await page.getByTestId("load").click();
-  await expect(page.getByTestId("save-msg")).toContainText(/version|save|could not|invalid/i);
+  await expect(page.getByTestId("save-msg")).toContainText("No save found");
+  await expect(page.getByRole("alertdialog", { name: "Load saved game?" })).toHaveCount(0);
+  expect(await page.evaluate(() => localStorage.getItem("hexapharma.save.slot.0")))
+    .toBe(JSON.stringify({ version: 5, game: {} }));
+  expect(await page.evaluate((version) => localStorage.getItem(`hexapharma.save.v${version}.checkpoint.0`), SAVE_VERSION))
+    .toBeNull();
 });

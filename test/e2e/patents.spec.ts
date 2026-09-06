@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 import { applyGameIntent, createGameState } from "../../src/sim/game";
 import { generate } from "../../src/sim/mapgen";
 import { compileEntitledPrototype } from "../../src/sim/recipe";
-import { serializeGameAuthority } from "../../src/sim/save";
+import { serializeSnapshot } from "../../src/sim/save";
 import {
   BASE_GAME_FACTORY_HEIGHT,
   BASE_GAME_FACTORY_WIDTH,
@@ -43,7 +43,7 @@ function productionCheckpoint(completeFirstContract = false): string {
       disease: disease.id,
     });
   }
-  return JSON.stringify({ version: 2, head: serializeGameAuthority(game), history: [] });
+  return JSON.stringify({ version: 2, head: serializeSnapshot(game), history: [] });
 }
 
 function revealedOf(text: string | null): number {
@@ -109,7 +109,7 @@ test("machine patents add the same fixed path to Research and Production Plan pa
   await expect(page.getByTestId("patent-unlock-skew-unlock")).toBeDisabled();
 
   await page.evaluate((checkpoint) => {
-    localStorage.setItem("hexapharma.save.v10.checkpoint.0", checkpoint);
+    localStorage.setItem("hexapharma.save.v11.checkpoint.0", checkpoint);
   }, productionCheckpoint(true));
   await page.reload();
   await confirmLoad(page);
@@ -146,7 +146,7 @@ test("factory expansion confirms before resetting built Production", async ({ pa
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
   await page.evaluate((checkpoint) => {
-    localStorage.setItem("hexapharma.save.v10.checkpoint.0", checkpoint);
+    localStorage.setItem("hexapharma.save.v11.checkpoint.0", checkpoint);
   }, productionCheckpoint());
   await page.reload();
   await confirmLoad(page);

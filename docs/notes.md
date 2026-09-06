@@ -22,7 +22,7 @@
 - **建造差異就是經濟 authority**：tile/machine新建收費；拆除不退款。只有接受的edit停止播放並重建runtime；rejection原子不變，累積waste保留。
 - **Blueprint v4 factory kind 是通用的**：`factory-layout`不記錄來自Production Plan或Production；同文件可開到Plan或付費Commission到Production。codec仍讀現行`research-program`，但UI不capture/apply它；Library key是`hexapharma.blueprint-library.v4`。
 - **Blueprint ≠ save**：Library lifecycle 獨立；不含 fog、seed、economy、runtime 或結果。Load／Rewind 不能改 Library。
-- **Save v10 不兼容舊開發版**：full／compact／slots／rewind都必須保留stepwise Research／formulas、paid build trace與non-null Production。checkpoint外層lineage仍是v2，內層key帶Save v10。
+- **Save v11 不兼容舊開發版**：full／compact／slots／rewind 保存完整 cold state，包括 stepwise Research／formulas、結算後 cash 與 non-null Production。plain JSON 可由玩家編輯，不驗資源來源；外層獨立 checkpoint/history 仍是 v2，內層 key 帶 Save v11。sim／mapgen 邏輯改變須明確 bump contentBuild 的 rules revision，詳見 [存檔規格](save.md)。
 - **connected texture 不是鄰居 skin**：只畫 sim 真正形成的 accept→emit edge；錯向相鄰格必須看得出沒有連接。
 - **hidden mounted ≠ active**：已造訪建築可 mounted 保存 camera/tool/history；hidden page 不接 gameplay input。
 - **renderer failure 必須可見**：asset/init 失敗不能用空 canvas 或 debug fallback 冒充成功。
@@ -53,3 +53,7 @@
 - Headless probes should reuse repository import paths: `src/sim/mapgen` is a directory entry point, not a `mapgen.ts` file.
 
 - Formula reference 的桌面／行動 breakpoint 必須同時套用 component world input 與 Game 的 Research cartridge／Enter hotkeys；resize 後可見 world 與鍵盤 authority 使用同一個 `worldInputActive`。
+
+- **Alpha reader 移除時同步更新 E2E fixtures**：完整 Save JSON 不能再寫入已停用的 `hexapharma.save.slot.0` 期待自動 migration；fixtures 必須經公開 snapshot codec 寫入當前 versioned checkpoint envelope。舊 namespace 只保留「忽略且不覆寫」測試。
+
+- **嚴格 Load 不代表停用部分損壞 Recovery**：外層 unknown field／非字串 head 必須讓正常 Load 失敗，但同版本、可解析且大小／數量有界時仍可獨立驗證已知 snapshot 字串供明確 Recover；錯誤版本或超量 envelope 不 salvage。兩個流程都不得在讀取時覆寫原始資料。
