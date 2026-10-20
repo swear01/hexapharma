@@ -46,7 +46,7 @@
 - 每疾病shipping contract quota=3；Disease 1／2／3分別gate Skew／Dilute／Settle patents。
 - transport renderer 使用 sim-derived connected topology；Belt drag 支援六鄰接連續hex route。
 - Blueprint v4 codec驗證`research-program`，但UI不capture/apply它；generic q/r `factory-layout`可正常建立／套用。Library使用`hexapharma.blueprint-library.v4`。Save v11保存stepwise Research/formulas、non-null Production與結算後 cash。
-- minimal flat hex schematic使用vector-only嚴格俯視2D，移除generated lab bitmap／runtime manifest contract；Atlas與Factory都render pointy-top hex，但仍保有分離的domain payload／validator。
+- 前端改為定向越野地圖語言（紙底墨印、路線紫 overprint、Objective 主線提示），仍是vector-only嚴格俯視2D；Atlas與Factory都render pointy-top hex，但仍保有分離的domain payload／validator。
 - UI 刪除不必要常駐文案；詳細操作移到玩家指南。
 - 自動 gate只證明 correctness；53346 必須另做人類 fresh-save loop，記錄理解、嘗試、資金、first-sale time與主觀樂趣。
 - 完成標準與執行次序見 [plan.md](plan.md)。

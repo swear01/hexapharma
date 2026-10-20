@@ -121,5 +121,5 @@
 - dense EffectMap／FactoryLayout arrays 固定以 `r * width + q` 索引；pixel `{x,y}` 只屬 projection/camera，不能進入 sim、Save 或 Blueprint authority。
 - Factory footprint／ports 的 `footRot` 只允許 0–5 個順時針 60° turns，並以 `(side + footRot) % 6` 旋轉 port；不得把 chemical `PathStamp` 一起旋轉。
 - Atlas PathStamp geometry 與 FactoryLayout geometry 仍使用獨立 payload／validator；共用 axial orientation 不代表能互相載入或 alias authority。
-- world renderer 必須是嚴格俯視 2D vector schematic；不得依賴 generated lab bitmap、runtime manifest或3D透視。
-- 中性炭灰／冷灰與近白構成世界；青藍／白或淡藍／綠／紫紅／紅只分別表達active flow／selection-candidate／cure／side effect／failure。裝飾不得挪用語意色造成假狀態。
+- world renderer 必須是嚴格俯視 2D vector 地圖；不得依賴 generated bitmap、runtime manifest或3D透視。
+- 紙底與墨印構成世界；路線紫只表達玩家自己的線（研究路線／candidate／選取／Plan overprint），藍＝flow、綠＝cure、琥珀＝side effect、紅＝failure，且各自另有形狀差異。裝飾不得挪用語意色造成假狀態；手繪抖動必須確定性，且不得作用於 port、belt 接點、hit-test 幾何或文字。

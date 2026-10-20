@@ -114,8 +114,8 @@ F1 只有一張大型單層 Atlas：
 - desktop 與 mobile 皆讓 world 佔主體；Details 預設關閉，桌面展開在 world 旁、窄屏在下方。工具與主要動作獨立排版，不蓋住 canvas；touch controls 至少 44px、focus 可見、錯誤 aria-live。窄屏 HUD 兩列，system controls 收 Menu，工具列保留可見 scroll 提示。
 - machine以silhouette、footprint、full-path glyph、ports辨識；terrain/portal不能用raw debug text冒充美術。
 - Atlas與Factory都顯示pointy-top axial hex；cell authority是`{q,r}`，六方向依序為E／SE／SW／W／NW／NE，dense arrays以`r * width + q`索引。hit-test、ghost、region edge、transport與renderer必須一致；兩個domain的payload／validator仍分離。
-- 極簡、偏 pixel 的俯視 2D：中性炭灰／冷灰底、近白文字與機身；青藍僅標流動、白／淡藍標選取與 candidate、綠標 cure、紫紅標副作用、紅標失敗。平塗硬邊，無黃光、青色 halo、裝飾圈環或全表面亮邊；Pixi vector runtime 保留 canonical true hex。
-- 平塗硬邊；禁止3D透視、glass blur、giant pill、過量gradient／glow／rounding與常駐tutorial遮world。
+- 定向越野地圖語言的嚴格俯視 2D：紙底＋近黑墨印；ISOM 色語（牆＝黑色斷崖墨、沼澤＝藍色水平線、治療＝綠、副作用＝琥珀、失敗＝紅、流動＝藍）；路線紫只屬玩家自己的線（研究路線、candidate、選取、Plan overprint）。Production 為黑墨實印、Plan 為紫色 overprint。手繪感只來自確定性墨線抖動，不用於 port、belt 接點、hit-test 幾何或文字；Pixi vector runtime 保留 canonical true hex。完整規格見 [design.md](design.md#visual-language)。
+- 禁止3D透視、glass blur、giant pill、gradient／glow halo與常駐tutorial遮world。
 
 ## 11. Copyright boundary
 
