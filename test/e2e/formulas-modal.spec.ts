@@ -59,7 +59,8 @@ for (const width of [1440, 390]) {
       for (let index = 0; index < formula.program.steps.length; index++) {
         await expect(panel.locator("li").nth(index)).toContainText(machineName(formula.program.steps[index]!.typeId));
       }
-      await expect(panel).toContainText(`$${formula.researchCost} assay`);
+      await expect(panel).toContainText("F-01 · Disease 1");
+      await expect(panel.locator(".formula-ribbon-cost")).toHaveText(`$${formula.researchCost}`);
       await expect(panel).toContainText(formula.outcome.sideEffects.length === 0 ? "Clean" : `${formula.outcome.sideEffects.length} side effect${formula.outcome.sideEffects.length === 1 ? "" : "s"}`);
       await panel.locator("li").last().scrollIntoViewIfNeeded();
       await expect(panel.locator("li").last()).toBeInViewport();

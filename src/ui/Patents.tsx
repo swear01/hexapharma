@@ -54,7 +54,7 @@ export function patentTitle(id: string): string {
 }
 
 export function patentCostLabel(node: (typeof DEFAULT_PATENTS)[number]): string {
-  return `${node.cost} cash · ${node.researchCost} Knowledge`;
+  return `$${node.cost} · ${node.researchCost} Knowledge`;
 }
 
 export function patentContractRequirement(
@@ -68,6 +68,37 @@ export function patentContractRequirement(
   return contract.completed
     ? null
     : `Ship ${Math.max(0, contract.quota - contract.sold)} more for ${diseaseName(disease)} contract (${contract.sold}/${contract.quota})`;
+}
+
+/** Only what is actually missing; null when both resources cover the cost. */
+export function patentShortfall(
+  node: Pick<(typeof DEFAULT_PATENTS)[number], "cost" | "researchCost">,
+  cash: number,
+  knowledge: number,
+): string | null {
+  const parts: string[] = [];
+  if (node.cost > cash) parts.push(`$${node.cost - cash} more cash`);
+  if (node.researchCost > knowledge) parts.push(`${node.researchCost - knowledge} more Knowledge`);
+  return parts.length === 0 ? null : `Need ${parts.join(" and ")}`;
+}
+
+export type PatentGroup = "available" | "contract" | "requires" | "owned";
+
+export const PATENT_GROUP_TITLES: Readonly<Record<PatentGroup, string>> = {
+  available: "Available now",
+  contract: "Waiting on a contract",
+  requires: "Requires another node",
+  owned: "Owned",
+};
+
+export function patentGroup(
+  node: (typeof DEFAULT_PATENTS)[number],
+  unlocked: readonly string[],
+  contractRequirement: string | null,
+): PatentGroup {
+  if (unlocked.includes(node.id)) return "owned";
+  if (node.requires.some((id) => !unlocked.includes(id))) return "requires";
+  return contractRequirement === null ? "available" : "contract";
 }
 
 export function patentEffectSummary(effects: ReturnType<typeof activeEffects>): readonly string[] {
@@ -132,56 +163,64 @@ export function Patents({
             {effectSummary.map((summary) => <span key={summary}>{summary}</span>)}
           </div>
         )}
-      {economy.cash === 0 && <p className="recovery-guidance">No cash remains. Check Market for profitable stock and consider a cheaper route. If you choose a fresh start, use Menu → New Game; save first to keep this run.</p>}
+        {economy.cash === 0 && <p className="recovery-guidance">No cash remains. Check Market for profitable stock and consider a cheaper route. If you choose a fresh start, use Menu → New Game; save first to keep this run.</p>}
       </header>
 
       <div className="patent-grid" data-testid="patent-grid">
         <div className="patent-grid-contents" data-testid="patents-table">
-          {DEFAULT_PATENTS.map((node) => {
-            const unlocked = patents.unlocked.includes(node.id);
-            const contractRequirement = patentContractRequirement(node.id, contracts);
-            const affordable = contractRequirement === null
-              && canUnlock(DEFAULT_PATENTS, patents, economy.cash, economy.research, node.id);
-            const stateLabel = unlocked ? "unlocked" : affordable ? "available" : "locked";
+          {(Object.keys(PATENT_GROUP_TITLES) as PatentGroup[]).map((group) => {
+            const nodes = DEFAULT_PATENTS.filter((node) =>
+              patentGroup(node, patents.unlocked, patentContractRequirement(node.id, contracts)) === group);
+            if (nodes.length === 0) return null;
             return (
-              <article key={node.id} className={`patent-card is-${stateLabel}`} data-testid={`patent-row-${node.id}`}>
-                <div className="patent-node-line" aria-hidden="true" />
-                <div className="patent-card-heading">
-                  <span className="patent-emblem">⌬</span>
-                  <div><h2>{patentTitle(node.id)}</h2><small>{effectLabel(node)}</small></div>
-                </div>
-                {node.requires.length > 0 && (
-                  <div className="patent-requirement">
-                    Requires: {node.requires.map(patentTitle).join(", ")}
-                  </div>
-                )}
-                {contractRequirement !== null && (
-                  <div className="patent-requirement">{contractRequirement}</div>
-                )}
-                {!unlocked && (node.cost > economy.cash || node.researchCost > economy.research) && (
-                  <p data-testid={`patent-shortfall-${node.id}`}>
-                    Need ${Math.max(0, node.cost - economy.cash)} cash · {Math.max(0, node.researchCost - economy.research)} Knowledge
-                  </p>
-                )}
-                <div className="patent-cost">{patentCostLabel(node)}</div>
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    if (patentUnlockWarning(node, expansionResetsProduction) === null) {
-                      onUnlock(node.id);
-                    } else {
-                      triggerRef.current = event.currentTarget;
-                      setPending(node);
-                    }
-                  }}
-                  disabled={unlocked || !affordable}
-                  className={affordable ? "primary-action" : "game-control"}
-                  data-testid={`patent-unlock-${node.id}`}
-                  aria-label={unlocked ? `${patentTitle(node.id)} owned` : `Unlock ${patentTitle(node.id)}`}
-                >
-                  {unlocked ? "Owned" : "Unlock"}
-                </button>
-              </article>
+              <section key={group} className={`patent-group is-${group}`} aria-labelledby={`patent-group-${group}`}>
+                <h2 id={`patent-group-${group}`}>{PATENT_GROUP_TITLES[group]}</h2>
+                {nodes.map((node) => {
+                  const unlocked = group === "owned";
+                  const contractRequirement = patentContractRequirement(node.id, contracts);
+                  const affordable = contractRequirement === null
+                    && canUnlock(DEFAULT_PATENTS, patents, economy.cash, economy.research, node.id);
+                  const shortfall = group === "available"
+                    ? patentShortfall(node, economy.cash, economy.research)
+                    : null;
+                  const reasonId = `patent-reason-${node.id}`;
+                  const missing = node.requires.filter((id) => !patents.unlocked.includes(id));
+                  const reason = shortfall ?? contractRequirement;
+                  return (
+                    <article key={node.id} className={`patent-card is-${group}`} data-testid={`patent-row-${node.id}`}>
+                      <div className="patent-card-main">
+                        <h3>{patentTitle(node.id)}</h3>
+                        <small>{effectLabel(node)}</small>
+                        {missing.length > 0 && (
+                          <div className="patent-requirement">Requires: {missing.map(patentTitle).join(", ")}</div>
+                        )}
+                        {!unlocked && reason !== null && (
+                          <div id={reasonId} className="patent-requirement" data-testid={shortfall === null ? undefined : `patent-shortfall-${node.id}`}>{reason}</div>
+                        )}
+                      </div>
+                      {!unlocked && <div className="patent-cost">{patentCostLabel(node)}</div>}
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          if (patentUnlockWarning(node, expansionResetsProduction) === null) {
+                            onUnlock(node.id);
+                          } else {
+                            triggerRef.current = event.currentTarget;
+                            setPending(node);
+                          }
+                        }}
+                        disabled={unlocked || !affordable}
+                        aria-describedby={!unlocked && reason !== null ? reasonId : undefined}
+                        className={affordable ? "primary-action" : "game-control"}
+                        data-testid={`patent-unlock-${node.id}`}
+                        aria-label={unlocked ? `${patentTitle(node.id)} owned` : `Unlock ${patentTitle(node.id)}`}
+                      >
+                        {unlocked ? "Owned" : "Unlock"}
+                      </button>
+                    </article>
+                  );
+                })}
+              </section>
             );
           })}
         </div>

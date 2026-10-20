@@ -14,7 +14,7 @@ import type {
   InventoryProduct,
 } from "../sim/phase0_interfaces";
 import { nextUnitPrice } from "../sim/economy";
-import { SIDE_EFFECT_PENALTY } from "../sim/game";
+import { SHIPPING_CONTRACT_QUOTA, SIDE_EFFECT_PENALTY } from "../sim/game";
 import { diseaseEmblem, diseaseName } from "./effectLabels";
 
 interface ShopProps {
@@ -125,103 +125,132 @@ export function marketDisabledReason(
   return null;
 }
 
+export const MARKET_LADDER_UNITS = 5;
+
+export function formatMoney(amount: number): string {
+  return amount < 0 ? `−$${-amount}` : `$${amount}`;
+}
+
+/** The side-effect term of a quote, or null when the best unit is clean. */
+export function marketPenaltyLabel(quote: MarketQuote | null): string | null {
+  if (quote === null || quote.sideEffectCount === 0) return null;
+  return `$${quote.sideEffectPenaltyEach} × ${quote.sideEffectCount} = $${quote.sideEffectPenalty}`;
+}
+
+/** Gross price of each of the next `count` units: finite demand made concrete. */
+export function marketPriceLadder(basePrice: number, alreadySold: number, count = MARKET_LADDER_UNITS): number[] {
+  return Array.from({ length: count }, (_, index) => nextUnitPrice(basePrice, alreadySold + index));
+}
+
 function soldSoFar(economy: EconomyState, disease: DiseaseId): number {
   for (const sc of economy.sold) if (sc.disease === disease) return sc.count;
   return 0;
 }
 
 export function Shop({ level, economy, inventory, onSell }: ShopProps) {
-  const [saleFeedback, setSaleFeedback] = useState("");
-  const sellOne = useCallback(
-    (disease: DiseaseId) => {
+  const [saleFeedback, setSaleFeedback] = useState({ text: "", serial: 0 });
+  const ship = useCallback(
+    (disease: DiseaseId, all: boolean) => {
       const spec = level.diseases.find((candidate) => candidate.id === disease);
       if (spec === undefined) return;
-      const product = profitableMarketProducts(
+      const profitable = profitableMarketProducts(
         inventory,
         disease,
         spec.basePrice,
         soldSoFar(economy, disease),
-      )[0];
-      if (product === undefined) return;
-      setSaleFeedback(marketSaleFeedback(onSell([product.inventoryId], disease), 1));
+      );
+      const productIds = (all ? profitable : profitable.slice(0, 1)).map((product) => product.inventoryId);
+      if (productIds.length === 0) return;
+      const text = marketSaleFeedback(onSell(productIds, disease), productIds.length);
+      setSaleFeedback((previous) => ({ text, serial: previous.serial + 1 }));
     },
     [economy, inventory, level.diseases, onSell],
   );
 
-  const sellAll = useCallback(
-    (disease: DiseaseId) => {
-      const spec = level.diseases.find((candidate) => candidate.id === disease);
-      if (spec === undefined) return;
-      const productIds = profitableMarketProducts(
-        inventory,
-        disease,
-        spec.basePrice,
-        soldSoFar(economy, disease),
-      ).map((product) => product.inventoryId);
-      if (productIds.length > 0) {
-        setSaleFeedback(marketSaleFeedback(onSell(productIds, disease), productIds.length));
-      }
-    },
-    [economy, inventory, level.diseases, onSell],
-  );
+  const rows = level.diseases.map((disease) => ({ disease, eligible: marketProducts(inventory, disease.id) }));
+  rows.sort((left, right) =>
+    Number(right.eligible.length > 0) - Number(left.eligible.length > 0) || left.disease.id - right.disease.id);
 
   return (
     <div className="game-view management-view market-view">
       <header className="management-header">
         <h1>Market</h1>
-        {saleFeedback !== "" && (
-          <p role="status" data-testid="market-sale-feedback">{saleFeedback}</p>
+        <p>Every unit shipped lowers that disease’s next price.</p>
+        {saleFeedback.text !== "" && (
+          <p key={saleFeedback.serial} className="market-feedback" role="status" data-testid="market-sale-feedback">{saleFeedback.text}</p>
         )}
       </header>
       <div className="market-grid" data-testid="market-grid">
         <div className="market-grid-contents" data-testid="shop-table">
-          {level.diseases.map((disease) => {
-            const eligible = marketProducts(inventory, disease.id);
+          {rows.map(({ disease, eligible }) => {
             const have = eligible.length;
             const clean = eligible.filter((product) => product.outcome.sideEffects.length === 0).length;
             const tainted = have - clean;
             const sold = soldSoFar(economy, disease.id);
             const next = nextUnitPrice(disease.basePrice, sold);
-            const profitable = profitableMarketProducts(
-              inventory,
-              disease.id,
-              disease.basePrice,
-              sold,
-            );
-            const quote = bestMarketQuote(
-              inventory,
-              disease.id,
-              disease.basePrice,
-              sold,
-            );
+            const quote = bestMarketQuote(inventory, disease.id, disease.basePrice, sold);
             const remaining = marketLineReadout(inventory, disease.id, disease.basePrice, sold);
             const disabledReason = marketDisabledReason(have, quote);
             const disabledReasonId = `shop-disabled-reason-${disease.id}`;
+            const penalty = marketPenaltyLabel(quote);
+            const contract = (
+              <span className="market-contract">
+                Sold <strong data-testid={`shop-sold-${disease.id}`}>{sold}</strong>
+                {" · "}Contract <strong>{Math.min(sold, SHIPPING_CONTRACT_QUOTA)}/{SHIPPING_CONTRACT_QUOTA}</strong>
+              </span>
+            );
+            if (have === 0) {
+              return (
+                <article key={disease.id} className="market-card is-quiet" data-testid={`shop-row-${disease.id}`}>
+                  <span className="disease-emblem">{diseaseEmblem(disease.id)}</span>
+                  <h2>{diseaseName(disease.id)}</h2>
+                  <span className="market-quiet-price">Next <strong data-testid={`shop-next-${disease.id}`}>{formatMoney(next)}</strong></span>
+                  {contract}
+                  <span id={disabledReasonId} className="market-reason" data-testid={disabledReasonId}>{disabledReason}</span>
+                </article>
+              );
+            }
+            const describedBy = disabledReason === null ? undefined : disabledReasonId;
             return (
-              <article key={disease.id} className={`market-card${have > 0 ? " is-active" : ""}`} data-testid={`shop-row-${disease.id}`}>
+              <article key={disease.id} className="market-card is-active" data-testid={`shop-row-${disease.id}`}>
                 <div className="market-card-heading">
                   <span className="disease-emblem">{diseaseEmblem(disease.id)}</span>
                   <h2>{diseaseName(disease.id)}</h2>
+                  {contract}
                 </div>
-                <div className="market-stats">
-                  <div><span>Base</span><strong>{disease.basePrice}</strong></div>
-                  <div><span>Sold</span><strong data-testid={`shop-sold-${disease.id}`}>{sold}</strong></div>
-                  <div><span>Next gross</span><strong data-testid={`shop-next-${disease.id}`}>{next}</strong></div>
-                  <div><span>Clean stock</span><strong className="market-value-clean" data-testid={`shop-clean-${disease.id}`}>{clean}</strong></div>
-                  <div><span>Tainted stock</span><strong className="market-value-tainted" data-testid={`shop-tainted-${disease.id}`}>{tainted}</strong></div>
-                  <div><span>Best production cost</span><strong data-testid={`shop-production-cost-${disease.id}`}>{quote?.productionCost ?? "—"}</strong></div>
-                  <div><span>Best effect penalty</span><strong className="market-value-tainted" data-testid={`shop-side-effect-penalty-${disease.id}`}>{quote === null ? "—" : `$${quote.sideEffectPenaltyEach} × ${quote.sideEffectCount} = $${quote.sideEffectPenalty}`}</strong></div>
-                  <div><span>Best net</span><strong data-testid={`shop-net-${disease.id}`}>{quote?.net ?? "—"}</strong></div>
-                </div>
-                <p data-testid={`shop-stock-net-${disease.id}`}>This stock can still net ${remaining.net} across {remaining.units} units.</p>
-                <p>Demand is finite: each shipment lowers this disease’s next price.</p>
-                {have > 0 && remaining.units === 0 && <p>Improve processing cost or side effects, or try another disease.</p>}
+                <dl className="market-sheet">
+                  <dt>Stock</dt>
+                  <dd>
+                    <span className="market-stock is-clean"><strong className="market-value-clean" data-testid={`shop-clean-${disease.id}`}>{clean}</strong> Clean</span>
+                    <span className="market-stock is-tainted"><strong className="market-value-tainted" data-testid={`shop-tainted-${disease.id}`}>{tainted}</strong> Tainted</span>
+                  </dd>
+                  <dt>Next unit</dt>
+                  <dd className="market-equation">
+                    <span><strong data-testid={`shop-next-${disease.id}`}>{formatMoney(next)}</strong> price</span>
+                    <span>− <strong data-testid={`shop-production-cost-${disease.id}`}>{formatMoney(quote?.productionCost ?? 0)}</strong> cost</span>
+                    {penalty !== null && (
+                      <span className="market-value-tainted">− <strong data-testid={`shop-side-effect-penalty-${disease.id}`}>{penalty}</strong> side effects</span>
+                    )}
+                    <span className="market-net">= <strong data-testid={`shop-net-${disease.id}`}>{formatMoney(quote?.net ?? 0)}</strong> net</span>
+                  </dd>
+                  <dt>Demand</dt>
+                  <dd>
+                    <ol className="price-ladder" aria-label={`Next ${MARKET_LADDER_UNITS} unit prices`} data-testid={`shop-ladder-${disease.id}`}>
+                      {marketPriceLadder(disease.basePrice, sold).map((price, index) => (
+                        <li key={index} className={index < remaining.units ? "is-covered" : undefined}>{formatMoney(price)}</li>
+                      ))}
+                    </ol>
+                  </dd>
+                </dl>
+                <p className="market-readout" data-testid={`shop-stock-net-${disease.id}`}>
+                  This stock can still net <strong>{formatMoney(remaining.net)}</strong> across <strong>{remaining.units}</strong> {remaining.units === 1 ? "unit" : "units"}.
+                </p>
                 <div className="market-actions">
                   <button
                     type="button"
-                    onClick={() => sellOne(disease.id)}
-                    disabled={profitable.length <= 0}
-                    aria-describedby={disabledReason === null ? undefined : disabledReasonId}
+                    onClick={() => ship(disease.id, false)}
+                    disabled={remaining.units === 0}
+                    aria-describedby={describedBy}
                     className="primary-action"
                     data-testid={`shop-sell-${disease.id}`}
                   >
@@ -229,18 +258,21 @@ export function Shop({ level, economy, inventory, onSell }: ShopProps) {
                   </button>
                   <button
                     type="button"
-                    onClick={() => sellAll(disease.id)}
-                    disabled={profitable.length <= 0}
-                    aria-describedby={disabledReason === null ? undefined : disabledReasonId}
+                    onClick={() => ship(disease.id, true)}
+                    disabled={remaining.units === 0}
+                    aria-describedby={describedBy}
                     className="game-control"
                     data-testid={`shop-sell-all-${disease.id}`}
                   >
                     Ship profitable
                   </button>
+                  {disabledReason !== null && (
+                    <p className="market-reason">
+                      <span id={disabledReasonId} data-testid={disabledReasonId}>{disabledReason}</span>
+                      {" "}Lower processing cost or side effects, or ship another disease.
+                    </p>
+                  )}
                 </div>
-                {disabledReason !== null && (
-                  <p id={disabledReasonId} data-testid={disabledReasonId}>{disabledReason}</p>
-                )}
               </article>
             );
           })}

@@ -179,3 +179,16 @@ test("Technology cards present one concise status and hide empty summaries", asy
   await expect(page.getByTestId("patent-row-floor-depth")).toContainText("Add 2 factory rows");
   await expect(page.getByTestId("patent-row-dilute-unlock")).toContainText("Requires: Wider factory floor");
 });
+
+test("Technology names only the real shortfall and groups nodes by what blocks them", async ({ page }) => {
+  await page.goto("/?cash=9999&research=0");
+  await page.getByTestId("view-technology").click();
+
+  await expect(page.getByTestId("patent-shortfall-bench-2")).toHaveText("Need 2 more Knowledge");
+  await expect(page.getByTestId("patents-table")).not.toContainText("$0 cash");
+  await expect(page.getByRole("region", { name: "Available now" }).getByTestId("patent-row-bench-2")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Waiting on a contract" }).getByTestId("patent-row-skew-unlock")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Requires another node" }).getByTestId("patent-row-dilute-unlock")).toBeVisible();
+  await expect(page.getByTestId("patent-unlock-bench-2")).toBeDisabled();
+  await expect(page.getByTestId("patent-unlock-bench-2")).not.toHaveClass(/primary-action/);
+});

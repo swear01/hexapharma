@@ -59,7 +59,8 @@ export function BlueprintLibrary({
   const [entries, setEntries] = useState<readonly LibraryBlueprint[]>([]);
   const [name, setName] = useState("Untitled layout");
   const [json, setJson] = useState("");
-  const [status, setStatus] = useState("Loading library…");
+  const [status, setStatus] = useState("");
+  const [loaded, setLoaded] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<LibraryBlueprint | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const deleteTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -92,7 +93,7 @@ export function BlueprintLibrary({
     try {
       const next = await listLibraryBlueprints(localStorage);
       setEntries(next);
-      setStatus(next.length === 0 ? "Library is empty." : `${next.length} blueprint(s).`);
+      setLoaded(true);
     } catch (error) {
       setStatus(`Library error: ${message(error)}`);
     }
@@ -138,7 +139,7 @@ export function BlueprintLibrary({
   const loadFactory = useCallback((entry: LibraryBlueprint, destination: "pilot" | "production") => {
     try {
       const layout = materializeFactoryLayout(entry.blueprint);
-      const destinationLabel = destination === "pilot" ? "Production Plan" : "Production";
+      const destinationLabel = destination === "pilot" ? "Plan" : "Production";
       const accepted = destination === "pilot" ? onLoadPilot(layout) : onBuildProduction(layout);
       setStatus(accepted
         ? `Loaded “${entry.blueprint.name}” into ${destinationLabel}.`
@@ -178,20 +179,66 @@ export function BlueprintLibrary({
     <div className="blueprint-library" data-testid="blueprint-library">
       <h1>Blueprints</h1>
 
-      <section className="panel-section blueprint-capture">
-        <h2>Save</h2>
-        <label>
+      <section className="panel-section blueprint-capture" aria-label="Save a blueprint">
+        <label className="game-field">
           <span>Name</span>
           <input value={name} maxLength={80} onChange={(event) => setName(event.target.value)} data-testid="blueprint-name" />
         </label>
         <div className="panel-actions">
-          <button type="button" disabled={pilotLayout === null} onClick={() => void capturePilot()} data-testid="blueprint-save-pilot">Save Production Plan</button>
+          <button type="button" disabled={pilotLayout === null} onClick={() => void capturePilot()} data-testid="blueprint-save-pilot">Save Plan</button>
           <button type="button" onClick={() => void captureProduction()} data-testid="blueprint-save-production">Save Production</button>
         </div>
       </section>
 
-      <section className="panel-section">
-        <div className="panel-heading"><h2>Import</h2><span>{entries.length}/64</span></div>
+      <section className="panel-section blueprint-list" aria-labelledby="blueprint-list-title">
+        <div className="panel-heading"><h2 id="blueprint-list-title">Library</h2><span className="blueprint-count">{entries.length}/64</span></div>
+        {loaded && entries.length === 0 && (
+          <p className="panel-empty">No blueprints yet. Save your Plan or Production above, or import a shared .json file below. The Library is kept across saves and new games.</p>
+        )}
+        {entries.map((entry) => {
+          const factoryLayout = entry.blueprint.kind === "factory-layout"
+            ? materializeFactoryLayout(entry.blueprint)
+            : null;
+          const buildQuote = factoryLayout === null
+            ? null
+            : factoryBlueprintBuildQuote(productionLayout, factoryLayout, quoteProduction);
+          const reasonId = `blueprint-reason-${entry.id}`;
+          return <article key={entry.id} className="blueprint-card">
+            <div className="blueprint-card-title">
+              <strong>{entry.blueprint.name}</strong>
+              <span>{entry.blueprint.kind === "research-program"
+                ? `Research · ${entry.blueprint.program.steps.length} ${entry.blueprint.program.steps.length === 1 ? "step" : "steps"}`
+                : `Factory · ${entry.blueprint.layout.width}×${entry.blueprint.layout.height} · ${entry.blueprint.layout.machines.length} ${entry.blueprint.layout.machines.length === 1 ? "machine" : "machines"}`}</span>
+            </div>
+            <div className="panel-actions">
+              {entry.blueprint.kind === "factory-layout" && (
+                <>
+                  <button type="button" disabled={buildQuote === null} aria-describedby={buildQuote === null ? reasonId : undefined} onClick={() => loadFactory(entry, "pilot")}>Open in Plan</button>
+                  <button type="button" disabled={buildQuote === null} aria-describedby={buildQuote === null ? reasonId : undefined} onClick={() => loadFactory(entry, "production")}>{buildQuote === null ? "Commission" : `Commission $${buildQuote}`}</button>
+                </>
+              )}
+              <button type="button" onClick={() => void exportEntry(entry)}>Download</button>
+              <button
+                type="button"
+                className="blueprint-delete"
+                onClick={(event) => {
+                  deleteTriggerRef.current = event.currentTarget;
+                  setPendingDelete(entry);
+                }}
+                aria-label={`Delete ${entry.blueprint.name}`}
+              >Delete</button>
+            </div>
+            {buildQuote === null && entry.blueprint.kind === "factory-layout" && (
+              <small id={reasonId} className="blueprint-reason">
+                Built for a {entry.blueprint.layout.width}×{entry.blueprint.layout.height} floor; Production is {productionLayout.width}×{productionLayout.height}.
+              </small>
+            )}
+          </article>;
+        })}
+      </section>
+
+      <section className="panel-section blueprint-import" aria-labelledby="blueprint-import-title">
+        <h2 id="blueprint-import-title">Import</h2>
         <input
           ref={fileRef}
           type="file"
@@ -206,48 +253,11 @@ export function BlueprintLibrary({
             event.target.value = "";
           }}
         />
+        <textarea value={json} onChange={(event) => setJson(event.target.value)} placeholder="Paste blueprint JSON" aria-label="Blueprint JSON" data-testid="blueprint-json" />
         <div className="panel-actions">
-          <button type="button" onClick={() => fileRef.current?.click()} data-testid="blueprint-upload">Upload JSON</button>
           <button type="button" disabled={json.trim() === ""} onClick={() => void importJson(json)} data-testid="blueprint-import">Import pasted JSON</button>
+          <button type="button" onClick={() => fileRef.current?.click()} data-testid="blueprint-upload">Upload file</button>
         </div>
-        <textarea value={json} onChange={(event) => setJson(event.target.value)} placeholder="Paste or inspect a versioned blueprint document" data-testid="blueprint-json" />
-      </section>
-
-      <section className="blueprint-list" aria-label="Saved blueprints">
-        {entries.map((entry) => {
-          const factoryLayout = entry.blueprint.kind === "factory-layout"
-            ? materializeFactoryLayout(entry.blueprint)
-            : null;
-          const buildQuote = factoryLayout === null
-            ? null
-            : factoryBlueprintBuildQuote(productionLayout, factoryLayout, quoteProduction);
-          return <article key={entry.id} className="blueprint-card">
-            <div>
-              <strong>{entry.blueprint.name}</strong>
-              <span>{entry.blueprint.kind === "research-program" ? "Research" : "Factory"}</span>
-              <small>{entry.blueprint.kind === "research-program"
-                ? `${entry.blueprint.program.steps.length} paths`
-                : `${entry.blueprint.layout.width}×${entry.blueprint.layout.height} · ${entry.blueprint.layout.machines.length} machines`}</small>
-            </div>
-            <div className="panel-actions">
-              {entry.blueprint.kind === "factory-layout" && (
-                <>
-                  <button type="button" disabled={buildQuote === null} onClick={() => loadFactory(entry, "pilot")}>Open in Production Plan</button>
-                  <button type="button" disabled={buildQuote === null} onClick={() => loadFactory(entry, "production")}>{buildQuote === null ? "Build unavailable" : `Commission $${buildQuote}`}</button>
-                </>
-              )}
-              <button type="button" onClick={() => void exportEntry(entry)}>Download</button>
-              <button
-                type="button"
-                onClick={(event) => {
-                  deleteTriggerRef.current = event.currentTarget;
-                  setPendingDelete(entry);
-                }}
-                aria-label={`Delete ${entry.blueprint.name}`}
-              >×</button>
-            </div>
-          </article>;
-        })}
       </section>
       <output className="blueprint-status" role="status" data-testid="blueprint-status">{status}</output>
       {pendingDelete !== null && createPortal(
