@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { generate } from "../sim/mapgen";
+import { compileEntitledPrototype } from "../sim/recipe";
+import { defaultGenOptions } from "./Game";
 import {
   DEFAULT_CATALOG,
   DEFAULT_SHAPES,
@@ -13,6 +16,8 @@ import {
   factoryResetPlaybackAfterClose,
   facilityMayAnalyzeOutcome,
   facilityOutcomeMap,
+  factoryMachineFlowOrder,
+  factoryPaperTexture,
   fitFactoryCamera,
   formatFacilityOutcome,
   initialFacilityLayout,
@@ -261,16 +266,39 @@ describe("facility sample visibility", () => {
 });
 
 describe("factory framing and legend copy", () => {
-  it("enlarges a small floor to fill the frame, centred, and never shrinks a large one", () => {
-    const fitted = fitFactoryCamera({ width: 1400, height: 600 }, { width: 1000, height: 400 });
+  const floor = { minX: 12, minY: 12, maxX: 1012, maxY: 412 };
+
+  it("enlarges an empty floor to fill the view, centred, and never shrinks it below 100%", () => {
+    const fitted = fitFactoryCamera({ width: 1400, height: 700 }, floor, null);
     expect(fitted.zoom).toBeGreaterThan(1);
     expect(fitted.zoom).toBeLessThanOrEqual(1.6);
-    expect(1000 * fitted.zoom).toBeLessThanOrEqual(1400);
-    expect(400 * fitted.zoom).toBeLessThanOrEqual(600);
-    expect(fitted.x).toBeCloseTo(1000 * (1 - fitted.zoom) / 2);
-    expect(fitted.y).toBeCloseTo(400 * (1 - fitted.zoom) / 2);
-    expect(fitFactoryCamera({ width: 390, height: 400 }, { width: 1000, height: 400 }))
-      .toEqual({ x: 0, y: 0, zoom: 1 });
+    expect(fitted.x + fitted.zoom * (floor.minX + floor.maxX) / 2).toBeCloseTo(700);
+    expect(fitted.y + fitted.zoom * (floor.minY + floor.maxY) / 2).toBeCloseTo(350);
+    expect(fitFactoryCamera({ width: 390, height: 400 }, floor, null).zoom).toBe(1);
+  });
+
+  it("fits a built line whole on a phone, zooming below 100% when it must", () => {
+    const line = { minX: 40, minY: 150, maxX: 980, maxY: 330 };
+    const fitted = fitFactoryCamera({ width: 390, height: 440 }, floor, line);
+    expect(fitted.zoom).toBeLessThan(1);
+    expect(fitted.x + fitted.zoom * line.minX).toBeGreaterThanOrEqual(0);
+    expect(fitted.x + fitted.zoom * line.maxX).toBeLessThanOrEqual(390);
+  });
+
+  it("numbers a compiled formula line in its step order, Source to Sink", () => {
+    const program = generate(defaultGenOptions(14)).diseases[0]!.reference;
+    const layout = compileEntitledPrototype(program, 24, 12).layout;
+    const order = factoryMachineFlowOrder(layout);
+    const steps = program.steps.map((step) => step.typeId);
+    const byNumber = [...layout.machines]
+      .sort((a, b) => order.get(a.id)! - order.get(b.id)!)
+      .map((machine) => machine.def.typeId);
+    expect(byNumber).toEqual(steps);
+  });
+
+  it("prints the unbuilt ground as one deterministic contour tile", () => {
+    expect(factoryPaperTexture()).toBe(factoryPaperTexture());
+    expect(factoryPaperTexture()).toMatch(/^url\("data:image\/svg\+xml,/u);
   });
 
   it("explains a locked machine in player terms, naming its contract gate", () => {

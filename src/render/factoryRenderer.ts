@@ -104,6 +104,9 @@ export function factoryPrintStyle(mode: FactoryRenderMode): FactoryPrintStyle {
 }
 
 const CHANNEL_WIDTH = 8;
+/** Outer machine outline vs. the seam between two touching machines. */
+export const MACHINE_OUTLINE_WIDTH = 1.6;
+export const SEAM_WIDTH = 4;
 const PORT_HALF = 3.6;
 
 export interface FactoryTransportArmGeometry {
@@ -446,6 +449,43 @@ function drawMachineLinks(layout: FactoryLayout, topology: FactoryTransportTopol
   if (any) g.stroke({ color: style.channel, alpha: style.channelAlpha, width: CHANNEL_WIDTH });
 }
 
+/** Edges two different machines share, each listed once (lower machine id first). */
+export function factoryMachineSeams(layout: FactoryLayout): readonly { readonly q: number; readonly r: number; readonly side: Dir }[] {
+  const owner = new Int32Array(layout.width * layout.height).fill(-1);
+  for (const machine of layout.machines) {
+    for (const cell of worldCells(machine)) {
+      if (hexInBounds(layout.width, layout.height, cell.q, cell.r)) owner[hexIndex(layout.width, cell.q, cell.r)] = machine.id;
+    }
+  }
+  const seams: { q: number; r: number; side: Dir }[] = [];
+  for (let r = 0; r < layout.height; r++) {
+    for (let q = 0; q < layout.width; q++) {
+      const own = owner[hexIndex(layout.width, q, r)]!;
+      if (own < 0) continue;
+      for (const side of HEX_DIRS) {
+        const nq = q + HEX_DQ[side]!;
+        const nr = r + HEX_DR[side]!;
+        if (!hexInBounds(layout.width, layout.height, nq, nr)) continue;
+        const other = owner[hexIndex(layout.width, nq, nr)]!;
+        if (other >= 0 && own < other) seams.push({ q, r, side });
+      }
+    }
+  }
+  return seams;
+}
+
+/** Where two machines touch, the dividing line prints heavier than a line's outer outline. */
+function drawMachineSeams(layout: FactoryLayout, g: Graphics, style: FactoryPrintStyle): void {
+  const seams = factoryMachineSeams(layout);
+  for (const seam of seams) {
+    const polygon = hexPolygon(cellX(seam.q, seam.r), cellY(seam.r), FACTORY_HEX_SIZE);
+    const a = polygon[(seam.side + 1) % 6]!;
+    const b = polygon[(seam.side + 2) % 6]!;
+    g.moveTo(a.x, a.y).lineTo(b.x, b.y);
+  }
+  if (seams.length > 0) g.stroke({ color: style.ink, alpha: style.inkAlpha, width: SEAM_WIDTH, cap: "round" });
+}
+
 /** Inputs are square notches, outputs circles; connected = solid, open = hollow. */
 function drawPort(
   g: Graphics,
@@ -496,7 +536,7 @@ function drawMachine(m: PlacedMachine, isBottleneck: boolean, ctx: DrawCtx): voi
     if (cx > maxX) maxX = cx;
     if (cy > maxY) maxY = cy;
   }
-  cells.stroke({ color: style.ink, alpha: style.inkAlpha, width: isBottleneck ? 3 : 1.6, cap: "round", join: "round" });
+  cells.stroke({ color: style.ink, alpha: style.inkAlpha, width: isBottleneck ? 3 : MACHINE_OUTLINE_WIDTH, cap: "round", join: "round" });
 
   if (minX !== Infinity) {
     const cx = (minX + maxX) / 2;
@@ -616,7 +656,8 @@ export async function createFactoryRenderer(
     autoStart: false,
     width,
     height,
-    background: FACTORY_SCHEMATIC_STYLE.background,
+    // Transparent: the contour paper around the floor is printed by the page underneath.
+    backgroundAlpha: 0,
     antialias: true,
     resolution,
     autoDensity: true,
@@ -660,6 +701,7 @@ export async function createFactoryRenderer(
       for (const m of curr.machines) {
         drawMachine(m, bottleneckId !== null && m.id === bottleneckId, ctx);
       }
+      drawMachineSeams(curr, cells, style);
       drawMachineLinks(curr, renderedTopology, cells, style);
       for (const port of renderedTopology.machinePorts) {
         drawPort(cells, portCenterX(port.q, port.r, port.side), portCenterY(port.r, port.side), port.role, port.connected, style);
