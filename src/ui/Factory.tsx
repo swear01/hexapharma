@@ -22,8 +22,10 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { MachineIcon } from "./MachineIcon";
 import { blockingDialogOpen } from "./blockingDialog";
 import { createPortal } from "react-dom";
-import { machineName, machineShortName } from "./machineLabels";
-import { outcomeEffectText } from "./effectLabels";
+import { machineName } from "./machineLabels";
+import { diseaseName, outcomeEffectText } from "./effectLabels";
+import { DEFAULT_PATENTS } from "../sim/patent";
+import { requiredShippingContractForPatent } from "../sim/game";
 import type {
   Dir,
   HexCoord,
@@ -47,7 +49,9 @@ import { factoryOutcome } from "../sim/recipe";
 import { quoteProductionBuild } from "../sim/construction";
 import { worldCells } from "../sim/factory-geom";
 import { hexInBounds, hexIndex, rotateHexCoord } from "../sim/hex";
-import { hexToPixel } from "../render/hexProjection";
+import { buildFactoryTransportTopology } from "../render/factoryTransportTopology";
+import { inkJitter } from "../render/ink";
+import { hexBoardBounds, hexPolygon, hexToPixel } from "../render/hexProjection";
 import type { FactoryRenderer } from "../render/factoryRenderer";
 import {
   appendUniqueCells,
@@ -157,6 +161,16 @@ export function machineTooltip(entry: MachineCatalogEntry): string {
   return `${machineName(entry.typeId)} · ${entry.speed} ticks/unit · Processing $${entry.cost}/unit`;
 }
 
+/** Why a machine is not on the toolbelt yet, in player terms. */
+export function machineLockReason(typeId: MachineTypeId): string {
+  const patent = DEFAULT_PATENTS.find((node) =>
+    node.effect.kind === "unlockMachine" && node.effect.typeId === typeId);
+  const disease = patent === undefined ? null : requiredShippingContractForPatent(patent.id);
+  return disease === null
+    ? `${machineName(typeId)} locked · unlock in Technology`
+    : `${machineName(typeId)} locked · ship the ${diseaseName(disease)} contract, then unlock in Technology`;
+}
+
 function machineDef(typeId: MachineTypeId): FactoryMachineDef {
   const entry = entryOf(typeId);
   return {
@@ -181,33 +195,164 @@ export function initialFacilityLayout(
   };
 }
 
-function factoryLayoutFocus(layout: FactoryLayout): HexCoord | null {
-  let minQ = Infinity;
-  let minR = Infinity;
-  let maxQ = -Infinity;
-  let maxR = -Infinity;
+export interface PixelBounds {
+  readonly minX: number;
+  readonly minY: number;
+  readonly maxX: number;
+  readonly maxY: number;
+}
+
+/** Pixel bounds of everything built (machines and tiles), padded by one cell; null on an empty floor. */
+export function factoryLayoutBounds(layout: FactoryLayout): PixelBounds | null {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  const include = (q: number, r: number) => {
+    const center = factoryCellCenter({ q, r });
+    minX = Math.min(minX, center.x);
+    minY = Math.min(minY, center.y);
+    maxX = Math.max(maxX, center.x);
+    maxY = Math.max(maxY, center.y);
+  };
   for (const machine of layout.machines) {
-    for (const cell of worldCells(machine)) {
-      minQ = Math.min(minQ, cell.q);
-      minR = Math.min(minR, cell.r);
-      maxQ = Math.max(maxQ, cell.q);
-      maxR = Math.max(maxR, cell.r);
+    for (const cell of worldCells(machine)) include(cell.q, cell.r);
+  }
+  for (let index = 0; index < layout.tiles.length; index++) {
+    if (layout.tiles[index]?.kind !== "empty") include(index % layout.width, Math.floor(index / layout.width));
+  }
+  if (minX === Infinity) return null;
+  const margin = FACTORY_HEX_WIDTH * 1.5;
+  return { minX: minX - margin, minY: minY - margin, maxX: maxX + margin, maxY: maxY + margin };
+}
+
+/** Pixel centre of the first Source, where a line starts. */
+export function factoryStartPoint(layout: FactoryLayout): { readonly x: number; readonly y: number } | null {
+  const index = layout.tiles.findIndex((tile) => tile.kind === "source");
+  return index < 0 ? null : factoryCellCenter({ q: index % layout.width, r: Math.floor(index / layout.width) });
+}
+
+function factoryFloorBounds(layout: FactoryLayout): PixelBounds {
+  const bounds = hexBoardBounds(layout.width, layout.height, FACTORY_HEX_SIZE);
+  return { minX: PAD, minY: PAD, maxX: PAD + bounds.maxX - bounds.minX, maxY: PAD + bounds.maxY - bounds.minY };
+}
+
+/** Control numbers: machines in the order flow reaches them from the Sources (matches a formula's step order on a straight line). */
+export function factoryMachineFlowOrder(layout: FactoryLayout): ReadonlyMap<number, number> {
+  const topology = buildFactoryTransportTopology(layout);
+  const area = layout.width * layout.height;
+  const owner = new Int32Array(area).fill(-1);
+  const byId = new Map<number, PlacedMachine>();
+  for (const machine of layout.machines) {
+    byId.set(machine.id, machine);
+    for (const cell of worldCells(machine)) owner[hexIndex(layout.width, cell.q, cell.r)] = machine.id;
+  }
+  const next: number[][] = Array.from({ length: area }, () => []);
+  for (const edge of topology.edges) {
+    next[hexIndex(layout.width, edge.from.q, edge.from.r)]!.push(hexIndex(layout.width, edge.to.q, edge.to.r));
+  }
+  const order = new Map<number, number>();
+  const seen = new Uint8Array(area);
+  const queue: number[] = [];
+  for (let index = 0; index < area; index++) {
+    if (layout.tiles[index]?.kind === "source") {
+      seen[index] = 1;
+      queue.push(index);
     }
   }
-  if (minQ === Infinity) {
-    for (let index = 0; index < layout.tiles.length; index++) {
-      if (layout.tiles[index]?.kind === "empty") continue;
-      const q = index % layout.width;
-      const r = Math.floor(index / layout.width);
-      minQ = Math.min(minQ, q);
-      minR = Math.min(minR, r);
-      maxQ = Math.max(maxQ, q);
-      maxR = Math.max(maxR, r);
+  for (let head = 0; head < queue.length; head++) {
+    for (const to of next[queue[head]!]!) {
+      if (seen[to] === 1) continue;
+      const id = owner[to]!;
+      const machine = id >= 0 ? byId.get(id) : undefined;
+      if (machine === undefined) {
+        seen[to] = 1;
+        queue.push(to);
+        continue;
+      }
+      if (!order.has(id)) order.set(id, order.size + 1);
+      for (const cell of worldCells(machine)) {
+        const index = hexIndex(layout.width, cell.q, cell.r);
+        if (seen[index] === 1) continue;
+        seen[index] = 1;
+        queue.push(index);
+      }
     }
   }
-  return minQ === Infinity
-    ? null
-    : { q: (minQ + maxQ) / 2, r: (minR + maxR) / 2 };
+  for (const machine of layout.machines) {
+    if (!order.has(machine.id)) order.set(machine.id, order.size + 1);
+  }
+  return order;
+}
+
+const PAPER_TILE_CELLS = 120;
+const PAPER_STEP = 12;
+const PAPER_SEED = 0x51f3;
+let paperTexture: string | null = null;
+
+/**
+ * Unbuilt ground around the floor: paper-sunk with faint contour ink, like the Atlas's unprinted
+ * paper. A periodic height field run through marching squares gives a seamless tile; crossings
+ * wobble by inkJitter keyed to the shared grid edge, so the tile is deterministic. Built once.
+ */
+export function factoryPaperTexture(): string {
+  if (paperTexture !== null) return paperTexture;
+  const n = PAPER_TILE_CELLS;
+  const tau = Math.PI * 2;
+  const height = (i: number, j: number) => {
+    const x = (((i % n) + n) % n) / n * tau;
+    const y = (((j % n) + n) % n) / n * tau;
+    return Math.sin(3 * x + 1.6 * Math.sin(2 * y + 0.4)) + Math.sin(4 * y + 1.4 * Math.sin(3 * x + 1.9))
+      + 0.55 * Math.sin(5 * x - 2 * y + 2.3) + 0.45 * Math.sin(x + 2 * y + 1.1) + 0.35 * Math.sin(2 * x + 5 * y + 0.7);
+  };
+  const interval = 0.42;
+  let thin = "";
+  let index = "";
+  const crossing = (gi: number, gj: number, vertical: boolean, a: number, b: number, threshold: number, level: number) => {
+    const key = Math.imul(((gi % n) + n) % n, 7_919) ^ Math.imul(((gj % n) + n) % n, 104_729) ^ (vertical ? 1 : 0);
+    const t = Math.min(1, Math.max(0, (threshold - a) / (b - a) + inkJitter(key ^ PAPER_SEED, level) * 0.07));
+    const x = (vertical ? gi : gi + t) * PAPER_STEP;
+    const y = (vertical ? gj + t : gj) * PAPER_STEP;
+    return `${x.toFixed(1)} ${y.toFixed(1)}`;
+  };
+  for (let j = 0; j < n; j++) {
+    for (let i = 0; i < n; i++) {
+      const v0 = height(i, j);
+      const v1 = height(i + 1, j);
+      const v2 = height(i + 1, j + 1);
+      const v3 = height(i, j + 1);
+      const hi = Math.max(v0, v1, v2, v3);
+      for (let level = Math.ceil(Math.min(v0, v1, v2, v3) / interval - 0.5); (level + 0.5) * interval <= hi; level++) {
+        const threshold = (level + 0.5) * interval;
+        const code = (v0 > threshold ? 1 : 0) | (v1 > threshold ? 2 : 0) | (v2 > threshold ? 4 : 0) | (v3 > threshold ? 8 : 0);
+        if (code === 0 || code === 15) continue;
+        const top = () => crossing(i, j, false, v0, v1, threshold, level);
+        const right = () => crossing(i + 1, j, true, v1, v2, threshold, level);
+        const bottom = () => crossing(i, j + 1, false, v3, v2, threshold, level);
+        const left = () => crossing(i, j, true, v0, v3, threshold, level);
+        const segment = (a: string, b: string) => {
+          if (((level % 5) + 5) % 5 === 0) index += `M${a}L${b}`;
+          else thin += `M${a}L${b}`;
+        };
+        switch (code) {
+          case 1: case 14: segment(left(), top()); break;
+          case 2: case 13: segment(top(), right()); break;
+          case 3: case 12: segment(left(), right()); break;
+          case 4: case 11: segment(right(), bottom()); break;
+          case 6: case 9: segment(top(), bottom()); break;
+          case 7: case 8: segment(left(), bottom()); break;
+          case 5: segment(left(), top()); segment(right(), bottom()); break;
+          case 10: segment(top(), right()); segment(left(), bottom()); break;
+        }
+      }
+    }
+  }
+  const size = n * PAPER_STEP;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">`
+    + `<path d="${thin}" fill="none" stroke="#a0673a" stroke-opacity=".22" stroke-width="1" stroke-linecap="round"/>`
+    + `<path d="${index}" fill="none" stroke="#a0673a" stroke-opacity=".3" stroke-width="1.6" stroke-linecap="round"/></svg>`;
+  paperTexture = `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
+  return paperTexture;
 }
 
 // ───────────────────────────── palette / editing ─────────────────────────────
@@ -248,13 +393,82 @@ type CanvasGesture =
     };
 
 const DIR_LABEL: Record<Dir, string> = {
-  0: "→ E",
-  1: "↘ SE",
-  2: "↙ SW",
-  3: "← W",
-  4: "↖ NW",
-  5: "↗ NE",
+  0: "E",
+  1: "SE",
+  2: "SW",
+  3: "W",
+  4: "NW",
+  5: "NE",
 };
+
+type TileBrushKind = Brush["kind"] & ("belt" | "splitter" | "merger" | "source" | "sink" | "erase");
+
+/** Legend glyphs for transport tools; they match the symbols printed on the floor. */
+function ToolGlyph({ kind }: { readonly kind: TileBrushKind }) {
+  const common = { width: 30, height: 30, viewBox: "0 0 30 30", fill: "none", "aria-hidden": true, focusable: false } as const;
+  switch (kind) {
+    case "belt":
+      return <svg {...common}><path d="M3 15h24" stroke="var(--flow)" strokeWidth="7" /><path d="M13 11l4 4-4 4" stroke="var(--paper-raised)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+    case "splitter":
+      return <svg {...common}><path d="M3 15h12l9-8M15 15l9 8" stroke="var(--flow)" strokeWidth="5" strokeLinejoin="round" /><circle cx="15" cy="15" r="5" fill="var(--paper-raised)" stroke="currentColor" strokeWidth="2" /><circle cx="15" cy="15" r="1.5" fill="currentColor" /></svg>;
+    case "merger":
+      return <svg {...common}><path d="M6 7l9 8h12M6 23l9-8" stroke="var(--flow)" strokeWidth="5" strokeLinejoin="round" /><circle cx="15" cy="15" r="6" fill="var(--paper-raised)" /><path d="M20 15l-8 4.6v-9.2z" fill="currentColor" /></svg>;
+    case "source":
+      return <svg {...common}><path d="M15 15h12" stroke="var(--flow)" strokeWidth="5" /><path d="M22 15L8 23V7z" fill="var(--paper-raised)" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" /></svg>;
+    case "sink":
+      return <svg {...common}><circle cx="15" cy="15" r="10" stroke="currentColor" strokeWidth="2" /><circle cx="15" cy="15" r="5.5" stroke="currentColor" strokeWidth="2" /></svg>;
+    case "erase":
+      return <svg {...common}><path d="M15 4l9.5 5.5v11L15 26l-9.5-5.5v-11z" stroke="currentColor" strokeWidth="1.5" strokeDasharray="3 2.5" /><path d="M10.5 10.5l9 9M19.5 10.5l-9 9" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" /></svg>;
+  }
+}
+
+/** Small heading arrow for the current brush direction (drawn, rotated by hex direction). */
+function DirectionGlyph({ dir }: { readonly dir: Dir }) {
+  return (
+    <svg className="direction-glyph" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" focusable="false">
+      <g transform={`rotate(${dir * 60} 7 7)`}>
+        <path d="M2 7h8M7 3.5L10.5 7 7 10.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      </g>
+    </svg>
+  );
+}
+
+function LockGlyph() {
+  return (
+    <svg className="tool-lock" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+      <path d="M3.5 5.5V4a2.5 2.5 0 015 0v1.5" fill="none" stroke="currentColor" strokeWidth="1.4" />
+      <rect x="2" y="5.5" width="8" height="5.5" rx="1" fill="currentColor" />
+    </svg>
+  );
+}
+
+function ChevronGlyph({ down = false }: { readonly down?: boolean }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" focusable="false">
+      <path d={down ? "M3 5l4 4 4-4" : "M5 3l4 4-4 4"} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function CloseGlyph() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+      <path d="M3.5 3.5l9 9M12.5 3.5l-9 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+type RunState = "running" | "paused" | "blocked";
+
+function RunStateGlyph({ state }: { readonly state: RunState }) {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+      {state === "running" && <path d="M2.5 1.5l8 4.5-8 4.5z" fill="currentColor" />}
+      {state === "paused" && <path d="M2.5 1.5h2.5v9H2.5zM7 1.5h2.5v9H7z" fill="currentColor" />}
+      {state === "blocked" && <path d="M1.5 6h9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />}
+    </svg>
+  );
+}
 
 /** A belt-grid tile for the current brush + direction (machines handled separately). */
 function makeTile(brush: Brush, dir: Dir): FactoryTile | null {
@@ -415,6 +629,55 @@ const CELL = 42;
 const FACTORY_HEX_SIZE = CELL / 2;
 const FACTORY_HEX_WIDTH = Math.sqrt(3) * FACTORY_HEX_SIZE;
 const PAD = 12;
+const MIN_ZOOM = 0.35;
+/** On a phone a built line opens no smaller than this, so ports and step numbers stay legible. */
+const MIN_PHONE_FIT_ZOOM = 0.6;
+const MAX_ZOOM = 2.25;
+const MARK_BAND = 36;
+/** The floor is framed up to this zoom; beyond it hexes stop reading as a map. */
+const MAX_FIT_ZOOM = 1.6;
+
+/**
+ * Camera that frames the work: an empty floor fills the view (never below 100%, so touch hexes
+ * stay usable); a built layout is fitted whole (Source to Sink), zooming below 100% only when
+ * it cannot otherwise fit. On a phone the fit stops at a legible zoom and, if the line is still
+ * wider than the view, opens at its left (Source) end for the player to pan along.
+ * Translation is relative to the frame's top-left.
+ */
+export function fitFactoryCamera(
+  view: { readonly width: number; readonly height: number },
+  floor: PixelBounds,
+  layout: PixelBounds | null,
+  start: { readonly x: number; readonly y: number } | null = null,
+): Camera {
+  if (view.width <= 0 || view.height <= 0) return { x: 0, y: 0, zoom: 1 };
+  const fitHeight = Math.max(1, view.height - 2 * Math.min(MARK_BAND, view.height * 0.1));
+  const zoomFor = (b: PixelBounds) =>
+    Math.min(view.width / (b.maxX - b.minX), fitHeight / (b.maxY - b.minY)) * 0.96;
+  const floorZoom = zoomFor(floor);
+  const zoom = layout === null
+    ? Math.min(MAX_FIT_ZOOM, Math.max(1, floorZoom))
+    : Math.max(view.width <= 768 ? MIN_PHONE_FIT_ZOOM : MIN_ZOOM, Math.min(zoomFor(layout), MAX_FIT_ZOOM, Math.max(1, floorZoom)));
+  const target = layout === null || zoom <= floorZoom ? floor : layout;
+  if (layout !== null && zoom > floorZoom && zoom > zoomFor(layout)) {
+    // Cropped: open at the edge nearest the Source so the line's start is on screen.
+    const midX = (layout.minX + layout.maxX) / 2;
+    const midY = (layout.minY + layout.maxY) / 2;
+    const fitsY = zoom * (layout.maxY - layout.minY) <= view.height;
+    return {
+      x: start !== null && start.x > midX ? view.width - PAD - zoom * layout.maxX : PAD - zoom * layout.minX,
+      y: fitsY || start === null
+        ? view.height / 2 - zoom * midY
+        : start.y > midY ? view.height - PAD - zoom * layout.maxY : PAD - zoom * layout.minY,
+      zoom,
+    };
+  }
+  return {
+    x: view.width / 2 - zoom * (target.minX + target.maxX) / 2,
+    y: view.height / 2 - zoom * (target.minY + target.maxY) / 2,
+    zoom,
+  };
+}
 
 function factoryCellCenter(cell: HexCoord): { readonly x: number; readonly y: number } {
   const projected = hexToPixel(cell.q, cell.r, FACTORY_HEX_SIZE);
@@ -547,6 +810,9 @@ export function Factory({
 
   // editing brush + parameters.
   const [brush, setBrush] = useState<Brush>({ kind: "belt" });
+  const [lockedHint, setLockedHint] = useState<string | null>(null);
+  // Any new tool choice (click, hotkey, pipette) retires a stale locked-machine hint.
+  useEffect(() => setLockedHint(null), [brush]);
   const [brushDir, setBrushDir] = useState<Dir>(E);
   const [footRot, setFootRot] = useState<Rotation>(0);
   const [clipboardLabel, setClipboardLabel] = useState("empty");
@@ -603,6 +869,21 @@ export function Factory({
     }
   }, [authoritativeLayout, layout, mm]);
   const throughput = throughputAnalysis.report;
+  const machineOrder = useMemo(() => factoryMachineFlowOrder(layout), [layout]);
+  const machineControls = useMemo(() => layout.machines.map((machine) => {
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const cell of worldCells(machine)) {
+      const center = factoryCellCenter(cell);
+      minX = Math.min(minX, center.x);
+      minY = Math.min(minY, center.y);
+      maxX = Math.max(maxX, center.x);
+      maxY = Math.max(maxY, center.y);
+    }
+    return { id: machine.id, number: machineOrder.get(machine.id) ?? 0, x: (minX + maxX) / 2 - 16, y: (minY + maxY) / 2 - 14 };
+  }), [layout, machineOrder]);
   const sampleAnalysis = useMemo<{
     readonly outcome: Outcome | null;
     readonly error: string | null;
@@ -693,32 +974,26 @@ export function Factory({
   const highlightedMachineId = throughput?.bottleneck ?? null;
   const bottleneckRef = useRef(highlightedMachineId);
   bottleneckRef.current = highlightedMachineId;
+  const fitCamera = useCallback((): Camera => {
+    const frame = frameRef.current;
+    if (frame === null) return { x: 0, y: 0, zoom: 1 };
+    return fitFactoryCamera(
+      { width: frame.clientWidth, height: frame.clientHeight },
+      factoryFloorBounds(layoutRef.current),
+      factoryLayoutBounds(layoutRef.current),
+      factoryStartPoint(layoutRef.current),
+    );
+  }, []);
   const focusLayoutInViewport = useCallback(() => {
     const frame = frameRef.current;
-    const canvas = rendererRef.current?.canvas;
-    if (!activeRef.current || frame === null || canvas === undefined) return false;
-    const frameRect = frame.getBoundingClientRect();
-    const canvasRect = canvas.getBoundingClientRect();
-    if (frameRect.width === 0 || frameRect.height === 0 || canvasRect.width === 0 || canvasRect.height === 0) {
-      return false;
-    }
-    const focus = factoryLayoutFocus(layoutRef.current) ?? {
-      q: (layoutRef.current.width - 1) / 2,
-      r: (layoutRef.current.height - 1) / 2,
-    };
-    const toolbelt = frame.closest(".factory-workspace")?.querySelector<HTMLElement>(".toolbelt");
-    const toolbeltTop = toolbelt?.getBoundingClientRect().top ?? frameRect.bottom;
-    const visibleBottom = Math.min(frameRect.bottom, toolbeltTop);
-    const targetX = frameRect.left + frameRect.width / 2;
-    const targetY = frameRect.top + Math.max(0, visibleBottom - frameRect.top) / 2;
-    const projectedFocus = factoryCellCenter(focus);
-    const focusX = canvasRect.left + projectedFocus.x * canvasRect.width / canvas.width;
-    const focusY = canvasRect.top + projectedFocus.y * canvasRect.height / canvas.height;
-    if (frame.scrollWidth > frame.clientWidth) frame.scrollLeft += focusX - targetX;
-    if (frame.scrollHeight > frame.clientHeight) frame.scrollTop += focusY - targetY;
+    if (!activeRef.current || frame === null || rendererRef.current === null) return false;
+    if (frame.clientWidth === 0 || frame.clientHeight === 0) return false;
+    const fitted = fitCamera();
+    cameraRef.current = fitted;
+    setCamera(fitted);
     pendingViewportFocusRef.current = false;
     return true;
-  }, []);
+  }, [fitCamera]);
   useEffect(() => {
     let disposed = false;
     let local: FactoryRenderer | null = null;
@@ -727,7 +1002,7 @@ export function Factory({
     void (async () => {
       try {
         const { createFactoryRenderer } = await import("../render/factoryRenderer");
-        const r = await createFactoryRenderer(layoutRef.current);
+        const r = await createFactoryRenderer(layoutRef.current, mode === "pilot" ? "plan" : "production");
         if (disposed) {
           r.destroy();
           return;
@@ -757,7 +1032,36 @@ export function Factory({
       rendererRef.current = null;
       if (local) local.destroy();
     };
-  }, [focusLayoutInViewport, layout.width, layout.height]);
+  }, [focusLayoutInViewport, layout.width, layout.height, mode]);
+
+  // A frame resize (window, rotation, the Formulas reference) reframes the floor like Center.
+  useEffect(() => {
+    const frame = frameRef.current;
+    if (frame === null || typeof ResizeObserver === "undefined") return;
+    let last = { width: frame.clientWidth, height: frame.clientHeight };
+    const observer = new ResizeObserver(() => {
+      const next = { width: frame.clientWidth, height: frame.clientHeight };
+      const changed = Math.abs(next.width - last.width) > 1 || Math.abs(next.height - last.height) > 40;
+      last = next;
+      if (!changed || !activeRef.current || next.width === 0 || next.height === 0) return;
+      const fitted = fitCamera();
+      cameraRef.current = fitted;
+      setCamera(fitted);
+    });
+    observer.observe(frame);
+    return () => observer.disconnect();
+  }, [fitCamera]);
+
+  // Details changes the frame width: reframe the floor.
+  useEffect(() => {
+    if (!activeRef.current) return;
+    const request = window.requestAnimationFrame(() => {
+      const fitted = fitCamera();
+      cameraRef.current = fitted;
+      setCamera(fitted);
+    });
+    return () => window.cancelAnimationFrame(request);
+  }, [diagnosticsOpen, fitCamera]);
 
   // ── repaint whenever layout / state / bottleneck changes ──
   useEffect(() => {
@@ -860,8 +1164,8 @@ export function Factory({
           maxX: 10_000,
           minY: -10_000,
           maxY: 10_000,
-          minZoom: 0.65,
-          maxZoom: 2.25,
+          minZoom: MIN_ZOOM,
+          maxZoom: MAX_ZOOM,
         });
       }
       const rect = canvas.getBoundingClientRect();
@@ -876,8 +1180,8 @@ export function Factory({
         maxX: frameRect.right - visibleEdge - baseLeft,
         minY: frameRect.top + visibleEdge - baseTop - baseHeight * requested.zoom,
         maxY: frameRect.bottom - visibleEdge - baseTop,
-        minZoom: 0.65,
-        maxZoom: 2.25,
+        minZoom: MIN_ZOOM,
+        maxZoom: MAX_ZOOM,
       });
     });
   }, []);
@@ -901,10 +1205,10 @@ export function Factory({
       { width: baseWidth, height: baseHeight },
       current,
       {
-        cellSize: FACTORY_HEX_SIZE * baseWidth / canvas.width,
+        cellSize: FACTORY_HEX_SIZE * baseWidth / canvas.clientWidth,
         origin: {
-          x: (PAD + FACTORY_HEX_WIDTH / 2) * baseWidth / canvas.width,
-          y: (PAD + FACTORY_HEX_SIZE) * baseHeight / canvas.height,
+          x: (PAD + FACTORY_HEX_WIDTH / 2) * baseWidth / canvas.clientWidth,
+          y: (PAD + FACTORY_HEX_SIZE) * baseHeight / canvas.clientHeight,
         },
       },
     );
@@ -1085,7 +1389,7 @@ export function Factory({
       value,
       { x: event.clientX - baseLeft, y: event.clientY - baseTop },
       value.zoom * Math.exp(-event.deltaY * 0.0015),
-      { minZoom: 0.65, maxZoom: 2.25 },
+      { minZoom: MIN_ZOOM, maxZoom: MAX_ZOOM },
     ));
   }, [updateCamera]);
 
@@ -1104,7 +1408,7 @@ export function Factory({
     if (copied === null) return;
     clipboardRef.current = copied;
     setClipboardLabel(copied.brush.kind === "machine"
-      ? machineShortName(copied.brush.typeId)
+      ? machineName(copied.brush.typeId)
       : copied.brush.kind);
     if (cut) {
       commitLayout(paint(layoutRef.current, hoverCell.q, hoverCell.r, { kind: "erase" }, E, 0));
@@ -1227,6 +1531,7 @@ export function Factory({
     : formatFacilityOutcome(sampleAnalysis.outcome);
   const resetAvailable = mode === "production" && onReset !== undefined && factoryRuntimeMayReset(state);
   const hoveredMachine = hoverCell === null ? undefined : machineAt(layout, hoverCell.q, hoverCell.r);
+  const hoveredControl = hoveredMachine === undefined ? undefined : machineOrder.get(hoveredMachine.id);
   const hoveredTile = hoverCell === null
     ? undefined
     : layout.tiles[hexIndex(layout.width, hoverCell.q, hoverCell.r)];
@@ -1286,12 +1591,7 @@ export function Factory({
         })
       : [hoverCell];
 
-  const tileBrushBtn = (
-    kind: Brush["kind"] & ("belt" | "splitter" | "merger" | "source" | "sink" | "erase"),
-    label: string,
-    symbol: string,
-    hotkey: string,
-  ) => (
+  const tileBrushBtn = (kind: TileBrushKind, label: string, hotkey: string) => (
     <button
       type="button"
       onClick={() => setBrush({ kind })}
@@ -1300,25 +1600,47 @@ export function Factory({
       data-testid={`brush-${kind}`}
       title={`${label} (${hotkey})`}
     >
-      <span className="tool-symbol" aria-hidden="true">{symbol}</span>
-      <span className="tool-name">{label}</span>
       <span className="hotkey">{hotkey}</span>
+      <span className="tool-symbol"><ToolGlyph kind={kind} /></span>
+      <span className="tool-name">{label}</span>
     </button>
   );
 
   const facilityName = mode === "pilot" ? "Production Plan" : "Production";
+  const runState: RunState = state.deadlocked ? "blocked" : playing ? "running" : "paused";
+  const quote = mode === "pilot"
+    ? null
+    : brush.kind === "erase"
+    ? "No refund"
+    : hoverBuildCost === null
+    ? null
+    : `${moveCandidate === null ? "Build" : "Move"} $${hoverBuildCost}`;
+  const canvasBounds = hexBoardBounds(layout.width, layout.height, FACTORY_HEX_SIZE);
+  const overlayWidth = Math.ceil(PAD * 2 + canvasBounds.maxX - canvasBounds.minX);
+  const overlayHeight = Math.ceil(PAD * 2 + canvasBounds.maxY - canvasBounds.minY);
+  const ghostErase = gestureRef.current?.mode === "erase" || brush.kind === "erase";
+  const controlScale = Math.max(1, 0.75 / camera.zoom);
+  const ghostClass = `factory-ghost${ghostErase ? " is-erase" : ""}${hoverPlacementValid ? "" : " is-invalid"}`;
 
   return (
     <div className={`game-view factory-workspace facility-${mode}`} data-testid={`${mode}-facility-workspace`}>
       <div className={`world-layout${diagnosticsOpen ? " has-inspector" : ""}`}>
         <section className="world-viewport factory-world" aria-label={`${facilityName} construction workspace`}>
           {rendererError !== null && <div role="alert" data-testid="factory-render-error" className="game-alert factory-render-alert">{rendererError}</div>}
+          {mode === "pilot" ? (
+            <div className="factory-mode-mark is-plan" data-testid="factory-mode-mark">Plan · Free</div>
+          ) : (
+            <div className={`factory-mode-mark is-${runState}`} data-testid="factory-mode-mark" role="status">
+              Production
+              <span className="run-state"><RunStateGlyph state={runState} />{runState === "blocked" ? "Blocked" : runState === "running" ? "Running" : "Paused"}</span>
+            </div>
+          )}
           <div className="transport-bar factory-controls" aria-label={`${facilityName} controls`}>
             {mode === "production" && (
-              <>
+              <div className="control-group">
                 <button type="button" onClick={() => setPlaying(true)} disabled={playing || state.deadlocked} className={playing ? "is-active" : ""} data-testid="factory-play" aria-label="Play Production" title="Play (Space)">Play</button>
                 <button type="button" onClick={() => setPlaying(false)} disabled={!playing} data-testid="factory-pause" aria-label="Pause Production" title="Pause (Space)">Pause</button>
-                <button type="button" onClick={stepOnce} disabled={playing} data-testid="factory-step" aria-label="Step Production one tick" title="Step one tick (.)">▶|</button>
+                <button type="button" onClick={stepOnce} disabled={playing} data-testid="factory-step" aria-label="Step Production one tick" title="Step one tick (.)">Step</button>
                 <button
                   ref={resetTriggerRef}
                   type="button"
@@ -1327,9 +1649,14 @@ export function Factory({
                   data-testid="factory-reset"
                   aria-label="Reset Production"
                   title="Reset Production"
-                >↺</button>
-              </>
+                >Reset</button>
+              </div>
             )}
+            <div className="control-group view-group">
+              <button type="button" onClick={() => { const fitted = fitCamera(); cameraRef.current = fitted; setCamera(fitted); }} data-testid="factory-camera-reset" aria-label={`Reset ${facilityName} camera`}>Center</button>
+              <output className="zoom-readout" data-testid="factory-zoom">{Math.round(camera.zoom * 100)}%</output>
+              <button type="button" data-testid="factory-diagnostics" aria-expanded={diagnosticsOpen} onClick={() => setDiagnosticsOpen((open) => !open)}>Details</button>
+            </div>
             {onCommand !== undefined && commandLabel !== undefined && (
               <button
                 type="button"
@@ -1342,23 +1669,32 @@ export function Factory({
                 {commandLabel}
               </button>
             )}
-            <button type="button" onClick={() => setCamera({ x: 0, y: 0, zoom: 1 })} data-testid="factory-camera-reset" aria-label={`Reset ${facilityName} camera`}>Center</button>
-            <output className="zoom-readout" data-testid="factory-zoom">{Math.round(camera.zoom * 100)}%</output>
-            <button type="button" data-testid="factory-diagnostics" aria-expanded={diagnosticsOpen} onClick={() => setDiagnosticsOpen((open) => !open)}>Details</button>
           </div>
           <div className="factory-build-status" aria-label="Current build tool">
-            <strong data-testid="brush-selected">{brushLabel}</strong>
-            <span data-testid="brush-direction">{brushIsMachine ? `Footprint ${footRot * 60}°` : `Direction ${DIR_LABEL[brushDir]}`}</span>
-            <span>{mode === "pilot" ? "Free plan" : brush.kind === "erase" ? "No refund" : hoverBuildCost === null ? "Point to quote" : `${moveCandidate === null ? "Placement" : "Move"} $${hoverBuildCost}`}</span>
-            <button type="button" onClick={rotateHoveredOrActive} data-testid="brush-rotate">Rotate <kbd>R</kbd></button>
-            <button type="button" onClick={undoLayout} disabled={history.past.length === 0} data-testid="factory-undo">Undo</button>
-            <button type="button" onClick={redoLayout} disabled={history.future.length === 0} data-testid="factory-redo">Redo</button>
+            <div className="build-readout">
+              <strong data-testid="brush-selected" className={brushIsMachine ? "" : "is-transport"}>{brushLabel}</strong>
+              <span data-testid="brush-direction">{brushIsMachine ? `Footprint ${footRot * 60}°` : <><DirectionGlyph dir={brushDir} />Direction {DIR_LABEL[brushDir]}</>}</span>
+              {lockedHint !== null
+                ? <span className="build-hint" role="status">{lockedHint}</span>
+                : quote !== null && <output className={`build-quote${hoverBuildCost === null ? "" : " has-cost"}`} data-testid="factory-quote">{quote}</output>}
+            </div>
+            <div className="build-actions">
+              <button type="button" onClick={rotateHoveredOrActive} data-testid="brush-rotate">Rotate <kbd>R</kbd></button>
+              <button type="button" onClick={undoLayout} disabled={history.past.length === 0} data-testid="factory-undo">Undo</button>
+              <button type="button" onClick={redoLayout} disabled={history.future.length === 0} data-testid="factory-redo">Redo</button>
+            </div>
           </div>
           {hoveredMachine !== undefined && <div className="machine-selection" data-testid="machine-selection">
-            <strong>{machineName(hoveredMachine.def.typeId)}</strong>
-            <span>{hoveredMachine.shape.inPorts.length} input · {hoveredMachine.shape.outPorts.length} output · {hoveredMachine.def.speed} ticks/unit · ${hoveredMachine.def.cost}/unit · {hoveredMachine.footRot * 60}°</span>
+            <MachineIcon typeId={hoveredMachine.def.typeId} path={hoveredMachine.def.path} size={40} variant="token" />
+            <div>
+              <strong>{hoveredControl !== undefined && <span className="machine-control is-inline">{hoveredControl}</span>}{machineName(hoveredMachine.def.typeId)}</strong>
+              <dl>
+                <dt>Ports</dt><dd>{hoveredMachine.shape.inPorts.length} in · {hoveredMachine.shape.outPorts.length} out</dd>
+                <dt>Process</dt><dd>{hoveredMachine.def.speed} ticks · ${hoveredMachine.def.cost}/unit</dd>
+                <dt>Rotation</dt><dd>{hoveredMachine.footRot * 60}°</dd>
+              </dl>
+            </div>
           </div>}
-          {state.deadlocked && <div className="factory-blocked" role="status">Line blocked · check ports and open Details</div>}
           {analysisError !== "" && <div role="alert" data-testid="factory-analysis-error" className="game-alert factory-render-alert">{analysisError}</div>}
 
           <div
@@ -1377,23 +1713,29 @@ export function Factory({
             onContextMenu={(event) => event.preventDefault()}
           >
             <div className="factory-canvas-transform" style={{ transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})` }}>
+              <div className="factory-paper" style={{ backgroundImage: factoryPaperTexture() }} aria-hidden="true" />
               <div ref={mountRef} className="factory-canvas-mount" />
-              {ghostCells.map((cell) => {
-                const center = factoryCellCenter(cell);
-                return (
-                  <div
-                    key={`${cell.q},${cell.r}`}
-                    className={`factory-ghost${gestureRef.current?.mode === "erase" || brush.kind === "erase" ? " is-erase" : ""}${hoverPlacementValid ? "" : " is-invalid"}`}
-                    style={{
-                      left: center.x - FACTORY_HEX_WIDTH / 2,
-                      top: center.y - FACTORY_HEX_SIZE,
-                      width: FACTORY_HEX_WIDTH,
-                      height: CELL,
-                      clipPath: "polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%)",
-                    }}
-                  />
-                );
-              })}
+              {machineControls.map((control) => (
+                <span
+                  key={control.id}
+                  className="machine-control"
+                  data-testid="machine-control"
+                  aria-hidden="true"
+                  style={{ left: control.x, top: control.y, transform: `translate(-50%, -50%) scale(${controlScale})` }}
+                >{control.number}</span>
+              ))}
+              <svg className="factory-ghost-layer" width={overlayWidth} height={overlayHeight} aria-hidden="true" focusable="false">
+                {ghostCells.map((cell) => {
+                  const center = factoryCellCenter(cell);
+                  return (
+                    <polygon
+                      key={`${cell.q},${cell.r}`}
+                      className={ghostClass}
+                      points={hexPolygon(center.x, center.y, FACTORY_HEX_SIZE - 1).map((p) => `${p.x},${p.y}`).join(" ")}
+                    />
+                  );
+                })}
+              </svg>
               {hoverCell !== null && hoverBuildCost !== null && (
                 <output
                   className="factory-ghost-cost"
@@ -1401,6 +1743,7 @@ export function Factory({
                   style={{
                     left: factoryCellCenter(hoverCell).x,
                     top: factoryCellCenter(hoverCell).y,
+                    transform: `translate(8px, -30px) scale(${1 / camera.zoom})`,
                   }}
                 >${hoverBuildCost}</output>
               )}
@@ -1408,62 +1751,68 @@ export function Factory({
           </div>
 
           <div className="toolbelt" role="toolbar" aria-label={`${facilityName} build hotbar`} data-testid="factory-toolbelt">
-            {tileBrushBtn("belt", "Belt", "➜", "1")}
-            {tileBrushBtn("splitter", "Split", "⑂", "2")}
-            {tileBrushBtn("merger", "Merge", "⑃", "3")}
-            {tileBrushBtn("source", "Source", "S", "4")}
-            {tileBrushBtn("sink", "Sink", "◎", "5")}
-            {tileBrushBtn("erase", "Erase", "×", "6")}
+            {tileBrushBtn("belt", "Belt", "1")}
+            {tileBrushBtn("splitter", "Splitter", "2")}
+            {tileBrushBtn("merger", "Merger", "3")}
+            {tileBrushBtn("source", "Source", "4")}
+            {tileBrushBtn("sink", "Sink", "5")}
+            {tileBrushBtn("erase", "Erase", "6")}
             <span className="toolbelt-divider" />
             {DEFAULT_CATALOG.map((entry) => {
               const unlocked = catalog.some((candidate) => candidate.typeId === entry.typeId);
               const shortcutIndex = catalog.findIndex((candidate) => candidate.typeId === entry.typeId);
+              const lockReason = unlocked ? null : machineLockReason(entry.typeId);
               return (
                 <button
                   key={entry.typeId}
                   type="button"
                   onClick={() => {
-                    setBrush({ kind: "machine", typeId: entry.typeId });
+                    if (lockReason === null) setBrush({ kind: "machine", typeId: entry.typeId });
+                    else setLockedHint(lockReason);
                   }}
-                  disabled={!unlocked}
-                  className={`tool-slot${brush.kind === "machine" && brush.typeId === entry.typeId ? " is-selected" : ""}${unlocked ? "" : " is-locked"}`}
+                  onMouseEnter={lockReason === null ? undefined : () => setLockedHint(lockReason)}
+                  onMouseLeave={lockReason === null ? undefined : () => setLockedHint(null)}
+                  onFocus={lockReason === null ? undefined : () => setLockedHint(lockReason)}
+                  onBlur={lockReason === null ? undefined : () => setLockedHint(null)}
+                  aria-disabled={lockReason === null ? undefined : true}
+                  className={`tool-slot is-machine${brush.kind === "machine" && brush.typeId === entry.typeId ? " is-selected" : ""}${unlocked ? "" : " is-locked"}`}
                   aria-pressed={brush.kind === "machine" && brush.typeId === entry.typeId}
                   data-testid={`brush-machine-${entry.typeId}`}
-                  title={machineTooltip(entry)}
+                  title={lockReason ?? machineTooltip(entry)}
                 >
-                  <span className="tool-symbol">
-                    <MachineIcon typeId={entry.typeId} path={entry.path} size={36} footprint />
-                  </span>
-                  <span className="tool-name">{machineShortName(entry.typeId)}</span>
                   {shortcutIndex >= 0 && shortcutIndex < 4 && (
                     <span className="hotkey">{(shortcutIndex + 7) % 10}</span>
                   )}
+                  {lockReason !== null && <LockGlyph />}
+                  <span className="tool-symbol">
+                    <MachineIcon typeId={entry.typeId} path={entry.path} size={34} variant="token" />
+                  </span>
+                  <span className="tool-name">{machineName(entry.typeId)}</span>
                 </button>
               );
             })}
           </div>
-          <span className="toolbelt-more" data-testid="toolbelt-more" aria-hidden="true">›</span>
+          <span className="toolbelt-more" data-testid="toolbelt-more" aria-hidden="true"><ChevronGlyph /></span>
         </section>
 
         <aside className="inspector factory-inspector" data-testid="factory-inspector" hidden={!diagnosticsOpen}>
-          <button type="button" className="drawer-close" aria-label="Close factory details" onClick={() => setDiagnosticsOpen(false)}>×</button>
-          <h1>{facilityName}</h1>
+          <button type="button" className="drawer-close" aria-label="Close factory details" onClick={() => setDiagnosticsOpen(false)}><CloseGlyph /></button>
+          <h1>{mode === "pilot" ? "Plan" : "Production"}</h1>
           {mode === "production" ? (
             <div className={`factory-metrics${state.deadlocked ? " is-error" : ""}`} data-testid="factory-status" role="status">
-              <div><span>Tick</span><strong data-testid="factory-tick">{state.tick}</strong></div>
-              <div><span>Total sink outcomes</span><strong data-testid="factory-produced">{state.producedTotal}</strong></div>
-              <div><span>Waste</span><strong data-testid="factory-waste">{waste}</strong></div>
-              <div><span>Throughput</span><strong><span data-testid="factory-rate">{rate}</span>/tick</strong></div>
+              {state.deadlocked && <p className="factory-blocked-note">Line stuck. Red bars mark open belt ends and unconnected outputs.</p>}
+              <div><span>Throughput</span><strong><span data-testid="factory-rate">{rate}</span> units/tick</strong></div>
               <div><span>Bottleneck</span><strong data-testid="factory-bottleneck">{throughput === null ? "unavailable" : throughput.bottleneck === null ? "none" : machineName(throughput.bottleneckType!)}</strong></div>
+              <div><span>Units finished</span><strong data-testid="factory-produced">{state.producedTotal}</strong></div>
+              <div><span>Waste</span><strong data-testid="factory-waste">{waste}</strong></div>
+              <div><span>Tick</span><strong data-testid="factory-tick">{state.tick}</strong></div>
             </div>
           ) : (
             <div className="factory-metrics facility-mode-summary" role="status">
-              <div><span>Clock</span><strong>Stopped</strong></div>
-              <div><span>Build cost</span><strong>Free</strong></div>
               <div><span>Machines</span><strong>{layout.machines.length}</strong></div>
+              <div><span>Throughput</span><strong data-testid="pilot-rate">{rate} units/tick</strong></div>
+              <div><span>Bottleneck</span><strong data-testid="pilot-bottleneck">{throughput === null ? "unavailable" : throughput.bottleneck === null ? "none" : machineName(throughput.bottleneckType!)}</strong></div>
               <div><span>Sample</span><strong data-testid="facility-sample-outcome">{sampleSummary}</strong></div>
-              {mode === "pilot" && <div><span>Throughput</span><strong data-testid="pilot-rate">{rate} units/tick</strong></div>}
-              {mode === "pilot" && <div><span>Bottleneck</span><strong data-testid="pilot-bottleneck">{throughput === null ? "unavailable" : throughput.bottleneck === null ? "none" : machineName(throughput.bottleneckType!)}</strong></div>}
             </div>
           )}
 
@@ -1483,7 +1832,7 @@ export function Factory({
             </div>
           </div>
         </aside>
-        <span className="inspector-more" data-testid="inspector-more" aria-hidden="true">⌄</span>
+        <span className="inspector-more" data-testid="inspector-more" aria-hidden="true"><ChevronGlyph down /></span>
       </div>
       {resetPending && createPortal(
         <div

@@ -8,7 +8,8 @@ export interface MachineIconProps {
   readonly path: PathStamp;
   readonly title?: string;
   readonly size?: number;
-  readonly footprint?: boolean;
+  /** path: the Atlas stamp; footprint: the factory cells and ports; token: both, one identity. */
+  readonly variant?: "path" | "footprint" | "token";
 }
 
 interface Point {
@@ -50,11 +51,11 @@ export function MachineIcon({
   path,
   title,
   size = 24,
-  footprint = false,
+  variant = "path",
 }: MachineIconProps) {
   const labelled = title !== undefined;
-  const shape = footprint ? DEFAULT_SHAPES[typeId] : undefined;
-  if (footprint && shape === undefined) throw new Error(`Missing footprint for ${typeId}`);
+  const shape = variant === "path" ? undefined : DEFAULT_SHAPES[typeId];
+  if (variant !== "path" && shape === undefined) throw new Error(`Missing footprint for ${typeId}`);
   const centers = shape?.cells.map((cell) => hexToPixel(cell.q, cell.r, 8)) ?? [];
   const centerX = centers.length === 0 ? 0 : (Math.min(...centers.map((p) => p.x)) + Math.max(...centers.map((p) => p.x))) / 2;
   const centerY = centers.length === 0 ? 0 : (Math.min(...centers.map((p) => p.y)) + Math.max(...centers.map((p) => p.y))) / 2;
@@ -73,8 +74,8 @@ export function MachineIcon({
       fill="none"
       stroke="currentColor"
       strokeWidth="3"
-      strokeLinecap="square"
-      strokeLinejoin="miter"
+      strokeLinecap="round"
+      strokeLinejoin="round"
       focusable="false"
       aria-hidden={labelled ? undefined : true}
       role={labelled ? "img" : undefined}
@@ -82,8 +83,8 @@ export function MachineIcon({
       data-machine-icon={typeId}
     >
       {labelled && <title>{title}</title>}
-      {shape !== undefined ? <g data-icon-shape="footprint" strokeWidth="1" transform={`translate(24 24) scale(${footprintScale}) translate(-24 -24)`}>
-        {centers.map((p, index) => <polygon key={index} points={pointList(hexPolygon(24 + p.x - centerX, 24 + p.y - centerY, 7.7))} fill="currentColor" fillOpacity=".18" />)}
+      {shape !== undefined && <g data-icon-shape="footprint" className="machine-icon-footprint" strokeWidth="1" transform={`translate(24 24) scale(${footprintScale}) translate(-24 -24)`}>
+        {centers.map((p, index) => <polygon key={index} points={pointList(hexPolygon(24 + p.x - centerX, 24 + p.y - centerY, 7.7))} fill="currentColor" fillOpacity=".12" />)}
         {shape.inPorts.map((port, index) => {
           const p = hexToPixel(port.cell.q, port.cell.r, 8);
           const offset = hexToPixel(HEX_DQ[port.side]!, HEX_DR[port.side]!, 4);
@@ -94,7 +95,8 @@ export function MachineIcon({
           const offset = hexToPixel(HEX_DQ[port.side]!, HEX_DR[port.side]!, 4);
           return <circle key={index} cx={24 + p.x - centerX + offset.x} cy={24 + p.y - centerY + offset.y} r="2" />;
         })}
-      </g> : <g>
+      </g>}
+      {variant !== "footprint" && <g className="machine-icon-path" transform={variant === "token" ? "translate(24 24) scale(.62) translate(-24 -24)" : undefined}>
       <polyline points={pointList(points)} data-icon-shape="path" />
       <circle cx={points[0]!.x} cy={points[0]!.y} r="3" fill="currentColor" />
       <circle cx={endpoint.x} cy={endpoint.y} r="4" fill="none" data-icon-endpoint="true" />

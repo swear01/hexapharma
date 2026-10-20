@@ -1,4 +1,4 @@
-import { Application, Graphics } from "pixi.js";
+import { Application, Container, Graphics, Text } from "pixi.js";
 import type { DrugState, EffectMap, MultiMap, Vec2 } from "../sim/phase0_interfaces";
 import { hexInBounds, hexIndex } from "../sim/hex";
 import {
@@ -12,20 +12,22 @@ import {
   type LabCamera,
   type LabGridLineKind,
 } from "./labCamera";
-import { hexToPixel, type PixelPoint } from "./hexProjection";
-import { revealedRegionEdges } from "./labRegions";
+import { hexBoardBounds, hexPolygon, hexToPixel, pixelToHex, type PixelPoint } from "./hexProjection";
+import { inkJitter } from "./ink";
+import { revealedRegionEdges, type RegionEdges } from "./labRegions";
 import { labTerrainVisual, type CellTerrainVisual, type PortalTerrainVisual } from "./labTerrain";
 import { SHARED_SCHEMATIC_STYLE } from "./schematicStyle";
 
 export const LAB_SCHEMATIC_STYLE = Object.freeze({
   ...SHARED_SCHEMATIC_STYLE,
-  candidate: 0xc0d5e2,
-  sideEffect: 0xde5fb1,
-  fogGrid: 0x30383e,
-  wallDetail: 0x637078,
-  abyssDetail: 0x06090c,
-  sideEffectOutline: 0x51223f,
+  /** The held candidate is the player's own line: course purple, dashed. */
+  candidate: SHARED_SCHEMATIC_STYLE.course,
+  abyssRing: 0x5f86ad,
+  oliveInk: 0x6f7d34,
 });
+
+/** Ink-draw time for a committed leg (exponential ease-out); instant under reduced motion. */
+export const LAB_LEG_DRAW_MS = 220;
 
 export interface LabRenderView {
   readonly activeMap: number;
@@ -33,6 +35,10 @@ export interface LabRenderView {
   readonly trail: readonly (Vec2 | null)[];
   readonly previewTrail?: readonly (Vec2 | null)[];
   readonly previewDrug?: DrugState;
+  /** Endpoint of each executed step, in order (numbered control circles). */
+  readonly controls?: readonly Vec2[];
+  /** The last control is a Cure: draw it as the orienteering finish. */
+  readonly finish?: boolean;
 }
 
 export interface LabRenderer {
@@ -41,23 +47,30 @@ export interface LabRenderer {
   destroy(): void;
 }
 
+const LAB_HEX_SIZE = LAB_CELL_PIXELS / 2;
+
 function isRevealed(map: EffectMap, q: number, r: number): boolean {
   if (!hexInBounds(map.width, map.height, q, r)) return false;
   return map.fog[hexIndex(map.width, q, r)] === 1;
 }
 
+function cellSeed(q: number, r: number): number {
+  return Math.imul(q, 92_821) ^ Math.imul(r, 68_917);
+}
+
 function drawGridKind(
   grid: Graphics,
   kind: LabGridLineKind,
+  map: EffectMap,
   camera: LabCamera,
   bounds: ReturnType<typeof visibleLabCells>,
-  origin: Vec2,
 ): void {
   let drewCell = false;
   for (let r = bounds.r0; r < bounds.r1; r++) {
     for (let q = bounds.q0; q < bounds.q1; q++) {
-      const isMajor = labGridKindForBoundary(q, origin.q) === "major"
-        || labGridKindForBoundary(r, origin.r) === "major";
+      if (!isRevealed(map, q, r)) continue;
+      const isMajor = labGridKindForBoundary(q, map.origin.q) === "major"
+        || labGridKindForBoundary(r, map.origin.r) === "major";
       if ((kind === "major") !== isMajor) continue;
       grid.poly([...labCellPolygon(camera, { q, r })], true);
       drewCell = true;
@@ -66,10 +79,113 @@ function drawGridKind(
   if (drewCell) grid.stroke(labGridLineStyle(kind, camera.zoom));
 }
 
-function drawLabGrid(map: EffectMap, camera: LabCamera, grid: Graphics): void {
+/** A light grid only where the map is printed, so picking stays legible without gridding the fog. */
+function drawRevealedGrid(map: EffectMap, camera: LabCamera, grid: Graphics): void {
   const bounds = visibleLabCells(camera, LAB_VIEWPORT, map);
-  drawGridKind(grid, "minor", camera, bounds, map.origin);
-  drawGridKind(grid, "major", camera, bounds, map.origin);
+  drawGridKind(grid, "minor", map, camera, bounds);
+  drawGridKind(grid, "major", map, camera, bounds);
+}
+
+// ───────────────────────────── fog contour texture ─────────────────────────────
+
+const CONTOUR_STEP = 12;
+const CONTOUR_INTERVAL = 0.42;
+const CONTOUR_CHUNK = 32;
+
+/** Smooth height over projected world pixels. Coordinates only: never reads terrain or fog. */
+function contourHeight(x: number, y: number): number {
+  return Math.sin(x * 0.0105 + 1.6 * Math.sin(y * 0.0062 + 0.4))
+    + Math.sin(y * 0.0118 + 1.4 * Math.sin(x * 0.0047 + 1.9))
+    + 0.55 * Math.sin((x - y) * 0.0151 + 2.3);
+}
+
+/**
+ * Unprinted paper carries faint brown contours (marching squares over contourHeight). Each chunk
+ * of CONTOUR_CHUNK² grid squares is built once in world pixels and moved with the camera. Revealed
+ * cells print over them, so the texture shows only in fog and cannot encode hidden terrain.
+ */
+function drawFogContours(map: EffectMap, target: Graphics, gx0: number, gy0: number): void {
+  const cols = CONTOUR_CHUNK;
+  const rows = CONTOUR_CHUNK;
+  const stride = cols + 1;
+  const indexSegments: PixelPoint[] = [];
+  const field = new Float64Array(stride * (rows + 1));
+  for (let j = 0; j <= rows; j++) {
+    for (let i = 0; i <= cols; i++) {
+      field[j * stride + i] = contourHeight((gx0 + i) * CONTOUR_STEP, (gy0 + j) * CONTOUR_STEP);
+    }
+  }
+  // Edge crossing in world pixels; the jitter is keyed by the shared grid edge so neighbours agree.
+  const crossing = (
+    gi: number,
+    gj: number,
+    vertical: boolean,
+    a: number,
+    b: number,
+    threshold: number,
+    level: number,
+  ): PixelPoint => {
+    const key = Math.imul(gi, 7_919) ^ Math.imul(gj, 104_729) ^ (vertical ? 1 : 0);
+    const t = Math.min(1, Math.max(0, (threshold - a) / (b - a) + inkJitter(key, level) * 0.07));
+    return {
+      x: (vertical ? gi : gi + t) * CONTOUR_STEP,
+      y: (vertical ? gj + t : gj) * CONTOUR_STEP,
+    };
+  };
+  for (let j = 0; j < rows; j++) {
+    for (let i = 0; i < cols; i++) {
+      const gi = gx0 + i;
+      const gj = gy0 + j;
+      const hex = pixelToHex((gi + 0.5) * CONTOUR_STEP, (gj + 0.5) * CONTOUR_STEP, LAB_HEX_SIZE);
+      if (!hexInBounds(map.width, map.height, hex.q, hex.r)) continue;
+      const v0 = field[j * stride + i]!;
+      const v1 = field[j * stride + i + 1]!;
+      const v2 = field[(j + 1) * stride + i + 1]!;
+      const v3 = field[(j + 1) * stride + i]!;
+      const hi = Math.max(v0, v1, v2, v3);
+      for (
+        let level = Math.ceil(Math.min(v0, v1, v2, v3) / CONTOUR_INTERVAL - 0.5);
+        (level + 0.5) * CONTOUR_INTERVAL <= hi;
+        level++
+      ) {
+        const threshold = (level + 0.5) * CONTOUR_INTERVAL;
+        const code = (v0 > threshold ? 1 : 0) | (v1 > threshold ? 2 : 0)
+          | (v2 > threshold ? 4 : 0) | (v3 > threshold ? 8 : 0);
+        if (code === 0 || code === 15) continue;
+        const isIndex = ((level % 5) + 5) % 5 === 0;
+        const top = () => crossing(gi, gj, false, v0, v1, threshold, level);
+        const right = () => crossing(gi + 1, gj, true, v1, v2, threshold, level);
+        const bottom = () => crossing(gi, gj + 1, false, v3, v2, threshold, level);
+        const left = () => crossing(gi, gj, true, v0, v3, threshold, level);
+        const segment = (a: PixelPoint, b: PixelPoint) => {
+          if (isIndex) indexSegments.push(a, b);
+          else target.moveTo(a.x, a.y).lineTo(b.x, b.y);
+        };
+        switch (code) {
+          case 1: case 14: segment(left(), top()); break;
+          case 2: case 13: segment(top(), right()); break;
+          case 3: case 12: segment(left(), right()); break;
+          case 4: case 11: segment(right(), bottom()); break;
+          case 6: case 9: segment(top(), bottom()); break;
+          case 7: case 8: segment(left(), bottom()); break;
+          case 5: segment(left(), top()); segment(right(), bottom()); break;
+          case 10: segment(top(), right()); segment(left(), bottom()); break;
+        }
+      }
+    }
+  }
+  target.stroke({ color: LAB_SCHEMATIC_STYLE.contour, width: 1, alpha: 0.2 });
+  for (let segment = 0; segment < indexSegments.length; segment += 2) {
+    target.moveTo(indexSegments[segment]!.x, indexSegments[segment]!.y)
+      .lineTo(indexSegments[segment + 1]!.x, indexSegments[segment + 1]!.y);
+  }
+  target.stroke({ color: LAB_SCHEMATIC_STYLE.contour, width: 1.6, alpha: 0.26 });
+}
+
+// ───────────────────────────── printed terrain ─────────────────────────────
+
+function edgeEnds(polygon: readonly PixelPoint[], direction: number): readonly [PixelPoint, PixelPoint] {
+  return [polygon[(direction + 1) % 6]!, polygon[(direction + 2) % 6]!];
 }
 
 function portalMarkerColor(marker: string): number {
@@ -79,9 +195,9 @@ function portalMarkerColor(marker: string): number {
   }
   const palette = [
     LAB_SCHEMATIC_STYLE.flow,
-    LAB_SCHEMATIC_STYLE.sideEffect,
-    LAB_SCHEMATIC_STYLE.candidate,
-    LAB_SCHEMATIC_STYLE.cure,
+    LAB_SCHEMATIC_STYLE.contour,
+    LAB_SCHEMATIC_STYLE.structure,
+    LAB_SCHEMATIC_STYLE.oliveInk,
   ] as const;
   return palette[hash % palette.length] ?? LAB_SCHEMATIC_STYLE.flow;
 }
@@ -98,8 +214,8 @@ function drawPortalMotif(
   const markerColor = portalMarkerColor(marker);
   terrain.poly([...polygon], true).fill({ color: visual.baseColor, alpha: 1 });
   terrain.rect(cx - cell * .24, cy - cell * .3, cell * .48, cell * .6)
-    .fill({ color: LAB_SCHEMATIC_STYLE.background })
-    .stroke({ color: markerColor, width: 2 });
+    .fill({ color: LAB_SCHEMATIC_STYLE.deck })
+    .stroke({ color: markerColor, width: Math.max(2, cell * .055) });
 
   if (visual.direction === null) {
     if (visual.role === "entry") {
@@ -137,83 +253,102 @@ function drawPortalMotif(
   }
 }
 
+/** Black cliff: solid ink with short hand-drawn tags pointing off every open edge. */
+function drawCliff(
+  cliffs: Graphics,
+  visual: CellTerrainVisual,
+  center: PixelPoint,
+  polygon: readonly PixelPoint[],
+  edges: RegionEdges,
+  cell: number,
+  seed: number,
+): void {
+  cliffs.poly([...polygon], true).fill({ color: visual.baseColor });
+  let tagged = false;
+  for (let direction = 0; direction < 6; direction++) {
+    if (!edges[direction]) continue;
+    const [a, b] = edgeEnds(polygon, direction);
+    const mx = (a.x + b.x) / 2 - center.x;
+    const my = (a.y + b.y) / 2 - center.y;
+    const normal = Math.hypot(mx, my);
+    const along = 0.5 + inkJitter(seed, direction) * 0.12;
+    const x = a.x + (b.x - a.x) * along;
+    const y = a.y + (b.y - a.y) * along;
+    const length = cell * (0.12 + inkJitter(seed, direction + 6) * 0.03) / normal;
+    cliffs.moveTo(x, y).lineTo(x + mx * length, y + my * length);
+    tagged = true;
+  }
+  if (tagged) cliffs.stroke({ color: visual.rimColor, width: Math.max(1.5, cell * 0.045), cap: "round" });
+}
+
+function drawMarshHatch(terrain: Graphics, center: PixelPoint, cell: number, color: number, seed: number): void {
+  const size = cell / 2;
+  const rowOffsets = [-0.54, -0.18, 0.18, 0.54] as const;
+  for (let row = 0; row < rowOffsets.length; row++) {
+    const dy = rowOffsets[row]! * size;
+    const half = Math.sqrt(3) / 2 * size * Math.min(1, (size - Math.abs(dy)) / (size / 2)) * 0.82;
+    const gap = size * (0.12 + inkJitter(seed, row) * 0.05);
+    const split = center.x + inkJitter(seed, row + 8) * half * 0.35;
+    const y = center.y + dy + inkJitter(seed, row + 16) * cell * 0.012;
+    terrain.moveTo(center.x - half, y).lineTo(split - gap / 2, y)
+      .moveTo(split + gap / 2, y).lineTo(center.x + half, y);
+  }
+  terrain.stroke({ color, width: Math.max(1.2, cell * 0.04), cap: "round" });
+}
+
+/** Amber dot screen; kept around the centre when it overprints a Cure cross so both read. */
+function drawEffectDots(target: Graphics, center: PixelPoint, cell: number, aroundCross: boolean): void {
+  const radius = cell * 0.31;
+  for (let index = 0; index < 6; index++) {
+    const angle = Math.PI / 6 + index * Math.PI / 3;
+    target.circle(center.x + Math.cos(angle) * radius, center.y + Math.sin(angle) * radius, cell * 0.06);
+  }
+  if (!aroundCross) target.circle(center.x, center.y, cell * 0.075);
+  target.fill({ color: LAB_SCHEMATIC_STYLE.sideEffect });
+}
+
 function drawTerrainMotif(
   terrain: Graphics,
   visual: CellTerrainVisual | PortalTerrainVisual,
   center: PixelPoint,
   polygon: readonly PixelPoint[],
   cell: number,
+  seed: number,
 ): void {
-  if (visual.kind === "empty") return;
+  if (visual.kind === "empty" || visual.kind === "wall") return;
   if (visual.kind === "portal") {
     drawPortalMotif(terrain, visual, center, polygon, cell);
     return;
   }
-  const x = center.x - cell / 2;
-  const y = center.y - cell / 2;
-  if (visual.kind === "wall") {
-    terrain.poly([...polygon], true).fill({ color: visual.baseColor, alpha: 1 });
-    terrain.poly([...polygon], true)
-      .stroke({ color: visual.rimColor, width: Math.max(2, cell * 0.055), alpha: 0.95 });
-    for (let row = 1; row <= 2; row++) {
-      const lineY = y + (cell * row) / 3;
-      terrain.moveTo(x, lineY).lineTo(x + cell, lineY)
-        .stroke({ color: LAB_SCHEMATIC_STYLE.wallDetail, width: Math.max(1, cell * 0.035), alpha: 0.72 });
-    }
-    terrain.moveTo(x + cell * 0.5, y).lineTo(x + cell * 0.5, y + cell / 3)
-      .moveTo(x + cell * 0.25, y + cell / 3).lineTo(x + cell * 0.25, y + (cell * 2) / 3)
-      .moveTo(x + cell * 0.7, y + (cell * 2) / 3).lineTo(x + cell * 0.7, y + cell)
-      .stroke({ color: LAB_SCHEMATIC_STYLE.wallDetail, width: Math.max(1, cell * 0.035), alpha: 0.72 });
-    return;
-  }
+  terrain.poly([...polygon], true).fill({ color: visual.baseColor });
   if (visual.kind === "abyss") {
-    terrain.poly([...polygon], true).fill({ color: visual.baseColor, alpha: 1 });
-    terrain.poly([
-      x + cell * .2, y + cell * .2, x + cell * .65, y + cell * .16,
-      x + cell * .84, y + cell * .5, x + cell * .6, y + cell * .82,
-      x + cell * .23, y + cell * .72, x + cell * .35, y + cell * .45,
-    ], true).fill({ color: LAB_SCHEMATIC_STYLE.abyssDetail })
-      .stroke({ color: visual.rimColor, width: 2 });
-    return;
-  }
-  terrain.poly([...polygon], true).fill({ color: visual.baseColor, alpha: 0.82 });
-  if (visual.kind === "swamp") {
-    for (let line = 0; line < 3; line++) {
-      const offset = line % 2 * cell * .14;
-      terrain.rect(x + cell * .18 + offset, y + cell * (.25 + line * .2), cell * .35, cell * .045)
-        .fill({ color: visual.rimColor, alpha: .8 });
-    }
-    return;
-  }
-  if (visual.kind === "sideEffect") {
-    const cx = x + cell / 2;
-    const cy = y + cell / 2;
-    terrain.circle(cx, cy, cell * 0.21)
-      .stroke({ color: visual.rimColor, width: Math.max(2, cell * 0.055), alpha: 0.92 });
-    for (let index = 0; index < 3; index++) {
-      const angle = index * Math.PI * 2 / 3 - Math.PI / 2;
-      const nodeX = cx + Math.cos(angle) * cell * 0.24;
-      const nodeY = cy + Math.sin(angle) * cell * 0.24;
-      terrain.moveTo(cx, cy).lineTo(nodeX, nodeY)
-        .stroke({ color: visual.rimColor, width: Math.max(1.5, cell * 0.035), alpha: 0.8 });
-      terrain.circle(nodeX, nodeY, cell * 0.065).fill({ color: visual.rimColor, alpha: 0.95 });
-    }
-    return;
-  }
-  if (visual.kind === "cure") {
-    const cx = x + cell / 2;
-    const cy = y + cell / 2;
-    terrain.rect(cx - cell * .07, cy - cell * .22, cell * .14, cell * .44)
-      .rect(cx - cell * .22, cy - cell * .07, cell * .44, cell * .14)
+    terrain.poly([...hexPolygon(center.x, center.y, cell * 0.24)], true)
+      .stroke({ color: LAB_SCHEMATIC_STYLE.abyssRing, width: Math.max(1.2, cell * 0.035) });
+  } else if (visual.kind === "swamp") {
+    drawMarshHatch(terrain, center, cell, visual.rimColor, seed);
+  } else if (visual.kind === "sideEffect") {
+    drawEffectDots(terrain, center, cell, false);
+  } else {
+    terrain.rect(center.x - cell * .06, center.y - cell * .2, cell * .12, cell * .4)
+      .rect(center.x - cell * .2, center.y - cell * .06, cell * .4, cell * .12)
       .fill({ color: visual.rimColor });
   }
+}
+
+function regionEdgeStyle(visual: CellTerrainVisual | PortalTerrainVisual, cell: number) {
+  if (visual.kind === "swamp") return null;
+  if (visual.kind === "abyss") return { color: visual.rimColor, width: Math.max(2.5, cell * 0.08) };
+  if (visual.kind === "cure") return { color: visual.rimColor, width: Math.max(2, cell * 0.06) };
+  return { color: visual.rimColor, width: Math.max(1.5, cell * 0.04), alpha: 0.75 };
 }
 
 function drawVisibleMap(
   map: EffectMap,
   camera: LabCamera,
+  paper: Graphics,
   terrain: Graphics,
-  featureOverlay: Graphics,
+  cliffs: Graphics,
+  features: Graphics,
 ): void {
   const cell = LAB_CELL_PIXELS * camera.zoom;
   const bounds = visibleLabCells(camera, LAB_VIEWPORT, map);
@@ -222,109 +357,116 @@ function drawVisibleMap(
       const coord = { q, r };
       const center = labCellCenter(camera, coord);
       const polygon = labCellPolygon(camera, coord);
-      const revealed = isRevealed(map, q, r);
-      terrain.poly([...polygon], true)
-        .fill({ color: revealed ? LAB_SCHEMATIC_STYLE.deck : LAB_SCHEMATIC_STYLE.background });
+      const seed = cellSeed(q, r);
+      if (isRevealed(map, q, r)) terrain.poly([...polygon], true).fill({ color: LAB_SCHEMATIC_STYLE.deck });
+      else paper.poly([...polygon], true).fill({ color: LAB_SCHEMATIC_STYLE.fog });
 
       const visual = labTerrainVisual(map, q, r);
-      drawTerrainMotif(terrain, visual, center, polygon, cell);
-      if (visual.kind !== "portal" && visual.sideEffectOverlay) {
-        featureOverlay.circle(center.x + cell * 0.28, center.y - cell * 0.28, cell * 0.12)
-          .fill({ color: LAB_SCHEMATIC_STYLE.sideEffect, alpha: 0.98 });
-        featureOverlay.circle(center.x + cell * 0.28, center.y - cell * 0.28, cell * 0.17)
-          .stroke({ color: LAB_SCHEMATIC_STYLE.sideEffectOutline, width: Math.max(2, cell * 0.04), alpha: 0.98 });
+      if (visual.kind === "empty") continue;
+      const edges = revealedRegionEdges(map, q, r);
+      if (visual.kind === "wall") {
+        drawCliff(cliffs, visual, center, polygon, edges, cell, seed);
+        continue;
       }
-      if (visual.kind !== "empty") {
-        const edges = revealedRegionEdges(map, q, r);
-        const edgeStyle = {
-          color: visual.rimColor,
-          width: Math.max(2, cell * (visual.kind === "cure" ? 0.07 : 0.045)),
-          alpha: visual.kind === "cure" ? 0.9 : 0.7,
-        };
-        for (let direction = 0; direction < edges.length; direction++) {
-          if (edges[direction] !== true) continue;
-          const start = polygon[(direction + 1) % 6]!;
-          const end = polygon[(direction + 2) % 6]!;
-          terrain.moveTo(start.x, start.y).lineTo(end.x, end.y).stroke(edgeStyle);
-        }
+      drawTerrainMotif(terrain, visual, center, polygon, cell, seed);
+      if (visual.kind !== "portal" && visual.sideEffectOverlay) drawEffectDots(features, center, cell, true);
+      const edgeStyle = regionEdgeStyle(visual, cell);
+      if (edgeStyle === null) continue;
+      for (let direction = 0; direction < edges.length; direction++) {
+        if (edges[direction] !== true) continue;
+        const [start, end] = edgeEnds(polygon, direction);
+        features.moveTo(start.x, start.y).lineTo(end.x, end.y).stroke(edgeStyle);
       }
     }
   }
 }
 
-function drawToken(
-  pos: Vec2,
-  camera: LabCamera,
-  token: Graphics,
-  failed: boolean,
-): void {
-  const cell = LAB_CELL_PIXELS * camera.zoom;
-  const { x: cx, y: cy } = labCellCenter(camera, pos);
-  const color = failed ? LAB_SCHEMATIC_STYLE.failure : LAB_SCHEMATIC_STYLE.structure;
-  token.rect(cx - cell * .1, cy - cell * .26, cell * .2, cell * .1)
-    .rect(cx - cell * .16, cy - cell * .16, cell * .32, cell * .4)
-    .fill({ color });
-  token.rect(cx - cell * .1, cy + cell * .02, cell * .2, cell * .15)
-    .fill({ color: failed ? LAB_SCHEMATIC_STYLE.background : LAB_SCHEMATIC_STYLE.flow });
+// ───────────────────────────── course overprint ─────────────────────────────
+
+function coordKey(point: Vec2): number {
+  return point.q * 65_536 + point.r;
 }
 
-function drawTrail(
+/**
+ * Solid purple legs between cell centres with gaps at control circles. Segments from trail index
+ * `from` on are inked up to `progress`; returns the ink head while a committed leg is drawing.
+ */
+function drawLegs(
+  course: Graphics,
+  trail: readonly (Vec2 | null)[],
+  nodes: ReadonlySet<number>,
+  camera: LabCamera,
+  gap: number,
+  from: number,
+  progress: number,
+): PixelPoint | null {
+  const inked = from < 0 ? 0 : progress * (trail.length - 1 - from);
+  for (let index = 1; index < trail.length; index++) {
+    const fromPoint = trail[index - 1];
+    const toPoint = trail[index];
+    if (fromPoint === null || fromPoint === undefined || toPoint === null || toPoint === undefined) continue;
+    const fraction = from >= 0 && index - 1 >= from ? Math.min(1, inked - (index - 1 - from)) : 1;
+    const a = labCellCenter(camera, fromPoint);
+    if (fraction <= 0) return a;
+    const b = labCellCenter(camera, toPoint);
+    const length = Math.hypot(b.x - a.x, b.y - a.y);
+    if (length === 0) continue;
+    const ux = (b.x - a.x) / length;
+    const uy = (b.y - a.y) / length;
+    const startTrim = nodes.has(coordKey(fromPoint)) ? gap : 0;
+    const endTrim = nodes.has(coordKey(toPoint)) ? gap : 0;
+    const end = Math.min(length - endTrim, length * fraction);
+    if (end > startTrim) {
+      course.moveTo(a.x + ux * startTrim, a.y + uy * startTrim).lineTo(a.x + ux * end, a.y + uy * end);
+    }
+    if (fraction < 1) return { x: a.x + ux * length * fraction, y: a.y + uy * length * fraction };
+  }
+  return null;
+}
+
+function drawDashedTrail(
+  target: Graphics,
   points: readonly (Vec2 | null)[],
+  nodes: ReadonlySet<number>,
   camera: LabCamera,
-  route: Graphics,
-  preview = false,
+  gap: number,
 ): void {
-  if (points.length < 2) return;
   const cell = LAB_CELL_PIXELS * camera.zoom;
-  let drawing = false;
-  let previous: Vec2 | null = null;
-  for (const world of points) {
-    if (world === null) {
-      drawing = false;
-      previous = null;
-      continue;
+  const dash = Math.max(5, cell * 0.16);
+  const stride = dash * 1.8;
+  for (let index = 1; index < points.length; index++) {
+    const fromPoint = points[index - 1];
+    const toPoint = points[index];
+    if (fromPoint === null || fromPoint === undefined || toPoint === null || toPoint === undefined) continue;
+    const a = labCellCenter(camera, fromPoint);
+    const b = labCellCenter(camera, toPoint);
+    const length = Math.hypot(b.x - a.x, b.y - a.y);
+    if (length === 0) continue;
+    const startTrim = nodes.has(coordKey(fromPoint)) ? gap : 0;
+    const endTrim = index === points.length - 1 ? gap : 0;
+    for (let offset = startTrim; offset < length - endTrim; offset += stride) {
+      const s = offset / length;
+      const e = Math.min(length - endTrim, offset + dash) / length;
+      target.moveTo(a.x + (b.x - a.x) * s, a.y + (b.y - a.y) * s)
+        .lineTo(a.x + (b.x - a.x) * e, a.y + (b.y - a.y) * e);
     }
-    const { x, y } = labCellCenter(camera, world);
-    if (drawing && previous !== null && preview) {
-      const { x: x0, y: y0 } = labCellCenter(camera, previous);
-      const dx = x - x0;
-      const dy = y - y0;
-      const length = Math.hypot(dx, dy);
-      const dash = Math.max(5, cell * 0.16);
-      const stride = dash * 1.75;
-      for (let offset = 0; offset < length; offset += stride) {
-        const a = offset / length;
-        const b = Math.min(length, offset + dash) / length;
-        route.moveTo(x0 + dx * a, y0 + dy * a);
-        route.lineTo(x0 + dx * b, y0 + dy * b);
-      }
-    } else if (drawing) {
-      route.lineTo(x, y);
-    } else {
-      route.moveTo(x, y);
-    }
-    drawing = true;
-    previous = world;
   }
-  route.stroke({
-    color: preview ? LAB_SCHEMATIC_STYLE.candidate : LAB_SCHEMATIC_STYLE.flow,
-    width: Math.max(2, cell * (preview ? 0.045 : 0.06)),
-    alpha: preview ? 0.94 : 0.62,
-  });
+  target.stroke({ color: LAB_SCHEMATIC_STYLE.candidate, width: Math.max(2, cell * 0.05), cap: "round" });
 }
 
-function drawPreviewToken(
-  pos: Vec2,
-  camera: LabCamera,
-  token: Graphics,
-  failed: boolean,
-): void {
-  const cell = LAB_CELL_PIXELS * camera.zoom;
-  const { x: cx, y: cy } = labCellCenter(camera, pos);
-  const color = failed ? LAB_SCHEMATIC_STYLE.failure : LAB_SCHEMATIC_STYLE.candidate;
-  token.circle(cx, cy, cell * 0.22).stroke({ color, width: 2, alpha: 1 });
-
+function drawCross(target: Graphics, center: PixelPoint, size: number, width: number): void {
+  target.moveTo(center.x - size, center.y - size).lineTo(center.x + size, center.y + size)
+    .moveTo(center.x + size, center.y - size).lineTo(center.x - size, center.y + size)
+    .stroke({ color: LAB_SCHEMATIC_STYLE.failure, width, cap: "round" });
 }
+
+const LABEL_STYLE = {
+  fontFamily: "\"Barlow Condensed\", \"Arial Narrow\", sans-serif",
+  fontWeight: "600",
+  fill: SHARED_SCHEMATIC_STYLE.course,
+  // Paper knockout under overprinted numerals, as on a printed course.
+  stroke: { color: SHARED_SCHEMATIC_STYLE.deck, width: 3, join: "round" },
+} as const;
 
 export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
   const app = new Application();
@@ -338,22 +480,125 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
     autoDensity: true,
   });
 
-  const grid = new Graphics();
+  const paper = new Graphics();
   const terrain = new Graphics();
-  const route = new Graphics();
-  const previewRoute = new Graphics();
-  const featureOverlay = new Graphics();
-  const token = new Graphics();
-  const previewToken = new Graphics();
-  app.stage.addChild(
-    terrain,
-    featureOverlay,
-    grid,
-    route,
-    previewRoute,
-    token,
-    previewToken,
-  );
+  const grid = new Graphics();
+  const cliffs = new Graphics();
+  const features = new Graphics();
+  const course = new Graphics();
+  const marks = new Graphics();
+  const contours = new Container();
+  const contourChunks = new Map<number, Graphics>();
+  let contourBoard = "";
+  const mapLayers = [paper, terrain, grid, cliffs, features] as const;
+  const labels = new Container();
+  const labelPool: Text[] = [];
+  app.stage.addChild(paper, contours, terrain, grid, cliffs, features, course, marks, labels);
+
+  let last: { readonly mm: MultiMap; readonly drug: DrugState; readonly view: LabRenderView } | null = null;
+  let lastControlCount = -1;
+  let lastTrailLength = 0;
+  let legFrom = -1;
+  let legProgress = 1;
+  let legStartTime = -1;
+  let frame = 0;
+  let destroyed = false;
+
+  const label = (index: number): Text => {
+    let text = labelPool[index];
+    if (text === undefined) {
+      text = new Text({ text: "", style: { ...LABEL_STYLE, fontSize: 16 } });
+      labels.addChild(text);
+      labelPool[index] = text;
+    }
+    return text;
+  };
+
+  const paintCourse = (): void => {
+    course.clear();
+    marks.clear();
+    let labelCount = 0;
+    const map = last?.mm.maps[last.view.activeMap];
+    if (last !== null && map !== undefined) {
+      const { drug, view } = last;
+      const camera = view.camera;
+      const cell = LAB_CELL_PIXELS * camera.zoom;
+      const radius = cell * 0.3;
+      const lineWidth = Math.max(2, cell * 0.065);
+      const crossWidth = Math.max(2.5, cell * 0.08);
+      const controls = view.controls ?? [];
+      const start = view.trail[0] ?? null;
+      const nodes = new Set<number>(controls.map(coordKey));
+      if (start !== null) nodes.add(coordKey(start));
+      const animating = legFrom >= 0 && legProgress < 1;
+
+      const head = drawLegs(course, view.trail, nodes, camera, radius, animating ? legFrom : -1, legProgress);
+      course.stroke({ color: LAB_SCHEMATIC_STYLE.course, width: lineWidth, cap: "round" });
+
+      if (start !== null) {
+        const center = labCellCenter(camera, start);
+        const next = view.trail.find((point, index) => index > 0 && point !== null && coordKey(point) !== coordKey(start));
+        const toward = next === undefined || next === null ? null : labCellCenter(camera, next);
+        const angle = toward === null ? -Math.PI / 2 : Math.atan2(toward.y - center.y, toward.x - center.x);
+        const size = radius * 1.2;
+        marks.moveTo(center.x + Math.cos(angle) * size, center.y + Math.sin(angle) * size);
+        for (let corner = 1; corner < 3; corner++) {
+          const theta = angle + corner * Math.PI * 2 / 3;
+          marks.lineTo(center.x + Math.cos(theta) * size, center.y + Math.sin(theta) * size);
+        }
+        marks.closePath().stroke({ color: LAB_SCHEMATIC_STYLE.course, width: lineWidth, join: "round" });
+      }
+
+      const fontSize = Math.round(Math.max(12, 16 * camera.zoom));
+      const inkedControls = animating ? controls.length - 1 : controls.length;
+      for (let index = 0; index < inkedControls; index++) {
+        const center = labCellCenter(camera, controls[index]!);
+        marks.circle(center.x, center.y, radius);
+        if (view.finish === true && index === controls.length - 1) marks.circle(center.x, center.y, radius * 0.66);
+        const text = label(labelCount++);
+        const value = String(index + 1);
+        if (text.text !== value) text.text = value;
+        if (text.style.fontSize !== fontSize) text.style.fontSize = fontSize;
+        text.visible = true;
+        text.position.set(center.x + radius * 0.8, center.y - radius * 0.95 - fontSize);
+      }
+      marks.stroke({ color: LAB_SCHEMATIC_STYLE.course, width: lineWidth });
+
+      const position = drug.pos[view.activeMap];
+      if (head !== null) {
+        marks.circle(head.x, head.y, cell * 0.11).fill({ color: LAB_SCHEMATIC_STYLE.course });
+      } else if (position !== undefined) {
+        const center = labCellCenter(camera, position);
+        if (drug.failed) drawCross(marks, center, radius * 0.75, crossWidth);
+        else if (view.finish !== true) marks.circle(center.x, center.y, cell * 0.11).fill({ color: LAB_SCHEMATIC_STYLE.course });
+      }
+
+      const previewPos = view.previewDrug?.pos[view.activeMap];
+      if (!animating && view.previewTrail !== undefined) drawDashedTrail(marks, view.previewTrail, nodes, camera, radius);
+      if (!animating && previewPos !== undefined) {
+        const center = labCellCenter(camera, previewPos);
+        if (view.previewDrug?.failed === true) drawCross(marks, center, radius * 0.75, crossWidth);
+        else {
+          marks.circle(center.x, center.y, radius)
+            .stroke({ color: LAB_SCHEMATIC_STYLE.candidate, width: Math.max(2, cell * 0.05) });
+        }
+      }
+    }
+    for (let index = labelCount; index < labelPool.length; index++) labelPool[index]!.visible = false;
+  };
+
+  const tick = (now: number): void => {
+    frame = 0;
+    if (destroyed) return;
+    if (legStartTime < 0) legStartTime = now;
+    const t = Math.min(1, (now - legStartTime) / LAB_LEG_DRAW_MS);
+    legProgress = t >= 1 ? 1 : 1 - 2 ** (-10 * t);
+    paintCourse();
+    app.render();
+    if (legProgress < 1) frame = requestAnimationFrame(tick);
+    else legFrom = -1;
+  };
+
   const densityObserver = new ResizeObserver(() => {
     const width = app.canvas.getBoundingClientRect().width;
     if (width === 0) return;
@@ -363,44 +608,82 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
     app.render();
   });
   densityObserver.observe(app.canvas);
-  let destroyed = false;
+  // Control numbers use the display face; rebuild them once it has loaded.
+  document.fonts.load("600 16px \"Barlow Condensed\"").then(() => {
+    if (destroyed) return;
+    for (const text of labelPool) text.destroy();
+    labelPool.length = 0;
+    paintCourse();
+    app.render();
+  }).catch(() => undefined);
 
   return {
     canvas: app.canvas,
     render: (mm, drug, view) => {
-      grid.clear();
-      terrain.clear();
-      featureOverlay.clear();
-      route.clear();
-      previewRoute.clear();
-      token.clear();
-      previewToken.clear();
-      const map = mm.maps[view.activeMap];
-      if (map === undefined) return;
-      drawLabGrid(map, view.camera, grid);
-      drawVisibleMap(map, view.camera, terrain, featureOverlay);
-      drawTrail(view.trail, view.camera, route);
-      if (view.previewTrail !== undefined) drawTrail(view.previewTrail, view.camera, previewRoute, true);
-      const pos = drug.pos[view.activeMap];
-      if (pos !== undefined) drawToken(pos, view.camera, token, drug.failed);
-      const previewPos = view.previewDrug?.pos[view.activeMap];
-      if (previewPos !== undefined) {
-        drawPreviewToken(previewPos, view.camera, previewToken, view.previewDrug?.failed ?? false);
+      for (const layer of mapLayers) layer.clear();
+      const count = view.controls?.length ?? 0;
+      const committed = lastControlCount >= 0 && count > 0 && count !== lastControlCount
+        && (count === lastControlCount + 1 || count === 1);
+      if (committed && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        legFrom = count === 1 ? 0 : Math.max(0, lastTrailLength - 1);
+        legProgress = 0;
+        legStartTime = -1;
+        if (frame === 0) frame = requestAnimationFrame(tick);
       }
+      lastControlCount = count;
+      lastTrailLength = view.trail.length;
+      last = { mm, drug, view };
+      const map = mm.maps[view.activeMap];
+      if (map !== undefined) {
+        const board = `${map.width}x${map.height}`;
+        if (board !== contourBoard) {
+          contourBoard = board;
+          for (const chunk of contourChunks.values()) chunk.destroy();
+          contourChunks.clear();
+        }
+        const { camera } = view;
+        const chunkSize = CONTOUR_STEP * CONTOUR_CHUNK;
+        const halfW = LAB_VIEWPORT.width / 2 / camera.zoom;
+        const halfH = LAB_VIEWPORT.height / 2 / camera.zoom;
+        const bounds = hexBoardBounds(map.width, map.height, LAB_HEX_SIZE);
+        const cx0 = Math.floor(Math.max(bounds.minX, camera.x - halfW) / chunkSize);
+        const cx1 = Math.floor(Math.min(bounds.maxX, camera.x + halfW) / chunkSize);
+        const cy0 = Math.floor(Math.max(bounds.minY, camera.y - halfH) / chunkSize);
+        const cy1 = Math.floor(Math.min(bounds.maxY, camera.y + halfH) / chunkSize);
+        for (const chunk of contourChunks.values()) chunk.visible = false;
+        for (let cy = cy0; cy <= cy1; cy++) {
+          for (let cx = cx0; cx <= cx1; cx++) {
+            const key = cx * 4_096 + cy;
+            let chunk = contourChunks.get(key);
+            if (chunk === undefined) {
+              chunk = new Graphics();
+              drawFogContours(map, chunk, cx * CONTOUR_CHUNK, cy * CONTOUR_CHUNK);
+              contours.addChild(chunk);
+              contourChunks.set(key, chunk);
+            }
+            chunk.visible = true;
+          }
+        }
+        contours.scale.set(view.camera.zoom);
+        contours.position.set(
+          LAB_VIEWPORT.width / 2 - view.camera.x * view.camera.zoom,
+          LAB_VIEWPORT.height / 2 - view.camera.y * view.camera.zoom,
+        );
+        drawVisibleMap(map, view.camera, paper, terrain, cliffs, features);
+        drawRevealedGrid(map, view.camera, grid);
+      }
+      paintCourse();
       app.render();
     },
     destroy: () => {
       if (destroyed) return;
       destroyed = true;
+      if (frame !== 0) cancelAnimationFrame(frame);
       densityObserver.disconnect();
       app.stage.removeChildren();
-      grid.destroy();
-      terrain.destroy();
-      route.destroy();
-      previewRoute.destroy();
-      featureOverlay.destroy();
-      token.destroy();
-      previewToken.destroy();
+      for (const layer of [...mapLayers, course, marks]) layer.destroy();
+      contours.destroy({ children: true });
+      labels.destroy({ children: true });
       app.destroy({ removeView: true });
     },
   };

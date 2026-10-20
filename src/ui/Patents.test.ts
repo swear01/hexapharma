@@ -4,6 +4,8 @@ import {
   patentCostLabel,
   patentContractRequirement,
   patentEffectSummary,
+  patentGroup,
+  patentShortfall,
   patentTitle,
   patentUnlockWarning,
 } from "./Patents";
@@ -36,7 +38,7 @@ describe("Technology copy", () => {
   });
 
   it("uses the HUD resource name for Technology costs", () => {
-    expect(patentCostLabel(DEFAULT_PATENTS[0]!)).toBe("120 cash · 2 Knowledge");
+    expect(patentCostLabel(DEFAULT_PATENTS[0]!)).toBe("$120 · 2 Knowledge");
     expect(patentCostLabel(DEFAULT_PATENTS[1]!)).not.toMatch(/R&D/i);
   });
 
@@ -70,5 +72,24 @@ describe("Technology copy", () => {
     expect(patentContractRequirement("dilute-unlock", []))
       .toBe("Disease 2 contract unavailable");
     expect(patentContractRequirement("reveal-aid", [])).toBeNull();
+  });
+});
+
+describe("Technology availability", () => {
+  const node = (id: string) => DEFAULT_PATENTS.find((candidate) => candidate.id === id)!;
+
+  it("names only the resource that is actually short", () => {
+    expect(patentShortfall(node("bench-2"), 500, 0)).toBe("Need 2 more Knowledge");
+    expect(patentShortfall(node("bench-2"), 100, 5)).toBe("Need $20 more cash");
+    expect(patentShortfall(node("bench-2"), 100, 1)).toBe("Need $20 more cash and 1 more Knowledge");
+    expect(patentShortfall(node("bench-2"), 120, 2)).toBeNull();
+  });
+
+  it("groups nodes by what blocks them", () => {
+    expect(patentGroup(node("bench-2"), [], null)).toBe("available");
+    expect(patentGroup(node("skew-unlock"), [], "Ship 3 more for Disease 1 contract (0/3)")).toBe("contract");
+    expect(patentGroup(node("dilute-unlock"), [], "Ship 3 more for Disease 2 contract (0/3)")).toBe("requires");
+    expect(patentGroup(node("dilute-unlock"), ["bench-2"], "Ship 3 more for Disease 2 contract (0/3)")).toBe("contract");
+    expect(patentGroup(node("bench-2"), ["bench-2"], null)).toBe("owned");
   });
 });

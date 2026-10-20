@@ -1,50 +1,57 @@
 import { describe, expect, it } from "vitest";
-import type { PlacedMachine } from "../sim/phase0_interfaces";
+import type { FactoryLayout, PlacedMachine } from "../sim/phase0_interfaces";
+import { buildFactoryTransportTopology } from "./factoryTransportTopology";
 import { DEFAULT_CATALOG, DEFAULT_SHAPES, SHAPE_1x1 } from "../sim/phase0_interfaces";
 import { HEX_DIRS, HEX_DQ, HEX_DR } from "../sim/hex";
 import { hexToPixel } from "./hexProjection";
 import {
   FACTORY_HEX_SIZE,
-  FACTORY_MACHINE_SHADOW_ALPHA,
   FACTORY_SCHEMATIC_STYLE,
+  dashSegments,
   factoryCellCenter,
+  factoryPrintStyle,
+  factoryUnitBlocked,
   factoryTransportArmGeometry,
   factoryTransportFlowPoint,
   machinePathGlyph,
-  machineVisualStyle,
   placedMachinePathGlyph,
 } from "./factoryRenderer";
 
-describe("flat factory schematic", () => {
-  it("shares the atlas semantic colors on a dark industrial deck", () => {
-    expect(FACTORY_SCHEMATIC_STYLE.portInput).toBe(FACTORY_SCHEMATIC_STYLE.flow);
-    expect(FACTORY_SCHEMATIC_STYLE.portOutput).toBe(FACTORY_SCHEMATIC_STYLE.structure);
-    expect(FACTORY_SCHEMATIC_STYLE.selection).not.toBe(FACTORY_SCHEMATIC_STYLE.flow);;
+describe("printed factory map", () => {
+  it("prints Plan as a dashed purple overprint and Production as solid black print", () => {
+    const plan = factoryPrintStyle("plan");
+    const production = factoryPrintStyle("production");
+    expect(plan.ink).toBe(FACTORY_SCHEMATIC_STYLE.course);
+    expect(plan.channel).toBe(FACTORY_SCHEMATIC_STYLE.course);
+    expect(plan.dashed).toBe(true);
+    expect(plan.inkAlpha).toBeLessThan(1);
+    expect(production.ink).toBe(FACTORY_SCHEMATIC_STYLE.structure);
+    expect(production.channel).toBe(FACTORY_SCHEMATIC_STYLE.flow);
+    expect(production.dashed).toBe(false);
   });
 
-  it("keeps machine shadows subordinate to the chassis", () => {
-    expect(FACTORY_SCHEMATIC_STYLE.shadow).not.toBe(FACTORY_SCHEMATIC_STYLE.background);
-    expect(FACTORY_MACHINE_SHADOW_ALPHA).toBe(0.28);
+  it("keeps hand-drawn wobble within 0.6px and off the Plan overprint", () => {
+    expect(factoryPrintStyle("production").wobble).toBeLessThanOrEqual(0.6);
+    expect(factoryPrintStyle("plan").wobble).toBe(0);
+  });
+
+  it("splits dashed outlines into dashes that start and end exactly on the edge", () => {
+    const from = { x: 0, y: 0 };
+    const to = { x: 21, y: 0 };
+    const dashes = dashSegments(from, to);
+    expect(dashes.length).toBeGreaterThan(1);
+    expect(dashes[0]!.from).toEqual(from);
+    expect(dashes.at(-1)!.to.x).toBeCloseTo(to.x);
+    for (let index = 1; index < dashes.length; index++) {
+      expect(dashes[index]!.from.x).toBeGreaterThan(dashes[index - 1]!.to.x);
+    }
   });
 });
 
 describe("factory machine visual language", () => {
-  it("gives every machine family a distinct bounded chassis palette", () => {
-    const styles = DEFAULT_CATALOG.map((entry) => machineVisualStyle(entry.typeId));
-    const signatures = styles.map((style) => `${style.body}:${style.face}`);
-
-    expect(new Set(signatures).size).toBe(DEFAULT_CATALOG.length);
-    for (const style of styles) {
-      expect(style).not.toHaveProperty("accent");
-      expect(style.body).toBeGreaterThanOrEqual(0);
-      expect(style.body).toBeLessThanOrEqual(0xffffff);
-      expect(style.face).toBeGreaterThanOrEqual(0);
-      expect(style.face).toBeLessThanOrEqual(0xffffff);
-    }
-  });
-
-  it("does not collapse push and pull into the same visual family", () => {
-    expect(machineVisualStyle("push")).not.toEqual(machineVisualStyle("pull"));
+  it("identifies every machine family by its own printed Atlas path", () => {
+    const glyphs = DEFAULT_CATALOG.map((entry) => JSON.stringify(machinePathGlyph(entry.path).points));
+    expect(new Set(glyphs).size).toBe(DEFAULT_CATALOG.length);
   });
 
   it("has one canonical footprint for every current path machine and no obsolete family", () => {
@@ -116,5 +123,36 @@ describe("factory connected transport geometry", () => {
     );
     expect(intoMachine.dir).toBe(0);
     expect(outOfMachine.dir).toBe(0);
+  });
+});
+
+describe("factory blocked units", () => {
+  const emptyTiles = (width: number, height: number) =>
+    Array.from({ length: width * height }, () => ({ kind: "empty" as const }));
+
+  it("marks a unit on a belt that leads nowhere as blocked, but not one on a connected belt", () => {
+    const tiles: FactoryLayout["tiles"][number][] = emptyTiles(4, 1);
+    tiles[0] = { kind: "source", dir: 0, period: 1 };
+    tiles[1] = { kind: "belt", dir: 0 };
+    tiles[2] = { kind: "belt", dir: 0 };
+    const layout: FactoryLayout = { width: 4, height: 1, tiles, machines: [] };
+    const topology = buildFactoryTransportTopology(layout);
+    expect(factoryUnitBlocked(layout, topology, { q: 2, r: 0, machineId: -1, proc: 0 })).toBe(true);
+    expect(factoryUnitBlocked(layout, topology, { q: 1, r: 0, machineId: -1, proc: 0 })).toBe(false);
+  });
+
+  it("marks a finished unit inside a machine with no output belt as blocked", () => {
+    const entry = DEFAULT_CATALOG[0]!;
+    const machine: PlacedMachine = {
+      id: 3,
+      def: { typeId: entry.typeId, path: entry.path, cost: entry.cost, speed: entry.speed },
+      anchor: { q: 2, r: 2 },
+      footRot: 0,
+      shape: SHAPE_1x1,
+    };
+    const layout: FactoryLayout = { width: 5, height: 5, tiles: emptyTiles(5, 5), machines: [machine] };
+    const topology = buildFactoryTransportTopology(layout);
+    expect(factoryUnitBlocked(layout, topology, { q: 2, r: 2, machineId: 3, proc: entry.speed })).toBe(true);
+    expect(factoryUnitBlocked(layout, topology, { q: 2, r: 2, machineId: 3, proc: 0 })).toBe(false);
   });
 });

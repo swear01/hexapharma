@@ -30,7 +30,7 @@
 | D24 | 每疾病 demand 按 `floor(19/20)` 衰減到 0；Market 先乾淨、再低成本，且只自動出售正 net產品。 | 防止單線永久印錢，也避免 bulk action 默默虧損。 |
 | D25 | 成功 Cure 自動建立／覆寫每疾病唯一的 `DiscoveredFormula`，保存實際 program、累積 Research cost 與 outcome。 | 探索成果成為可讀的配方紀錄，但不暗中自動建廠或繞過 Production。 |
 | D26 | 每疾病 shipping contract quota 固定為 3；Disease 1／2／3 分別 gate Skew／Dilute／Settle patents。 | Production 出貨回饋下一層 Research 工具，形成跨場域節奏，而非只靠抽象 currency。 |
-| D27 | 視覺採嚴格俯視 minimal flat hex schematic，世界由 Pixi vector runtime 繪製；語意色限於 flow／selection／cure／side-effect／failure。 | 保留 2D 系統圖可讀性與原創身份，移除 generated bitmap manifest、玻璃 UI 與任意玩具色。 |
+| D27 | 視覺採定向越野地圖語言（2026-10-20 取代 minimal flat schematic）：紙底墨印、ISOM 色語、路線紫只屬玩家的線，世界由 Pixi vector runtime 繪製。 | 使用者要求現代乾淨線條＋手繪感、更有遊戲感但守住工廠可讀性；地圖探索與「路線疊在地形上」正是本作機制。 |
 | D28 | assay 只透露目標的寬廣方向 sector，不提供座標或距離。 | 給玩家起步方向，又不把探索謎題降成導航。 |
 
 ## Current authority summary
@@ -43,4 +43,4 @@
 - Economy：$1000 bootstrap、linear seeded base prices、per-disease demand decay to zero、profitable clean-first shipping、quota-3 contracts與machine patent gates。
 - Blueprint：v4 codec保留ResearchProgram文件，但UI只create/apply generic FactoryLayout；Library跨存檔。
 - Save：v11 plain、開放、可編輯的同 build cold state；checkpoint history/recovery 保持獨立外層 v2。
-- Geometry／visual：Atlas 與 Factory 都使用pointy-top axial true hex與六方向／六rotation contract，但payload／validator分離；minimal flat hex維持俯視2D vector schematic，不做3D migration。
+- Geometry／visual：Atlas 與 Factory 都使用pointy-top axial true hex與六方向／六rotation contract，但payload／validator分離；世界維持俯視2D vector 地圖（定向越野語言），不做3D migration。

@@ -46,19 +46,19 @@
 
 F1 只有一張大型單層 Atlas：
 
-- Research拖曳任一滑鼠鍵都可pan，與Factory的Shift+LMB／MMB手勢分開；pointer cancel只取消gesture，不得commit或erase。camera開局聚焦世界中心的generator start；fresh fog只揭露中心radius-two 19-cell hex disk，平常只看見大地圖的一小部分。focus command固定明示Next並聚焦淡藍空心candidate endpoint。每個stamp在單一intent中立即resolve，UI不顯示timed Dose phase或自動camera follow；建築往返不因舊outcome重設手動camera。Cure sites是可操作的已揭露位置計數／輪播，聚焦fog已揭露的Cure，不得暗示成功治療數、顯示未知總數或讀取隱藏座標。
-- mission label桌面顯示Assay、疾病與Look broad sector；≤768px隱藏Assay，保留疾病與Look；accessible name仍為Active assay；sector只可為local或east／south-east／south-west／west／north-west／north-east，不顯示座標、距離、reference或region大小。
-- grid/scale與Wall在霧下仍可讀。
+- Research拖曳任一滑鼠鍵都可pan，與Factory的Shift+LMB／MMB手勢分開；pointer cancel只取消gesture，不得commit或erase。camera開局聚焦世界中心的generator start；fresh fog只揭露中心radius-two 19-cell hex disk，平常只看見大地圖的一小部分。focus command固定明示Next並聚焦紫色空心candidate control。每個stamp在單一intent中立即resolve，UI不顯示timed Dose phase或自動camera follow；唯一例外是剛resolve出Cure的那一步會以≤220 ms（reduced motion即時、任何pointer／wheel／focus可中斷）把camera fit到整條已印路線與終點，避開結果卡與step清單；建築往返不因舊outcome重設手動camera。Cure sites是可操作的已揭露位置計數／輪播，聚焦fog已揭露的Cure，不得暗示成功治療數、顯示未知總數或讀取隱藏座標。
+- mission readout是地圖左上角的羅盤：以紫色扇區標出目標方向，並顯示疾病與Look broad sector（mobile 仍保留疾病與Look）；accessible name仍為Active assay；sector只可為local或east／south-east／south-west／west／north-west／north-east，不顯示座標、距離、reference或region大小。
+- 霧是未印的紙：只有與seed／座標有關、與隱藏地形無關的淡等高線；Wall在霧下仍可讀，格線只畫在已揭露格。
 - Abyss、Swamp、Portal A+B、Cure與SideEffect未揭露前不能有 motif、sprite、region edge、preview差異或 outcome洩漏。只揭露單一 Portal 端點時可顯示未配對端點，但配對標記、方向、目的座標與 preview jump 必須等兩端都揭露。
-- palette 每個 machine 以完整奇形 path silhouette 與 semantic glyph辨識；沒有 path-length control。
-- executed program trail與held next-candidate trail樣式不同；candidate由目前actual drug state接續完整 path。
-- held candidate的endpoint必須有明確單一淡藍空心endpoint；白色瓶是目前route head，底部`Next`可隨時把淡藍空心endpoint重新置中。滑鼠命中時從pan的grab cursor改為pointer，tooltip只顯示短動作`Test cartridge`；其餘地圖提示`Drag map`。LMB單擊就commit並立即resolve完整stamp，不需雙擊，小幅pointer抖動仍視為click。blank map click不append也不把整張canvas當confirm button。
-- machine hotbar tooltip要說明選擇只預覽下一個完整stamp；點 endpoint 或 Test 才執行；session readout在一般desktop寬度必須顯示已執行step與累積cost，不能呈現可重排／刪除的pending batch route。
+- palette是map legend：每個machine以footprint＋完整path的token、全名、價格與hotkey辨識；沒有 path-length control。
+- 起點是紫色空心三角；已執行step是實線紫色leg與編號控制點圓，目前位置是紫色實心點；held candidate是虛線紫色leg，由目前actual drug state接續完整 path。每次commit的新leg以≤250 ms墨線描出（reduced motion時立即完成）。
+- held candidate的endpoint必須有明確單一紫色空心control；底部`Next`可隨時把它重新置中。滑鼠命中時從pan的grab cursor改為pointer，tooltip只顯示短動作`Run step`；其餘地圖提示`Drag map`。LMB單擊就commit並立即resolve完整stamp，不需雙擊，小幅pointer抖動仍視為click。blank map click不append也不把整張canvas當confirm button。
+- machine hotbar tooltip要說明選擇只預覽下一個完整stamp；點 endpoint 或 `Run · $N` 才執行，`End run` 放棄本輪；session readout（`N steps · $X spent`與左上編號step清單）必須顯示已執行step與累積cost，不能呈現可重排／刪除的pending batch route。
 - 第一次commit以單一`advanceResearchShot`原子地從step 0開始並執行所選machine；每次advance立即逐步扣款、執行、揭露與evaluate。no-cure保留session供下一個決定；Failure／Cure結束。Abort不退款且不回滾fog。
 - planning／hover不改 fog；執行只畫已完成 segment。Portal jump trail斷開。
-- Cure使用綠色十字與區域邊界；SideEffect visual可在同一cell疊加，不能互相遮掉或用互斥terrain kind呈現。
-- progress、stop/failure與outcome使用短 HUD/status；outcome以一基底疾病名稱與副作用數量同時顯示已知結果，不暴露 raw effect IDs、權威座標或工廠流程提示。
-- 成功 Cure 後 Formulas 入口顯示已知配方數量；面板以疾病選擇器查全部已發現成果，列完整步驟序號／名稱／path／footprint、累積 assay cost 與 Clean／side effects。每疾病 latest 由 sim authority 提供；手動選擇跨場域保留，新成果預設最新，Save／Load 後可查所有存入成果。面板可關閉，mobile 列表可垂直 scroll；全寬 mobile 面板會停用被遮住的 world hotkeys，但不暂停 Production timer，放大回 desktop 後恢復 world 操作。
+- Cure使用綠色十字與區域邊界，SideEffect是琥珀色點網；兩者可在同一cell疊加，不能互相遮掉或用互斥terrain kind呈現。Failure以紅色X標記，Cure以紫色雙圈終點標記。
+- Cure時地圖右上（mobile為下方）出現結果卡：`F-0n · Disease N`、步數、成本、Clean或副作用數與`Open in Plan`；no-cure／failure 以單行readout呈現；outcome以一基底疾病名稱與副作用數量同時顯示已知結果，不暴露 raw effect IDs、權威座標或工廠流程提示。
+- 成功 Cure 後 Formulas 入口顯示已知配方數量；面板以疾病選擇器查全部已發現成果，以定向越野control description sheet列`F-0n`、Source、完整步驟序號／token／名稱／footprint、Sink、累積成本與 Clean／side effects。每疾病 latest 由 sim authority 提供；手動選擇跨場域保留，新成果預設最新，Save／Load 後可查所有存入成果。面板可關閉，mobile 列表可垂直 scroll；全寬 mobile 面板會停用被遮住的 world hotkeys，但不暂停 Production timer，放大回 desktop 後恢復 world 操作。
 
 ## 6. Production Plan
 
@@ -114,8 +114,8 @@ F1 只有一張大型單層 Atlas：
 - desktop 與 mobile 皆讓 world 佔主體；Details 預設關閉，桌面展開在 world 旁、窄屏在下方。工具與主要動作獨立排版，不蓋住 canvas；touch controls 至少 44px、focus 可見、錯誤 aria-live。窄屏 HUD 兩列，system controls 收 Menu，工具列保留可見 scroll 提示。
 - machine以silhouette、footprint、full-path glyph、ports辨識；terrain/portal不能用raw debug text冒充美術。
 - Atlas與Factory都顯示pointy-top axial hex；cell authority是`{q,r}`，六方向依序為E／SE／SW／W／NW／NE，dense arrays以`r * width + q`索引。hit-test、ghost、region edge、transport與renderer必須一致；兩個domain的payload／validator仍分離。
-- 極簡、偏 pixel 的俯視 2D：中性炭灰／冷灰底、近白文字與機身；青藍僅標流動、白／淡藍標選取與 candidate、綠標 cure、紫紅標副作用、紅標失敗。平塗硬邊，無黃光、青色 halo、裝飾圈環或全表面亮邊；Pixi vector runtime 保留 canonical true hex。
-- 平塗硬邊；禁止3D透視、glass blur、giant pill、過量gradient／glow／rounding與常駐tutorial遮world。
+- 定向越野地圖語言的嚴格俯視 2D：紙底＋近黑墨印；ISOM 色語（牆＝黑色斷崖墨、沼澤＝藍色水平線、治療＝綠、副作用＝琥珀、失敗＝紅、流動＝藍）；路線紫只屬玩家自己的線（研究路線、candidate、選取、Plan overprint）。Production 為黑墨實印、Plan 為紫色 overprint。手繪感只來自確定性墨線抖動，不用於 port、belt 接點、hit-test 幾何或文字；Pixi vector runtime 保留 canonical true hex。完整規格見 [design.md](design.md#visual-language)。
+- 禁止3D透視、glass blur、giant pill、gradient／glow halo與常駐tutorial遮world。
 
 ## 11. Copyright boundary
 

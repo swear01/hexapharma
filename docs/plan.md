@@ -48,7 +48,7 @@
    - focused unit/property → typecheck/lint → integration/E2E → full `npm run check`。
    - residue scan：batch Research route、partial path、blank-click append、非Wall穿霧、universal corridor、default one disease、互斥effects、$200 start、permanent price floor、Pilot Plant玩家文案、generated bitmap manifest與fixture-only full loop都不得留作active truth。
    - 更新README、design、overview、notes、decisions、invariants、structure、UI contract、player guide、roadmap與playtest。
-   - 極簡、偏 pixel 的俯視 2D：中性炭灰／冷灰底、近白文字與機身；青藍僅標流動、白／淡藍標選取與 candidate、綠標 cure、紫紅標副作用、紅標失敗。平塗硬邊，無黃光、青色 halo、裝飾圈環或全表面亮邊；Pixi vector runtime 保留 canonical true hex。
+   - 定向越野地圖語言的嚴格俯視 2D：紙底＋近黑墨印；ISOM 色語（牆＝黑色斷崖墨、沼澤＝藍色水平線、治療＝綠、副作用＝琥珀、失敗＝紅、流動＝藍）；路線紫只屬玩家自己的線（研究路線、candidate、選取、Plan overprint）。Production 為黑墨實印、Plan 為紫色 overprint。手繪感只來自確定性墨線抖動，不用於 port、belt 接點、hit-test 幾何或文字；Pixi vector runtime 保留 canonical true hex。完整規格見 [design.md](design.md#visual-language)。
    - 重建Research／Factory／effects／Market screenshots，做至少一輪邏輯、視覺與文件audit；確認pointy-top polygon、q/r picking、六鄰接routing與六個60° rotations在sim／renderer／UI一致。
 
 7. **Human fun validation on 53346**

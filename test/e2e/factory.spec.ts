@@ -168,8 +168,8 @@ async function factoryCellPoint(
   const box = await canvas.boundingBox();
   if (box === null) throw new Error("Factory canvas has no bounds");
   const intrinsic = await canvas.evaluate((element) => ({
-    width: (element as HTMLCanvasElement).width,
-    height: (element as HTMLCanvasElement).height,
+    width: element.clientWidth,
+    height: element.clientHeight,
   }));
   const bounds = hexBoardBounds(layout.width, layout.height, 21);
   const projected = hexToPixel(cell.q, cell.r, 21);
@@ -584,12 +584,12 @@ test("focused Factory tool controls still allow R, number, and Q world hotkeys",
   await workspace.getByTestId("brush-merger").click();
   await page.keyboard.press("q");
   await expect(workspace.getByTestId("brush-selected")).toHaveText("source");
-  await expect(workspace.getByTestId("brush-direction")).toHaveText("Direction ↙ SW");
+  await expect(workspace.getByTestId("brush-direction")).toHaveText("Direction SW");
 });
 
 test("Pilot builds without a Research contract and Production is an exact copy", async ({ page }) => {
   await loadSaveFixture(page, pilotSave());
-  await expect(page.getByTestId("research-program-count")).toHaveText("0 tested");
+  await expect(page.getByTestId("research-program-count")).toHaveText("0 steps");
   await page.getByTestId("view-pilot").click();
   await expect(page.getByTestId("pilot-facility-workspace")).toBeVisible();
   await expect(page.getByTestId("factory-play")).toHaveCount(0);
@@ -703,31 +703,44 @@ test("compact Pilot controls remain reachable above the construction hotbar", as
     .toBeHidden();
 });
 
-test("compact Pilot keeps scroll position after a local edit acknowledgement", async ({ page }) => {
+test("compact Pilot keeps its camera after a local edit acknowledgement", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await loadSaveFixture(page, pilotSave());
   await page.getByTestId("view-pilot").click();
-  const frame = page.getByTestId("pilot-facility-workspace").getByTestId("factory-canvas");
+  const workspace = page.getByTestId("pilot-facility-workspace");
+  const frame = workspace.getByTestId("factory-canvas");
   await expect(frame.locator("canvas")).toBeVisible({ timeout: 15_000 });
-  await frame.evaluate((element) => {
-    element.scrollTop = 0;
-    element.scrollLeft = 0;
-  });
-  const emptyLayout: FactoryLayout = {
-    width: BASE_GAME_FACTORY_WIDTH,
-    height: BASE_GAME_FACTORY_HEIGHT,
-    tiles: Array.from(
-      { length: BASE_GAME_FACTORY_WIDTH * BASE_GAME_FACTORY_HEIGHT },
-      () => ({ kind: "empty" as const }),
-    ),
-    machines: [],
-  };
-  const target = await factoryCellPoint(frame, emptyLayout, { q: 0, r: 0 });
-  await page.mouse.click(target.x, target.y);
-  await expect(page.getByTestId("pilot-facility-workspace").getByTestId("factory-undo"))
-    .toBeEnabled();
+  const transform = workspace.locator(".factory-canvas-transform");
   await page.waitForTimeout(250);
-  expect(await frame.evaluate((element) => element.scrollTop)).toBe(0);
+  const before = await transform.getAttribute("style");
+  const layout = referenceLayout();
+  const target = await factoryCellPoint(frame, layout, nearestEmptyCell(layout, layout.machines[0]!.anchor));
+  await page.mouse.click(target.x, target.y);
+  await expect(workspace.getByTestId("factory-undo")).toBeEnabled();
+  await page.waitForTimeout(250);
+  expect(await transform.getAttribute("style")).toBe(before);
+});
+
+test("opening a built line on a phone starts legible at its Source", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await loadSaveFixture(page, productionSave());
+  await page.getByTestId("view-production").click();
+  const workspace = page.getByTestId("production-facility-workspace");
+  const frame = workspace.getByTestId("factory-canvas");
+  await expect(frame.locator("canvas")).toBeVisible({ timeout: 15_000 });
+  await page.waitForTimeout(250);
+  const frameBox = await frame.boundingBox();
+  if (frameBox === null) throw new Error("Production frame has no bounds");
+  const layout = referenceLayout();
+  for (let index = 0; index < layout.tiles.length; index++) {
+    const kind = layout.tiles[index]!.kind;
+    if (kind !== "source") continue;
+    const point = await factoryCellPoint(frame, layout, { q: index % layout.width, r: Math.floor(index / layout.width) });
+    expect(point.x).toBeGreaterThan(frameBox.x);
+    expect(point.x).toBeLessThan(frameBox.x + frameBox.width);
+    expect(point.y).toBeGreaterThan(frameBox.y);
+    expect(point.y).toBeLessThan(frameBox.y + frameBox.height);
+  }
 });
 
 test("every unlocked machine family has its own path icon and factory silhouette", async ({ page }) => {

@@ -1,0 +1,555 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-20T00:00:00Z",
+  "title": "Design System: HexaPharma",
+  "extensions": {
+    "colorMeta": {
+      "paper": {
+        "role": "neutral",
+        "displayName": "Map Paper",
+        "canonical": "#f6f3ec",
+        "tonalRamp": [
+          "oklch(15% 0.010 87)",
+          "oklch(26% 0.010 87)",
+          "oklch(38% 0.010 87)",
+          "oklch(50% 0.010 87)",
+          "oklch(62% 0.010 87)",
+          "oklch(74% 0.010 87)",
+          "oklch(85% 0.010 87)",
+          "oklch(95% 0.010 87)"
+        ]
+      },
+      "paper-sunk": {
+        "role": "neutral",
+        "displayName": "Unprinted Paper",
+        "canonical": "#ece7db",
+        "tonalRamp": [
+          "oklch(15% 0.017 88)",
+          "oklch(26% 0.017 88)",
+          "oklch(38% 0.017 88)",
+          "oklch(50% 0.017 88)",
+          "oklch(62% 0.017 88)",
+          "oklch(74% 0.017 88)",
+          "oklch(85% 0.017 88)",
+          "oklch(95% 0.017 88)"
+        ]
+      },
+      "paper-raised": {
+        "role": "neutral",
+        "displayName": "Printed Paper",
+        "canonical": "#fffdf8",
+        "tonalRamp": [
+          "oklch(15% 0.007 89)",
+          "oklch(26% 0.007 89)",
+          "oklch(38% 0.007 89)",
+          "oklch(50% 0.007 89)",
+          "oklch(62% 0.007 89)",
+          "oklch(74% 0.007 89)",
+          "oklch(85% 0.007 89)",
+          "oklch(95% 0.007 89)"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#1e1f1c",
+        "tonalRamp": [
+          "oklch(15% 0.006 122)",
+          "oklch(26% 0.006 122)",
+          "oklch(38% 0.006 122)",
+          "oklch(50% 0.006 122)",
+          "oklch(62% 0.006 122)",
+          "oklch(74% 0.006 122)",
+          "oklch(85% 0.006 122)",
+          "oklch(95% 0.006 122)"
+        ]
+      },
+      "ink-2": {
+        "role": "neutral",
+        "displayName": "Ink 2",
+        "canonical": "#47463f",
+        "tonalRamp": [
+          "oklch(15% 0.012 100)",
+          "oklch(26% 0.012 100)",
+          "oklch(38% 0.012 100)",
+          "oklch(50% 0.012 100)",
+          "oklch(62% 0.012 100)",
+          "oklch(74% 0.012 100)",
+          "oklch(85% 0.012 100)",
+          "oklch(95% 0.012 100)"
+        ]
+      },
+      "ink-3": {
+        "role": "neutral",
+        "displayName": "Ink 3",
+        "canonical": "#6b675c",
+        "tonalRamp": [
+          "oklch(15% 0.018 90)",
+          "oklch(26% 0.018 90)",
+          "oklch(38% 0.018 90)",
+          "oklch(50% 0.018 90)",
+          "oklch(62% 0.018 90)",
+          "oklch(74% 0.018 90)",
+          "oklch(85% 0.018 90)",
+          "oklch(95% 0.018 90)"
+        ]
+      },
+      "rule": {
+        "role": "neutral",
+        "displayName": "Rule",
+        "canonical": "#ddd6c6",
+        "tonalRamp": [
+          "oklch(15% 0.023 87)",
+          "oklch(26% 0.023 87)",
+          "oklch(38% 0.023 87)",
+          "oklch(50% 0.023 87)",
+          "oklch(62% 0.023 87)",
+          "oklch(74% 0.023 87)",
+          "oklch(85% 0.023 87)",
+          "oklch(95% 0.023 87)"
+        ]
+      },
+      "rule-strong": {
+        "role": "neutral",
+        "displayName": "Rule Strong",
+        "canonical": "#b9ae97",
+        "tonalRamp": [
+          "oklch(15% 0.034 85)",
+          "oklch(26% 0.034 85)",
+          "oklch(38% 0.034 85)",
+          "oklch(50% 0.034 85)",
+          "oklch(62% 0.034 85)",
+          "oklch(74% 0.034 85)",
+          "oklch(85% 0.034 85)",
+          "oklch(95% 0.034 85)"
+        ]
+      },
+      "course": {
+        "role": "primary",
+        "displayName": "Course Purple",
+        "canonical": "#7b2cbf",
+        "tonalRamp": [
+          "oklch(15% 0.080 304)",
+          "oklch(26% 0.140 304)",
+          "oklch(38% 0.200 304)",
+          "oklch(50% 0.213 304)",
+          "oklch(62% 0.200 304)",
+          "oklch(74% 0.150 304)",
+          "oklch(85% 0.090 304)",
+          "oklch(95% 0.035 304)"
+        ]
+      },
+      "course-ink": {
+        "role": "primary",
+        "displayName": "Course Ink",
+        "canonical": "#6421a3",
+        "tonalRamp": [
+          "oklch(15% 0.080 302)",
+          "oklch(26% 0.140 302)",
+          "oklch(38% 0.192 302)",
+          "oklch(50% 0.192 302)",
+          "oklch(62% 0.192 302)",
+          "oklch(74% 0.150 302)",
+          "oklch(85% 0.090 302)",
+          "oklch(95% 0.035 302)"
+        ]
+      },
+      "course-tint": {
+        "role": "primary",
+        "displayName": "Course Tint",
+        "canonical": "#efe5f8",
+        "tonalRamp": [
+          "oklch(15% 0.027 309)",
+          "oklch(26% 0.027 309)",
+          "oklch(38% 0.027 309)",
+          "oklch(50% 0.027 309)",
+          "oklch(62% 0.027 309)",
+          "oklch(74% 0.027 309)",
+          "oklch(85% 0.027 309)",
+          "oklch(95% 0.027 309)"
+        ]
+      },
+      "contour": {
+        "role": "secondary",
+        "displayName": "Contour Brown",
+        "canonical": "#a0673a",
+        "tonalRamp": [
+          "oklch(15% 0.080 58)",
+          "oklch(26% 0.095 58)",
+          "oklch(38% 0.095 58)",
+          "oklch(50% 0.095 58)",
+          "oklch(62% 0.095 58)",
+          "oklch(74% 0.095 58)",
+          "oklch(85% 0.090 58)",
+          "oklch(95% 0.035 58)"
+        ]
+      },
+      "flow": {
+        "role": "secondary",
+        "displayName": "Flow Blue",
+        "canonical": "#2b78b8",
+        "tonalRamp": [
+          "oklch(15% 0.080 248)",
+          "oklch(26% 0.124 248)",
+          "oklch(38% 0.124 248)",
+          "oklch(50% 0.124 248)",
+          "oklch(62% 0.124 248)",
+          "oklch(74% 0.124 248)",
+          "oklch(85% 0.090 248)",
+          "oklch(95% 0.035 248)"
+        ]
+      },
+      "cure": {
+        "role": "tertiary",
+        "displayName": "Cure Green",
+        "canonical": "#2f8f46",
+        "tonalRamp": [
+          "oklch(15% 0.080 148)",
+          "oklch(26% 0.140 148)",
+          "oklch(38% 0.141 148)",
+          "oklch(50% 0.141 148)",
+          "oklch(62% 0.141 148)",
+          "oklch(74% 0.141 148)",
+          "oklch(85% 0.090 148)",
+          "oklch(95% 0.035 148)"
+        ]
+      },
+      "cure-ink": {
+        "role": "tertiary",
+        "displayName": "Cure Ink",
+        "canonical": "#22703a",
+        "tonalRamp": [
+          "oklch(15% 0.080 150)",
+          "oklch(26% 0.114 150)",
+          "oklch(38% 0.114 150)",
+          "oklch(50% 0.114 150)",
+          "oklch(62% 0.114 150)",
+          "oklch(74% 0.114 150)",
+          "oklch(85% 0.090 150)",
+          "oklch(95% 0.035 150)"
+        ]
+      },
+      "effect": {
+        "role": "tertiary",
+        "displayName": "Side-effect Amber",
+        "canonical": "#d9822b",
+        "tonalRamp": [
+          "oklch(15% 0.080 60)",
+          "oklch(26% 0.140 60)",
+          "oklch(38% 0.144 60)",
+          "oklch(50% 0.144 60)",
+          "oklch(62% 0.144 60)",
+          "oklch(74% 0.144 60)",
+          "oklch(85% 0.090 60)",
+          "oklch(95% 0.035 60)"
+        ]
+      },
+      "effect-ink": {
+        "role": "tertiary",
+        "displayName": "Effect Ink",
+        "canonical": "#9a5410",
+        "tonalRamp": [
+          "oklch(15% 0.080 57)",
+          "oklch(26% 0.118 57)",
+          "oklch(38% 0.118 57)",
+          "oklch(50% 0.118 57)",
+          "oklch(62% 0.118 57)",
+          "oklch(74% 0.118 57)",
+          "oklch(85% 0.090 57)",
+          "oklch(95% 0.035 57)"
+        ]
+      },
+      "failure-ink": {
+        "role": "tertiary",
+        "displayName": "Failure Ink",
+        "canonical": "#a62b22",
+        "tonalRamp": [
+          "oklch(15% 0.080 29)",
+          "oklch(26% 0.140 29)",
+          "oklch(38% 0.161 29)",
+          "oklch(50% 0.161 29)",
+          "oklch(62% 0.161 29)",
+          "oklch(74% 0.150 29)",
+          "oklch(85% 0.090 29)",
+          "oklch(95% 0.035 29)"
+        ]
+      },
+      "failure-border": {
+        "role": "tertiary",
+        "displayName": "Failure Red",
+        "canonical": "#c8372d",
+        "tonalRamp": [
+          "oklch(15% 0.080 29)",
+          "oklch(26% 0.140 29)",
+          "oklch(38% 0.184 29)",
+          "oklch(50% 0.184 29)",
+          "oklch(62% 0.184 29)",
+          "oklch(74% 0.150 29)",
+          "oklch(85% 0.090 29)",
+          "oklch(95% 0.035 29)"
+        ]
+      },
+      "failure-surface": {
+        "role": "tertiary",
+        "displayName": "Failure Surface",
+        "canonical": "#fbe9e6",
+        "tonalRamp": [
+          "oklch(15% 0.020 29)",
+          "oklch(26% 0.020 29)",
+          "oklch(38% 0.020 29)",
+          "oklch(50% 0.020 29)",
+          "oklch(62% 0.020 29)",
+          "oklch(74% 0.020 29)",
+          "oklch(85% 0.020 29)",
+          "oklch(95% 0.020 29)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Drawer and inspector titles; uppercase condensed caps."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Modal titles, cure card formula title, formula IDs."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Section headings, patent names, market values."
+      },
+      "numeral": {
+        "displayName": "Numeral",
+        "purpose": "HUD resources and headline numbers; tabular."
+      },
+      "nav": {
+        "displayName": "Nav",
+        "purpose": "Field tabs, compass disease name, Run button."
+      },
+      "action": {
+        "displayName": "Action",
+        "purpose": "Primary buttons; factory and utility controls at 15px."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Field labels, sheet dt labels, resource labels in ink-3."
+      },
+      "hotkey": {
+        "displayName": "Hotkey",
+        "purpose": "Keycap hints beside controls."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Root size and paragraphs; sentences only."
+      },
+      "body-small": {
+        "displayName": "Body small",
+        "purpose": "Drawer copy, toasts, readouts."
+      }
+    },
+    "shadows": [
+      {
+        "name": "drawer-edge",
+        "value": "-12px 0 32px rgb(30 31 28 / 10%)",
+        "purpose": "Right-hand drawer lying over the world."
+      },
+      {
+        "name": "toast",
+        "value": "0 6px 18px rgb(30 31 28 / 12%)",
+        "purpose": "Transient status and error messages."
+      },
+      {
+        "name": "modal",
+        "value": "0 18px 48px rgb(30 31 28 / 22%)",
+        "purpose": "Blocking confirmation; paired with rgb(30 31 28 / 45%) scrim."
+      }
+    ],
+    "motion": [
+      {
+        "name": "control-state",
+        "value": ".12s ease-out",
+        "purpose": "Button background, border and colour changes."
+      },
+      {
+        "name": "panel-note-in",
+        "value": ".2s cubic-bezier(.16, 1, .3, 1)",
+        "purpose": "Market sale feedback note fades and drops 4px in."
+      },
+      {
+        "name": "leg-draw",
+        "value": "220ms exponential ease-out (LAB_LEG_DRAW_MS)",
+        "purpose": "The one authored moment: a committed course leg inks itself; instant under prefers-reduced-motion."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "touch",
+        "value": "768px"
+      },
+      {
+        "name": "compact-hud",
+        "value": "1050px"
+      },
+      {
+        "name": "factory-stack",
+        "value": "1100px"
+      },
+      {
+        "name": "no-wordmark",
+        "value": "1180px"
+      }
+    ],
+    "rendererInks": {
+      "source": "src/render/schematicStyle.ts SHARED_SCHEMATIC_STYLE",
+      "notes": "Pixi uses hex ints mirroring CSS: background=paper, deck=paper-raised, structure=ink, fog=paper-sunk, rule=rule, course, flow, cure, contour, sideEffect=effect, failure=failure-border. Factory neatline=rule-strong. Lab adds abyssRing #5f86ad and oliveInk #6f7d34 (portal marker)."
+    }
+  },
+  "components": [
+    {
+      "name": "Default Button",
+      "kind": "button",
+      "refersTo": "button",
+      "description": "Printed paper control for secondary actions.",
+      "html": "<button class=\"ds-btn\">Load</button>",
+      "css": ".ds-btn{min-height:44px;padding:8px 12px;border:1px solid var(--rule-strong);border-radius:3px;background:var(--paper-raised);color:var(--ink);font:14px/1.2 var(--font-body);cursor:pointer;transition:border-color .12s ease-out,background-color .12s ease-out,color .12s ease-out}.ds-btn:hover{border-color:var(--ink-2)}.ds-btn:focus-visible{outline:2px solid var(--course);outline-offset:2px}.ds-btn.is-active{border-color:var(--course);color:var(--course-ink);background:var(--course-tint)}"
+    },
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Solid ink command: objective actions, commission, confirm.",
+      "html": "<button class=\"ds-btn-primary\">Open Plan</button>",
+      "css": ".ds-btn-primary{min-height:44px;padding:8px 12px;border:1px solid var(--ink);border-radius:3px;background:var(--ink);color:var(--paper-raised);font:600 16px/1 var(--font-display);letter-spacing:.05em;text-transform:uppercase;cursor:pointer;transition:background-color .12s ease-out,border-color .12s ease-out}.ds-btn-primary:hover{background:var(--ink-2);border-color:var(--ink-2)}.ds-btn-primary:focus-visible{outline:2px solid var(--course);outline-offset:2px}"
+    },
+    {
+      "name": "Course Button",
+      "kind": "button",
+      "refersTo": "button-course",
+      "description": "Commits the player's line: Run a step, Open in Plan.",
+      "html": "<button class=\"ds-btn-course\">Run · $2</button>",
+      "css": ".ds-btn-course{min-width:132px;min-height:48px;padding:8px 12px;border:1px solid var(--course);border-radius:3px;background:var(--course);color:var(--paper-raised);font:600 19px/1 var(--font-display);letter-spacing:.05em;text-transform:uppercase;font-variant-numeric:tabular-nums;cursor:pointer;transition:background-color .12s ease-out,border-color .12s ease-out}.ds-btn-course:hover{background:var(--course-ink);border-color:var(--course-ink)}.ds-btn-course:focus-visible{outline:2px solid var(--course);outline-offset:2px}.ds-btn-course:disabled{border-color:var(--rule-strong);background:var(--paper-sunk);color:var(--ink-3);cursor:not-allowed}"
+    },
+    {
+      "name": "Field Tabs",
+      "kind": "nav",
+      "refersTo": "nav-tab",
+      "description": "Research / Plan / Production on the paper top bar; purple underline marks the active field.",
+      "html": "<nav class=\"ds-nav\"><button class=\"ds-tab is-active\">Research <kbd>F1</kbd></button><button class=\"ds-tab\">Plan <kbd>F2</kbd></button><button class=\"ds-tab\">Production <kbd>F3</kbd></button></nav>",
+      "css": ".ds-nav{display:flex;gap:2px;height:56px;border-bottom:2px solid var(--ink);background:var(--paper)}.ds-tab{display:flex;align-items:center;gap:8px;padding:0 14px;margin-bottom:-2px;border:0;border-bottom:4px solid transparent;background:transparent;color:var(--ink-2);font:600 18px/1 var(--font-display);letter-spacing:.03em;text-transform:uppercase;cursor:pointer}.ds-tab kbd{color:var(--ink-3);font:600 11px/1 var(--font-display);letter-spacing:.04em}.ds-tab:hover{color:var(--ink);border-bottom-color:var(--rule-strong)}.ds-tab:focus-visible{outline:2px solid var(--course);outline-offset:2px}.ds-tab.is-active{color:var(--course-ink);border-bottom-color:var(--course)}"
+    },
+    {
+      "name": "Legend Entry",
+      "kind": "chip",
+      "refersTo": "legend-entry",
+      "description": "Machine key in the hotbar: symbol, name, cost, hotkey.",
+      "html": "<button class=\"ds-legend is-selected\"><svg width=\"36\" height=\"36\" viewBox=\"0 0 48 48\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M8 24h16l8 8\"/><circle cx=\"8\" cy=\"24\" r=\"3\" fill=\"currentColor\"/><circle cx=\"32\" cy=\"32\" r=\"4\"/></svg><span class=\"ds-legend-name\">Hook pump</span><span class=\"ds-legend-cost\">$2</span><kbd>1</kbd></button>",
+      "css": ".ds-legend{display:grid;grid-template-columns:36px auto auto;grid-template-rows:auto auto;align-items:center;column-gap:10px;min-height:56px;padding:6px 12px 6px 8px;border:1px solid transparent;border-radius:3px;background:transparent;color:var(--ink-2);text-align:left;cursor:pointer}.ds-legend svg{grid-row:1/3}.ds-legend-name{grid-column:2;color:var(--ink);font:600 15px/1.1 var(--font-display);letter-spacing:.03em;text-transform:uppercase}.ds-legend-cost{grid-column:2;font-size:12px;font-variant-numeric:tabular-nums}.ds-legend kbd{grid-row:1;grid-column:3;align-self:start;color:var(--ink-3);font:600 11px/1 var(--font-display)}.ds-legend:hover{border-color:var(--rule-strong)}.ds-legend:focus-visible{outline:2px solid var(--course);outline-offset:2px}.ds-legend.is-selected{border-color:var(--course);color:var(--course-ink);background:var(--course-tint)}.ds-legend.is-selected .ds-legend-name{color:var(--course-ink)}"
+    },
+    {
+      "name": "Course List Row",
+      "kind": "custom",
+      "refersTo": "control-number",
+      "description": "Executed step printed as a numbered orienteering control in the map margin.",
+      "html": "<ol class=\"ds-course\"><li><span class=\"ds-control\">1</span><span>Hook pump</span><span class=\"ds-cost\">$2</span></li><li><span class=\"ds-control\">2</span><span>Wave reactor</span><span class=\"ds-cost\">$6</span></li></ol>",
+      "css": ".ds-course{width:232px;margin:0;padding:4px 0;list-style:none;border:1px solid var(--rule-strong);border-radius:3px;background:var(--paper-raised)}.ds-course li{display:grid;grid-template-columns:24px minmax(0,1fr) auto;align-items:center;gap:8px;min-height:34px;padding:2px 12px 2px 8px;color:var(--ink-2);font-size:13px}.ds-course li+li{border-top:1px solid var(--rule)}.ds-control{display:grid;place-items:center;width:24px;height:24px;border:2px solid var(--course);border-radius:50%;color:var(--course-ink);font:600 13px/1 var(--font-display);font-variant-numeric:tabular-nums}.ds-cost{color:var(--ink-3);font-variant-numeric:tabular-nums}"
+    },
+    {
+      "name": "Cure Card",
+      "kind": "card",
+      "refersTo": "margin-card",
+      "description": "Signature result: a Cure becomes Formula F-0n, one action to Plan.",
+      "html": "<section class=\"ds-cure\"><svg width=\"32\" height=\"32\" viewBox=\"0 0 32 32\" fill=\"none\" stroke=\"#7b2cbf\" stroke-width=\"2.5\"><circle cx=\"16\" cy=\"16\" r=\"12\"/><circle cx=\"16\" cy=\"16\" r=\"7\"/></svg><div><h2>F-01 · Disease 1</h2><p>7 steps <span>$26</span> <b>Clean</b></p></div><button>Open in Plan</button></section>",
+      "css": ".ds-cure{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;width:320px;padding:14px 16px 16px 14px;border:2px solid var(--course);border-radius:3px;background:var(--paper-raised)}.ds-cure h2{margin:0;color:var(--ink);font:600 26px/1.1 var(--font-display);text-transform:uppercase;font-variant-numeric:tabular-nums}.ds-cure p{display:flex;gap:12px;margin:4px 0 0;color:var(--ink-2);font-size:13px;font-variant-numeric:tabular-nums}.ds-cure b{color:var(--cure-ink)}.ds-cure button{grid-column:1/-1;min-height:44px;border:1px solid var(--course);border-radius:3px;background:var(--course);color:var(--paper-raised);font:600 17px/1 var(--font-display);letter-spacing:.05em;text-transform:uppercase;cursor:pointer}.ds-cure button:hover{background:var(--course-ink);border-color:var(--course-ink)}.ds-cure button:focus-visible{outline:2px solid var(--course);outline-offset:2px}"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Labelled field on printed paper; purple caret and focus border.",
+      "html": "<label class=\"ds-field\"><span>Blueprint name</span><input value=\"Disease 1 line\"></label>",
+      "css": ".ds-field{display:grid;gap:8px}.ds-field span{color:var(--ink-3);font:600 13px/1.2 var(--font-display);letter-spacing:.06em;text-transform:uppercase}.ds-field input{min-height:44px;padding:8px 12px;border:1px solid var(--rule-strong);border-radius:3px;background:var(--paper-raised);color:var(--ink);font:14px var(--font-body);caret-color:var(--course)}.ds-field input:focus{border-color:var(--course)}.ds-field input:focus-visible{outline:2px solid var(--course);outline-offset:2px}.ds-field input[aria-invalid=true]{border-color:var(--failure-border)}"
+    },
+    {
+      "name": "Factory Mode Mark",
+      "kind": "custom",
+      "description": "Print mark naming the sheet; dashed purple in Plan, solid ink in Production.",
+      "html": "<div class=\"ds-mode\">Production <span>▶ Running</span></div> <div class=\"ds-mode is-plan\">Plan</div>",
+      "css": ".ds-mode{display:inline-flex;align-items:center;gap:10px;padding:5px 10px;border:1.5px solid var(--ink);background:var(--paper);color:var(--ink);font:600 15px/1 var(--font-display);letter-spacing:.08em;text-transform:uppercase}.ds-mode span{padding-left:10px;border-left:1px solid var(--rule-strong);letter-spacing:.05em}.ds-mode.is-plan{border-style:dashed;border-color:var(--course);color:var(--course-ink)}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Course Being Printed",
+    "overview": "**Creative North Star: \"The Course Being Printed\"**\n\nHexaPharma is an orienteering map that is printed as you run it. The ground is paper (`paper`), structure is near-black ink (`ink`), the land carries ISOM-style map inks (brown contours, blue water, black cliffs, green cure screens, amber side-effect screens), and the only thing in purple is the player's own course. The Atlas, the Factory floor, the legend hotbar and every drawer are parts of one sheet: map, margin furniture, and legend. Game rules live in `docs/design.md`; its \"Visual language\" section is the short canonical statement this file expands into tokens.\n\nDensity follows the factory-game floor: tabular numerals everywhere, compact condensed caps for every name and number, and 44px hit areas on touch. Chrome is printed, not floated. Panels sit on the paper as ruled boxes with hairline borders and heavy ink rules at sheet edges; only drawers, toasts and modals that physically cover the map carry a soft shadow. The hand-drawn quality is narrow and deterministic: contour wobble, cliff ticks, hatch lines and the course leg's ink draw, all seeded from `src/render/ink.ts` so a redraw never shimmers.\n\n`docs/design.md` rules out 3D perspective, glass blur, glow and gradients, and generated bitmaps. Everything in the world is drawn by code at runtime: Pixi `Graphics` for the Atlas and Factory, inline SVG for legend symbols. The one exception is the self-hosted Barlow Condensed 600 font.",
+    "keyCharacteristics": [
+      "Warm paper ground, near-black ink, and a strict map-ink palette in which every colour means something.",
+      "Course purple marks the player's own line, selection and Plan overprint. Nothing else uses it.",
+      "Condensed bold caps for headings, numerals, labels and controls. System sans for sentences.",
+      "Heavy 2px ink rules mark sheet edges, 1px rules divide rows, and dashed lines mean draft or empty.",
+      "Numbered control circles, a start triangle and a double-circle finish are drawn as orienteering symbols.",
+      "One authored motion: the course leg inks itself in 220ms, and appears instantly under reduced motion."
+    ],
+    "rules": [
+      {
+        "name": "The Course Purple Rule",
+        "body": "Purple belongs to the player's own line: the course, the candidate, the current selection and Plan overprint. If an element is not something the player drew, chose or is about to commit, it does not use purple.",
+        "section": "colors"
+      },
+      {
+        "name": "The Ink-Means-Something Rule",
+        "body": "Green means cure, amber means side effect, red means failure, blue means water or flow, and brown means terrain. Each one also has a shape (cross, dots, X, hatch, contour), so meaning never depends on colour alone.",
+        "section": "colors"
+      },
+      {
+        "name": "The Shared Inks Rule",
+        "body": "The Pixi renderers read the same values as CSS, from `src/render/schematicStyle.ts` (`SHARED_SCHEMATIC_STYLE`). A new world colour is added to both places.",
+        "section": "colors"
+      },
+      {
+        "name": "The Two Faces Rule",
+        "body": "Use condensed caps for every name, number and control, and use system sans for sentences. Never set a sentence in Barlow, and never set a heading in the body face.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tabular Rule",
+        "body": "Every number is tabular (`font-variant-numeric: tabular-nums` on `strong`, `output`, `td`, `.num` and all readouts), so changing values don't shift the layout.",
+        "section": "typography"
+      },
+      {
+        "name": "The World-First Rule",
+        "body": "The map or floor fills everything chrome doesn't need. Margin furniture sits in the corners at a fixed 12px inset and never covers the centre of the sheet.",
+        "section": "layout"
+      },
+      {
+        "name": "The Printed-Not-Glass Rule",
+        "body": "Anything that sits on the map is printed on it: paper fill, a 1–2px border, no shadow and no blur. Shadows belong only to sheets lying on top of the map.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Overprint Rule",
+        "body": "A Plan is purple overprint: dashed outlines at 0.85 ink alpha, 0.4 alpha channels, 0.06 fill and no wobble. Production is solid black print with blue flow channels and 0.6px outline wobble. Free drafts and paid builds must never look alike.",
+        "section": "shapes"
+      },
+      {
+        "name": "The Steady Hand Rule",
+        "body": "The hand-drawn look comes only from the deterministic `inkJitter` (`src/render/ink.ts`). It applies to contours, cliff ticks, hatch lines, course legs and non-functional footprint outlines. It never touches ports, belt joints, hit-test geometry or text, and the same state renders identically every frame.",
+        "section": "shapes"
+      }
+    ],
+    "dos": [
+      "Do draw new world elements with code (Pixi `Graphics` or inline SVG) using `SHARED_SCHEMATIC_STYLE` / CSS custom properties, never raster assets.",
+      "Do give every status colour a shape partner: cross for cure, dots for side effect, X or dash for failure.",
+      "Do use condensed display caps (Barlow Condensed 600) for names, numbers and controls, with tabular numerals.",
+      "Do keep map furniture printed: `paper-raised`, 1px `rule-strong` border, 3px corners, 12px inset, no shadow.",
+      "Do keep the course leg ink draw at or under 250ms (currently 220ms, exponential ease-out) and make it instant under `prefers-reduced-motion`.",
+      "Do keep touch targets at least 44px and a visible 2px `course` focus outline."
+    ],
+    "donts": [
+      "Don't use course purple for anything the player didn't draw, select or isn't about to commit.",
+      "Don't use 3D perspective, glass blur, glow, gradients or generated bitmaps (per `docs/design.md`).",
+      "Don't put shadows on anything printed on the map. Only drawers, toasts and modals get them.",
+      "Don't apply ink jitter to ports, belt joints, hit-test geometry or text, or seed it from anything nondeterministic.",
+      "Don't let fog texture reveal hidden terrain. Fog contours depend only on seed and coordinates, and only walls show through.",
+      "Don't render Plan and Production the same way. Plan is dashed purple overprint, and Production is solid black print."
+    ]
+  }
+}

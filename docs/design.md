@@ -45,7 +45,7 @@ Atlas 採 pointy-top axial true hex。離散位置是整數 `{q,r}`；六鄰接�
 - **Swamp**：該步消耗 2 energy；一般可進入格消耗 1。
 - **Portal A→B**：從入口立即到同圖的配對出口，剩餘 path 從 B 繼續。B 不可反向當入口；trail 必須在跳躍處斷開。
 
-Atlas 起點位於 generator 宣告的世界中心附近；新局只揭露以起點為中心、hex distance radius 2 的 19-cell disk。camera 開局聚焦起點，地圖只顯示 viewport 覆蓋的一小部分。一般 pan／zoom 不改 authority；contextual focus固定明示Next並移到淡藍空心candidate endpoint。每個stamp在單一intent中立即resolve，UI不呈現timed Dose phase或自動camera follow；resolved outcome可保留，但建築重新啟用不能因stale outcome強制聚焦。Cure sites HUD只顯示已揭露位置的數量並可輪播已知Cure，不能讓玩家誤以為是已成功治療數，也不能以總數、disabled state、輪播順序或camera洩漏未知Cure。
+Atlas 起點位於 generator 宣告的世界中心附近；新局只揭露以起點為中心、hex distance radius 2 的 19-cell disk。camera 開局聚焦起點，地圖只顯示 viewport 覆蓋的一小部分。一般 pan／zoom 不改 authority；contextual focus固定明示Next並移到淡藍空心candidate endpoint。每個stamp在單一intent中立即resolve，UI不呈現timed Dose phase或自動camera follow（唯一例外：剛resolve出Cure的步驟把camera fit到已印路線與終點，可被輸入中斷）；resolved outcome可保留，但建築重新啟用不能因stale outcome強制聚焦。Cure sites HUD只顯示已揭露位置的數量並可輪播已知Cure，不能讓玩家誤以為是已成功治療數，也不能以總數、disabled state、輪播順序或camera洩漏未知Cure。
 
 每次 assay 的 mission readout 只提供目標相對起點的寬廣sector：local，或east／south-east／south-west／west／north-west／north-east。它不公開目標座標、距離、reference path、region大小或霧下內容；sector是方向線索，不是導航答案。
 
@@ -174,10 +174,21 @@ Blueprint 與 save slot 完全分離，Library envelope version 是 4，使用 `
 - Research 與 Factory 共用 pick／place／erase／pan／zoom 的肌肉記憶，但維持不同 authority 與 validators。
 - Research 的 place target 是下一個完整 candidate 的 endpoint，不是任意 canvas click；session readout 只投影已執行 program，不是可重排或批次送出的第二份 route authority。
 - Atlas 與 Factory 都使用 pointy-top axial true hex、`{q,r}` 與 E／SE／SW／W／NW／NE；兩者共用投影慣例，但 geometry payload 與 validator 仍分離。不得重新引入 Cartesian tile authority 或四方向 packing。
-- 極簡、偏 pixel 的俯視 2D：中性炭灰／冷灰底、近白文字與機身；青藍僅標流動、白／淡藍標選取與 candidate、綠標 cure、紫紅標副作用、紅標失敗。平塗硬邊，無黃光、青色 halo、裝飾圈環或全表面亮邊；Pixi vector runtime 保留 canonical true hex。
-- 世界使用 Pixi `Graphics` 的平塗 vector runtime，不使用 3D 透視、glass blur、過量 glow／gradient／rounding，也不依賴 generated lab bitmap 或 runtime asset manifest。
+- 視覺語言見下方 [Visual language](#visual-language)；世界由 Pixi `Graphics` vector runtime 繪製，不使用 3D 透視、glass blur、glow／gradient，也不依賴 generated bitmap 或 runtime asset manifest。
 - 詳細按鍵、建造費與驗證步驟集中在 [player-guide.md](player-guide.md)；畫面只提供短 label、icon、hotkey 與 tooltip。
 - 完整視覺與互動規格見 [ui-interaction.md](ui-interaction.md)。
+
+### Visual language
+
+整體是「邊跑邊印出來的定向越野地圖」；產品真相見 `PRODUCT.md`，方向契約見 `.impeccable/surfaces/src-ui-game-tsx.md`。
+
+- **紙與墨**：紙底 `#F6F3EC`、近黑墨 `#1E1F1C`；ISOM 色語——牆是黑色斷崖墨、沼澤是藍色水平線、治療區是綠色網點＋十字、副作用是琥珀網點、失敗是紅；Cure＋SideEffect 同格時兩種網點都要看得見。
+- **路線紫 `#7B2CBF` 只屬玩家自己的線**：研究路線（起點三角、編號控制點圓、終點雙圈、虛線 candidate）、選取與 Plan overprint。Production 以黑墨實印；Plan 以紫色 overprint 區分免費草稿與付費實體。
+- **霧**：未揭露是未印的紙，只有與 seed／座標有關、與隱藏地形無關的淡等高線紋理；牆仍穿霧可見。格線只畫在已揭露格。
+- **字**：標題、數字、標籤用自帶 Barlow Condensed 600（`src/ui/fonts/`，OFL），內文系統字；所有數字 tabular。
+- **手繪感**：只來自 `src/render/ink.ts` 的確定性抖動，用於等高線、斷崖刻痕、陰影線與路線墨線；不得作用於 port、belt 接點、hit-test 幾何或文字，同一狀態必須逐幀一致。
+- **動態**：每個場域只有一個 authored moment（研究步驟的墨線描出 ≤250 ms），`prefers-reduced-motion` 時立即完成；Pixi auto-ticker 維持關閉。
+- **Shell**：頂列（場域分頁、Cash／Knowledge／Stock→Market／合約）與 Objective 列（依遊戲狀態指出下一步並提供直接動作）；Market／Technology／Blueprints／Formulas／Guide 是右側 legend 式抽屜。
 
 ## 1.11 Save v11 — 開放、可編輯的 alpha 存檔
 

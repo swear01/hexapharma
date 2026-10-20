@@ -1,8 +1,15 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { EffectMap, MultiMap } from "../sim/phase0_interfaces";
+import { applyTemplate } from "../sim/drug-graph";
+import { generate } from "../sim/mapgen";
+import { defaultGenOptions } from "./Game";
+import { focusLabCamera } from "../render/labCamera";
 import {
   labPointerToViewport,
+  researchControlPoints,
+  researchFitCamera,
+  researchStepResolved,
   researchFocusTarget,
   researchKnownCureLabel,
   researchKnownCureCount,
@@ -153,5 +160,50 @@ describe("Lab pointer projection", () => {
     expect(researchPointerMoved(10, 10, 14, 12)).toBe(false);
     expect(researchPointerMoved(10, 10, 16, 12)).toBe(true);
     expect(researchPointerMoved(10, 10, 20, 10)).toBe(true);
+  });
+});
+
+describe("Research course controls", () => {
+  it("numbers one control per executed step and ends at the run's final position", () => {
+    const level = generate(defaultGenOptions(14));
+    const program = level.diseases[0]!.reference;
+    const controls = researchControlPoints(level.mm, level.start, program, 0);
+    expect(controls).toHaveLength(program.steps.length);
+    expect(controls.at(-1)).toEqual(applyTemplate(level.mm, level.start, program).pos[0]);
+    expect(researchControlPoints(level.mm, level.start, { steps: [] }, 0)).toEqual([]);
+  });
+});
+
+describe("Research Cure fit", () => {
+  const push = { typeId: "push", path: [0] } as const;
+  const pull = { typeId: "pull", path: [3] } as const;
+
+  it("fires only for one freshly resolved step, never for a stale or loaded program", () => {
+    const one = { steps: [push] };
+    const two = { steps: [push, pull] };
+    expect(researchStepResolved({ steps: [] }, one)).toBe(true);
+    expect(researchStepResolved(one, { steps: [push, pull] })).toBe(true);
+    expect(researchStepResolved(two, two)).toBe(false);
+    expect(researchStepResolved({ steps: [] }, two)).toBe(false);
+    expect(researchStepResolved({ steps: [pull] }, { steps: [push, pull] })).toBe(false);
+    expect(researchStepResolved(two, { steps: [pull] })).toBe(true);
+  });
+
+  it("keeps the whole course inside the uncovered part of the viewport without zooming in", () => {
+    const map = { width: 63, height: 63 };
+    const viewport = { width: 832, height: 512 };
+    const insets = { top: 10, right: 200, bottom: 40, left: 150 };
+    const points = [{ q: 31, r: 31 }, { q: 40, r: 31 }, { q: 44, r: 33 }];
+    const camera = researchFitCamera(points, viewport, insets, { x: 0, y: 0, zoom: 1 }, map);
+    expect(camera.zoom).toBeLessThanOrEqual(1);
+    for (const point of points) {
+      const projected = focusLabCamera(point);
+      const x = viewport.width / 2 + (projected.x - camera.x) * camera.zoom;
+      const y = viewport.height / 2 + (projected.y - camera.y) * camera.zoom;
+      expect(x).toBeGreaterThanOrEqual(insets.left);
+      expect(x).toBeLessThanOrEqual(viewport.width - insets.right);
+      expect(y).toBeGreaterThanOrEqual(insets.top);
+      expect(y).toBeLessThanOrEqual(viewport.height - insets.bottom);
+    }
   });
 });

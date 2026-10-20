@@ -132,16 +132,16 @@ describe("Lab terrain visual language", () => {
     level.fog[2] = 1;
 
     expect(labTerrainVisual(level, 0, 0)).toMatchObject({
-      baseColor: 0x3a4248,
-      rimColor: 0x727f88,
+      baseColor: 0x1e1f1c,
+      rimColor: 0x1e1f1c,
     });
     expect(labTerrainVisual(level, 1, 0)).toMatchObject({
-      baseColor: 0x2b4032,
-      rimColor: 0x8dcb9b,
+      baseColor: 0xd8ecd9,
+      rimColor: 0x2f8f46,
     });
     expect(labTerrainVisual(level, 2, 0)).toMatchObject({
-      baseColor: 0x51223f,
-      rimColor: 0xde5fb1,
+      baseColor: 0xf8e7d1,
+      rimColor: 0xd9822b,
     });
   });
 

@@ -59,17 +59,18 @@ test("Market explains Ship best economics and reports Knowledge from a sale", as
   await loadMarket(page, 0);
   const row = page.getByTestId("shop-row-0");
 
-  await expect(row.getByText("Next gross", { exact: true })).toBeVisible();
-  await expect(row.getByText("Best production cost", { exact: true })).toBeVisible();
-  await expect(row.getByText("Best effect penalty", { exact: true })).toBeVisible();
-  await expect(row.getByText("Best net", { exact: true })).toBeVisible();
-  await expect(row.getByTestId("shop-next-0")).toHaveText("96");
-  await expect(row.getByTestId("shop-production-cost-0")).toHaveText("26");
-  await expect(row.getByTestId("shop-side-effect-penalty-0")).toHaveText("$25 × 0 = $0");
-  await expect(row.getByTestId("shop-net-0")).toHaveText("70");
+  await expect(row.getByText("Next unit", { exact: true })).toBeVisible();
+  await expect(row.getByText("Demand", { exact: true })).toBeVisible();
+  await expect(row.getByTestId("shop-next-0")).toHaveText("$96");
+  await expect(row.getByTestId("shop-production-cost-0")).toHaveText("$26");
+  // Clean stock carries no side-effect term; the penalty appears only when it applies.
+  await expect(row.getByTestId("shop-side-effect-penalty-0")).toHaveCount(0);
+  await expect(row.getByTestId("shop-net-0")).toHaveText("$70");
+  await expect(row.getByTestId("shop-ladder-0").locator("li")).toHaveCount(5);
+  await expect(row.getByTestId("shop-ladder-0").locator("li").first()).toHaveText("$96");
   await expect(row.getByTestId("shop-clean-0")).toHaveClass("market-value-clean");
   await expect(row.getByTestId("shop-tainted-0")).toHaveClass("market-value-tainted");
-  await expect(row.getByText("Tainted stock", { exact: true })).toBeVisible();
+  await expect(row.locator(".market-stock.is-tainted")).toContainText("Tainted");
 
   await row.getByTestId("shop-sell-0").click();
   await expect(page.getByTestId("market-sale-feedback")).toHaveText(
@@ -82,9 +83,9 @@ test("Market gives a visible reason when no stock can ship profitably", async ({
   await loadMarket(page, 22);
   const row = page.getByTestId("shop-row-0");
 
-  await expect(row.getByTestId("shop-next-0")).toHaveText("25");
-  await expect(row.getByTestId("shop-production-cost-0")).toHaveText("26");
-  await expect(row.getByTestId("shop-net-0")).toHaveText("-1");
+  await expect(row.getByTestId("shop-next-0")).toHaveText("$25");
+  await expect(row.getByTestId("shop-production-cost-0")).toHaveText("$26");
+  await expect(row.getByTestId("shop-net-0")).toHaveText("−$1");
   await expect(row.getByTestId("shop-disabled-reason-0")).toHaveText(
     "No profitable stock at next price.",
   );

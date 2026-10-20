@@ -70,9 +70,9 @@ test("loading a finished Research shot preserves fog and its independent outcome
   await installSaveFixture(page, completedResearchSave());
   await page.reload();
   await confirmLoad(page);
-  await expect(page.getByTestId("research-program-count")).not.toHaveText("0 tested");
+  await expect(page.getByTestId("research-program-count")).not.toHaveText("0 steps");
   await expect(page.getByTestId("research-atlas-outcome")).toBeVisible();
-  await expect(page.getByTestId("research-command")).toHaveText("Test · $2");
+  await expect(page.getByTestId("research-command")).toHaveText("Run · $2");
   await expect(page.getByRole("button", { name: /send.*pilot|transfer/i })).toHaveCount(0);
   await page.getByTestId("view-pilot").click();
   await expect(page.getByTestId("pilot-command")).toBeDisabled();
@@ -90,7 +90,7 @@ test("Research selection is free and each tested cartridge immediately spends an
   await expect(revealed).toHaveText(fogBefore ?? "");
   await expect(cash).toHaveText(cashBefore ?? "");
   await clickCandidateEndpoint(page, 1);
-  await expect(page.getByTestId("research-program-count")).toHaveText("1 tested");
+  await expect(page.getByTestId("research-program-count")).toHaveText("1 step");
   await expect(revealed).not.toHaveText(fogBefore ?? "");
   await expect(cash).not.toHaveText(cashBefore ?? "");
 });
@@ -105,7 +105,7 @@ test("ending an active assay does not refund tested cartridges", async ({ page }
   await page.getByTestId("research-abort").click();
   await expect(page.getByTestId("cash")).toHaveText("192");
   await expect(page.getByTestId("research-command")).toBeEnabled();
-  await expect(page.getByTestId("research-program-count")).toHaveText("0 tested");
+  await expect(page.getByTestId("research-program-count")).toHaveText("0 steps");
 });
 
 test("an obsolete save namespace is ignored and preserved without migration", async ({ page }) => {

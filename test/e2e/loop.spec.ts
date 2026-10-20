@@ -54,7 +54,8 @@ test("full loop: paid Research → Formula → Production Plan → Production �
   await expect(page.getByTestId("research-atlas-outcome")).toBeVisible();
   await page.getByTestId("view-formulas").click();
   await expect(page.getByTestId("formula-ribbon")).toContainText("Disease 1");
-  await expect(page.getByTestId("formula-ribbon").locator(".formula-ribbon-cost")).toContainText("assay");
+  await expect(page.getByTestId("formula-ribbon")).toContainText("F-01 · Disease 1");
+  await expect(page.getByTestId("formula-ribbon").locator(".formula-ribbon-cost")).toHaveText(/^\$[1-9][0-9]*$/);
   await expect(page.getByTestId("shipping-contract")).toContainText("0 / 3");
 
   await page.getByTestId("view-pilot").click();
@@ -148,7 +149,8 @@ test("an expanded-floor Blueprint stays readable on a smaller Production floor",
   await page.goto("/");
   await page.getByTestId("view-blueprints").click();
   const card = page.locator(".blueprint-card").filter({ hasText: "Expanded floor" });
-  await expect(card.getByRole("button", { name: "Open in Production Plan" })).toBeDisabled();
-  await expect(card.getByRole("button", { name: "Build unavailable" })).toBeDisabled();
+  await expect(card.getByRole("button", { name: "Open in Plan" })).toBeDisabled();
+  await expect(card.getByRole("button", { name: "Commission", exact: true })).toBeDisabled();
+  await expect(card).toContainText("Built for a 26×12 floor; Production is 24×12.");
   expect(errors).toEqual([]);
 });
