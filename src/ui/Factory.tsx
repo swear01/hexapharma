@@ -22,7 +22,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { MachineIcon } from "./MachineIcon";
 import { blockingDialogOpen } from "./blockingDialog";
 import { createPortal } from "react-dom";
-import { machineName, machineShortName } from "./machineLabels";
+import { machineName } from "./machineLabels";
 import { outcomeEffectText } from "./effectLabels";
 import type {
   Dir,
@@ -1104,7 +1104,7 @@ export function Factory({
     if (copied === null) return;
     clipboardRef.current = copied;
     setClipboardLabel(copied.brush.kind === "machine"
-      ? machineShortName(copied.brush.typeId)
+      ? machineName(copied.brush.typeId)
       : copied.brush.kind);
     if (cut) {
       commitLayout(paint(layoutRef.current, hoverCell.q, hoverCell.r, { kind: "erase" }, E, 0));
@@ -1432,9 +1432,9 @@ export function Factory({
                   title={machineTooltip(entry)}
                 >
                   <span className="tool-symbol">
-                    <MachineIcon typeId={entry.typeId} path={entry.path} size={36} footprint />
+                    <MachineIcon typeId={entry.typeId} path={entry.path} size={36} variant="token" />
                   </span>
-                  <span className="tool-name">{machineShortName(entry.typeId)}</span>
+                  <span className="tool-name">{machineName(entry.typeId)}</span>
                   {shortcutIndex >= 0 && shortcutIndex < 4 && (
                     <span className="hotkey">{(shortcutIndex + 7) % 10}</span>
                   )}

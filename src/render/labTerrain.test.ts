@@ -137,7 +137,7 @@ describe("Lab terrain visual language", () => {
     });
     expect(labTerrainVisual(level, 1, 0)).toMatchObject({
       baseColor: 0x2b4032,
-      rimColor: 0x8dcb9b,
+      rimColor: 0x2f8f46,
     });
     expect(labTerrainVisual(level, 2, 0)).toMatchObject({
       baseColor: 0x51223f,

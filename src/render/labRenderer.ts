@@ -20,7 +20,6 @@ import { SHARED_SCHEMATIC_STYLE } from "./schematicStyle";
 export const LAB_SCHEMATIC_STYLE = Object.freeze({
   ...SHARED_SCHEMATIC_STYLE,
   candidate: 0xc0d5e2,
-  sideEffect: 0xde5fb1,
   fogGrid: 0x30383e,
   wallDetail: 0x637078,
   abyssDetail: 0x06090c,

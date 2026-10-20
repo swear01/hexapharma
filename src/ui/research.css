@@ -1,0 +1,52 @@
+.research-workspace { position: absolute; inset: 0; min-width: 0; min-height: 0; overflow: hidden; display: grid; grid-template-rows: minmax(0, 1fr) 64px 54px; }
+.research-mission { position: absolute; top: 0; left: 0; height: 40px; pointer-events: none; z-index: 2; display: flex; align-items: center; gap: 12px; padding: 0 24px; color: var(--ink-2); font-size: 12px; }
+.research-mission > span:first-child { text-transform: uppercase; font-size: 10px; letter-spacing: .1em; }
+.research-mission strong { color: var(--ink); }
+.research-mission output { color: var(--cure-ink); }
+.research-atlas { position: relative; grid-row: 1; grid-column: 1; overflow: visible; }
+.world-viewport { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: var(--paper); }
+.lab-world { width: 100%; height: 100%; container-type: size; }
+.lab-map-frame { position: absolute; inset: 0; overflow: hidden; cursor: grab; touch-action: none; }
+.lab-map-frame:active { cursor: grabbing; }
+.lab-map-frame[data-placement-target="true"] { cursor: pointer; }
+.lab-canvas { position: absolute; width: max(100cqw, calc(100cqh * 13 / 8)); height: max(100cqh, calc(100cqw * 8 / 13)); left: 50%; top: 50%; transform: translate(-50%, -50%); }
+.lab-canvas canvas { display: block; width: 100% !important; height: 100% !important; }
+.research-path-hotbar { grid-row: 2; display: flex; justify-content: center; align-items: stretch; gap: 8px; padding: 4px 20px; overflow-x: auto; background: var(--paper); }
+.research-path-hotbar button { flex: 0 0 84px; display: grid; grid-template-columns: 1fr auto; grid-template-rows: 1fr auto; padding: 4px 8px; border-color: transparent; color: var(--ink-2); background: transparent; }
+.research-path-hotbar button svg { margin: auto; grid-column: 1 / -1; }
+.research-path-hotbar button span { font-size: 10px; text-align: left; }
+.research-path-hotbar button kbd { grid-row: 2; grid-column: 2; }
+.research-path-hotbar button.is-selected { border-color: var(--ink); color: var(--ink); background: var(--paper-raised); }
+.research-commandbar { grid-row: 3; display: flex; justify-content: flex-end; align-items: center; padding: 4px 20px; gap: 16px; border-top: 1px solid var(--rule); font-size: 12px; }
+.research-commandbar strong { color: var(--ink-2); font-weight: 500; }
+.research-commandbar .facility-command { min-width: 120px; border-color: var(--course); background: var(--course); color: var(--paper-raised); font: 600 16px/1 var(--font-display); letter-spacing: .05em; text-transform: uppercase; }
+.research-commandbar .facility-command:hover:not(:disabled) { background: var(--course-ink); }
+.research-commandbar .is-warning { border: 0; background: transparent; }
+.research-program-strip { position: absolute; z-index: 4; top: 48px; left: 24px; max-width: calc(100% - 48px); }
+.research-program-strip ol { display: flex; max-width: 100%; padding: 0; margin: 0; list-style: none; gap: 12px; overflow-x: auto; background: var(--paper); }
+.research-program-strip li { display: flex; flex: 0 0 auto; gap: 4px; align-items: center; font-size: 10px; }
+.research-step-number { color: var(--ink-3); }
+.research-step-name, .research-step-cost { display: none; }
+.research-atlas-status { position: absolute; z-index: 3; bottom: 8px; left: 20px; right: 20px; display: flex; align-items: center; gap: 14px; pointer-events: none; font-size: 11px; }
+.research-atlas-status button { pointer-events: auto; background: var(--paper); border-color: transparent; font-size: 12px; }
+.research-atlas-status strong { margin-left: auto; padding: 12px; background: var(--paper); font-weight: 500; }
+.research-atlas-status output, .research-atlas-status > span { color: var(--ink-3); }
+.research-atlas-status button.research-cure-count { color: var(--cure-ink); }
+.research-atlas-status button > span:first-child { display: none; }
+.research-atlas-status kbd { margin-left: 8px; }
+@media (max-width: 768px) {
+  .research-workspace { grid-template-rows: minmax(0, 1fr) 76px 54px; }
+  .research-mission { padding: 0 12px; gap: 8px; font-size: 11px; }
+  .research-mission > span:first-child { display: none; }
+  .research-commandbar { padding: 4px 8px; gap: 8px; justify-content: space-between; font-size: 11px; }
+  .research-commandbar button { font-size: 12px; padding-inline: 8px; }
+  .research-commandbar .facility-command { min-width: 94px; }
+  .research-path-hotbar { gap: 4px; padding: 6px 8px; }
+  .research-path-hotbar button { flex-basis: 74px; }
+  .research-program-strip { left: 12px; max-width: calc(100% - 24px); }
+  .research-atlas-status { left: 8px; right: 8px; bottom: 0; gap: 4px; flex-wrap: wrap; }
+  .research-atlas-status > span { display: none; }
+  .research-atlas-status strong { flex: 0 0 100%; padding: 6px 10px; margin: 0; font-size: 12px; }
+  .research-atlas-status button { padding: 8px; }
+  .research-atlas-status output { margin-right: auto; }
+}

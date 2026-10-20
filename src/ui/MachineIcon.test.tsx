@@ -40,11 +40,20 @@ describe("MachineIcon", () => {
   it("uses the canonical physical cells and ports for Factory tools", () => {
     for (const entry of DEFAULT_CATALOG) {
       const shape = DEFAULT_SHAPES[entry.typeId]!;
-      const markup = renderToStaticMarkup(<MachineIcon typeId={entry.typeId} path={entry.path} footprint />);
+      const markup = renderToStaticMarkup(<MachineIcon typeId={entry.typeId} path={entry.path} variant="footprint" />);
       expect(markup.match(/<polygon/g)).toHaveLength(shape.cells.length);
       expect(markup.match(/<rect/g)).toHaveLength(shape.inPorts.length);
       expect(markup.match(/<circle/g)).toHaveLength(shape.outPorts.length);
       expect(markup).not.toContain("NaN");
+    }
+  });
+
+  it("draws one machine identity with both its factory footprint and its Atlas path", () => {
+    for (const entry of DEFAULT_CATALOG) {
+      const markup = renderToStaticMarkup(<MachineIcon typeId={entry.typeId} path={entry.path} variant="token" />);
+      expect(markup).toContain('data-icon-shape="footprint"');
+      expect(markup).toContain('data-icon-shape="path"');
+      expect(markup.match(/<polyline/g)).toHaveLength(1);
     }
   });
 
