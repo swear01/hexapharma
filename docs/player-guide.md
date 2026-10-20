@@ -39,7 +39,7 @@ Blueprint Library 與 save slot 分離；New Game、Load、Rewind、換 slot 都
 
 - Atlas 遠大於 viewport；開局 camera 聚焦世界中心的 generator start，只有以起點為中心、hex distance radius 2 的19-cell disk已揭露，畫面只顯示整張圖的一小部分。地圖是pointy-top hex，六個相鄰方向為E／SE／SW／W／NW／NE。
 - 地圖左上角的羅盤以紫色扇區顯示目前疾病與Look的寬廣sector：local，或east／south-east／south-west／west／north-west／north-east。它不是精確座標、距離或reference route。
-- 拖曳任一滑鼠鍵可平移；滾輪以游標位置縮放。`F`或Next會聚焦紫色空心candidate control，方便接續離屏路線。每個stamp立即resolve，沒有等待動畫結束的Dose階段或自動camera跟隨；切到其他建築再回來不會重設手動camera。
+- 拖曳任一滑鼠鍵可平移；滾輪以游標位置縮放。`F`或Next會聚焦紫色空心candidate control，方便接續離屏路線。每個stamp立即resolve，沒有等待動畫結束的Dose階段或自動camera跟隨（唯一例外：剛找到Cure的那一步會把鏡頭拉到能看見整條路線與終點，可隨時拖曳中斷）；切到其他建築再回來不會重設手動camera。
 - 找到Cure位置後可點底部的`Cure sites x`逐一聚焦已揭露的位置；這是**已發現位置數**，不是已成功治療數。`Cure sites 0`時不可操作，HUD不顯示未知總數或霧下位置。
 - 霧是還沒印出的紙；**Wall**（黑色斷崖）不需要先探索就看得到；Wall會取消該步，但機器繼續走剩餘 path。
 - 其他互動物揭露後才可辨識：
