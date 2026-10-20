@@ -1,8 +1,12 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { EffectMap, MultiMap } from "../sim/phase0_interfaces";
+import { applyTemplate } from "../sim/drug-graph";
+import { generate } from "../sim/mapgen";
+import { defaultGenOptions } from "./Game";
 import {
   labPointerToViewport,
+  researchControlPoints,
   researchFocusTarget,
   researchKnownCureLabel,
   researchKnownCureCount,
@@ -153,5 +157,16 @@ describe("Lab pointer projection", () => {
     expect(researchPointerMoved(10, 10, 14, 12)).toBe(false);
     expect(researchPointerMoved(10, 10, 16, 12)).toBe(true);
     expect(researchPointerMoved(10, 10, 20, 10)).toBe(true);
+  });
+});
+
+describe("Research course controls", () => {
+  it("numbers one control per executed step and ends at the run's final position", () => {
+    const level = generate(defaultGenOptions(14));
+    const program = level.diseases[0]!.reference;
+    const controls = researchControlPoints(level.mm, level.start, program, 0);
+    expect(controls).toHaveLength(program.steps.length);
+    expect(controls.at(-1)).toEqual(applyTemplate(level.mm, level.start, program).pos[0]);
+    expect(researchControlPoints(level.mm, level.start, { steps: [] }, 0)).toEqual([]);
   });
 });

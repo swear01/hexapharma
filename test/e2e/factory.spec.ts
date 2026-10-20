@@ -589,7 +589,7 @@ test("focused Factory tool controls still allow R, number, and Q world hotkeys",
 
 test("Pilot builds without a Research contract and Production is an exact copy", async ({ page }) => {
   await loadSaveFixture(page, pilotSave());
-  await expect(page.getByTestId("research-program-count")).toHaveText("0 tested");
+  await expect(page.getByTestId("research-program-count")).toHaveText("0 steps");
   await page.getByTestId("view-pilot").click();
   await expect(page.getByTestId("pilot-facility-workspace")).toBeVisible();
   await expect(page.getByTestId("factory-play")).toHaveCount(0);

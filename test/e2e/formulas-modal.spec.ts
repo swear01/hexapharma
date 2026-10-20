@@ -153,11 +153,11 @@ test("formula reference restores Research hotkeys only when the world is visible
   await expect(page.getByTestId("cash")).toHaveText(cash!);
   await expect(page.getByTestId("research-program-count")).toHaveText(tested!);
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.getByTestId("lab-map-frame").click({ position: { x: 20, y: 80 } });
+  await page.getByTestId("lab-map-frame").click({ position: { x: 600, y: 80 } });
   await page.keyboard.press("2");
   await expect(cartridges.nth(1)).toHaveAttribute("aria-pressed", "true");
   await page.keyboard.press("Enter");
-  await expect(page.getByTestId("research-program-count")).toHaveText("1 tested");
+  await expect(page.getByTestId("research-program-count")).toHaveText("1 step");
   await expect(page.getByTestId("cash")).not.toHaveText(cash!);
   await expect(page.getByTestId("formula-ribbon")).toBeVisible();
 });
