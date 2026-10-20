@@ -12,6 +12,7 @@ import type {
 import { DEFAULT_CATALOG } from "../sim/phase0_interfaces";
 import { App, researchOutcomeText } from "./App";
 import { diseaseName } from "./effectLabels";
+import { formulaId } from "./Formulas";
 import { MachineIcon } from "./MachineIcon";
 import { machineName } from "./machineLabels";
 
@@ -21,9 +22,6 @@ export function researchMachineCost(typeId: string): number {
   return entry.cost;
 }
 
-export function researchFormulaId(disease: number): string {
-  return `F-${String(disease + 1).padStart(2, "0")}`;
-}
 
 export function researchStepCountLabel(count: number): string {
   return `${count} ${count === 1 ? "step" : "steps"}`;
@@ -88,7 +86,7 @@ function ResearchResult({
         <circle cx="16" cy="16" r="8.5" />
       </svg>
       <div className="research-cure-body">
-        <h2 data-testid="research-atlas-outcome">{researchFormulaId(cured)} · {diseaseName(cured)}</h2>
+        <h2 data-testid="research-atlas-outcome">{formulaId(cured)} · {diseaseName(cured)}</h2>
         <p className="research-cure-stats">
           <span>{researchStepCountLabel(steps)}</span>
           <span>${cost}</span>

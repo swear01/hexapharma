@@ -2,23 +2,25 @@ const HEX = "16,3 27.3,9.5 27.3,22.5 16,29 4.7,22.5 4.7,9.5";
 
 export type MapSymbolKind =
   | "start" | "control" | "finish" | "candidate" | "cure" | "sideEffect"
-  | "wall" | "marsh" | "abyss" | "portal" | "belt" | "inPort" | "outPort";
+  | "wall" | "marsh" | "abyss" | "portal" | "belt" | "inPort" | "outPort" | "source" | "sink";
 
 /** Legend glyphs; they echo the map and factory renderers' shapes so meaning never rests on colour alone. */
 export function MapSymbol({ kind, size = 32 }: { readonly kind: MapSymbolKind; readonly size?: number }) {
   return (
     <svg className={`map-symbol is-${kind}`} viewBox="0 0 32 32" width={size} height={size} aria-hidden="true" focusable="false" fill="none" strokeLinecap="round" strokeLinejoin="round">
       {kind === "start" && <path d="M16 5 27 24H5z" className="ink-course" strokeWidth="2.5" />}
-      {kind === "control" && <><circle cx="16" cy="16" r="10" className="ink-course" strokeWidth="2.5" /><text x="16" y="20.5" className="map-symbol-number">3</text></>}
+      {kind === "control" && <><circle cx="14" cy="18" r="9" className="ink-course" strokeWidth="2.5" /><text x="26" y="11" className="map-symbol-number">3</text></>}
       {kind === "finish" && <><circle cx="16" cy="16" r="11" className="ink-course" strokeWidth="2.5" /><circle cx="16" cy="16" r="6.5" className="ink-course" strokeWidth="2.5" /></>}
       {kind === "candidate" && <><path d="M4 27 19 12" className="ink-course" strokeWidth="2.5" strokeDasharray="3 4" /><circle cx="23" cy="8" r="5" className="ink-course" strokeWidth="2.5" /></>}
       {kind === "cure" && <><polygon points={HEX} className="fill-cure" /><path d="M14 9h4v5h5v4h-5v5h-4v-5H9v-4h5z" className="solid-cure" /></>}
-      {kind === "sideEffect" && <><polygon points={HEX} className="fill-effect" /><g className="ink-effect" strokeWidth="2"><circle cx="16" cy="16" r="4.5" /><path d="M16 16V8.5M16 16l6.5 3.8M16 16l-6.5 3.8" /></g><g className="solid-effect"><circle cx="16" cy="8.5" r="2" /><circle cx="22.5" cy="19.8" r="2" /><circle cx="9.5" cy="19.8" r="2" /></g></>}
-      {kind === "wall" && <><polygon points={HEX} className="solid-ink" /><path d="M7 13h18M7 19h18M16 7v6M11 13v6M21 19v6" className="ink-paper" strokeWidth="1.5" /></>}
-      {kind === "marsh" && <><polygon points={HEX} className="ink-rule" strokeWidth="1.5" /><path d="M9 11h9M13 16h10M9 21h9" className="ink-marsh" strokeWidth="2.5" /></>}
-      {kind === "abyss" && <><polygon points={HEX} className="ink-ink" strokeWidth="2" /><path d="M10 10 20 9 24 16 19 23 11 21 13 15z" className="solid-ink" /></>}
+      {kind === "sideEffect" && <><polygon points={HEX} className="fill-effect" /><g className="solid-effect"><circle cx="16" cy="16" r="1.8" /><circle cx="16" cy="9.5" r="1.8" /><circle cx="21.6" cy="12.8" r="1.8" /><circle cx="21.6" cy="19.2" r="1.8" /><circle cx="16" cy="22.5" r="1.8" /><circle cx="10.4" cy="19.2" r="1.8" /><circle cx="10.4" cy="12.8" r="1.8" /></g></>}
+      {kind === "wall" && <><polygon points={HEX} className="solid-ink" /><path d="M16 3V0M27.3 9.5l2.6-1.5M27.3 22.5l2.6 1.5M16 29v3M4.7 22.5l-2.6 1.5M4.7 9.5 2.1 8" className="ink-ink" strokeWidth="2" /></>}
+      {kind === "marsh" && <><polygon points={HEX} className="fill-marsh" /><path d="M7 11h8m3 0h7M6 15h11m3 0h6M6 19h5m3 0h12M7 23h10m3 0h5" className="ink-flow" strokeWidth="1.6" /></>}
+      {kind === "abyss" && <><polygon points={HEX} className="fill-abyss" strokeWidth="2.5" /><polygon points="16,10 21.2,13 21.2,19 16,22 10.8,19 10.8,13" className="ink-pit" strokeWidth="1.5" /></>}
       {kind === "portal" && <><polygon points={HEX} className="ink-rule" strokeWidth="1.5" /><rect x="11" y="8" width="10" height="16" className="ink-ink" strokeWidth="2" /><path d="M13 16h6m-2.5-3 3 3-3 3" className="ink-ink" strokeWidth="2" /></>}
       {kind === "belt" && <><path d="M3 16h26" className="ink-flow" strokeWidth="4" /><path d="M10 12l4 4-4 4M19 12l4 4-4 4" className="ink-paper" strokeWidth="1.8" /></>}
+      {kind === "source" && <path d="M7 7 26 16 7 25z" className="ink-ink" strokeWidth="2" />}
+      {kind === "sink" && <><circle cx="16" cy="16" r="11" className="ink-ink" strokeWidth="2" /><circle cx="16" cy="16" r="6.5" className="ink-ink" strokeWidth="2" /></>}
       {kind === "inPort" && <><polygon points={HEX} className="ink-rule" strokeWidth="1.5" /><rect x="12" y="12" width="8" height="8" className="solid-ink" /></>}
       {kind === "outPort" && <><polygon points={HEX} className="ink-rule" strokeWidth="1.5" /><circle cx="16" cy="16" r="4.5" className="ink-ink" strokeWidth="2.5" /></>}
     </svg>
@@ -41,9 +43,11 @@ const LEGEND: readonly { readonly group: string; readonly items: readonly (reado
     ["portal", "Portal", "One-way jump to its paired exit; the step continues there."],
   ] },
   { group: "Factory", items: [
-    ["belt", "Belt", "Carries units in the arrow's direction."],
+    ["source", "Source", "Starts units into the line."],
+    ["belt", "Belt", "Carries units the way its chevrons point."],
     ["inPort", "Input port", "Where a machine takes units in."],
-    ["outPort", "Output port", "Where a machine sends units out."],
+    ["outPort", "Output port", "Where a machine sends units out. Hollow ports are not connected."],
+    ["sink", "Sink", "Collects finished units into stock."],
   ] },
 ];
 

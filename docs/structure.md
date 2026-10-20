@@ -28,12 +28,17 @@
 | `src/render/hexProjection.ts` | Research／Factory共用pointy-top axial pixel projection；不擁有sim座標。 |
 | `src/render/labCamera.ts` | 大型 axial Atlas camera、pan/zoom/focus/q-r picking/culling。 |
 | `src/render/labTerrain.ts`, `labRegions.ts` | Wall-only穿霧、其他terrain/effect discovery gating、overlap Cure/SideEffect與portal pairing visuals。 |
+| `src/render/ink.ts` | renderer-only確定性墨線抖動（手繪感）；不得用於port、belt接點、hit-test或文字。 |
 | `src/render/labRenderer.ts` | vector-only minimal flat hex Atlas、下一個full-path candidate、executed trail、terrain、overlap features與fog layer；event-driven單幀重繪。 |
 | `src/render/factoryTransportTopology.ts` | sim-derived accept/emit edges、cell shape classification、machine port connectivity。 |
 | `src/render/factoryRenderer.ts` | Production Plan／Production minimal flat hex schematic、connected transport與tick animation；event-driven單幀重繪。 |
+| `src/ui/ResearchWorkspace.tsx` | F1 Research 版面：羅盤、編號step清單、Cure結果卡、machine legend hotbar與`Run`／`End run` command bar。 |
+| `src/ui/objective.ts` | 由contracts／formulas／stock／layout／patents推導Objective下一步與目標場域的純函式。 |
+| `src/ui/Formulas.tsx`, `FieldGuide.tsx` | `F-0n` control description sheet；Guide與地圖／工廠符號圖例。 |
+| `src/ui/game.css`, `research.css`, `factory.css`, `panels.css`, `fonts/` | tokens＋shell與各區域樣式；自帶 Barlow Condensed 600（OFL）。 |
 | `src/ui/App.tsx` | Research Atlas wrapper、candidate endpoint hit-testing、手動camera focus、已知Cure輪播與resolved outcome。 |
 | `src/ui/Factory.tsx` | Production Plan／Production shared editor、Belt drag、Commission cost preview、diagnostics/transport controls。 |
-| `src/ui/Game.tsx` | F1 stepwise Research／assay sector／Formulas 面板、F2 optional Production Plan、F3 direct Production、contract HUD、$1000 bootstrap、New Game、drawers、paid intents與save shell。 |
+| `src/ui/Game.tsx` | shell：場域分頁、資源HUD、Objective列、drawers、Research authority helpers、F2 optional Production Plan、F3 direct Production、$1000 bootstrap、New Game、paid intents與save shell。 |
 | `src/ui/machineLabels.ts`, `effectLabels.ts` | 玩家可讀的machine／一基底disease／outcome文字；不暴露internal IDs或座標。 |
 | `src/ui/Shop.tsx` | clean/cheap stable product ranking、positive-net single/bulk shipping與finite-demand顯示。 |
 | `src/ui/BlueprintLibrary.tsx` | capture Production Plan／Production、open Factory in Production Plan或paid Commission、strict import/export；既有Research cards只可download/delete，不可capture/apply。 |
