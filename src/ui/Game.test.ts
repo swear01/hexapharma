@@ -68,17 +68,17 @@ describe("default Lab world options", () => {
     expect(playerFacingIntentError(new Error("game intent: product 19 is duplicated, unavailable, or not a cure")))
       .toBe("That product is no longer available to ship.");
     expect(playerFacingIntentError(new Error("game intent: Research stamp requires 42 cash")))
-      .toBe("Need $42 to test that cartridge.");
+      .toBe("Need $42 to run that step.");
     expect(playerFacingIntentError(new Error("game intent: Production construction requires 42 cash")))
       .toBe("Need $42 to build in Production.");
     expect(playerFacingIntentError(new Error("another failure"))).toBe("another failure");
   });
 
-  it("blocks a cartridge before opening an assay that cannot advance", () => {
+  it("blocks a step before opening a run that cannot advance", () => {
     const machine = DEFAULT_CATALOG[0]!;
     expect(researchTestBlockReason(machine.cost - 1, 0, true, machine))
-      .toBe(`Need $${machine.cost} to test that cartridge.`);
-    expect(researchTestBlockReason(machine.cost, 256, true, machine)).toMatch(/end this assay/i);
+      .toBe(`Need $${machine.cost} to run that step.`);
+    expect(researchTestBlockReason(machine.cost, 256, true, machine)).toMatch(/end this run/i);
     expect(researchTestBlockReason(machine.cost, 256, false, machine)).toBeNull();
     expect(researchTestBlockReason(machine.cost, 0, true, machine)).toBeNull();
   });
@@ -227,7 +227,7 @@ describe("default Lab world options", () => {
     )).toEqual([[{ q: 4, r: 3 }, { q: 4, r: 4 }]]);
   });
 
-  it("maps Enter to the next cartridge and Backspace to ending the active assay", () => {
+  it("maps Enter to the next step and Backspace to ending the active run", () => {
     expect(researchKeyboardAction("Enter")).toBe("apply");
     expect(researchKeyboardAction("Backspace")).toBe("abort");
     expect(researchKeyboardAction("x")).toBeNull();

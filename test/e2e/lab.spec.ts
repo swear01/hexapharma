@@ -181,14 +181,14 @@ test("fixed cartridges execute at the endpoint and reveal before the next decisi
   const pushEndpoint = await candidateEndpointPoint(page, "push");
   await page.mouse.move(pushEndpoint.x, pushEndpoint.y);
   await expect(frame).toHaveCSS("cursor", "pointer");
-  await expect(frame).toHaveAttribute("title", "Test cartridge");
+  await expect(frame).toHaveAttribute("title", "Run step");
   await page.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.2);
   await expect(frame).toHaveCSS("cursor", "grab");
   await expect(frame).toHaveAttribute("title", "Drag map");
   await clickBlankWorld();
-  await expect(page.getByTestId("research-program-count")).toHaveText("0 tested");
+  await expect(page.getByTestId("research-program-count")).toHaveText("0 steps");
   await clickPushEndpoint();
-  await expect(page.getByTestId("research-program-count")).toHaveText("1 tested");
+  await expect(page.getByTestId("research-program-count")).toHaveText("1 step");
   await expect(page.getByTestId("research-program-strip").getByRole("listitem"))
     .toHaveCount(1);
   await expect(page.getByTestId("research-program-strip").getByRole("listitem").first())
@@ -205,7 +205,7 @@ test("fixed cartridges execute at the endpoint and reveal before the next decisi
   await expect(page.getByTestId("research-atlas-outcome")).toContainText(/side effects/i);
 
   await page.keyboard.press("Enter");
-  await expect(page.getByTestId("research-program-count")).toHaveText("2 tested");
+  await expect(page.getByTestId("research-program-count")).toHaveText("2 steps");
   await expect(page.getByTestId("research-shot-cost")).toHaveText("$4 spent");
   await expect(cash).toHaveText(String(cashBefore - 4));
 });
@@ -225,14 +225,14 @@ test("machine hotkeys select cartridges while Enter tests one and Backspace ends
   await page.keyboard.press("[");
   await expect(page.getByTestId("research-calibration")).toHaveCount(0);
   await page.keyboard.press("Enter");
-  await expect(page.getByTestId("research-program-count")).toHaveText("1 tested");
+  await expect(page.getByTestId("research-program-count")).toHaveText("1 step");
   const selectedName = page.getByTestId("research-program-strip").locator(".research-step-name").first();
   await expect(selectedName).toHaveAttribute("title", "Wave reactor");
   expect(await selectedName.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   await expect(page.getByTestId("research-shot-cost")).toHaveText(`$${available[1]!.cost} spent`);
   await expect(page.getByTestId("cash")).toHaveText(String(200 - available[1]!.cost));
   await page.keyboard.press("Backspace");
-  await expect(page.getByTestId("research-program-count")).toHaveText("0 tested");
+  await expect(page.getByTestId("research-program-count")).toHaveText("0 steps");
 });
 
 test("native Enter activates a focused Research button instead of testing a cartridge", async ({ page }) => {
@@ -245,7 +245,7 @@ test("native Enter activates a focused Research button instead of testing a cart
 
   await expect(push2).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("cash")).toHaveText("200");
-  await expect(page.getByTestId("research-program-count")).toHaveText("0 tested");
+  await expect(page.getByTestId("research-program-count")).toHaveText("0 steps");
 });
 
 test("Research focus hotkey does not consume text entry in a drawer", async ({ page }) => {
@@ -317,7 +317,7 @@ test("Next focus follows the held candidate at the end of a growing route", asyn
     await expect(frame).toHaveAttribute("data-camera-x", String(endpointCamera.x));
     await expect(frame).toHaveAttribute("data-camera-y", String(endpointCamera.y));
     await clickCandidateEndpoint(page, "push2", stepCount);
-    await expect(page.getByTestId("research-program-count")).toHaveText(`${stepCount} tested`);
+    await expect(page.getByTestId("research-program-count")).toHaveText(`${stepCount} ${stepCount === 1 ? "step" : "steps"}`);
   }
 
   const held = plannedEndpoint("push2", 3);
@@ -368,6 +368,29 @@ test("Cure sites focuses only a Cure already present in authoritative fog", asyn
   const frame = page.getByTestId("lab-map-frame");
   await expect(frame).toHaveAttribute("data-camera-x", String(expected.x));
   await expect(frame).toHaveAttribute("data-camera-y", String(expected.y));
+});
+
+test("a Cure prints its formula card and opens it in Plan", async ({ page }) => {
+  const options = defaultGenOptions(14);
+  const level = generate(options);
+  let game = createGameState(options, 1_000, 0);
+  game = applyGameIntent(game, { kind: "beginResearchShot" });
+  for (const machine of level.diseases[0]!.reference.steps) {
+    game = applyGameIntent(game, { kind: "advanceResearchShot", machine });
+    if (game.research.shot === null) break;
+  }
+  expect(game.research.lastOutcome?.cured).toContain(0);
+  const steps = game.research.program.steps.length;
+
+  await page.goto("/");
+  await installSaveFixture(page, serializeGame(game));
+  await page.reload();
+  await confirmLoad(page);
+  const card = page.getByRole("status", { name: "Cure found" });
+  await expect(card.getByTestId("research-atlas-outcome")).toHaveText("F-01 · Disease 1");
+  await expect(card).toContainText(`${steps} steps`);
+  await page.getByTestId("research-open-plan").click();
+  await expect(page.getByTestId("pilot-facility-workspace")).toBeVisible();
 });
 
 test("Research pan, zoom, and focus preserve the manually controlled camera", async ({ page }) => {

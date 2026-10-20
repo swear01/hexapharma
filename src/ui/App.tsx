@@ -6,8 +6,10 @@ import type {
   GeneratedLevel,
   MultiMap,
   Outcome,
+  Template,
   Vec2,
 } from "../sim/phase0_interfaces";
+import { previewStep } from "../sim/drug-graph";
 import type { LabRenderer } from "../render/labRenderer";
 import type { PixelPoint } from "../render/hexProjection";
 import {
@@ -62,6 +64,24 @@ export function researchPreviewEndpointHit(
 
 export function researchOutcomeText(lastOutcome: Outcome | null): string | null {
   return lastOutcome === null ? null : outcomeEffectText(lastOutcome);
+}
+
+/** Endpoint of each executed step from the run start: the numbered controls of the course. */
+export function researchControlPoints(
+  mm: MultiMap,
+  start: DrugState,
+  program: Template,
+  mapIndex: number,
+): readonly Vec2[] {
+  const controls: Vec2[] = [];
+  let drug = start;
+  for (const machine of program.steps) {
+    drug = previewStep(mm, drug, machine).next;
+    const position = drug.pos[mapIndex];
+    if (position !== undefined) controls.push(position);
+    if (drug.failed) break;
+  }
+  return controls;
 }
 
 export interface ResearchFocusTarget {
@@ -154,6 +174,7 @@ interface AppProps {
   readonly trails: readonly (readonly (Vec2 | null)[])[];
   readonly previewTrails?: readonly (readonly (Vec2 | null)[])[];
   readonly previewDrug?: DrugState;
+  readonly program: Template;
   readonly lastOutcome: Outcome | null;
   readonly onWorldActivate?: () => void;
   readonly onWorldErase?: () => void;
@@ -167,6 +188,7 @@ export function App({
   trails,
   previewTrails,
   previewDrug,
+  program,
   lastOutcome,
   onWorldActivate,
   onWorldErase,
@@ -187,6 +209,11 @@ export function App({
     ),
   ));
   const camera = cameras[activeMap] ?? focusLabCamera(drug.pos[activeMap] ?? { q: 0, r: 0 });
+  const controls = useMemo(
+    () => researchControlPoints(mm, start, program, activeMap),
+    [activeMap, mm, program, start],
+  );
+  const finish = lastOutcome !== null && lastOutcome.cured.length > 0;
   const view = useMemo(
     () => ({
       activeMap,
@@ -194,8 +221,10 @@ export function App({
       trail: trails[activeMap] ?? [],
       previewTrail: previewTrails?.[activeMap],
       previewDrug,
+      controls,
+      finish,
     }),
-    [activeMap, camera, previewDrug, previewTrails, trails],
+    [activeMap, camera, controls, finish, previewDrug, previewTrails, trails],
   );
   const renderMapRef = useRef(renderMap);
   renderMapRef.current = renderMap;
@@ -442,8 +471,6 @@ export function App({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [active, focusResearch]);
 
-  const outcomeText = researchOutcomeText(lastOutcome);
-
   return (
     <div className="game-view lab-workspace research-atlas" data-testid="research-atlas">
       <section className="world-viewport lab-world" aria-label="Research atlas">
@@ -456,7 +483,7 @@ export function App({
           data-camera-zoom={camera.zoom}
           data-placement-target={endpointHovered}
           tabIndex={-1}
-          title={endpointHovered ? "Test cartridge" : "Drag map"}
+          title={endpointHovered ? "Run step" : "Drag map"}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerLeave={() => {
@@ -477,7 +504,11 @@ export function App({
             aria-label={`Focus ${focusDescription}`}
             title={`Focus ${focusDescription}`}
           >
-            <span aria-hidden="true">◎</span><span className="lab-focus-label">{focusTarget.label}</span><kbd>F</kbd>
+            <svg className="lab-focus-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+              <circle cx="8" cy="8" r="5" />
+              <path d="M8 0v4M8 12v4M0 8h4M12 8h4" />
+            </svg>
+            <span className="lab-focus-label">{focusTarget.label}</span><kbd>F</kbd>
           </button>
           <output data-testid="lab-zoom">{Math.round(camera.zoom * 100)}%</output>
           <span data-testid="revealed-count">revealed {revealed}/{total}</span>
@@ -492,7 +523,6 @@ export function App({
           >
             {researchKnownCureLabel(knownCures.length)}
           </button>
-          {outcomeText !== null && <strong data-testid="research-atlas-outcome">{outcomeText}</strong>}
         </div>
       </section>
     </div>

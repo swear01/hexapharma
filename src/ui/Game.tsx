@@ -165,11 +165,11 @@ export function researchTestBlockReason(
   active: boolean,
   machine: { readonly cost: number } | undefined,
 ): string | null {
-  if (machine === undefined) return "Select a cartridge.";
+  if (machine === undefined) return "Select a machine.";
   if (active && completedSteps >= MAX_TEMPLATE_STEPS) {
-    return `End this assay before testing more than ${MAX_TEMPLATE_STEPS} cartridges.`;
+    return `End this run before adding more than ${MAX_TEMPLATE_STEPS} steps.`;
   }
-  return cash < machine.cost ? `Need $${machine.cost} to test that cartridge.` : null;
+  return cash < machine.cost ? `Need $${machine.cost} to run that step.` : null;
 }
 
 export function researchProgramCost(program: Template): number {
@@ -287,7 +287,7 @@ export function playerFacingIntentError(error: unknown): string {
     return placementMessages[machinePlacement] ?? "Machine layout is invalid.";
   }
   const researchCash = /^game intent: Research stamp requires (\d+) cash$/u.exec(message)?.[1];
-  if (researchCash !== undefined) return `Need $${researchCash} to test that cartridge.`;
+  if (researchCash !== undefined) return `Need $${researchCash} to run that step.`;
   const productionCash = /^game intent: Production construction requires (\d+) cash$/u.exec(message)?.[1];
   if (productionCash !== undefined) return `Need $${productionCash} to build in Production.`;
   if (/^game intent: product \d+ is duplicated, unavailable, or not a cure$/u.test(message)) {
