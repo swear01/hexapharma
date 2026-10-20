@@ -13,8 +13,8 @@ async function factoryCellPoint(
   const box = await canvas.boundingBox();
   if (box === null) throw new Error("Factory canvas has no bounds");
   const intrinsic = await canvas.evaluate((element) => ({
-    width: (element as HTMLCanvasElement).width,
-    height: (element as HTMLCanvasElement).height,
+    width: element.clientWidth,
+    height: element.clientHeight,
   }));
   const bounds = hexBoardBounds(BASE_GAME_FACTORY_WIDTH, BASE_GAME_FACTORY_HEIGHT, 21);
   const projected = hexToPixel(q, r, 21);
@@ -178,8 +178,12 @@ test("Pilot spatial editing supports palette, rotate, drag paint, erase, undo, r
   await page.mouse.move(x, y);
   const ghostBox = await frame.locator(".factory-ghost").first().boundingBox();
   if (ghostBox === null) throw new Error("Factory placement preview has no bounds");
-  expect(ghostBox.width).toBeCloseTo(Math.sqrt(3) * 21, 0);
-  expect(ghostBox.height).toBeCloseTo(42, 0);
+  const canvasBox = await canvas.boundingBox();
+  const logicalWidth = await canvas.evaluate((element) => element.clientWidth);
+  if (canvasBox === null) throw new Error("Factory canvas has no bounds");
+  const zoom = canvasBox.width / logicalWidth;
+  expect(ghostBox.width).toBeCloseTo(Math.sqrt(3) * 21 * zoom, 0);
+  expect(ghostBox.height).toBeCloseTo(42 * zoom, 0);
   await page.mouse.down();
   await page.mouse.move(beltEnd.x, beltEnd.y, { steps: 5 });
   await page.mouse.up();

@@ -13,8 +13,10 @@ import {
   factoryResetPlaybackAfterClose,
   facilityMayAnalyzeOutcome,
   facilityOutcomeMap,
+  fitFactoryCamera,
   formatFacilityOutcome,
   initialFacilityLayout,
+  machineLockReason,
   machineTooltip,
   paintBeltRoute,
   placeFactoryTile,
@@ -255,5 +257,25 @@ describe("facility sample visibility", () => {
       cured: [],
       sideEffects: [202],
     })).toBe("No cure · 1 side effect");
+  });
+});
+
+describe("factory framing and legend copy", () => {
+  it("enlarges a small floor to fill the frame, centred, and never shrinks a large one", () => {
+    const fitted = fitFactoryCamera({ width: 1400, height: 600 }, { width: 1000, height: 400 });
+    expect(fitted.zoom).toBeGreaterThan(1);
+    expect(fitted.zoom).toBeLessThanOrEqual(1.6);
+    expect(1000 * fitted.zoom).toBeLessThanOrEqual(1400);
+    expect(400 * fitted.zoom).toBeLessThanOrEqual(600);
+    expect(fitted.x).toBeCloseTo(1000 * (1 - fitted.zoom) / 2);
+    expect(fitted.y).toBeCloseTo(400 * (1 - fitted.zoom) / 2);
+    expect(fitFactoryCamera({ width: 390, height: 400 }, { width: 1000, height: 400 }))
+      .toEqual({ x: 0, y: 0, zoom: 1 });
+  });
+
+  it("explains a locked machine in player terms, naming its contract gate", () => {
+    expect(machineLockReason("skew")).toContain("Disease 1 contract");
+    expect(machineLockReason("skew")).toContain("Technology");
+    expect(machineLockReason("skew")).not.toContain("skew");
   });
 });
