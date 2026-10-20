@@ -1,47 +1,167 @@
+/* Drawers are the map's legend and control-description sheets: ruled rows on raised paper. */
 .management-view { display: grid; grid-template-rows: auto minmax(0, 1fr); }
-.management-header { padding: 24px 72px 16px 24px; border-bottom: 1px solid var(--rule); }
-.management-header h1 { margin-bottom: 0; }
-.management-header p { color: var(--ink-2); font-size: 12px; }
+.management-header { padding: 24px 72px 14px 24px; border-bottom: 2px solid var(--ink); }
+.management-header h1 { margin-bottom: 6px; }
+.management-header p { margin: 0; color: var(--ink-2); font-size: 13px; }
 .market-grid, .patent-grid { min-width: 0; overflow: auto; padding: 0 24px 24px; }
 .market-grid-contents, .patent-grid-contents { display: grid; grid-template-columns: minmax(0, 1fr); }
-.market-card, .patent-card { position: relative; min-width: 0; padding: 22px 0; border-bottom: 1px solid var(--rule-strong); }
-.market-card-heading, .patent-card-heading { display: flex; align-items: center; gap: 12px; }
-.market-card h2, .patent-card h2 { margin: 0; }
-.market-card small, .patent-card small { color: var(--ink-2); }
-.disease-emblem { display: grid; place-items: center; width: 32px; height: 32px; color: var(--cure-ink); border: 1px solid var(--rule-strong); }
-.patent-emblem, .patent-node-line { display: none; }
-.market-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin-top: 16px; gap: 8px; }
-.market-stats > div { display: grid; gap: 4px; }
-.market-stats span { color: var(--ink-3); font-size: 10px; }
-.market-stats strong { font-size: 14px; font-weight: 500; }
-.market-value-clean { color: var(--cure-ink); }
+.market-sheet dt, .market-contract, .market-quiet-price, .patent-group h2, .legend-group h3, .formula-picker, .blueprint-capture .game-field > span, .formula-sheet-meta {
+  color: var(--ink-3); font: 600 13px/1.2 var(--font-display); letter-spacing: .06em; text-transform: uppercase;
+}
+.panel-empty { margin: 12px 0 0; padding: 14px 16px; border: 1px dashed var(--rule-strong); color: var(--ink-2); font-size: 13px; }
+
+/* Market */
+.market-feedback { margin-top: 8px !important; color: var(--cure-ink) !important; font-weight: 600; animation: panel-note-in .2s cubic-bezier(.16, 1, .3, 1); }
+@keyframes panel-note-in { from { opacity: 0; transform: translateY(-4px); } }
+.market-card { min-width: 0; padding: 16px 0; border-bottom: 1px solid var(--rule-strong); }
+.market-card-heading { display: flex; align-items: center; gap: 12px; }
+.market-card h2 { margin: 0; }
+.market-contract, .market-quiet-price { white-space: nowrap; }
+.market-contract strong, .market-quiet-price strong { color: var(--ink); font-size: 15px; letter-spacing: .02em; }
+.market-card-heading .market-contract { margin-left: auto; }
+.disease-emblem { display: grid; flex: 0 0 auto; place-items: center; width: 32px; height: 32px; border: 1.5px solid var(--ink); color: var(--ink); font: 600 15px/1 var(--font-display); letter-spacing: .02em; }
+.market-sheet { display: grid; grid-template-columns: 92px minmax(0, 1fr); margin: 12px 0 0; }
+.market-sheet dt, .market-sheet dd { padding: 8px 0; border-top: 1px solid var(--rule); }
+.market-sheet dt { padding-top: 11px; }
+.market-sheet dd { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; min-width: 0; margin: 0; color: var(--ink-2); font-size: 13px; }
+.market-sheet strong { font: 600 19px/1 var(--font-display); color: var(--ink); }
+.market-stock strong { margin-right: 2px; }
+.market-sheet .market-value-clean { color: var(--cure-ink); }
+.market-sheet .market-value-tainted, .market-equation .market-value-tainted strong { color: var(--effect-ink); }
 .market-value-tainted { color: var(--effect-ink); }
-.patent-requirement, .patent-cost { margin: 10px 0; font-size: 12px; color: var(--ink-2); }
-.effects-strip { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; color: var(--ink-2); font-size: 12px; }
+.market-equation { gap: 4px 10px !important; }
+.market-net strong { font-size: 23px; }
+.price-ladder { display: flex; flex-wrap: wrap; margin: 0; padding: 0; list-style: none; }
+.price-ladder li { padding: 2px 10px 3px; border-left: 1px solid var(--rule); border-bottom: 3px solid transparent; color: var(--ink-3); font: 600 16px/1.2 var(--font-display); font-variant-numeric: tabular-nums; }
+.price-ladder li:first-child { padding-left: 0; border-left: 0; }
+.price-ladder li.is-covered { color: var(--ink); border-bottom-color: var(--ink); }
+.market-readout { margin: 10px 0 0; font-size: 13px; color: var(--ink-2); }
+.market-readout strong { color: var(--ink); font-weight: 700; }
+.market-actions { align-items: center; margin-top: 12px; }
+.market-reason { flex-basis: 100%; margin: 2px 0 0; color: var(--ink-2); font-size: 12px; }
+.market-reason > span { color: var(--ink); font-weight: 600; }
+.market-card.is-quiet { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto auto; align-items: center; gap: 4px 16px; padding: 10px 0; }
+.market-card.is-quiet h2 { font-size: 16px; color: var(--ink-2); }
+.market-card.is-quiet .disease-emblem { width: 28px; height: 28px; font-size: 13px; border-color: var(--rule-strong); color: var(--ink-2); }
+.market-card.is-quiet .market-reason { grid-column: 2 / -1; flex-basis: auto; margin: 0; color: var(--ink-2); font-weight: 400; }
+
+/* Technology */
+.effects-strip { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 8px; color: var(--cure-ink); font-size: 13px; font-weight: 600; }
+.recovery-guidance { margin-top: 8px !important; color: var(--failure-ink) !important; }
+.patent-group { padding-top: 18px; }
+.patent-group h2 { margin: 0; padding-bottom: 6px; border-bottom: 1.5px solid var(--ink); color: var(--ink); }
+.patent-card { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 4px 16px; min-width: 0; padding: 12px 0; border-bottom: 1px solid var(--rule); }
+.patent-card-main { display: grid; gap: 3px; min-width: 0; }
+.patent-card h3 { margin: 0; font: 600 19px/1.1 var(--font-display); letter-spacing: .01em; text-transform: uppercase; }
+.patent-card small { color: var(--ink-2); font-size: 13px; }
+.patent-requirement { color: var(--ink-2); font-size: 12px; }
+.patent-card.is-available .patent-requirement[data-testid] { color: var(--ink); font-weight: 600; }
+.patent-cost { color: var(--ink); font: 600 16px/1 var(--font-display); letter-spacing: .02em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.patent-card.is-owned { grid-template-columns: minmax(0, 1fr) auto; }
+.patent-card.is-owned h3 { color: var(--ink-2); }
+.patent-card.is-owned button { min-height: 32px; border-color: transparent; color: var(--cure-ink); font: 600 14px/1 var(--font-display); letter-spacing: .05em; text-transform: uppercase; }
+
+/* Blueprints, Formulas, Guide, Menu */
 .blueprint-library, .menu-panel, .formula-library, .help-panel { padding: 24px; }
 .blueprint-library h1, .menu-panel h1, .formula-library h1, .help-panel h1 { padding-right: 44px; }
-.blueprint-library p, .help-panel p, .formula-ribbon p { color: var(--ink-2); font-size: 13px; }
+.blueprint-library h1, .help-panel h1, .menu-panel h1 { padding-bottom: 14px; border-bottom: 2px solid var(--ink); }
+.blueprint-library .panel-section { margin-top: 18px; }
+.blueprint-library .blueprint-capture { margin-top: 0; border-top: 0; }
+.blueprint-library h2 { margin: 0 0 4px; font-size: 17px; }
+.blueprint-capture .game-field { margin-top: 0; }
 .blueprint-capture input, .blueprint-library textarea { width: 100%; }
-.blueprint-library textarea { margin-top: 16px; min-height: 100px; resize: vertical; font: 12px ui-monospace, monospace; }
-.blueprint-list { margin-top: 20px; }
-.blueprint-card { display: grid; gap: 8px; padding: 20px 0; border-top: 1px solid var(--rule-strong); }
-.blueprint-card > div:first-child { display: grid; gap: 6px; }
-.blueprint-card small, .blueprint-card span { color: var(--ink-2); }
-.blueprint-status { display: block; margin-top: 20px; }
-.system-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 20px; }
-.new-game-button { display: flex; align-items: center; gap: 8px; }
-.formula-ribbon ol { padding: 0; margin: 20px 0; list-style: none; }
-.formula-ribbon li { display: grid; grid-template-columns: 24px 40px minmax(0, 1fr) 44px; gap: 10px; align-items: center; min-height: 56px; border-bottom: 1px solid var(--rule); }
-.formula-ribbon li > span:first-child { color: var(--ink-3); font-size: 12px; }
-.formula-library label { font-size: 12px; color: var(--ink-2); }
-.formula-library select { color: var(--ink); }
+.blueprint-count { margin-left: auto; color: var(--ink-3); font: 600 15px/1 var(--font-display); font-variant-numeric: tabular-nums; }
+.blueprint-list .panel-heading h2 { margin: 0; }
+.blueprint-card { display: grid; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--rule); }
+.blueprint-list .panel-heading + .blueprint-card, .blueprint-list .panel-heading + .panel-empty { margin-top: 8px; }
+.blueprint-card-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; min-width: 0; }
+.blueprint-card-title strong { overflow-wrap: anywhere; font-size: 15px; }
+.blueprint-card-title span { color: var(--ink-2); font-size: 13px; font-variant-numeric: tabular-nums; }
+.blueprint-card .panel-actions { margin-top: 0; }
+.blueprint-delete { margin-left: auto; color: var(--failure-ink); }
+.blueprint-reason { color: var(--ink-2); font-size: 12px; }
+.blueprint-library textarea { min-height: 64px; margin-top: 6px; resize: vertical; font: 12px/1.4 ui-monospace, monospace; }
+.blueprint-import .panel-actions { margin-top: 8px; }
+.blueprint-status { display: block; margin-top: 16px; color: var(--ink-2); font-size: 13px; }
+.blueprint-status:empty { display: none; }
+
+.formula-picker { display: grid; gap: 6px; }
+.formula-picker select { width: 100%; color: var(--ink); font: 600 16px/1 var(--font-display); letter-spacing: .02em; text-transform: none; }
+.formula-ribbon { margin-top: 16px; border: 2px solid var(--ink); background: var(--paper-raised); }
+.formula-sheet-head { border-bottom: 2px solid var(--ink); }
+.formula-sheet-head h2 { margin: 0; padding: 10px 12px 8px; font-size: 20px; }
+.formula-id { color: var(--course-ink); font-size: 26px; }
+.formula-sheet-meta { display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid var(--rule-strong); }
+.formula-sheet-meta > span { display: flex; align-items: center; gap: 6px; padding: 7px 12px; }
+.formula-sheet-meta > span + span { border-left: 1px solid var(--rule-strong); }
+.formula-sheet-meta strong { color: var(--ink); font: 600 19px/1 var(--font-display); }
+.formula-sheet-meta .is-clean { color: var(--cure-ink); }
+.formula-sheet-meta .is-tainted { color: var(--effect-ink); }
+.formula-sheet-end { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 4px 12px; color: var(--ink-2); font: 600 15px/1 var(--font-display); letter-spacing: .04em; text-transform: uppercase; }
+.formula-sheet-end:first-of-type { border-bottom: 1px solid var(--rule-strong); }
+.formula-ribbon ol { margin: 0; padding: 0; list-style: none; }
+.formula-ribbon li { display: grid; grid-template-columns: 40px 46px minmax(0, 1fr) 48px; min-height: 50px; border-bottom: 1px solid var(--rule-strong); }
+.formula-ribbon li > span { display: grid; place-items: center; min-width: 0; }
+.formula-ribbon li > span:not(:last-child) { border-right: 1px solid var(--rule); }
+.formula-step-icon { color: var(--ink); }
+.formula-step-number { color: var(--course-ink); font: 600 22px/1 var(--font-display); font-variant-numeric: tabular-nums; }
+.formula-ribbon li > .formula-step-name { justify-items: start; padding: 0 10px; font: 600 16px/1.1 var(--font-display); letter-spacing: .02em; text-transform: uppercase; color: var(--ink); }
+.formula-sheet-note { margin: 0; padding: 10px 12px; border-top: 1px solid var(--rule-strong); color: var(--ink-2); font-size: 13px; line-height: 1.45; }
+
+.help-panel h2 { margin: 24px 0 6px; padding-bottom: 5px; border-bottom: 1.5px solid var(--ink); font-size: 18px; }
+.help-panel p { margin: 6px 0; color: var(--ink-2); font-size: 13px; }
+.help-panel p strong { color: var(--ink); }
+.help-panel .nowrap { white-space: nowrap; }
+.legend-group h3 { margin: 12px 0 2px; }
+.legend-list, .legend-keys { display: grid; margin: 0; }
+.legend-list > div, .legend-keys > div { display: grid; grid-template-columns: minmax(0, 168px) minmax(0, 1fr); align-items: center; gap: 12px; padding: 5px 0; border-bottom: 1px solid var(--rule); }
+.legend-list dt { display: flex; align-items: center; gap: 10px; font: 600 15px/1.1 var(--font-display); letter-spacing: .03em; text-transform: uppercase; }
+.legend-list dd, .legend-keys dd { margin: 0; color: var(--ink-2); font-size: 13px; line-height: 1.4; }
+.legend-keys dt { color: var(--ink-3); }
+.legend-keys kbd { display: inline-block; min-width: 20px; padding: 3px 5px; border: 1px solid var(--rule-strong); border-radius: 2px; color: var(--ink); font-size: 12px; text-align: center; }
+.map-symbol { flex: 0 0 auto; }
+.map-symbol .ink-course { stroke: var(--course); }
+.map-symbol .map-symbol-number { fill: var(--course-ink); font: 600 12px var(--font-display); text-anchor: middle; }
+.map-symbol .fill-cure { fill: color-mix(in srgb, var(--cure) 14%, var(--paper-raised)); stroke: var(--cure); stroke-width: 1.5; }
+.map-symbol .solid-cure { fill: var(--cure); }
+.map-symbol .fill-effect { fill: color-mix(in srgb, var(--effect) 22%, var(--paper-raised)); stroke: var(--effect); stroke-width: 1.5; }
+.map-symbol .ink-effect { stroke: var(--effect-ink); }
+.map-symbol .solid-effect { fill: var(--effect-ink); }
+.map-symbol .solid-ink { fill: var(--ink); }
+.map-symbol .ink-ink { stroke: var(--ink); }
+.map-symbol .ink-paper { stroke: var(--paper-raised); }
+.map-symbol .ink-rule { fill: var(--paper-raised); stroke: var(--rule-strong); }
+.map-symbol .ink-marsh { stroke: var(--marsh); }
+.map-symbol .ink-flow { stroke: var(--flow); }
+
+.menu-panel h1 { color: var(--course-ink); }
+.menu-panel > .resource-chip { display: flex; align-items: baseline; gap: 10px; margin-top: 16px; }
+.menu-panel > .resource-chip .resource-label-full { display: inline; }
+.menu-panel > .resource-chip .resource-label-compact { display: none; }
+.system-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--rule); }
+.system-strip .hud-button { font: 600 16px/1 var(--font-display); letter-spacing: .05em; text-transform: uppercase; }
+.system-strip .new-game-button { grid-column: span 2; justify-content: center; }
+.new-game-button > span[aria-hidden="true"] { display: none; }
+.save-slot-control { display: flex; grid-column: span 2; align-items: center; gap: 8px; color: var(--ink-3); font: 600 13px/1 var(--font-display); letter-spacing: .06em; text-transform: uppercase; }
+.save-slot-control select { flex: 1; min-width: 0; font: 600 16px/1 var(--font-display); }
+.system-strip .is-warning { grid-column: 1 / -1; border-color: var(--effect); color: var(--effect-ink); }
+
+@media (min-width: 769px) {
+  .blueprint-card .panel-actions button, .patent-card button, .market-actions button { min-height: 36px; padding: 6px 12px; }
+  .formula-reference .formula-library { padding: 20px 16px; }
+  .formula-reference .formula-ribbon li { grid-template-columns: 34px 42px minmax(0, 1fr) 44px; }
+  .formula-reference .formula-step-name { font-size: 15px; padding: 0 8px; }
+}
 @media (max-width: 768px) {
   .management-header, .blueprint-library, .menu-panel, .formula-library, .help-panel { padding: 20px 16px; }
+  .management-header { padding-right: 64px; }
   .market-grid, .patent-grid { padding: 0 16px 24px; }
-  .market-stats { gap: 6px; }
-  .market-stats strong { font-size: 12px; }
-}
-@media (min-width: 769px) {
-  .formula-reference .formula-library { padding: 20px 16px; }
-  .formula-reference .formula-ribbon li { grid-template-columns: 18px 32px minmax(0, 1fr) 40px; gap: 6px; }
+  .market-card-heading { flex-wrap: wrap; }
+  .market-sheet { grid-template-columns: 76px minmax(0, 1fr); }
+  .market-actions button { flex: 1; }
+  .market-card.is-quiet { grid-template-columns: 28px minmax(0, 1fr) auto; }
+  .market-card.is-quiet .market-contract { grid-column: 2 / -1; }
+  .patent-card { grid-template-columns: minmax(0, 1fr) auto; }
+  .patent-card-main { grid-column: 1 / -1; }
+  .legend-list > div, .legend-keys > div { grid-template-columns: minmax(0, 132px) minmax(0, 1fr); gap: 10px; }
 }
