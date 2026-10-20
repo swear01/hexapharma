@@ -49,6 +49,8 @@ import { factoryOutcome } from "../sim/recipe";
 import { quoteProductionBuild } from "../sim/construction";
 import { worldCells } from "../sim/factory-geom";
 import { hexInBounds, hexIndex, rotateHexCoord } from "../sim/hex";
+import { buildFactoryTransportTopology } from "../render/factoryTransportTopology";
+import { inkJitter } from "../render/ink";
 import { hexBoardBounds, hexPolygon, hexToPixel } from "../render/hexProjection";
 import type { FactoryRenderer } from "../render/factoryRenderer";
 import {
@@ -193,33 +195,157 @@ export function initialFacilityLayout(
   };
 }
 
-function factoryLayoutFocus(layout: FactoryLayout): HexCoord | null {
-  let minQ = Infinity;
-  let minR = Infinity;
-  let maxQ = -Infinity;
-  let maxR = -Infinity;
+export interface PixelBounds {
+  readonly minX: number;
+  readonly minY: number;
+  readonly maxX: number;
+  readonly maxY: number;
+}
+
+/** Pixel bounds of everything built (machines and tiles), padded by one cell; null on an empty floor. */
+export function factoryLayoutBounds(layout: FactoryLayout): PixelBounds | null {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  const include = (q: number, r: number) => {
+    const center = factoryCellCenter({ q, r });
+    minX = Math.min(minX, center.x);
+    minY = Math.min(minY, center.y);
+    maxX = Math.max(maxX, center.x);
+    maxY = Math.max(maxY, center.y);
+  };
   for (const machine of layout.machines) {
-    for (const cell of worldCells(machine)) {
-      minQ = Math.min(minQ, cell.q);
-      minR = Math.min(minR, cell.r);
-      maxQ = Math.max(maxQ, cell.q);
-      maxR = Math.max(maxR, cell.r);
+    for (const cell of worldCells(machine)) include(cell.q, cell.r);
+  }
+  for (let index = 0; index < layout.tiles.length; index++) {
+    if (layout.tiles[index]?.kind !== "empty") include(index % layout.width, Math.floor(index / layout.width));
+  }
+  if (minX === Infinity) return null;
+  const margin = FACTORY_HEX_WIDTH * 1.5;
+  return { minX: minX - margin, minY: minY - margin, maxX: maxX + margin, maxY: maxY + margin };
+}
+
+function factoryFloorBounds(layout: FactoryLayout): PixelBounds {
+  const bounds = hexBoardBounds(layout.width, layout.height, FACTORY_HEX_SIZE);
+  return { minX: PAD, minY: PAD, maxX: PAD + bounds.maxX - bounds.minX, maxY: PAD + bounds.maxY - bounds.minY };
+}
+
+/** Control numbers: machines in the order flow reaches them from the Sources (matches a formula's step order on a straight line). */
+export function factoryMachineFlowOrder(layout: FactoryLayout): ReadonlyMap<number, number> {
+  const topology = buildFactoryTransportTopology(layout);
+  const area = layout.width * layout.height;
+  const owner = new Int32Array(area).fill(-1);
+  const byId = new Map<number, PlacedMachine>();
+  for (const machine of layout.machines) {
+    byId.set(machine.id, machine);
+    for (const cell of worldCells(machine)) owner[hexIndex(layout.width, cell.q, cell.r)] = machine.id;
+  }
+  const next: number[][] = Array.from({ length: area }, () => []);
+  for (const edge of topology.edges) {
+    next[hexIndex(layout.width, edge.from.q, edge.from.r)]!.push(hexIndex(layout.width, edge.to.q, edge.to.r));
+  }
+  const order = new Map<number, number>();
+  const seen = new Uint8Array(area);
+  const queue: number[] = [];
+  for (let index = 0; index < area; index++) {
+    if (layout.tiles[index]?.kind === "source") {
+      seen[index] = 1;
+      queue.push(index);
     }
   }
-  if (minQ === Infinity) {
-    for (let index = 0; index < layout.tiles.length; index++) {
-      if (layout.tiles[index]?.kind === "empty") continue;
-      const q = index % layout.width;
-      const r = Math.floor(index / layout.width);
-      minQ = Math.min(minQ, q);
-      minR = Math.min(minR, r);
-      maxQ = Math.max(maxQ, q);
-      maxR = Math.max(maxR, r);
+  for (let head = 0; head < queue.length; head++) {
+    for (const to of next[queue[head]!]!) {
+      if (seen[to] === 1) continue;
+      const id = owner[to]!;
+      const machine = id >= 0 ? byId.get(id) : undefined;
+      if (machine === undefined) {
+        seen[to] = 1;
+        queue.push(to);
+        continue;
+      }
+      if (!order.has(id)) order.set(id, order.size + 1);
+      for (const cell of worldCells(machine)) {
+        const index = hexIndex(layout.width, cell.q, cell.r);
+        if (seen[index] === 1) continue;
+        seen[index] = 1;
+        queue.push(index);
+      }
     }
   }
-  return minQ === Infinity
-    ? null
-    : { q: (minQ + maxQ) / 2, r: (minR + maxR) / 2 };
+  for (const machine of layout.machines) {
+    if (!order.has(machine.id)) order.set(machine.id, order.size + 1);
+  }
+  return order;
+}
+
+const PAPER_TILE_CELLS = 40;
+const PAPER_STEP = 12;
+const PAPER_SEED = 0x51f3;
+let paperTexture: string | null = null;
+
+/**
+ * Unbuilt ground around the floor: paper-sunk with faint contour ink, like the Atlas's unprinted
+ * paper. A periodic height field run through marching squares gives a seamless tile; crossings
+ * wobble by inkJitter keyed to the shared grid edge, so the tile is deterministic. Built once.
+ */
+export function factoryPaperTexture(): string {
+  if (paperTexture !== null) return paperTexture;
+  const n = PAPER_TILE_CELLS;
+  const tau = Math.PI * 2;
+  const height = (i: number, j: number) => {
+    const x = (((i % n) + n) % n) / n * tau;
+    const y = (((j % n) + n) % n) / n * tau;
+    return Math.sin(x + 1.6 * Math.sin(y + 0.4)) + Math.sin(2 * y + 1.4 * Math.sin(x + 1.9)) + 0.55 * Math.sin(2 * x - y + 2.3);
+  };
+  const interval = 0.42;
+  let thin = "";
+  let index = "";
+  const crossing = (gi: number, gj: number, vertical: boolean, a: number, b: number, threshold: number, level: number) => {
+    const key = Math.imul(((gi % n) + n) % n, 7_919) ^ Math.imul(((gj % n) + n) % n, 104_729) ^ (vertical ? 1 : 0);
+    const t = Math.min(1, Math.max(0, (threshold - a) / (b - a) + inkJitter(key ^ PAPER_SEED, level) * 0.07));
+    const x = (vertical ? gi : gi + t) * PAPER_STEP;
+    const y = (vertical ? gj + t : gj) * PAPER_STEP;
+    return `${x.toFixed(1)} ${y.toFixed(1)}`;
+  };
+  for (let j = 0; j < n; j++) {
+    for (let i = 0; i < n; i++) {
+      const v0 = height(i, j);
+      const v1 = height(i + 1, j);
+      const v2 = height(i + 1, j + 1);
+      const v3 = height(i, j + 1);
+      const hi = Math.max(v0, v1, v2, v3);
+      for (let level = Math.ceil(Math.min(v0, v1, v2, v3) / interval - 0.5); (level + 0.5) * interval <= hi; level++) {
+        const threshold = (level + 0.5) * interval;
+        const code = (v0 > threshold ? 1 : 0) | (v1 > threshold ? 2 : 0) | (v2 > threshold ? 4 : 0) | (v3 > threshold ? 8 : 0);
+        if (code === 0 || code === 15) continue;
+        const top = () => crossing(i, j, false, v0, v1, threshold, level);
+        const right = () => crossing(i + 1, j, true, v1, v2, threshold, level);
+        const bottom = () => crossing(i, j + 1, false, v3, v2, threshold, level);
+        const left = () => crossing(i, j, true, v0, v3, threshold, level);
+        const segment = (a: string, b: string) => {
+          if (((level % 5) + 5) % 5 === 0) index += `M${a}L${b}`;
+          else thin += `M${a}L${b}`;
+        };
+        switch (code) {
+          case 1: case 14: segment(left(), top()); break;
+          case 2: case 13: segment(top(), right()); break;
+          case 3: case 12: segment(left(), right()); break;
+          case 4: case 11: segment(right(), bottom()); break;
+          case 6: case 9: segment(top(), bottom()); break;
+          case 7: case 8: segment(left(), bottom()); break;
+          case 5: segment(left(), top()); segment(right(), bottom()); break;
+          case 10: segment(top(), right()); segment(left(), bottom()); break;
+        }
+      }
+    }
+  }
+  const size = n * PAPER_STEP;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">`
+    + `<path d="${thin}" fill="none" stroke="#a0673a" stroke-opacity=".22" stroke-width="1" stroke-linecap="round"/>`
+    + `<path d="${index}" fill="none" stroke="#a0673a" stroke-opacity=".3" stroke-width="1.6" stroke-linecap="round"/></svg>`;
+  paperTexture = `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
+  return paperTexture;
 }
 
 // ───────────────────────────── palette / editing ─────────────────────────────
@@ -496,21 +622,36 @@ const CELL = 42;
 const FACTORY_HEX_SIZE = CELL / 2;
 const FACTORY_HEX_WIDTH = Math.sqrt(3) * FACTORY_HEX_SIZE;
 const PAD = 12;
-const MIN_ZOOM = 0.65;
+const MIN_ZOOM = 0.35;
 const MAX_ZOOM = 2.25;
 const MARK_BAND = 36;
 /** The floor is framed up to this zoom; beyond it hexes stop reading as a map. */
 const MAX_FIT_ZOOM = 1.6;
 
-/** Camera that centres a `canvas` (logical px) inside a `frame`, enlarged to fill but never shrunk. */
+/**
+ * Camera that frames the work: an empty floor fills the view (never below 100%, so touch hexes
+ * stay usable); a built layout is fitted whole (Source to Sink), zooming below 100% only when
+ * it cannot otherwise fit. Translation is relative to the frame's top-left.
+ */
 export function fitFactoryCamera(
-  frame: { readonly width: number; readonly height: number },
-  canvas: { readonly width: number; readonly height: number },
+  view: { readonly width: number; readonly height: number },
+  floor: PixelBounds,
+  layout: PixelBounds | null,
 ): Camera {
-  if (canvas.width <= 0 || canvas.height <= 0) return { x: 0, y: 0, zoom: 1 };
-  const zoom = Math.min(MAX_FIT_ZOOM, frame.width / canvas.width, frame.height / canvas.height) * 0.96;
-  if (zoom <= 1) return { x: 0, y: 0, zoom: 1 };
-  return { x: canvas.width * (1 - zoom) / 2, y: canvas.height * (1 - zoom) / 2, zoom };
+  if (view.width <= 0 || view.height <= 0) return { x: 0, y: 0, zoom: 1 };
+  const fitHeight = Math.max(1, view.height - 2 * Math.min(MARK_BAND, view.height * 0.1));
+  const zoomFor = (b: PixelBounds) =>
+    Math.min(view.width / (b.maxX - b.minX), fitHeight / (b.maxY - b.minY)) * 0.96;
+  const floorZoom = zoomFor(floor);
+  const zoom = layout === null
+    ? Math.min(MAX_FIT_ZOOM, Math.max(1, floorZoom))
+    : Math.max(MIN_ZOOM, Math.min(zoomFor(layout), MAX_FIT_ZOOM, Math.max(1, floorZoom)));
+  const target = layout === null || zoom <= floorZoom ? floor : layout;
+  return {
+    x: view.width / 2 - zoom * (target.minX + target.maxX) / 2,
+    y: view.height / 2 - zoom * (target.minY + target.maxY) / 2,
+    zoom,
+  };
 }
 
 function factoryCellCenter(cell: HexCoord): { readonly x: number; readonly y: number } {
@@ -701,6 +842,21 @@ export function Factory({
     }
   }, [authoritativeLayout, layout, mm]);
   const throughput = throughputAnalysis.report;
+  const machineOrder = useMemo(() => factoryMachineFlowOrder(layout), [layout]);
+  const machineControls = useMemo(() => layout.machines.map((machine) => {
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const cell of worldCells(machine)) {
+      const center = factoryCellCenter(cell);
+      minX = Math.min(minX, center.x);
+      minY = Math.min(minY, center.y);
+      maxX = Math.max(maxX, center.x);
+      maxY = Math.max(maxY, center.y);
+    }
+    return { id: machine.id, number: machineOrder.get(machine.id) ?? 0, x: (minX + maxX) / 2 - 16, y: (minY + maxY) / 2 - 14 };
+  }), [layout, machineOrder]);
   const sampleAnalysis = useMemo<{
     readonly outcome: Outcome | null;
     readonly error: string | null;
@@ -793,44 +949,20 @@ export function Factory({
   bottleneckRef.current = highlightedMachineId;
   const fitCamera = useCallback((): Camera => {
     const frame = frameRef.current;
-    const canvas = rendererRef.current?.canvas;
-    if (frame === null || canvas === undefined) return { x: 0, y: 0, zoom: 1 };
-    // Keep a band clear above and below for the print mark.
+    if (frame === null) return { x: 0, y: 0, zoom: 1 };
     return fitFactoryCamera(
-      { width: frame.clientWidth, height: frame.clientHeight - 2 * MARK_BAND },
-      { width: canvas.clientWidth, height: canvas.clientHeight },
+      { width: frame.clientWidth, height: frame.clientHeight },
+      factoryFloorBounds(layoutRef.current),
+      factoryLayoutBounds(layoutRef.current),
     );
   }, []);
   const focusLayoutInViewport = useCallback(() => {
     const frame = frameRef.current;
-    const canvas = rendererRef.current?.canvas;
-    if (!activeRef.current || frame === null || canvas === undefined) return false;
-    const frameRect = frame.getBoundingClientRect();
-    const canvasRect = canvas.getBoundingClientRect();
-    if (frameRect.width === 0 || frameRect.height === 0 || canvasRect.width === 0 || canvasRect.height === 0) {
-      return false;
-    }
-    const previous = cameraRef.current;
+    if (!activeRef.current || frame === null || rendererRef.current === null) return false;
+    if (frame.clientWidth === 0 || frame.clientHeight === 0) return false;
     const fitted = fitCamera();
     cameraRef.current = fitted;
     setCamera(fitted);
-    if (fitted.zoom === 1) {
-      // The floor is larger than the frame: scroll the layout (or floor centre) into view.
-      const focus = factoryLayoutFocus(layoutRef.current) ?? {
-        q: (layoutRef.current.width - 1) / 2,
-        r: (layoutRef.current.height - 1) / 2,
-      };
-      const toolbelt = frame.closest(".factory-workspace")?.querySelector<HTMLElement>(".toolbelt");
-      const toolbeltTop = toolbelt?.getBoundingClientRect().top ?? frameRect.bottom;
-      const visibleBottom = Math.min(frameRect.bottom, toolbeltTop);
-      const targetX = frameRect.left + frameRect.width / 2;
-      const targetY = frameRect.top + Math.max(0, visibleBottom - frameRect.top) / 2;
-      const projectedFocus = factoryCellCenter(focus);
-      const focusX = canvasRect.left - previous.x + projectedFocus.x;
-      const focusY = canvasRect.top - previous.y + projectedFocus.y;
-      if (frame.scrollWidth > frame.clientWidth) frame.scrollLeft += focusX - targetX;
-      if (frame.scrollHeight > frame.clientHeight) frame.scrollTop += focusY - targetY;
-    }
     pendingViewportFocusRef.current = false;
     return true;
   }, [fitCamera]);
@@ -1353,6 +1485,7 @@ export function Factory({
     : formatFacilityOutcome(sampleAnalysis.outcome);
   const resetAvailable = mode === "production" && onReset !== undefined && factoryRuntimeMayReset(state);
   const hoveredMachine = hoverCell === null ? undefined : machineAt(layout, hoverCell.q, hoverCell.r);
+  const hoveredControl = hoveredMachine === undefined ? undefined : machineOrder.get(hoveredMachine.id);
   const hoveredTile = hoverCell === null
     ? undefined
     : layout.tiles[hexIndex(layout.width, hoverCell.q, hoverCell.r)];
@@ -1440,6 +1573,7 @@ export function Factory({
   const overlayWidth = Math.ceil(PAD * 2 + canvasBounds.maxX - canvasBounds.minX);
   const overlayHeight = Math.ceil(PAD * 2 + canvasBounds.maxY - canvasBounds.minY);
   const ghostErase = gestureRef.current?.mode === "erase" || brush.kind === "erase";
+  const controlScale = Math.max(1, 0.75 / camera.zoom);
   const ghostClass = `factory-ghost${ghostErase ? " is-erase" : ""}${hoverPlacementValid ? "" : " is-invalid"}`;
 
   return (
@@ -1507,7 +1641,7 @@ export function Factory({
           {hoveredMachine !== undefined && <div className="machine-selection" data-testid="machine-selection">
             <MachineIcon typeId={hoveredMachine.def.typeId} path={hoveredMachine.def.path} size={40} variant="token" />
             <div>
-              <strong>{machineName(hoveredMachine.def.typeId)}</strong>
+              <strong>{hoveredControl !== undefined && <span className="machine-control is-inline">{hoveredControl}</span>}{machineName(hoveredMachine.def.typeId)}</strong>
               <dl>
                 <dt>Ports</dt><dd>{hoveredMachine.shape.inPorts.length} in · {hoveredMachine.shape.outPorts.length} out</dd>
                 <dt>Process</dt><dd>{hoveredMachine.def.speed} ticks · ${hoveredMachine.def.cost}/unit</dd>
@@ -1533,7 +1667,17 @@ export function Factory({
             onContextMenu={(event) => event.preventDefault()}
           >
             <div className="factory-canvas-transform" style={{ transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})` }}>
+              <div className="factory-paper" style={{ backgroundImage: factoryPaperTexture() }} aria-hidden="true" />
               <div ref={mountRef} className="factory-canvas-mount" />
+              {machineControls.map((control) => (
+                <span
+                  key={control.id}
+                  className="machine-control"
+                  data-testid="machine-control"
+                  aria-hidden="true"
+                  style={{ left: control.x, top: control.y, transform: `translate(-50%, -50%) scale(${controlScale})` }}
+                >{control.number}</span>
+              ))}
               <svg className="factory-ghost-layer" width={overlayWidth} height={overlayHeight} aria-hidden="true" focusable="false">
                 {ghostCells.map((cell) => {
                   const center = factoryCellCenter(cell);
