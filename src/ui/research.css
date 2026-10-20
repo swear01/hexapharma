@@ -22,7 +22,7 @@
 
 .research-program-strip { position: absolute; top: 80px; left: 12px; width: 232px; max-height: calc(100% - 80px - 76px); display: flex; pointer-events: auto; }
 .research-program-strip ol, .research-path-hotbar { scrollbar-width: thin; scrollbar-color: var(--rule-strong) transparent; }
-.research-program-strip ol { flex: 1; min-height: 0; max-height: 100%; margin: 0; padding: 4px 0; overflow: auto; list-style: none; }
+.research-program-strip ol { position: relative; flex: 1; min-height: 0; max-height: 100%; margin: 0; padding: 4px 0; overflow: auto; list-style: none; }
 .research-program-strip li { display: grid; grid-template-columns: 24px 24px minmax(0, 1fr) auto; align-items: center; gap: 8px; min-height: 34px; padding: 2px 12px 2px 8px; color: var(--ink-2); font-size: 13px; }
 .research-program-strip li + li { border-top: 1px solid var(--rule); }
 .research-program-strip li:last-child { color: var(--ink); }
@@ -90,11 +90,13 @@
   .research-compass { top: 8px; left: 8px; gap: 6px; padding: 4px 10px 4px 4px; }
   .research-compass-dial { width: 36px; height: 36px; }
   .research-compass strong { font-size: 16px; }
-  .research-program-strip { top: 8px; left: 164px; right: 8px; width: auto; max-height: 52px; }
-  .research-program-strip ol { display: flex; padding: 0 4px; }
-  .research-program-strip li { display: flex; flex: none; gap: 2px; min-height: 0; padding: 4px; }
+  .research-program-strip { top: 8px; left: 140px; width: auto; max-width: calc(100% - 148px); max-height: 52px; }
+  .research-program-strip ol { display: flex; width: var(--strip-width, auto); padding: 0 4px; overflow-y: hidden; scroll-snap-type: x mandatory; scroll-padding-inline: 4px; }
+  .research-program-strip li { display: flex; flex: none; gap: 4px; min-height: 44px; padding: 4px 6px; scroll-snap-align: start; }
   .research-program-strip li + li { border-top: 0; }
+  .research-program-strip li:not(:last-child) { border-right: 1px solid var(--rule); }
   .research-step-name, .research-step-cost { display: none; }
+  .research-program-strip li:last-child .research-step-name { display: block; max-width: 104px; color: var(--ink); }
   .research-result { top: auto; bottom: 68px; left: 8px; right: 8px; }
   .research-readout { max-width: none; }
   .research-cure-card { width: auto; }

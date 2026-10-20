@@ -131,7 +131,26 @@ export function ResearchWorkspace(props: ResearchWorkspaceProps) {
   const stepListRef = useRef<HTMLOListElement | null>(null);
   useEffect(() => {
     const list = stepListRef.current;
-    if (list !== null) list.scrollTo({ top: list.scrollHeight, left: list.scrollWidth });
+    const latest = list?.lastElementChild;
+    if (list === null || !(latest instanceof HTMLElement)) return;
+    list.style.removeProperty("--strip-width");
+    const style = getComputedStyle(list);
+    if (style.display !== "flex") {
+      list.scrollTo({ top: list.scrollHeight });
+      return;
+    }
+    // Compact strip: start on a whole chip, end on the latest, and size the strip to exactly those chips.
+    const padding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+    const end = latest.offsetLeft + latest.offsetWidth;
+    let first = latest;
+    for (const item of list.children) {
+      if (item instanceof HTMLElement && end - item.offsetLeft + padding <= list.clientWidth) {
+        first = item;
+        break;
+      }
+    }
+    list.style.setProperty("--strip-width", `${end - first.offsetLeft + padding}px`);
+    list.scrollTo({ left: first.offsetLeft - parseFloat(style.paddingLeft) });
   }, [program.steps.length]);
   return (
     <div className="research-workspace" data-testid="research-workspace">
