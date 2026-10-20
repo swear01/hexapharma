@@ -168,8 +168,8 @@ async function factoryCellPoint(
   const box = await canvas.boundingBox();
   if (box === null) throw new Error("Factory canvas has no bounds");
   const intrinsic = await canvas.evaluate((element) => ({
-    width: (element as HTMLCanvasElement).width,
-    height: (element as HTMLCanvasElement).height,
+    width: element.clientWidth,
+    height: element.clientHeight,
   }));
   const bounds = hexBoardBounds(layout.width, layout.height, 21);
   const projected = hexToPixel(cell.q, cell.r, 21);
@@ -584,7 +584,7 @@ test("focused Factory tool controls still allow R, number, and Q world hotkeys",
   await workspace.getByTestId("brush-merger").click();
   await page.keyboard.press("q");
   await expect(workspace.getByTestId("brush-selected")).toHaveText("source");
-  await expect(workspace.getByTestId("brush-direction")).toHaveText("Direction ↙ SW");
+  await expect(workspace.getByTestId("brush-direction")).toHaveText("Direction SW");
 });
 
 test("Pilot builds without a Research contract and Production is an exact copy", async ({ page }) => {

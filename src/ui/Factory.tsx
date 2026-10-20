@@ -23,7 +23,9 @@ import { MachineIcon } from "./MachineIcon";
 import { blockingDialogOpen } from "./blockingDialog";
 import { createPortal } from "react-dom";
 import { machineName } from "./machineLabels";
-import { outcomeEffectText } from "./effectLabels";
+import { diseaseName, outcomeEffectText } from "./effectLabels";
+import { DEFAULT_PATENTS } from "../sim/patent";
+import { requiredShippingContractForPatent } from "../sim/game";
 import type {
   Dir,
   HexCoord,
@@ -47,7 +49,7 @@ import { factoryOutcome } from "../sim/recipe";
 import { quoteProductionBuild } from "../sim/construction";
 import { worldCells } from "../sim/factory-geom";
 import { hexInBounds, hexIndex, rotateHexCoord } from "../sim/hex";
-import { hexToPixel } from "../render/hexProjection";
+import { hexBoardBounds, hexPolygon, hexToPixel } from "../render/hexProjection";
 import type { FactoryRenderer } from "../render/factoryRenderer";
 import {
   appendUniqueCells,
@@ -157,6 +159,16 @@ export function machineTooltip(entry: MachineCatalogEntry): string {
   return `${machineName(entry.typeId)} · ${entry.speed} ticks/unit · Processing $${entry.cost}/unit`;
 }
 
+/** Why a machine is not on the toolbelt yet, in player terms. */
+export function machineLockReason(typeId: MachineTypeId): string {
+  const patent = DEFAULT_PATENTS.find((node) =>
+    node.effect.kind === "unlockMachine" && node.effect.typeId === typeId);
+  const disease = patent === undefined ? null : requiredShippingContractForPatent(patent.id);
+  return disease === null
+    ? `${machineName(typeId)} locked · unlock in Technology`
+    : `${machineName(typeId)} locked · ship the ${diseaseName(disease)} contract, then unlock in Technology`;
+}
+
 function machineDef(typeId: MachineTypeId): FactoryMachineDef {
   const entry = entryOf(typeId);
   return {
@@ -248,13 +260,82 @@ type CanvasGesture =
     };
 
 const DIR_LABEL: Record<Dir, string> = {
-  0: "→ E",
-  1: "↘ SE",
-  2: "↙ SW",
-  3: "← W",
-  4: "↖ NW",
-  5: "↗ NE",
+  0: "E",
+  1: "SE",
+  2: "SW",
+  3: "W",
+  4: "NW",
+  5: "NE",
 };
+
+type TileBrushKind = Brush["kind"] & ("belt" | "splitter" | "merger" | "source" | "sink" | "erase");
+
+/** Legend glyphs for transport tools; they match the symbols printed on the floor. */
+function ToolGlyph({ kind }: { readonly kind: TileBrushKind }) {
+  const common = { width: 30, height: 30, viewBox: "0 0 30 30", fill: "none", "aria-hidden": true, focusable: false } as const;
+  switch (kind) {
+    case "belt":
+      return <svg {...common}><path d="M3 15h24" stroke="var(--flow)" strokeWidth="7" /><path d="M13 11l4 4-4 4" stroke="var(--paper-raised)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+    case "splitter":
+      return <svg {...common}><path d="M3 15h12l9-8M15 15l9 8" stroke="var(--flow)" strokeWidth="5" strokeLinejoin="round" /><circle cx="15" cy="15" r="5" fill="var(--paper-raised)" stroke="currentColor" strokeWidth="2" /><circle cx="15" cy="15" r="1.5" fill="currentColor" /></svg>;
+    case "merger":
+      return <svg {...common}><path d="M6 7l9 8h12M6 23l9-8" stroke="var(--flow)" strokeWidth="5" strokeLinejoin="round" /><circle cx="15" cy="15" r="6" fill="var(--paper-raised)" /><path d="M20 15l-8 4.6v-9.2z" fill="currentColor" /></svg>;
+    case "source":
+      return <svg {...common}><path d="M15 15h12" stroke="var(--flow)" strokeWidth="5" /><path d="M22 15L8 23V7z" fill="var(--paper-raised)" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" /></svg>;
+    case "sink":
+      return <svg {...common}><circle cx="15" cy="15" r="10" stroke="currentColor" strokeWidth="2" /><circle cx="15" cy="15" r="5.5" stroke="currentColor" strokeWidth="2" /></svg>;
+    case "erase":
+      return <svg {...common}><path d="M15 4l9.5 5.5v11L15 26l-9.5-5.5v-11z" stroke="currentColor" strokeWidth="1.5" strokeDasharray="3 2.5" /><path d="M10.5 10.5l9 9M19.5 10.5l-9 9" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" /></svg>;
+  }
+}
+
+/** Small heading arrow for the current brush direction (drawn, rotated by hex direction). */
+function DirectionGlyph({ dir }: { readonly dir: Dir }) {
+  return (
+    <svg className="direction-glyph" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" focusable="false">
+      <g transform={`rotate(${dir * 60} 7 7)`}>
+        <path d="M2 7h8M7 3.5L10.5 7 7 10.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      </g>
+    </svg>
+  );
+}
+
+function LockGlyph() {
+  return (
+    <svg className="tool-lock" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+      <path d="M3.5 5.5V4a2.5 2.5 0 015 0v1.5" fill="none" stroke="currentColor" strokeWidth="1.4" />
+      <rect x="2" y="5.5" width="8" height="5.5" rx="1" fill="currentColor" />
+    </svg>
+  );
+}
+
+function ChevronGlyph({ down = false }: { readonly down?: boolean }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" focusable="false">
+      <path d={down ? "M3 5l4 4 4-4" : "M5 3l4 4-4 4"} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function CloseGlyph() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+      <path d="M3.5 3.5l9 9M12.5 3.5l-9 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+type RunState = "running" | "paused" | "blocked";
+
+function RunStateGlyph({ state }: { readonly state: RunState }) {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+      {state === "running" && <path d="M2.5 1.5l8 4.5-8 4.5z" fill="currentColor" />}
+      {state === "paused" && <path d="M2.5 1.5h2.5v9H2.5zM7 1.5h2.5v9H7z" fill="currentColor" />}
+      {state === "blocked" && <path d="M1.5 6h9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />}
+    </svg>
+  );
+}
 
 /** A belt-grid tile for the current brush + direction (machines handled separately). */
 function makeTile(brush: Brush, dir: Dir): FactoryTile | null {
@@ -415,6 +496,22 @@ const CELL = 42;
 const FACTORY_HEX_SIZE = CELL / 2;
 const FACTORY_HEX_WIDTH = Math.sqrt(3) * FACTORY_HEX_SIZE;
 const PAD = 12;
+const MIN_ZOOM = 0.65;
+const MAX_ZOOM = 2.25;
+const MARK_BAND = 36;
+/** The floor is framed up to this zoom; beyond it hexes stop reading as a map. */
+const MAX_FIT_ZOOM = 1.6;
+
+/** Camera that centres a `canvas` (logical px) inside a `frame`, enlarged to fill but never shrunk. */
+export function fitFactoryCamera(
+  frame: { readonly width: number; readonly height: number },
+  canvas: { readonly width: number; readonly height: number },
+): Camera {
+  if (canvas.width <= 0 || canvas.height <= 0) return { x: 0, y: 0, zoom: 1 };
+  const zoom = Math.min(MAX_FIT_ZOOM, frame.width / canvas.width, frame.height / canvas.height) * 0.96;
+  if (zoom <= 1) return { x: 0, y: 0, zoom: 1 };
+  return { x: canvas.width * (1 - zoom) / 2, y: canvas.height * (1 - zoom) / 2, zoom };
+}
 
 function factoryCellCenter(cell: HexCoord): { readonly x: number; readonly y: number } {
   const projected = hexToPixel(cell.q, cell.r, FACTORY_HEX_SIZE);
@@ -550,6 +647,7 @@ export function Factory({
   const [brushDir, setBrushDir] = useState<Dir>(E);
   const [footRot, setFootRot] = useState<Rotation>(0);
   const [clipboardLabel, setClipboardLabel] = useState("empty");
+  const [lockedHint, setLockedHint] = useState<string | null>(null);
   const [hoverCell, setHoverCell] = useState<GridCell | null>(null);
   const [camera, setCamera] = useState<Camera>({ x: 0, y: 0, zoom: 1 });
   const cameraRef = useRef(camera);
@@ -693,6 +791,16 @@ export function Factory({
   const highlightedMachineId = throughput?.bottleneck ?? null;
   const bottleneckRef = useRef(highlightedMachineId);
   bottleneckRef.current = highlightedMachineId;
+  const fitCamera = useCallback((): Camera => {
+    const frame = frameRef.current;
+    const canvas = rendererRef.current?.canvas;
+    if (frame === null || canvas === undefined) return { x: 0, y: 0, zoom: 1 };
+    // Keep a band clear above and below for the print mark.
+    return fitFactoryCamera(
+      { width: frame.clientWidth, height: frame.clientHeight - 2 * MARK_BAND },
+      { width: canvas.clientWidth, height: canvas.clientHeight },
+    );
+  }, []);
   const focusLayoutInViewport = useCallback(() => {
     const frame = frameRef.current;
     const canvas = rendererRef.current?.canvas;
@@ -702,23 +810,30 @@ export function Factory({
     if (frameRect.width === 0 || frameRect.height === 0 || canvasRect.width === 0 || canvasRect.height === 0) {
       return false;
     }
-    const focus = factoryLayoutFocus(layoutRef.current) ?? {
-      q: (layoutRef.current.width - 1) / 2,
-      r: (layoutRef.current.height - 1) / 2,
-    };
-    const toolbelt = frame.closest(".factory-workspace")?.querySelector<HTMLElement>(".toolbelt");
-    const toolbeltTop = toolbelt?.getBoundingClientRect().top ?? frameRect.bottom;
-    const visibleBottom = Math.min(frameRect.bottom, toolbeltTop);
-    const targetX = frameRect.left + frameRect.width / 2;
-    const targetY = frameRect.top + Math.max(0, visibleBottom - frameRect.top) / 2;
-    const projectedFocus = factoryCellCenter(focus);
-    const focusX = canvasRect.left + projectedFocus.x * canvasRect.width / canvas.width;
-    const focusY = canvasRect.top + projectedFocus.y * canvasRect.height / canvas.height;
-    if (frame.scrollWidth > frame.clientWidth) frame.scrollLeft += focusX - targetX;
-    if (frame.scrollHeight > frame.clientHeight) frame.scrollTop += focusY - targetY;
+    const previous = cameraRef.current;
+    const fitted = fitCamera();
+    cameraRef.current = fitted;
+    setCamera(fitted);
+    if (fitted.zoom === 1) {
+      // The floor is larger than the frame: scroll the layout (or floor centre) into view.
+      const focus = factoryLayoutFocus(layoutRef.current) ?? {
+        q: (layoutRef.current.width - 1) / 2,
+        r: (layoutRef.current.height - 1) / 2,
+      };
+      const toolbelt = frame.closest(".factory-workspace")?.querySelector<HTMLElement>(".toolbelt");
+      const toolbeltTop = toolbelt?.getBoundingClientRect().top ?? frameRect.bottom;
+      const visibleBottom = Math.min(frameRect.bottom, toolbeltTop);
+      const targetX = frameRect.left + frameRect.width / 2;
+      const targetY = frameRect.top + Math.max(0, visibleBottom - frameRect.top) / 2;
+      const projectedFocus = factoryCellCenter(focus);
+      const focusX = canvasRect.left - previous.x + projectedFocus.x;
+      const focusY = canvasRect.top - previous.y + projectedFocus.y;
+      if (frame.scrollWidth > frame.clientWidth) frame.scrollLeft += focusX - targetX;
+      if (frame.scrollHeight > frame.clientHeight) frame.scrollTop += focusY - targetY;
+    }
     pendingViewportFocusRef.current = false;
     return true;
-  }, []);
+  }, [fitCamera]);
   useEffect(() => {
     let disposed = false;
     let local: FactoryRenderer | null = null;
@@ -727,7 +842,7 @@ export function Factory({
     void (async () => {
       try {
         const { createFactoryRenderer } = await import("../render/factoryRenderer");
-        const r = await createFactoryRenderer(layoutRef.current);
+        const r = await createFactoryRenderer(layoutRef.current, mode === "pilot" ? "plan" : "production");
         if (disposed) {
           r.destroy();
           return;
@@ -757,7 +872,18 @@ export function Factory({
       rendererRef.current = null;
       if (local) local.destroy();
     };
-  }, [focusLayoutInViewport, layout.width, layout.height]);
+  }, [focusLayoutInViewport, layout.width, layout.height, mode]);
+
+  // Details changes the frame width: reframe the floor.
+  useEffect(() => {
+    if (!activeRef.current) return;
+    const request = window.requestAnimationFrame(() => {
+      const fitted = fitCamera();
+      cameraRef.current = fitted;
+      setCamera(fitted);
+    });
+    return () => window.cancelAnimationFrame(request);
+  }, [diagnosticsOpen, fitCamera]);
 
   // ── repaint whenever layout / state / bottleneck changes ──
   useEffect(() => {
@@ -860,8 +986,8 @@ export function Factory({
           maxX: 10_000,
           minY: -10_000,
           maxY: 10_000,
-          minZoom: 0.65,
-          maxZoom: 2.25,
+          minZoom: MIN_ZOOM,
+          maxZoom: MAX_ZOOM,
         });
       }
       const rect = canvas.getBoundingClientRect();
@@ -876,8 +1002,8 @@ export function Factory({
         maxX: frameRect.right - visibleEdge - baseLeft,
         minY: frameRect.top + visibleEdge - baseTop - baseHeight * requested.zoom,
         maxY: frameRect.bottom - visibleEdge - baseTop,
-        minZoom: 0.65,
-        maxZoom: 2.25,
+        minZoom: MIN_ZOOM,
+        maxZoom: MAX_ZOOM,
       });
     });
   }, []);
@@ -901,10 +1027,10 @@ export function Factory({
       { width: baseWidth, height: baseHeight },
       current,
       {
-        cellSize: FACTORY_HEX_SIZE * baseWidth / canvas.width,
+        cellSize: FACTORY_HEX_SIZE * baseWidth / canvas.clientWidth,
         origin: {
-          x: (PAD + FACTORY_HEX_WIDTH / 2) * baseWidth / canvas.width,
-          y: (PAD + FACTORY_HEX_SIZE) * baseHeight / canvas.height,
+          x: (PAD + FACTORY_HEX_WIDTH / 2) * baseWidth / canvas.clientWidth,
+          y: (PAD + FACTORY_HEX_SIZE) * baseHeight / canvas.clientHeight,
         },
       },
     );
@@ -1085,7 +1211,7 @@ export function Factory({
       value,
       { x: event.clientX - baseLeft, y: event.clientY - baseTop },
       value.zoom * Math.exp(-event.deltaY * 0.0015),
-      { minZoom: 0.65, maxZoom: 2.25 },
+      { minZoom: MIN_ZOOM, maxZoom: MAX_ZOOM },
     ));
   }, [updateCamera]);
 
@@ -1286,12 +1412,7 @@ export function Factory({
         })
       : [hoverCell];
 
-  const tileBrushBtn = (
-    kind: Brush["kind"] & ("belt" | "splitter" | "merger" | "source" | "sink" | "erase"),
-    label: string,
-    symbol: string,
-    hotkey: string,
-  ) => (
+  const tileBrushBtn = (kind: TileBrushKind, label: string, hotkey: string) => (
     <button
       type="button"
       onClick={() => setBrush({ kind })}
@@ -1300,25 +1421,46 @@ export function Factory({
       data-testid={`brush-${kind}`}
       title={`${label} (${hotkey})`}
     >
-      <span className="tool-symbol" aria-hidden="true">{symbol}</span>
-      <span className="tool-name">{label}</span>
       <span className="hotkey">{hotkey}</span>
+      <span className="tool-symbol"><ToolGlyph kind={kind} /></span>
+      <span className="tool-name">{label}</span>
     </button>
   );
 
   const facilityName = mode === "pilot" ? "Production Plan" : "Production";
+  const runState: RunState = state.deadlocked ? "blocked" : playing ? "running" : "paused";
+  const quote = mode === "pilot"
+    ? null
+    : brush.kind === "erase"
+    ? "No refund"
+    : hoverBuildCost === null
+    ? null
+    : `${moveCandidate === null ? "Build" : "Move"} $${hoverBuildCost}`;
+  const canvasBounds = hexBoardBounds(layout.width, layout.height, FACTORY_HEX_SIZE);
+  const overlayWidth = Math.ceil(PAD * 2 + canvasBounds.maxX - canvasBounds.minX);
+  const overlayHeight = Math.ceil(PAD * 2 + canvasBounds.maxY - canvasBounds.minY);
+  const ghostErase = gestureRef.current?.mode === "erase" || brush.kind === "erase";
+  const ghostClass = `factory-ghost${ghostErase ? " is-erase" : ""}${hoverPlacementValid ? "" : " is-invalid"}`;
 
   return (
     <div className={`game-view factory-workspace facility-${mode}`} data-testid={`${mode}-facility-workspace`}>
       <div className={`world-layout${diagnosticsOpen ? " has-inspector" : ""}`}>
         <section className="world-viewport factory-world" aria-label={`${facilityName} construction workspace`}>
           {rendererError !== null && <div role="alert" data-testid="factory-render-error" className="game-alert factory-render-alert">{rendererError}</div>}
+          {mode === "pilot" ? (
+            <div className="factory-mode-mark is-plan" data-testid="factory-mode-mark">Plan · Free</div>
+          ) : (
+            <div className={`factory-mode-mark is-${runState}`} data-testid="factory-mode-mark" role="status">
+              Production
+              <span className="run-state"><RunStateGlyph state={runState} />{runState === "blocked" ? "Blocked" : runState === "running" ? "Running" : "Paused"}</span>
+            </div>
+          )}
           <div className="transport-bar factory-controls" aria-label={`${facilityName} controls`}>
             {mode === "production" && (
-              <>
+              <div className="control-group">
                 <button type="button" onClick={() => setPlaying(true)} disabled={playing || state.deadlocked} className={playing ? "is-active" : ""} data-testid="factory-play" aria-label="Play Production" title="Play (Space)">Play</button>
                 <button type="button" onClick={() => setPlaying(false)} disabled={!playing} data-testid="factory-pause" aria-label="Pause Production" title="Pause (Space)">Pause</button>
-                <button type="button" onClick={stepOnce} disabled={playing} data-testid="factory-step" aria-label="Step Production one tick" title="Step one tick (.)">▶|</button>
+                <button type="button" onClick={stepOnce} disabled={playing} data-testid="factory-step" aria-label="Step Production one tick" title="Step one tick (.)">Step</button>
                 <button
                   ref={resetTriggerRef}
                   type="button"
@@ -1327,9 +1469,14 @@ export function Factory({
                   data-testid="factory-reset"
                   aria-label="Reset Production"
                   title="Reset Production"
-                >↺</button>
-              </>
+                >Reset</button>
+              </div>
             )}
+            <div className="control-group view-group">
+              <button type="button" onClick={() => { const fitted = fitCamera(); cameraRef.current = fitted; setCamera(fitted); }} data-testid="factory-camera-reset" aria-label={`Reset ${facilityName} camera`}>Center</button>
+              <output className="zoom-readout" data-testid="factory-zoom">{Math.round(camera.zoom * 100)}%</output>
+              <button type="button" data-testid="factory-diagnostics" aria-expanded={diagnosticsOpen} onClick={() => setDiagnosticsOpen((open) => !open)}>Details</button>
+            </div>
             {onCommand !== undefined && commandLabel !== undefined && (
               <button
                 type="button"
@@ -1342,23 +1489,32 @@ export function Factory({
                 {commandLabel}
               </button>
             )}
-            <button type="button" onClick={() => setCamera({ x: 0, y: 0, zoom: 1 })} data-testid="factory-camera-reset" aria-label={`Reset ${facilityName} camera`}>Center</button>
-            <output className="zoom-readout" data-testid="factory-zoom">{Math.round(camera.zoom * 100)}%</output>
-            <button type="button" data-testid="factory-diagnostics" aria-expanded={diagnosticsOpen} onClick={() => setDiagnosticsOpen((open) => !open)}>Details</button>
           </div>
           <div className="factory-build-status" aria-label="Current build tool">
-            <strong data-testid="brush-selected">{brushLabel}</strong>
-            <span data-testid="brush-direction">{brushIsMachine ? `Footprint ${footRot * 60}°` : `Direction ${DIR_LABEL[brushDir]}`}</span>
-            <span>{mode === "pilot" ? "Free plan" : brush.kind === "erase" ? "No refund" : hoverBuildCost === null ? "Point to quote" : `${moveCandidate === null ? "Placement" : "Move"} $${hoverBuildCost}`}</span>
-            <button type="button" onClick={rotateHoveredOrActive} data-testid="brush-rotate">Rotate <kbd>R</kbd></button>
-            <button type="button" onClick={undoLayout} disabled={history.past.length === 0} data-testid="factory-undo">Undo</button>
-            <button type="button" onClick={redoLayout} disabled={history.future.length === 0} data-testid="factory-redo">Redo</button>
+            <div className="build-readout">
+              <strong data-testid="brush-selected" className={brushIsMachine ? "" : "is-transport"}>{brushLabel}</strong>
+              <span data-testid="brush-direction">{brushIsMachine ? `Footprint ${footRot * 60}°` : <><DirectionGlyph dir={brushDir} />Direction {DIR_LABEL[brushDir]}</>}</span>
+              {lockedHint !== null
+                ? <span className="build-hint" role="status">{lockedHint}</span>
+                : quote !== null && <output className={`build-quote${hoverBuildCost === null ? "" : " has-cost"}`} data-testid="factory-quote">{quote}</output>}
+            </div>
+            <div className="build-actions">
+              <button type="button" onClick={rotateHoveredOrActive} data-testid="brush-rotate">Rotate <kbd>R</kbd></button>
+              <button type="button" onClick={undoLayout} disabled={history.past.length === 0} data-testid="factory-undo">Undo</button>
+              <button type="button" onClick={redoLayout} disabled={history.future.length === 0} data-testid="factory-redo">Redo</button>
+            </div>
           </div>
           {hoveredMachine !== undefined && <div className="machine-selection" data-testid="machine-selection">
-            <strong>{machineName(hoveredMachine.def.typeId)}</strong>
-            <span>{hoveredMachine.shape.inPorts.length} input · {hoveredMachine.shape.outPorts.length} output · {hoveredMachine.def.speed} ticks/unit · ${hoveredMachine.def.cost}/unit · {hoveredMachine.footRot * 60}°</span>
+            <MachineIcon typeId={hoveredMachine.def.typeId} path={hoveredMachine.def.path} size={40} variant="token" />
+            <div>
+              <strong>{machineName(hoveredMachine.def.typeId)}</strong>
+              <dl>
+                <dt>Ports</dt><dd>{hoveredMachine.shape.inPorts.length} in · {hoveredMachine.shape.outPorts.length} out</dd>
+                <dt>Process</dt><dd>{hoveredMachine.def.speed} ticks · ${hoveredMachine.def.cost}/unit</dd>
+                <dt>Rotation</dt><dd>{hoveredMachine.footRot * 60}°</dd>
+              </dl>
+            </div>
           </div>}
-          {state.deadlocked && <div className="factory-blocked" role="status">Line blocked · check ports and open Details</div>}
           {analysisError !== "" && <div role="alert" data-testid="factory-analysis-error" className="game-alert factory-render-alert">{analysisError}</div>}
 
           <div
@@ -1378,22 +1534,18 @@ export function Factory({
           >
             <div className="factory-canvas-transform" style={{ transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})` }}>
               <div ref={mountRef} className="factory-canvas-mount" />
-              {ghostCells.map((cell) => {
-                const center = factoryCellCenter(cell);
-                return (
-                  <div
-                    key={`${cell.q},${cell.r}`}
-                    className={`factory-ghost${gestureRef.current?.mode === "erase" || brush.kind === "erase" ? " is-erase" : ""}${hoverPlacementValid ? "" : " is-invalid"}`}
-                    style={{
-                      left: center.x - FACTORY_HEX_WIDTH / 2,
-                      top: center.y - FACTORY_HEX_SIZE,
-                      width: FACTORY_HEX_WIDTH,
-                      height: CELL,
-                      clipPath: "polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%)",
-                    }}
-                  />
-                );
-              })}
+              <svg className="factory-ghost-layer" width={overlayWidth} height={overlayHeight} aria-hidden="true" focusable="false">
+                {ghostCells.map((cell) => {
+                  const center = factoryCellCenter(cell);
+                  return (
+                    <polygon
+                      key={`${cell.q},${cell.r}`}
+                      className={ghostClass}
+                      points={hexPolygon(center.x, center.y, FACTORY_HEX_SIZE - 1).map((p) => `${p.x},${p.y}`).join(" ")}
+                    />
+                  );
+                })}
+              </svg>
               {hoverCell !== null && hoverBuildCost !== null && (
                 <output
                   className="factory-ghost-cost"
@@ -1401,6 +1553,7 @@ export function Factory({
                   style={{
                     left: factoryCellCenter(hoverCell).x,
                     top: factoryCellCenter(hoverCell).y,
+                    transform: `translate(8px, -30px) scale(${1 / camera.zoom})`,
                   }}
                 >${hoverBuildCost}</output>
               )}
@@ -1408,62 +1561,68 @@ export function Factory({
           </div>
 
           <div className="toolbelt" role="toolbar" aria-label={`${facilityName} build hotbar`} data-testid="factory-toolbelt">
-            {tileBrushBtn("belt", "Belt", "➜", "1")}
-            {tileBrushBtn("splitter", "Split", "⑂", "2")}
-            {tileBrushBtn("merger", "Merge", "⑃", "3")}
-            {tileBrushBtn("source", "Source", "S", "4")}
-            {tileBrushBtn("sink", "Sink", "◎", "5")}
-            {tileBrushBtn("erase", "Erase", "×", "6")}
+            {tileBrushBtn("belt", "Belt", "1")}
+            {tileBrushBtn("splitter", "Splitter", "2")}
+            {tileBrushBtn("merger", "Merger", "3")}
+            {tileBrushBtn("source", "Source", "4")}
+            {tileBrushBtn("sink", "Sink", "5")}
+            {tileBrushBtn("erase", "Erase", "6")}
             <span className="toolbelt-divider" />
             {DEFAULT_CATALOG.map((entry) => {
               const unlocked = catalog.some((candidate) => candidate.typeId === entry.typeId);
               const shortcutIndex = catalog.findIndex((candidate) => candidate.typeId === entry.typeId);
+              const lockReason = unlocked ? null : machineLockReason(entry.typeId);
               return (
                 <button
                   key={entry.typeId}
                   type="button"
                   onClick={() => {
-                    setBrush({ kind: "machine", typeId: entry.typeId });
+                    if (lockReason === null) setBrush({ kind: "machine", typeId: entry.typeId });
+                    else setLockedHint(lockReason);
                   }}
-                  disabled={!unlocked}
-                  className={`tool-slot${brush.kind === "machine" && brush.typeId === entry.typeId ? " is-selected" : ""}${unlocked ? "" : " is-locked"}`}
+                  onMouseEnter={lockReason === null ? undefined : () => setLockedHint(lockReason)}
+                  onMouseLeave={lockReason === null ? undefined : () => setLockedHint(null)}
+                  onFocus={lockReason === null ? undefined : () => setLockedHint(lockReason)}
+                  onBlur={lockReason === null ? undefined : () => setLockedHint(null)}
+                  aria-disabled={lockReason === null ? undefined : true}
+                  className={`tool-slot is-machine${brush.kind === "machine" && brush.typeId === entry.typeId ? " is-selected" : ""}${unlocked ? "" : " is-locked"}`}
                   aria-pressed={brush.kind === "machine" && brush.typeId === entry.typeId}
                   data-testid={`brush-machine-${entry.typeId}`}
-                  title={machineTooltip(entry)}
+                  title={lockReason ?? machineTooltip(entry)}
                 >
-                  <span className="tool-symbol">
-                    <MachineIcon typeId={entry.typeId} path={entry.path} size={36} variant="token" />
-                  </span>
-                  <span className="tool-name">{machineName(entry.typeId)}</span>
                   {shortcutIndex >= 0 && shortcutIndex < 4 && (
                     <span className="hotkey">{(shortcutIndex + 7) % 10}</span>
                   )}
+                  {lockReason !== null && <LockGlyph />}
+                  <span className="tool-symbol">
+                    <MachineIcon typeId={entry.typeId} path={entry.path} size={34} variant="token" />
+                  </span>
+                  <span className="tool-name">{machineName(entry.typeId)}</span>
                 </button>
               );
             })}
           </div>
-          <span className="toolbelt-more" data-testid="toolbelt-more" aria-hidden="true">›</span>
+          <span className="toolbelt-more" data-testid="toolbelt-more" aria-hidden="true"><ChevronGlyph /></span>
         </section>
 
         <aside className="inspector factory-inspector" data-testid="factory-inspector" hidden={!diagnosticsOpen}>
-          <button type="button" className="drawer-close" aria-label="Close factory details" onClick={() => setDiagnosticsOpen(false)}>×</button>
-          <h1>{facilityName}</h1>
+          <button type="button" className="drawer-close" aria-label="Close factory details" onClick={() => setDiagnosticsOpen(false)}><CloseGlyph /></button>
+          <h1>{mode === "pilot" ? "Plan" : "Production"}</h1>
           {mode === "production" ? (
             <div className={`factory-metrics${state.deadlocked ? " is-error" : ""}`} data-testid="factory-status" role="status">
-              <div><span>Tick</span><strong data-testid="factory-tick">{state.tick}</strong></div>
-              <div><span>Total sink outcomes</span><strong data-testid="factory-produced">{state.producedTotal}</strong></div>
-              <div><span>Waste</span><strong data-testid="factory-waste">{waste}</strong></div>
-              <div><span>Throughput</span><strong><span data-testid="factory-rate">{rate}</span>/tick</strong></div>
+              {state.deadlocked && <p className="factory-blocked-note">Line stuck. Red bars mark open belt ends and unconnected outputs.</p>}
+              <div><span>Throughput</span><strong><span data-testid="factory-rate">{rate}</span> units/tick</strong></div>
               <div><span>Bottleneck</span><strong data-testid="factory-bottleneck">{throughput === null ? "unavailable" : throughput.bottleneck === null ? "none" : machineName(throughput.bottleneckType!)}</strong></div>
+              <div><span>Units finished</span><strong data-testid="factory-produced">{state.producedTotal}</strong></div>
+              <div><span>Waste</span><strong data-testid="factory-waste">{waste}</strong></div>
+              <div><span>Tick</span><strong data-testid="factory-tick">{state.tick}</strong></div>
             </div>
           ) : (
             <div className="factory-metrics facility-mode-summary" role="status">
-              <div><span>Clock</span><strong>Stopped</strong></div>
-              <div><span>Build cost</span><strong>Free</strong></div>
               <div><span>Machines</span><strong>{layout.machines.length}</strong></div>
+              <div><span>Throughput</span><strong data-testid="pilot-rate">{rate} units/tick</strong></div>
+              <div><span>Bottleneck</span><strong data-testid="pilot-bottleneck">{throughput === null ? "unavailable" : throughput.bottleneck === null ? "none" : machineName(throughput.bottleneckType!)}</strong></div>
               <div><span>Sample</span><strong data-testid="facility-sample-outcome">{sampleSummary}</strong></div>
-              {mode === "pilot" && <div><span>Throughput</span><strong data-testid="pilot-rate">{rate} units/tick</strong></div>}
-              {mode === "pilot" && <div><span>Bottleneck</span><strong data-testid="pilot-bottleneck">{throughput === null ? "unavailable" : throughput.bottleneck === null ? "none" : machineName(throughput.bottleneckType!)}</strong></div>}
             </div>
           )}
 
@@ -1483,7 +1642,7 @@ export function Factory({
             </div>
           </div>
         </aside>
-        <span className="inspector-more" data-testid="inspector-more" aria-hidden="true">⌄</span>
+        <span className="inspector-more" data-testid="inspector-more" aria-hidden="true"><ChevronGlyph down /></span>
       </div>
       {resetPending && createPortal(
         <div
