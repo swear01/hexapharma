@@ -8,9 +8,12 @@ export function formulaId(disease: DiseaseId): string {
   return `F-${String(disease + 1).padStart(2, "0")}`;
 }
 
-export function formulaEffectsLabel(formula: DiscoveredFormula): string {
-  const count = formula.outcome.sideEffects.length;
+export function sideEffectCountLabel(count: number): string {
   return count === 0 ? "Clean" : `${count} side effect${count === 1 ? "" : "s"}`;
+}
+
+export function formulaEffectsLabel(formula: DiscoveredFormula): string {
+  return sideEffectCountLabel(formula.outcome.sideEffects.length);
 }
 
 /** Orienteering control description sheet: start, numbered steps, finish. */

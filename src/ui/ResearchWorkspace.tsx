@@ -12,7 +12,7 @@ import type {
 import { DEFAULT_CATALOG } from "../sim/phase0_interfaces";
 import { App, researchOutcomeText } from "./App";
 import { diseaseName } from "./effectLabels";
-import { formulaId } from "./Formulas";
+import { formulaId, sideEffectCountLabel } from "./Formulas";
 import { MachineIcon } from "./MachineIcon";
 import { machineName } from "./machineLabels";
 
@@ -91,7 +91,7 @@ function ResearchResult({
           <span>{researchStepCountLabel(steps)}</span>
           <span>${cost}</span>
           <span className={effects === 0 ? "is-clean" : "has-effects"}>
-            {effects === 0 ? "Clean" : `${effects} side effect${effects === 1 ? "" : "s"}`}
+            {sideEffectCountLabel(effects)}
           </span>
         </p>
       </div>

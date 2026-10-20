@@ -2,8 +2,8 @@ import { defineConfig, devices } from "@playwright/test";
 
 // e2e runs against throwaway dev/preview servers (NOT the 53346 playtest port),
 // so automated tests never collide with a manual playtest session.
-const DEV_PORT = Number(process.env.E2E_DEV_PORT ?? 53347);
-const PREVIEW_PORT = Number(process.env.E2E_PREVIEW_PORT ?? 53348);
+const DEV_PORT = Number(process.env.E2E_DEV_PORT) || 53347;
+const PREVIEW_PORT = Number(process.env.E2E_PREVIEW_PORT) || 53348;
 
 export default defineConfig({
   testDir: "test/e2e",

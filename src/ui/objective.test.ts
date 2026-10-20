@@ -12,7 +12,9 @@ const base: ObjectiveInput = {
   unlockedPatents: [],
   gatedPatents: ["skew-unlock", "dilute-unlock"],
   profitableUnits: () => 0,
+  stockFor: () => 0,
   productionHasMachines: false,
+  producingOther: false,
   sector: "east",
 };
 
@@ -30,6 +32,12 @@ describe("currentObjective", () => {
     const filled = { ...base, contracts: [contract(0, 3), contract(1, 0)] };
     expect(currentObjective(filled)).toMatchObject({ target: "technology", text: "Unlock Zigzag still" });
     expect(currentObjective({ ...filled, unlockedPatents: ["skew-unlock"] }).text).toBe("Find a cure for Disease 2 · look east");
+  });
+
+  it("does not send the player to run a line that still makes the previous cure", () => {
+    const next = { ...base, contracts: [contract(0, 3), contract(1, 0)], unlockedPatents: ["skew-unlock"], formulaDiseases: [0, 1], productionHasMachines: true };
+    expect(currentObjective({ ...next, producingOther: true })).toMatchObject({ target: "pilot", text: "Build the Disease 2 formula · Production makes another cure" });
+    expect(currentObjective({ ...next, stockFor: (d) => (d === 1 ? 5 : 0) })).toMatchObject({ target: "production", text: "Disease 2 stock no longer earns · improve the line" });
   });
 
   it("reports when every contract is filled", () => {

@@ -284,6 +284,9 @@ describe("factory framing and legend copy", () => {
     expect(fitted.zoom).toBeLessThan(1);
     expect(fitted.x + fitted.zoom * line.minX).toBeGreaterThanOrEqual(0);
     expect(fitted.x + fitted.zoom * line.minX).toBeLessThanOrEqual(24);
+    const rightToLeft = fitFactoryCamera({ width: 390, height: 440 }, floor, line, { x: 960, y: 240 });
+    expect(rightToLeft.x + rightToLeft.zoom * 960).toBeGreaterThan(0);
+    expect(rightToLeft.x + rightToLeft.zoom * 960).toBeLessThanOrEqual(390);
     const short = { minX: 40, minY: 150, maxX: 400, maxY: 330 };
     const whole = fitFactoryCamera({ width: 390, height: 440 }, floor, short);
     expect(whole.x + whole.zoom * short.minX).toBeGreaterThanOrEqual(0);

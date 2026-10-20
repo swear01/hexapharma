@@ -226,6 +226,12 @@ export function factoryLayoutBounds(layout: FactoryLayout): PixelBounds | null {
   return { minX: minX - margin, minY: minY - margin, maxX: maxX + margin, maxY: maxY + margin };
 }
 
+/** Pixel centre of the first Source, where a line starts. */
+export function factoryStartPoint(layout: FactoryLayout): { readonly x: number; readonly y: number } | null {
+  const index = layout.tiles.findIndex((tile) => tile.kind === "source");
+  return index < 0 ? null : factoryCellCenter({ q: index % layout.width, r: Math.floor(index / layout.width) });
+}
+
 function factoryFloorBounds(layout: FactoryLayout): PixelBounds {
   const bounds = hexBoardBounds(layout.width, layout.height, FACTORY_HEX_SIZE);
   return { minX: PAD, minY: PAD, maxX: PAD + bounds.maxX - bounds.minX, maxY: PAD + bounds.maxY - bounds.minY };
@@ -642,6 +648,7 @@ export function fitFactoryCamera(
   view: { readonly width: number; readonly height: number },
   floor: PixelBounds,
   layout: PixelBounds | null,
+  start: { readonly x: number; readonly y: number } | null = null,
 ): Camera {
   if (view.width <= 0 || view.height <= 0) return { x: 0, y: 0, zoom: 1 };
   const fitHeight = Math.max(1, view.height - 2 * Math.min(MARK_BAND, view.height * 0.1));
@@ -653,9 +660,15 @@ export function fitFactoryCamera(
     : Math.max(view.width <= 768 ? MIN_PHONE_FIT_ZOOM : MIN_ZOOM, Math.min(zoomFor(layout), MAX_FIT_ZOOM, Math.max(1, floorZoom)));
   const target = layout === null || zoom <= floorZoom ? floor : layout;
   if (layout !== null && zoom > floorZoom && zoom > zoomFor(layout)) {
+    // Cropped: open at the edge nearest the Source so the line's start is on screen.
+    const midX = (layout.minX + layout.maxX) / 2;
+    const midY = (layout.minY + layout.maxY) / 2;
+    const fitsY = zoom * (layout.maxY - layout.minY) <= view.height;
     return {
-      x: PAD - zoom * layout.minX,
-      y: view.height / 2 - zoom * (layout.minY + layout.maxY) / 2,
+      x: start !== null && start.x > midX ? view.width - PAD - zoom * layout.maxX : PAD - zoom * layout.minX,
+      y: fitsY || start === null
+        ? view.height / 2 - zoom * midY
+        : start.y > midY ? view.height - PAD - zoom * layout.maxY : PAD - zoom * layout.minY,
       zoom,
     };
   }
@@ -797,10 +810,12 @@ export function Factory({
 
   // editing brush + parameters.
   const [brush, setBrush] = useState<Brush>({ kind: "belt" });
+  const [lockedHint, setLockedHint] = useState<string | null>(null);
+  // Any new tool choice (click, hotkey, pipette) retires a stale locked-machine hint.
+  useEffect(() => setLockedHint(null), [brush]);
   const [brushDir, setBrushDir] = useState<Dir>(E);
   const [footRot, setFootRot] = useState<Rotation>(0);
   const [clipboardLabel, setClipboardLabel] = useState("empty");
-  const [lockedHint, setLockedHint] = useState<string | null>(null);
   const [hoverCell, setHoverCell] = useState<GridCell | null>(null);
   const [camera, setCamera] = useState<Camera>({ x: 0, y: 0, zoom: 1 });
   const cameraRef = useRef(camera);
@@ -966,6 +981,7 @@ export function Factory({
       { width: frame.clientWidth, height: frame.clientHeight },
       factoryFloorBounds(layoutRef.current),
       factoryLayoutBounds(layoutRef.current),
+      factoryStartPoint(layoutRef.current),
     );
   }, []);
   const focusLayoutInViewport = useCallback(() => {
@@ -1017,6 +1033,24 @@ export function Factory({
       if (local) local.destroy();
     };
   }, [focusLayoutInViewport, layout.width, layout.height, mode]);
+
+  // A frame resize (window, rotation, the Formulas reference) reframes the floor like Center.
+  useEffect(() => {
+    const frame = frameRef.current;
+    if (frame === null || typeof ResizeObserver === "undefined") return;
+    let last = { width: frame.clientWidth, height: frame.clientHeight };
+    const observer = new ResizeObserver(() => {
+      const next = { width: frame.clientWidth, height: frame.clientHeight };
+      const changed = Math.abs(next.width - last.width) > 1 || Math.abs(next.height - last.height) > 40;
+      last = next;
+      if (!changed || !activeRef.current || next.width === 0 || next.height === 0) return;
+      const fitted = fitCamera();
+      cameraRef.current = fitted;
+      setCamera(fitted);
+    });
+    observer.observe(frame);
+    return () => observer.disconnect();
+  }, [fitCamera]);
 
   // Details changes the frame width: reframe the floor.
   useEffect(() => {

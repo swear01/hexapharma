@@ -499,9 +499,12 @@ export function Game() {
       const sold = game.economy.sold.find((entry) => entry.disease === disease)?.count ?? 0;
       return profitableMarketProducts(game.inventory, disease, spec.basePrice, sold).length;
     },
+    stockFor: (disease) => game.inventory.filter((product) => product.outcome.cured.includes(disease)).length,
     productionHasMachines: game.production.layout.machines.length > 0,
+    producingOther: game.inventory.some((product) => product.outcome.cured.length > 0)
+      && !game.inventory.some((product) => product.outcome.cured.includes(activeContract.disease)),
     sector: researchMissionSector,
-  }), [contracts, formulas, game.economy.sold, game.inventory, game.patents.unlocked, game.production.layout.machines.length, level.diseases, researchMissionSector]);
+  }), [activeContract.disease, contracts, formulas, game.economy.sold, game.inventory, game.patents.unlocked, game.production.layout.machines.length, level.diseases, researchMissionSector]);
   const knownResearchMap = useMemo(
     () => researchPlanningMap(level.mm, game.fog),
     [game.fog, level.mm],
