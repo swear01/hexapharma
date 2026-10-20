@@ -393,6 +393,53 @@ test("a Cure prints its formula card and opens it in Plan", async ({ page }) => 
   await expect(page.getByTestId("pilot-facility-workspace")).toBeVisible();
 });
 
+for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+  test(`the step that resolves a Cure brings the finish into view at ${viewport.width}px`, async ({ page }) => {
+    const options = defaultGenOptions(14);
+    const level = generate(options);
+    const reference = level.diseases[0]!.reference.steps;
+    let game = createGameState(options, 1_000, 0);
+    game = applyGameIntent(game, { kind: "beginResearchShot" });
+    for (const machine of reference.slice(0, -1)) {
+      game = applyGameIntent(game, { kind: "advanceResearchShot", machine });
+    }
+    expect(game.research.shot).not.toBeNull();
+    const finish = applyGameIntent(game, { kind: "advanceResearchShot", machine: reference.at(-1)! })
+      .research.lastOutcome!.final[0]!;
+
+    await page.setViewportSize(viewport);
+    await page.goto("/");
+    await installSaveFixture(page, serializeGame(game));
+    await page.reload();
+    await confirmLoad(page);
+    await page.getByTestId(`research-machine-${reference.at(-1)!.typeId}`).click();
+    await page.getByTestId("research-command").click();
+    const card = page.getByRole("status", { name: /Cure found/ });
+    await expect(card).toBeVisible();
+    const frame = page.getByTestId("lab-map-frame");
+    let settled = "";
+    await expect.poll(async () => {
+      const next = `${await frame.getAttribute("data-camera-x")},${await frame.getAttribute("data-camera-y")},${await frame.getAttribute("data-camera-zoom")}`;
+      const same = next === settled;
+      settled = next;
+      return same;
+    }, { intervals: [150] }).toBe(true);
+    const canvas = (await page.getByTestId("lab-canvas").boundingBox())!;
+    const box = (await frame.boundingBox())!;
+    const cardBox = (await card.boundingBox())!;
+    const [cameraX, cameraY, zoom] = settled.split(",").map(Number) as [number, number, number];
+    const projected = focusLabCamera(finish);
+    const x = canvas.x + canvas.width / 2 + (projected.x - cameraX) * zoom * canvas.width / LAB_VIEWPORT.width;
+    const y = canvas.y + canvas.height / 2 + (projected.y - cameraY) * zoom * canvas.height / LAB_VIEWPORT.height;
+    expect(x).toBeGreaterThan(box.x);
+    expect(x).toBeLessThan(box.x + box.width);
+    expect(y).toBeGreaterThan(box.y);
+    expect(y).toBeLessThan(box.y + box.height);
+    const underCard = x >= cardBox.x && x <= cardBox.x + cardBox.width && y >= cardBox.y && y <= cardBox.y + cardBox.height;
+    expect(underCard, "the finish must not sit under the result card").toBe(false);
+  });
+}
+
 test("Research pan, zoom, and focus preserve the manually controlled camera", async ({ page }) => {
   await page.goto("/");
   const frame = page.getByTestId("lab-map-frame");

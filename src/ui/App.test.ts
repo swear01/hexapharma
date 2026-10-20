@@ -4,9 +4,12 @@ import type { EffectMap, MultiMap } from "../sim/phase0_interfaces";
 import { applyTemplate } from "../sim/drug-graph";
 import { generate } from "../sim/mapgen";
 import { defaultGenOptions } from "./Game";
+import { focusLabCamera } from "../render/labCamera";
 import {
   labPointerToViewport,
   researchControlPoints,
+  researchFitCamera,
+  researchStepResolved,
   researchFocusTarget,
   researchKnownCureLabel,
   researchKnownCureCount,
@@ -168,5 +171,39 @@ describe("Research course controls", () => {
     expect(controls).toHaveLength(program.steps.length);
     expect(controls.at(-1)).toEqual(applyTemplate(level.mm, level.start, program).pos[0]);
     expect(researchControlPoints(level.mm, level.start, { steps: [] }, 0)).toEqual([]);
+  });
+});
+
+describe("Research Cure fit", () => {
+  const push = { typeId: "push", path: [0] } as const;
+  const pull = { typeId: "pull", path: [3] } as const;
+
+  it("fires only for one freshly resolved step, never for a stale or loaded program", () => {
+    const one = { steps: [push] };
+    const two = { steps: [push, pull] };
+    expect(researchStepResolved({ steps: [] }, one)).toBe(true);
+    expect(researchStepResolved(one, { steps: [push, pull] })).toBe(true);
+    expect(researchStepResolved(two, two)).toBe(false);
+    expect(researchStepResolved({ steps: [] }, two)).toBe(false);
+    expect(researchStepResolved({ steps: [pull] }, { steps: [push, pull] })).toBe(false);
+    expect(researchStepResolved(two, { steps: [pull] })).toBe(true);
+  });
+
+  it("keeps the whole course inside the uncovered part of the viewport without zooming in", () => {
+    const map = { width: 63, height: 63 };
+    const viewport = { width: 832, height: 512 };
+    const insets = { top: 10, right: 200, bottom: 40, left: 150 };
+    const points = [{ q: 31, r: 31 }, { q: 40, r: 31 }, { q: 44, r: 33 }];
+    const camera = researchFitCamera(points, viewport, insets, { x: 0, y: 0, zoom: 1 }, map);
+    expect(camera.zoom).toBeLessThanOrEqual(1);
+    for (const point of points) {
+      const projected = focusLabCamera(point);
+      const x = viewport.width / 2 + (projected.x - camera.x) * camera.zoom;
+      const y = viewport.height / 2 + (projected.y - camera.y) * camera.zoom;
+      expect(x).toBeGreaterThanOrEqual(insets.left);
+      expect(x).toBeLessThanOrEqual(viewport.width - insets.right);
+      expect(y).toBeGreaterThanOrEqual(insets.top);
+      expect(y).toBeLessThanOrEqual(viewport.height - insets.bottom);
+    }
   });
 });
