@@ -15,7 +15,7 @@
 .research-compass > div { display: grid; gap: 2px; }
 .research-compass strong { font: 600 18px/1 var(--font-display); letter-spacing: .02em; text-transform: uppercase; }
 .research-compass span { color: var(--ink-2); font-size: 13px; }
-.research-compass output { color: var(--course-ink); font-weight: 600; }
+.research-compass output { color: var(--ink); font-weight: 600; }
 .research-compass-dial path { fill: none; stroke: var(--rule-strong); stroke-width: 1; }
 .research-compass-dial circle { fill: var(--ink-3); }
 .research-compass-dial .is-target { fill: var(--course); stroke: var(--course-ink); }

@@ -9,8 +9,8 @@
 /* The camera places the floor; the frame never scrolls. */
 .factory-canvas-frame { grid-area: canvas; position: relative; overflow: hidden; cursor: crosshair; touch-action: none; overscroll-behavior: contain; background: var(--paper-sunk); }
 .factory-canvas-transform { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
-/* Unbuilt ground: contour paper that pans and zooms with the floor (tile = 480px, aligned to the canvas origin). */
-.factory-paper { position: absolute; top: -1920px; left: -1920px; width: calc(100% + 3840px); height: calc(100% + 3840px); background-color: var(--paper-sunk); background-repeat: repeat; pointer-events: none; }
+/* Unbuilt ground: contour paper that pans and zooms with the floor (tile = 1440px, aligned to the canvas origin). */
+.factory-paper { position: absolute; top: -2880px; left: -2880px; width: calc(100% + 5760px); height: calc(100% + 5760px); background-color: var(--paper-sunk); background-repeat: repeat; pointer-events: none; }
 .factory-canvas-mount { position: relative; line-height: 0; }
 .factory-canvas-mount canvas { display: block; }
 

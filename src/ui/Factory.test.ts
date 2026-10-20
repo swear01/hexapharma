@@ -277,12 +277,17 @@ describe("factory framing and legend copy", () => {
     expect(fitFactoryCamera({ width: 390, height: 400 }, floor, null).zoom).toBe(1);
   });
 
-  it("fits a built line whole on a phone, zooming below 100% when it must", () => {
+  it("opens a long line on a phone at a legible zoom, starting from its Source end", () => {
     const line = { minX: 40, minY: 150, maxX: 980, maxY: 330 };
     const fitted = fitFactoryCamera({ width: 390, height: 440 }, floor, line);
+    expect(fitted.zoom).toBeGreaterThanOrEqual(0.6);
     expect(fitted.zoom).toBeLessThan(1);
     expect(fitted.x + fitted.zoom * line.minX).toBeGreaterThanOrEqual(0);
-    expect(fitted.x + fitted.zoom * line.maxX).toBeLessThanOrEqual(390);
+    expect(fitted.x + fitted.zoom * line.minX).toBeLessThanOrEqual(24);
+    const short = { minX: 40, minY: 150, maxX: 400, maxY: 330 };
+    const whole = fitFactoryCamera({ width: 390, height: 440 }, floor, short);
+    expect(whole.x + whole.zoom * short.minX).toBeGreaterThanOrEqual(0);
+    expect(whole.x + whole.zoom * short.maxX).toBeLessThanOrEqual(390);
   });
 
   it("numbers a compiled formula line in its step order, Source to Sink", () => {

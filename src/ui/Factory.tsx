@@ -279,7 +279,7 @@ export function factoryMachineFlowOrder(layout: FactoryLayout): ReadonlyMap<numb
   return order;
 }
 
-const PAPER_TILE_CELLS = 40;
+const PAPER_TILE_CELLS = 120;
 const PAPER_STEP = 12;
 const PAPER_SEED = 0x51f3;
 let paperTexture: string | null = null;
@@ -296,7 +296,8 @@ export function factoryPaperTexture(): string {
   const height = (i: number, j: number) => {
     const x = (((i % n) + n) % n) / n * tau;
     const y = (((j % n) + n) % n) / n * tau;
-    return Math.sin(x + 1.6 * Math.sin(y + 0.4)) + Math.sin(2 * y + 1.4 * Math.sin(x + 1.9)) + 0.55 * Math.sin(2 * x - y + 2.3);
+    return Math.sin(3 * x + 1.6 * Math.sin(2 * y + 0.4)) + Math.sin(4 * y + 1.4 * Math.sin(3 * x + 1.9))
+      + 0.55 * Math.sin(5 * x - 2 * y + 2.3) + 0.45 * Math.sin(x + 2 * y + 1.1) + 0.35 * Math.sin(2 * x + 5 * y + 0.7);
   };
   const interval = 0.42;
   let thin = "";
@@ -623,6 +624,8 @@ const FACTORY_HEX_SIZE = CELL / 2;
 const FACTORY_HEX_WIDTH = Math.sqrt(3) * FACTORY_HEX_SIZE;
 const PAD = 12;
 const MIN_ZOOM = 0.35;
+/** On a phone a built line opens no smaller than this, so ports and step numbers stay legible. */
+const MIN_PHONE_FIT_ZOOM = 0.6;
 const MAX_ZOOM = 2.25;
 const MARK_BAND = 36;
 /** The floor is framed up to this zoom; beyond it hexes stop reading as a map. */
@@ -631,7 +634,9 @@ const MAX_FIT_ZOOM = 1.6;
 /**
  * Camera that frames the work: an empty floor fills the view (never below 100%, so touch hexes
  * stay usable); a built layout is fitted whole (Source to Sink), zooming below 100% only when
- * it cannot otherwise fit. Translation is relative to the frame's top-left.
+ * it cannot otherwise fit. On a phone the fit stops at a legible zoom and, if the line is still
+ * wider than the view, opens at its left (Source) end for the player to pan along.
+ * Translation is relative to the frame's top-left.
  */
 export function fitFactoryCamera(
   view: { readonly width: number; readonly height: number },
@@ -645,8 +650,15 @@ export function fitFactoryCamera(
   const floorZoom = zoomFor(floor);
   const zoom = layout === null
     ? Math.min(MAX_FIT_ZOOM, Math.max(1, floorZoom))
-    : Math.max(MIN_ZOOM, Math.min(zoomFor(layout), MAX_FIT_ZOOM, Math.max(1, floorZoom)));
+    : Math.max(view.width <= 768 ? MIN_PHONE_FIT_ZOOM : MIN_ZOOM, Math.min(zoomFor(layout), MAX_FIT_ZOOM, Math.max(1, floorZoom)));
   const target = layout === null || zoom <= floorZoom ? floor : layout;
+  if (layout !== null && zoom > floorZoom && zoom > zoomFor(layout)) {
+    return {
+      x: PAD - zoom * layout.minX,
+      y: view.height / 2 - zoom * (layout.minY + layout.maxY) / 2,
+      zoom,
+    };
+  }
   return {
     x: view.width / 2 - zoom * (target.minX + target.maxX) / 2,
     y: view.height / 2 - zoom * (target.minY + target.maxY) / 2,

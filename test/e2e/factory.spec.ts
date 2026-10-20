@@ -721,7 +721,7 @@ test("compact Pilot keeps its camera after a local edit acknowledgement", async 
   expect(await transform.getAttribute("style")).toBe(before);
 });
 
-test("opening a built line on a phone frames it from Source to Sink", async ({ page }) => {
+test("opening a built line on a phone starts legible at its Source", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await loadSaveFixture(page, productionSave());
   await page.getByTestId("view-production").click();
@@ -734,7 +734,7 @@ test("opening a built line on a phone frames it from Source to Sink", async ({ p
   const layout = referenceLayout();
   for (let index = 0; index < layout.tiles.length; index++) {
     const kind = layout.tiles[index]!.kind;
-    if (kind !== "source" && kind !== "sink") continue;
+    if (kind !== "source") continue;
     const point = await factoryCellPoint(frame, layout, { q: index % layout.width, r: Math.floor(index / layout.width) });
     expect(point.x).toBeGreaterThan(frameBox.x);
     expect(point.x).toBeLessThan(frameBox.x + frameBox.width);
