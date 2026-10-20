@@ -969,7 +969,7 @@ export function Game() {
         </section>
 
         <aside className="game-drawer" data-testid="menu-drawer" hidden={drawer !== "menu"}>
-          <button type="button" className="drawer-close" onClick={() => setDrawer(null)} aria-label="Close menu">×</button>
+          <button type="button" className="drawer-close" onClick={() => setDrawer(null)} aria-label="Close menu"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M3 3 13 13M13 3 3 13" /></svg></button>
           <section className="menu-panel">
             <h1>HexaPharma</h1>
             <span className="resource-chip" aria-label={`Seed ${game.genOptions.seed}`} title={`Seed ${game.genOptions.seed}`}>
@@ -1005,7 +1005,7 @@ export function Game() {
         </aside>
         {drawer !== null && drawer !== "menu" && (
           <aside className={`game-drawer${drawer === "formulas" ? " formula-reference" : ""}`} data-testid={`${drawer}-drawer`}>
-            <button type="button" className="drawer-close" onClick={() => setDrawer(null)} aria-label={`Close ${drawer}`}>×</button>
+            <button type="button" className="drawer-close" onClick={() => setDrawer(null)} aria-label={`Close ${drawer}`}><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M3 3 13 13M13 3 3 13" /></svg></button>
             {drawer === "market" ? (
               <Shop level={level} economy={game.economy} inventory={game.inventory} onSell={sellProducts} />
             ) : drawer === "technology" ? (
