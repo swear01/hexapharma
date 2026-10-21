@@ -19,28 +19,32 @@
 | D13 | Production 新局即有 non-null 24×12 editor；所有 edit 按差異付費。 | 直接操作取代線性網站式流程；成本而非頁面順序形成風險。 |
 | D14 | 只有接受的Production layout edit停止播放並重建runtime、保留累積waste；拆除不退款。 | 避免在途authority與新幾何錯配，防止用重建洗廢料，也不讓rejected gesture干擾運作。 |
 | D15 | Factory transport 使用 sim-derived connected topology。 | 端點、對向直線、60°／120°轉折、多向junction與machine ports必須反映六邊真實accept／emit edge，而非看相鄰格猜圖。 |
-| D16 | Blueprint v4 codec識別`research-program`與通用`factory-layout`；Library envelope／namespace是v4／`hexapharma.blueprint-library.v4`，UI不capture/apply Research，只讓Research card import/download/delete。 | stepwise Research不可被藍圖批次提交；同一工廠layout仍可進Production Plan或Commission到Production，不綁來源頁面。 |
-| D17 | Save v11 使用開放、可編輯的 plain cold snapshots；full／compact／slots 不要求收入 trace；獨立 checkpoint/history 外層仍為 v2，key 為 `hexapharma.save.v11.checkpoint.${slot}`。 | alpha 舊版本直接拒絕；只驗結構、資源容量、可執行狀態與同 content build 相容性。 |
+| D16 | Blueprint v4 codec識別`research-program`與通用`factory-layout`；Library envelope／namespace是v4／`hexapharma.blueprint-library.v4`，UI不capture/apply Research，只讓Research card import/download/delete。v2 起 ruleset 為 5（heading 規則改變 machine 語意），path／turn 仍由 catalog 還原。 | Research 試驗不可被藍圖繞過付費；同一工廠layout仍可進Production Plan或Commission到Production，不綁來源頁面。 |
+| D17 | Save v12 使用開放、可編輯的 plain cold snapshots；full／compact／slots 不要求收入 trace；獨立 checkpoint/history 外層仍為 v2，key 為 `hexapharma.save.v12.checkpoint.${slot}`。 | alpha 舊版本直接拒絕；只驗結構、資源容量、可執行狀態與同 content build 相容性。 |
 | D18 | release candidate 前不維護跨 build save migration。 | 早期設計變更速度優先；同 build correctness 仍必須完整。 |
 | D19 | UI 遵循 simple-is-better；詳細教學集中到玩家指南。 | world 保留給空間操作，chrome 只顯示工具、短狀態、錯誤與危險確認。 |
 | D20 | 單一大型 Atlas 正常生成 4 種獨立疾病，generator 支援最多 8 種。 | 多疾病與 tiered references 提供可持續探索；跨層仍不進 active design。 |
 | D21 | Cure 與 SideEffect 是可重疊欄位；reference endpoint 乾淨、同區部分 Cure cell 污染。 | 找到療效不等於找到最佳產品，精準路徑才有品質取捨。 |
-| D22 | Research 是 stepwise reveal–decide session：一次提交一個完整 candidate stamp，立即逐步扣款、執行、揭露與 evaluate；不預先提交 batch route。 | 每個決定都由剛揭露的地圖與結果驅動，操作與成本因果立即可讀。 |
+| D22 | （已由 D29 取代）Research 是 stepwise reveal–decide session：一次提交一個完整 candidate stamp，立即逐步扣款、執行、揭露與 evaluate；不預先提交 batch route。 | 每個決定都由剛揭露的地圖與結果驅動，操作與成本因果立即可讀。 |
 | D23 | 正常新局 cash 為 $1000，fresh run 必須負擔 Research → build → first sale。 | bootstrap 可達性是結構 contract，不用測試注資掩蓋。 |
 | D24 | 每疾病 demand 按 `floor(19/20)` 衰減到 0；Market 先乾淨、再低成本，且只自動出售正 net產品。 | 防止單線永久印錢，也避免 bulk action 默默虧損。 |
-| D25 | 成功 Cure 自動建立／覆寫每疾病唯一的 `DiscoveredFormula`，保存實際 program、累積 Research cost 與 outcome。 | 探索成果成為可讀的配方紀錄，但不暗中自動建廠或繞過 Production。 |
+| D25 | （已由 D29 取代）成功 Cure 自動建立／覆寫每疾病唯一的 `DiscoveredFormula`，保存實際 program、累積 Research cost 與 outcome。 | 探索成果成為可讀的配方紀錄，但不暗中自動建廠或繞過 Production。 |
 | D26 | 每疾病 shipping contract quota 固定為 3；Disease 1／2／3 分別 gate Skew／Dilute／Settle patents。 | Production 出貨回饋下一層 Research 工具，形成跨場域節奏，而非只靠抽象 currency。 |
 | D27 | 視覺採定向越野地圖語言（2026-10-20 取代 minimal flat schematic）：紙底墨印、ISOM 色語、路線紫只屬玩家的線，世界由 Pixi vector runtime 繪製。 | 使用者要求現代乾淨線條＋手繪感、更有遊戲感但守住工廠可讀性；地圖探索與「路線疊在地形上」正是本作機制。 |
 | D28 | assay 只透露目標的寬廣方向 sector，不提供座標或距離。 | 給玩家起步方向，又不把探索謎題降成導航。 |
+| D29 | （2026-10-21 使用者決定）Research＝開圖：玩家在 UI 本地規劃整條路線，預估只用已知地圖（霧當平地、Wall 可見）；`runResearchTrial` 付一次 Σ catalog cost，從關卡起點在真實地圖跑完整條，只揭露實際路徑，存 `lastTrial {program,cost,outcome}`。Research 不產生配方；移除 shot、`DiscoveredFormula` 與 Formulas 面板。 | 先規劃、後付費試驗讓「霧下偏離」成為解謎核心；配方由玩家在 Plan 自己組。 |
+| D30 | 藥帶一個所有圖共用的 heading（起點 E）；machine path 相對 heading，stamp 完成且未失敗後依 catalog 固定 `turn` 轉向。`turn` 同時存在 `MachineCatalogEntry` 與 `Machine`，像 path 一樣對 catalog 驗證；暫定值 push +1、push2 0、pull 3、shear −1、skew +2、dilute 0、settle −2。沒有純轉向機器。 | 機器順序本身改變之後的方向，同一組機器有多種解；drug-graph 保持不依賴 catalog。 |
+| D31 | Swamp 半格取代 energy：位置＝格＋兩倍單位 offset；Swamp 內每個 delta 走半格，離開到非 Swamp 格時對齊格中心。 | 沼澤改變步幅而不截斷路徑，與「完整 PathStamp」一致；整數 doubled 座標保持確定性。 |
+| D32 | 規格未明處的 v2 Step 1 選擇：（a）目標格平手先取目前格，兩鄰格平手依固定 E／SE／SW／W／NW／NE 順序（不依移動方向）；（b）平手選中的格是 Wall／OOB 時照樣取消該 delta；（c）stamp 失敗時 heading 不轉；（d）試驗揭露每個實際進入的格（含 Swamp 內同格的半步）與終點；（e）空 program 拒絕，同一路線重跑照樣付費；（f）規劃路線是 UI 本地狀態，不存檔，New Game／Load 時清空；（g）Objective 以「目前疾病任一 Cure 格已在 fog 中揭露」切換到 Plan；（h）點最後一個控制點與右鍵都移除最後一步；（i）Blueprint `research-program` 保留（仍是有效 machine 序列），ruleset 升到 5；（j）full save 字元上限由 5M 升到 6M，因滿倉 24,500 件產品的 drug 多了 heading／offset。 | 都選最簡單的確定性選項；平衡與 UI 打磨留給後續步驟。 |
 
 ## Current authority summary
 
 - F1 Research、F2 Production Plan、F3 Production；M／T／B drawers；Plan 以 Commission 送入正式產線。
-- Research：中心radius-two 19-cell hex disk起始視野、寬廣 assay sector、逐步完整 fixed stamp／即時付費揭露；只有 Wall 始終可見，其餘互動物藏霧下；Cure 自動記錄 formula。
+- Research：中心radius-two 19-cell hex disk起始視野、寬廣 assay sector；本地規劃整條 heading-relative 路線，Run 付一次費在真實地圖試驗並只揭露實際路徑；Swamp 半格；只有 Wall 始終可見，其餘互動物藏霧下；不產生配方。
 - Atlas：正常 4 種獨立疾病；terrain-first diverse references、clean/contaminated Cure cells、最多 8 種。
 - Production Plan：free/no-clock optional sandbox；內部仍可稱 pilot。
 - Production：direct paid construction、live runtime、actual inventory/waste/economy。
 - Economy：$1000 bootstrap、linear seeded base prices、per-disease demand decay to zero、profitable clean-first shipping、quota-3 contracts與machine patent gates。
-- Blueprint：v4 codec保留ResearchProgram文件，但UI只create/apply generic FactoryLayout；Library跨存檔。
-- Save：v11 plain、開放、可編輯的同 build cold state；checkpoint history/recovery 保持獨立外層 v2。
+- Blueprint：v4 codec（ruleset 5）保留ResearchProgram文件，但UI只create/apply generic FactoryLayout；Library跨存檔。
+- Save：v12 plain、開放、可編輯的同 build cold state；checkpoint history/recovery 保持獨立外層 v2。
 - Geometry／visual：Atlas 與 Factory 都使用pointy-top axial true hex與六方向／六rotation contract，但payload／validator分離；世界維持俯視2D vector 地圖（定向越野語言），不做3D migration。

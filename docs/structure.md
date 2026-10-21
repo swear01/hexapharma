@@ -9,10 +9,10 @@
 | `.github/workflows/pages.yml` | main 上 `check` 成功後，以相對 base build 並部署 GitHub Pages（custom domain `hexapharma.5334601.xyz`）。 |
 | `vitest.config.ts`、`test/vitest.setup.ts` | Node test runner 與最小 browser-global setup，讓 Pixi renderer 純函式在 CI Node 20 可載入。 |
 | `docs/` | canonical design、invariants、player guide、plan 與 playtest。 |
-| `src/json-guards.ts` | 共用 JSON object guard；Save v11 與 checkpoint slot envelope 共用。 |
+| `src/json-guards.ts` | 共用 JSON object guard；Save v12 與 checkpoint slot envelope 共用。 |
 | `src/sim/hex.ts` | pointy-top axial `{q,r}`、E／SE／SW／W／NW／NE、六鄰接、60° rotation與`r * width + q`索引 authority。 |
 | `src/sim/phase0_interfaces.ts` | 完整 `PathStamp` machine、terrain/portal、三場域 state、non-null Production、Game intents。 |
-| `src/sim/drug-graph/` | strict EffectMap validation、fixed path traversal、single-layer terrain/portal、preview/execution authority。 |
+| `src/sim/drug-graph/` | strict EffectMap／DrugState validation、heading-relative fixed path traversal與turn、Swamp半格（doubled coordinates）、single-layer terrain/portal、preview/execution authority。 |
 | `src/sim/mapgen/` | terrain-first seeded radial + motif Atlas、1–8疾病、paired portals、clean/contaminated Cure regions、diverse tiered reference ResearchPrograms、linear prices。 |
 | `src/sim/solver/` | dev/test-only whole-Cure-region minimum steps／cost、soundness/quality/balance tool；production dependency graph禁止 import。 |
 | `src/sim/rng/`, `hash.ts`, `state.ts` | seeded RNG、program/state hash、replay determinism。 |
@@ -20,10 +20,10 @@
 | `src/sim/factory-sim/` | SoA runtime、routing/cursors、actual products、throughput/deadlock、cold snapshots。 |
 | `src/sim/construction/` | `quoteProductionBuild` paid layout-diff authority。 |
 | `src/sim/recipe/` | Factory prototype compilation與bounded diagnostics；不作Research authority。 |
-| `src/sim/game.ts` | stepwise Research session/fog/formulas、shipping contracts、free Production Plan（內部 pilot）、direct paid Production、products/economy/reset。 |
+| `src/sim/game.ts` | Run-based Research trials（`runResearchTrial`／`lastTrial`）/fog、shipping contracts、free Production Plan（內部 pilot）、direct paid Production、products/economy/reset。 |
 | `src/sim/replay-work.ts` | Production 單次 batch 的 bounded work estimate；獨立 replay 的工作量估算。 |
 | `src/sim/economy/`, `patent/` | per-disease finite demand、quota-3 shipping contracts、machine patent gates與tiered單層Technology。 |
-| `src/sim/save/` | Save v11 full/compact/slots/rewind、plain cold snapshots、bounded strict parser、可執行狀態驗證與舊版本拒絕。 |
+| `src/sim/save/` | Save v12 full/compact/slots/rewind、plain cold snapshots、bounded strict parser、可執行狀態驗證與舊版本拒絕。 |
 | `src/blueprint/format.ts` | Blueprint v4 `research-program`／`factory-layout` schema、checksum/content/bounds/hex-geometry validators與materializers。 |
 | `src/blueprint/storage.ts` | v4 save-independent Library、`hexapharma.blueprint-library.v4` namespace、quota/dedupe/import/export/delete atomicity。 |
 | `src/render/hexProjection.ts` | Research／Factory共用pointy-top axial pixel projection；不擁有sim座標。 |
@@ -33,19 +33,19 @@
 | `src/render/labRenderer.ts` | vector-only minimal flat hex Atlas、下一個full-path candidate、executed trail、terrain、overlap features與fog layer；event-driven單幀重繪。 |
 | `src/render/factoryTransportTopology.ts` | sim-derived accept/emit edges、cell shape classification、machine port connectivity。 |
 | `src/render/factoryRenderer.ts` | Production Plan／Production minimal flat hex schematic、connected transport與tick animation；event-driven單幀重繪。 |
-| `src/ui/ResearchWorkspace.tsx` | F1 Research 版面：羅盤、編號step清單、Cure結果卡、machine legend hotbar與`Run`／`End run` command bar。 |
-| `src/ui/objective.ts` | 由contracts／formulas／stock／layout／patents推導Objective下一步與目標場域的純函式。 |
-| `src/ui/Formulas.tsx`, `FieldGuide.tsx` | `F-0n` control description sheet；Guide與地圖／工廠符號圖例。 |
+| `src/ui/ResearchWorkspace.tsx` | F1 Research 版面：羅盤、規劃step清單、試驗結果readout、依heading旋轉的machine legend hotbar與`Clear`／`Run · $N` command bar。 |
+| `src/ui/objective.ts` | 由contracts／已揭露Cure／stock／layout／patents推導Objective下一步與目標場域的純函式。 |
+| `src/ui/FieldGuide.tsx` | Guide與地圖／工廠符號圖例。 |
 | `src/ui/game.css`, `research.css`, `factory.css`, `panels.css`, `fonts/` | tokens＋shell與各區域樣式；自帶 Barlow Condensed 600（OFL）。 |
-| `src/ui/App.tsx` | Research Atlas wrapper、candidate endpoint hit-testing、手動camera focus、已知Cure輪播與resolved outcome。 |
+| `src/ui/App.tsx` | Research Atlas wrapper、最後控制點 hit-testing（移除最後一步）、手動camera focus、已知Cure輪播與試驗outcome fit。 |
 | `src/ui/Factory.tsx` | Production Plan／Production shared editor、Belt drag、Commission cost preview、diagnostics/transport controls。 |
-| `src/ui/Game.tsx` | shell：場域分頁、資源HUD、Objective列、drawers、Research authority helpers、F2 optional Production Plan、F3 direct Production、$1000 bootstrap、New Game、paid intents與save shell。 |
+| `src/ui/Game.tsx` | shell：場域分頁、資源HUD、Objective列、drawers、本地Research規劃與route helpers、F2 optional Production Plan、F3 direct Production、$1000 bootstrap、New Game、paid intents與save shell。 |
 | `src/ui/machineLabels.ts`, `effectLabels.ts` | 玩家可讀的machine／一基底disease／outcome文字；不暴露internal IDs或座標。 |
 | `src/ui/Shop.tsx` | clean/cheap stable product ranking、positive-net single/bulk shipping與finite-demand顯示。 |
 | `src/ui/BlueprintLibrary.tsx` | capture Production Plan／Production、open Factory in Production Plan或paid Commission、strict import/export；既有Research cards只可download/delete，不可capture/apply。 |
-| `src/ui/checkpointStorage.ts` | 獨立 checkpoint/history outer v2、inner Save v11 compact checkpoint、`hexapharma.save.v11.checkpoint.${slot}` key、rewind/recovery。 |
-| `test/integration/` | stepwise Research/formula、mapgen diversity、fresh-start affordability、shipping gates、optional Production Plan、paid Production、finite Market/Technology loop。 |
-| `test/e2e/` | world UI、radius-two hex visibility、reveal–decide Research、assay/formula、touch/direct construction、Market/contracts、Blueprint、Save/New Game、modal freeze與responsive acceptance。 |
+| `src/ui/checkpointStorage.ts` | 獨立 checkpoint/history outer v2、inner Save v12 compact checkpoint、`hexapharma.save.v12.checkpoint.${slot}` key、rewind/recovery。 |
+| `test/integration/` | Research trial、mapgen diversity、fresh-start affordability、shipping gates、optional Production Plan、paid Production、finite Market/Technology loop。 |
+| `test/e2e/` | world UI、radius-two hex visibility、planned-route Research／paid trials、assay、touch/direct construction、Market/contracts、Blueprint、Save/New Game、modal freeze與responsive acceptance。 |
 | `tools/` | headless sim與whole-region solver minima／mapgen quality/balance sweeps；不進遊戲內自動解。 |
 
 ## Module boundaries

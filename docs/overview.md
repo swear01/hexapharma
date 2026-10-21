@@ -7,8 +7,8 @@ HexaPharma 是「程序化藥效 Atlas + 實體工廠」的確定性單人遊戲
 1. **Research**
    - 單一大型 Atlas；正常新局同圖有 4 種獨立疾病，generator 最多支援 8 種。
    - assay 只顯示目標的local，或east／south-east／south-west／west／north-west／north-east六個寬廣sector之一；不公開座標、距離或reference。
-   - reveal–decide session 一次只接受一個 catalog 定義的完整奇形 `PathStamp`：該步立即付費、執行、揭露、evaluate，玩家再決定下一步；沒有 batch route submission 或待執行 queue。
-   - no-cure 繼續 session；Failure／Cure 結束，Abort 不退款且不回滾 fog。成功 Cure 自動建立或覆寫該疾病的 `DiscoveredFormula`。
+   - 玩家在本地以 catalog 定義的完整奇形 `PathStamp` 規劃整條路線（相對藥的朝向；每台機器有固定轉向；沼澤內走半格），預估只用已知地圖；`Run · $N` 一次付總價，從起點在權威地圖試驗並只揭露實際路徑。
+   - Research 只開圖，不產生配方；最近一次試驗保存為 `lastTrial`。
    - 只有牆始終可讀；深淵、沼澤、成對傳送門、治療區與副作用區都藏在霧下。
    - 新局只揭露以 Atlas 中心起點為中心、hex distance radius 2 的 19-cell disk。
    - 未揭露互動物不改變規劃預覽；只有出藥後的實際路徑會揭露內容。
@@ -51,7 +51,7 @@ HexaPharma 是「程序化藥效 Atlas + 實體工廠」的確定性單人遊戲
 
 - Blueprint v4 codec 識別只存 ordered `{typeId}` 的 `research-program`，但 UI 對它只提供import／download／delete，不提供capture／apply；`factory-layout` 存 routing 與 `{id,typeId,anchor,footRot}`，可正常建立與套用。Library envelope／namespace 是 v4／`hexapharma.blueprint-library.v4`。
 - Factory Blueprint 不綁來源場域，可免費開到 Production Plan，或付費 Commission 到 Production。Library 與 save slots 分離並跨存檔。
-- Save v11 保存 non-null Production layout/runtime、結算後 cash、stepwise Research／formulas、內部 pilot、economy 與 fog；舊開發版顯式拒絕。
+- Save v12 保存 non-null Production layout/runtime、結算後 cash、Research `lastTrial`、drug heading／offset、內部 pilot、economy 與 fog；舊開發版（含 v11）顯式拒絕。
 - 正式 release candidate 前不維護跨 build 相容。
 
 ## 技術界線

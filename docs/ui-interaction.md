@@ -26,7 +26,7 @@
 ## 3. Shell / navigation
 
 - 單一頂部 Research／Plan／Production 導航；Cash、Knowledge、Stock、合約以無框短列顯示。Menu 收納 seed、New、slot、Save、Load、Rewind、Recover；不常駐系統工具列。New 仍有可見文字與可取消確認，save checkpoints 與跨局 Blueprint Library 保留。
-- Market／Technology／Blueprints 是 M／T／B drawers；Formulas 與 ? Help 同在次要工具列，X 或 Escape 關閉。
+- Market／Technology／Blueprints 是 M／T／B drawers；Guide 在次要工具列，X 或 Escape 關閉。沒有 Formulas。
 - 已造訪建築 mounted 保存 camera/tool/history；hidden page 不接 gameplay keys/pointers。切換建築或一般 drawer 不停止 Production。
 - blocking alertdialog 開啟時 timer callback 與 productionTicks dispatch 都凍結；Cancel 保留先前 Play／Pause，確認 New／Load／Rewind／Reset／擴廠後停止舊 timer。Blueprint Delete 不換 Production authority，關閉後恢復原播放狀態。
 - drawer 開啟時 world 不接 gameplay hotkeys；input/contenteditable 保留文字鍵，focused button 保留原生 Enter／Space。
@@ -46,19 +46,17 @@
 
 F1 只有一張大型單層 Atlas：
 
-- Research拖曳任一滑鼠鍵都可pan，與Factory的Shift+LMB／MMB手勢分開；pointer cancel只取消gesture，不得commit或erase。camera開局聚焦世界中心的generator start；fresh fog只揭露中心radius-two 19-cell hex disk，平常只看見大地圖的一小部分。focus command固定明示Next並聚焦紫色空心candidate control。每個stamp在單一intent中立即resolve，UI不顯示timed Dose phase或自動camera follow；唯一例外是剛resolve出Cure的那一步會以≤220 ms（reduced motion即時、任何pointer／wheel／focus可中斷）把camera fit到整條已印路線與終點，避開結果卡與step清單；建築往返不因舊outcome重設手動camera。Cure sites是可操作的已揭露位置計數／輪播，聚焦fog已揭露的Cure，不得暗示成功治療數、顯示未知總數或讀取隱藏座標。
+- Research拖曳任一滑鼠鍵都可pan，與Factory的Shift+LMB／MMB手勢分開；pointer cancel只取消gesture，不得commit或erase。camera開局聚焦世界中心的generator start；fresh fog只揭露中心radius-two 19-cell hex disk，平常只看見大地圖的一小部分。focus command在有規劃時明示Next並聚焦規劃終點，否則明示Dose並聚焦最近試驗的實際終點。每次Run在單一intent中resolve，UI不顯示timed Dose phase或自動camera follow；唯一例外是剛resolve出Cure的試驗會以≤220 ms（reduced motion即時、任何pointer／wheel／focus可中斷）把camera fit到整條實際路線，避開結果readout與step清單；建築往返不因舊outcome重設手動camera。Cure sites是可操作的已揭露位置計數／輪播，聚焦fog已揭露的Cure，不得暗示成功治療數、顯示未知總數或讀取隱藏座標。
 - mission readout是地圖左上角的羅盤：以紫色扇區標出目標方向，並顯示疾病與Look broad sector（mobile 仍保留疾病與Look）；accessible name仍為Active assay；sector只可為local或east／south-east／south-west／west／north-west／north-east，不顯示座標、距離、reference或region大小。
 - 霧是未印的紙：只有與seed／座標有關、與隱藏地形無關的淡等高線；Wall在霧下仍可讀，格線只畫在已揭露格。
 - Abyss、Swamp、Portal A+B、Cure與SideEffect未揭露前不能有 motif、sprite、region edge、preview差異或 outcome洩漏。只揭露單一 Portal 端點時可顯示未配對端點，但配對標記、方向、目的座標與 preview jump 必須等兩端都揭露。
 - palette是map legend：每個machine以footprint＋完整path的token、全名、價格與hotkey辨識；沒有 path-length control。
-- 起點是紫色空心三角；已執行step是實線紫色leg與編號控制點圓，目前位置是紫色實心點；held candidate是虛線紫色leg，由目前actual drug state接續完整 path。每次commit的新leg以≤250 ms墨線描出（reduced motion時立即完成）。
-- held candidate的endpoint必須有明確單一紫色空心control；底部`Next`可隨時把它重新置中。滑鼠命中時從pan的grab cursor改為pointer，tooltip只顯示短動作`Run step`；其餘地圖提示`Drag map`。LMB單擊就commit並立即resolve完整stamp，不需雙擊，小幅pointer抖動仍視為click。blank map click不append也不把整張canvas當confirm button。
-- machine hotbar tooltip要說明選擇只預覽下一個完整stamp；點 endpoint 或 `Run · $N` 才執行，`End run` 放棄本輪；session readout（`N steps · $X spent`與左上編號step清單）必須顯示已執行step與累積cost，不能呈現可重排／刪除的pending batch route。
-- 第一次commit以單一`advanceResearchShot`原子地從step 0開始並執行所選machine；每次advance立即逐步扣款、執行、揭露與evaluate。no-cure保留session供下一個決定；Failure／Cure結束。Abort不退款且不回滾fog。
-- planning／hover不改 fog；執行只畫已完成 segment。Portal jump trail斷開。
-- Cure使用綠色十字與區域邊界，SideEffect是琥珀色點網；兩者可在同一cell疊加，不能互相遮掉或用互斥terrain kind呈現。Failure以紅色X標記，Cure以紫色雙圈終點標記。
-- Cure時地圖右上（mobile為下方）出現結果卡：`F-0n · Disease N`、步數、成本、Clean或副作用數與`Open in Plan`；no-cure／failure 以單行readout呈現；outcome以一基底疾病名稱與副作用數量同時顯示已知結果，不暴露 raw effect IDs、權威座標或工廠流程提示。
-- 成功 Cure 後 Formulas 入口顯示已知配方數量；面板以疾病選擇器查全部已發現成果，以定向越野control description sheet列`F-0n`、Source、完整步驟序號／token／名稱／footprint、Sink、累積成本與 Clean／side effects。每疾病 latest 由 sim authority 提供；手動選擇跨場域保留，新成果預設最新，Save／Load 後可查所有存入成果。面板可關閉，mobile 列表可垂直 scroll；全寬 mobile 面板會停用被遮住的 world hotkeys，但不暂停 Production timer，放大回 desktop 後恢復 world 操作。
+- 起點是紫色空心三角；**規劃路線**是虛線紫色leg與編號控制點圓，在 fog-masked planning map 上走完整條（霧當平地、Wall 照算）；**最近一次試驗的實際路線**是實線紫色leg，由 `lastTrial.program` 在真實地圖重播；實際終點是紫色實心點（Failure 為紅色X）。Swamp 半步畫在半格點。新試驗的實線以≤250 ms墨線描出（reduced motion時立即完成）。
+- hotbar／數字鍵把 machine 接到規劃末端；hotbar 圖示依規劃終點的 heading 旋轉。Backspace、Ctrl／⌘+Z、右鍵，或 LMB 單擊最後一個控制點（hover 時游標轉 pointer、tooltip `Remove last step`；其餘地圖 `Drag map`）移除最後一步；`Clear` 清空。blank map click 不改規劃。
+- 指令列只有步數讀數、`Clear` 與 `Run · $N`（Enter）；N 是規劃的 catalog 總價。規劃為空或現金不足時 Run disabled 並以短句說明。Run 以單一 `runResearchTrial` 一次付款、跑完整條、揭露實際路徑並保留規劃。
+- planning／hover不改 fog；只有試驗實際走過的格被揭露。Portal jump trail斷開。
+- Cure使用綠色十字與區域邊界，SideEffect是琥珀色點網；兩者可在同一cell疊加，不能互相遮掉或用互斥terrain kind呈現。Failure以紅色X標記。
+- 試驗結果在地圖右上（mobile為下方）以單行readout呈現（`Cure Disease N · …`、`No cure · …` 或 `Failed · …`），同時顯示已知副作用數量，不暴露 raw effect IDs、權威座標或工廠流程提示。沒有配方卡或 Formulas 面板；Objective 在目前疾病任一 Cure 格揭露後改為 `Plan a line to Disease N`。
 
 ## 6. Production Plan
 
@@ -94,7 +92,7 @@ F1 只有一張大型單層 Atlas：
 ## 9. Blueprint drawer
 
 - Library lifecycle與save slots分離。
-- Blueprint v4 codec可匯入現行`research-program`，但Library不提供Research capture／apply；Research card只可Download／Delete，不得寫入active session、揭霧、產生outcome或formula。Library namespace是`hexapharma.blueprint-library.v4`。
+- Blueprint v4 codec（ruleset 5）可匯入現行`research-program`，但Library不提供Research capture／apply；Research card只可Download／Delete，不得繞過付費 Run、揭霧或產生outcome。Library namespace是`hexapharma.blueprint-library.v4`。
 - capture Production Plan或Production都產生通用`factory-layout`，以`{q,r}`保存routing與`{id,typeId,anchor,footRot}`，`footRot`為0–5。
 - Factory card提供`Open in Production Plan`與`Commission $N`；後者走正式Production construction cost。
 - floor dimensions與目前entitlement不符時card仍可讀，但目的地disabled並顯示`Build unavailable`；render不得throw。
@@ -109,12 +107,12 @@ F1 只有一張大型單層 Atlas：
 - Technology machine cards對Skew／Dilute／Settle分別顯示Disease 1／2／3 contract requirement；quota固定3。UI應使用sim導出的gate mapping與contract progress，不能複製另一份規則。
 - `Ship best`依side-effect count、production cost、inventory ID掃描第一個positive-net產品；`Ship profitable`用同一順序略過non-positive候選，只出售逐件計入demand後仍positive-net的產品。沒有治療庫存或沒有可賺產品時，兩個action disabled並各自顯示原因；只有authority接受出售後才可顯示`Shipped`與每件`+1 Knowledge`，rejected intent不得假報成功。
 - 探索輔助只能放大actual executed segment的sensor radius；Unlock本身不能揭霧。
-- 擴廠若清Production runtime／waste，Unlock前必須有可取消確認；不能中止active Research shot。
+- 擴廠若清Production runtime／waste，Unlock前必須有可取消確認；不改 Research 的 lastTrial 或本地規劃。
 - Load若會覆蓋不同的current game、Rewind若會永久丟棄最新checkpoint，都必須先列出影響並可取消。
 - desktop 與 mobile 皆讓 world 佔主體；Details 預設關閉，桌面展開在 world 旁、窄屏在下方。工具與主要動作獨立排版，不蓋住 canvas；touch controls 至少 44px、focus 可見、錯誤 aria-live。窄屏 HUD 兩列，system controls 收 Menu，工具列保留可見 scroll 提示。
 - machine以silhouette、footprint、full-path glyph、ports辨識；terrain/portal不能用raw debug text冒充美術。
 - Atlas與Factory都顯示pointy-top axial hex；cell authority是`{q,r}`，六方向依序為E／SE／SW／W／NW／NE，dense arrays以`r * width + q`索引。hit-test、ghost、region edge、transport與renderer必須一致；兩個domain的payload／validator仍分離。
-- 定向越野地圖語言的嚴格俯視 2D：紙底＋近黑墨印；ISOM 色語（牆＝黑色斷崖墨、沼澤＝藍色水平線、治療＝綠、副作用＝琥珀、失敗＝紅、流動＝藍）；路線紫只屬玩家自己的線（研究路線、candidate、選取、Plan overprint）。Production 為黑墨實印、Plan 為紫色 overprint。手繪感只來自確定性墨線抖動，不用於 port、belt 接點、hit-test 幾何或文字；Pixi vector runtime 保留 canonical true hex。完整規格見 [design.md](design.md#visual-language)。
+- 定向越野地圖語言的嚴格俯視 2D：紙底＋近黑墨印；ISOM 色語（牆＝黑色斷崖墨、沼澤＝藍色水平線、治療＝綠、副作用＝琥珀、失敗＝紅、流動＝藍）；路線紫只屬玩家自己的線（研究實際路線、規劃虛線、選取、Plan overprint）。Production 為黑墨實印、Plan 為紫色 overprint。手繪感只來自確定性墨線抖動，不用於 port、belt 接點、hit-test 幾何或文字；Pixi vector runtime 保留 canonical true hex。完整規格見 [design.md](design.md#visual-language)。
 - 禁止3D透視、glass blur、giant pill、gradient／glow halo與常駐tutorial遮world。
 
 ## 11. Copyright boundary
@@ -123,7 +121,7 @@ F1 只有一張大型單層 Atlas：
 - Atlas／Factory world assets由repo內Pixi vector程式碼runtime繪製；沒有generated bitmap或runtime manifest contract。
 - 文件只使用本專案 screenshots；外部研究只連官方來源。
 
-Formulas stays beside the desktop world while switching rooms, so a paid Production line can be built while reading every step. On mobile, close the panel to return to the canvas. The build readout quotes the pointed placement or move through the construction authority; it does not promise a generic replacement price.
+The build readout quotes the pointed placement or move through the construction authority; it does not promise a generic replacement price.
 
 Market states how much the currently profitable stock can still net, and how many units that covers, with demand declining after every selected shipment. This is not a lifetime estimate for the line. Unprofitable stock suggests improving cost or quality, or another disease. Technology shows missing cash, Knowledge, and contract shipments. With no cash left, it points to Market and cheaper routes, with Menu → New Game as an optional fresh start after saving; it does not declare the run irrecoverable.
 
@@ -131,4 +129,4 @@ Research retains its logical camera coordinates while matching the canvas backin
 
 Research reserves at least 80% of its stage height for the world at the tested desktop size. The short mission hint overlays the world without intercepting input; compact tools and the action row keep their touch targets. Revealed Abyss interiors remain visibly darker than fog, while undiscovered terrain stays indistinguishable from hidden empty cells.
 
-Research cover canvas 的 pan／zoom／focus 依 clipped frame 實際可見的 logical viewport 限制 camera；視窗 resize 或 Formulas 開關不會把 map 邊界固定在畫面外。
+Research cover canvas 的 pan／zoom／focus 依 clipped frame 實際可見的 logical viewport 限制 camera；視窗 resize 不會把 map 邊界固定在畫面外。
