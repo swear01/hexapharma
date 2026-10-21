@@ -177,7 +177,3 @@ kbd, .hotkey { color: var(--ink-3); font: 600 11px/1 var(--font-display); letter
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
 }
-@media (min-width: 769px) {
-  .has-formula-reference > .view-layer { right: 340px; }
-  .game-drawer.formula-reference { width: 340px; box-shadow: none; }
-}

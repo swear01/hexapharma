@@ -122,6 +122,7 @@ function machineGallerySave(): string {
     def: {
       typeId: entry.typeId,
       path: entry.path,
+      turn: entry.turn,
       cost: entry.cost,
       speed: entry.speed,
     },
@@ -603,7 +604,7 @@ test("Pilot builds without a Research contract and Production is an exact copy",
   if (raw === null) throw new Error("built Production checkpoint was not saved");
   const envelope = JSON.parse(raw) as { readonly head: string };
   const saved = deserializeSnapshot(envelope.head);
-  expect(saved.research.program.steps).toHaveLength(0);
+  expect(saved.research.lastTrial).toBeNull();
   expect(saved.production.layout).toEqual(saved.pilot.layout);
 });
 

@@ -35,7 +35,7 @@ function plannedEndpoint(stepCount: number): HexCoord {
   throw new Error("default Research machine has no preview endpoint");
 }
 
-async function clickCandidateEndpoint(page: Page, stepCount: number): Promise<void> {
+async function clickLastControl(page: Page, stepCount: number): Promise<void> {
   const canvas = page.getByTestId("lab-canvas");
   const frame = page.getByTestId("lab-map-frame");
   const box = await canvas.boundingBox();
@@ -55,31 +55,30 @@ function completedResearchSave(): string {
   const options = defaultGenOptions(14);
   const program = generate(options).diseases[0]!.reference;
   let game = createGameState(options, 10_000, 100);
-  game = applyGameIntent(game, { kind: "beginResearchShot" });
-  for (const machine of program.steps) {
-    game = applyGameIntent(game, { kind: "advanceResearchShot", machine });
-    if (game.research.shot === null) break;
-  }
+  game = applyGameIntent(game, { kind: "runResearchTrial", program });
   return serializeGame(game);
 }
 
-test("loading a finished Research shot preserves fog and its independent outcome", async ({ page }) => {
+test("loading a finished Research trial preserves fog and its outcome without a plan", async ({ page }) => {
   const errors: Error[] = [];
   page.on("pageerror", (error) => errors.push(error));
   await page.goto("/");
   await installSaveFixture(page, completedResearchSave());
   await page.reload();
+  const revealedBefore = await page.getByTestId("revealed-count").textContent();
   await confirmLoad(page);
-  await expect(page.getByTestId("research-program-count")).not.toHaveText("0 steps");
-  await expect(page.getByTestId("research-atlas-outcome")).toBeVisible();
-  await expect(page.getByTestId("research-command")).toHaveText("Run · $2");
+  await expect(page.getByTestId("revealed-count")).not.toHaveText(revealedBefore ?? "");
+  await expect(page.getByTestId("research-program-count")).toHaveText("0 steps");
+  await expect(page.getByTestId("research-atlas-outcome")).toContainText("Cure Disease 1");
+  await expect(page.getByTestId("research-command")).toHaveText("Run · $0");
+  await expect(page.getByTestId("research-command")).toBeDisabled();
   await expect(page.getByRole("button", { name: /send.*pilot|transfer/i })).toHaveCount(0);
   await page.getByTestId("view-pilot").click();
   await expect(page.getByTestId("pilot-command")).toBeDisabled();
   expect(errors).toEqual([]);
 });
 
-test("Research selection is free and each tested cartridge immediately spends and reveals", async ({ page }) => {
+test("Research planning is free; only Run spends once and reveals", async ({ page }) => {
   await page.goto("/");
   const revealed = page.getByTestId("revealed-count");
   const cash = page.getByTestId("cash");
@@ -87,24 +86,27 @@ test("Research selection is free and each tested cartridge immediately spends an
   const cashBefore = await cash.textContent();
   await expect(page.getByTestId("lab-canvas")).toBeVisible({ timeout: 15_000 });
   await page.getByTestId("research-machine-push").click();
+  await page.getByTestId("research-machine-push").click();
+  await expect(page.getByTestId("research-program-count")).toHaveText("2 steps");
   await expect(revealed).toHaveText(fogBefore ?? "");
   await expect(cash).toHaveText(cashBefore ?? "");
-  await clickCandidateEndpoint(page, 1);
-  await expect(page.getByTestId("research-program-count")).toHaveText("1 step");
+  await page.getByTestId("research-command").click();
+  await expect(page.getByTestId("research-program-count")).toHaveText("2 steps");
   await expect(revealed).not.toHaveText(fogBefore ?? "");
-  await expect(cash).not.toHaveText(cashBefore ?? "");
+  await expect(cash).toHaveText(String(Number(cashBefore) - 4));
 });
 
-test("ending an active assay does not refund tested cartridges", async ({ page }) => {
+test("clicking the last control removes it and Clear empties the plan without refunds", async ({ page }) => {
   await page.goto("/?cash=200");
   await expect(page.getByTestId("lab-canvas")).toBeVisible({ timeout: 15_000 });
-  for (let step = 0; step < 4; step++) {
-    await clickCandidateEndpoint(page, step + 1);
-  }
+  for (let step = 0; step < 4; step++) await page.getByTestId("research-machine-push").click();
+  await page.getByTestId("research-command").click();
   await expect(page.getByTestId("cash")).toHaveText("192");
-  await page.getByTestId("research-abort").click();
+  await clickLastControl(page, 4);
+  await expect(page.getByTestId("research-program-count")).toHaveText("3 steps");
+  await page.getByTestId("research-clear").click();
   await expect(page.getByTestId("cash")).toHaveText("192");
-  await expect(page.getByTestId("research-command")).toBeEnabled();
+  await expect(page.getByTestId("research-command")).toBeDisabled();
   await expect(page.getByTestId("research-program-count")).toHaveText("0 steps");
 });
 

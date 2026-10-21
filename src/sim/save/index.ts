@@ -68,7 +68,8 @@ export const SAVE_CONTENT_BUILD = fnv1a32Hex(canonical({
   patents: DEFAULT_PATENTS,
 }));
 export const MAX_SLOT_STATES = 20;
-export const MAX_SAVE_CHARACTERS = 5_000_000;
+// A full save of the 24,500-product warehouse is ~5.36M characters once drugs carry heading + offset.
+export const MAX_SAVE_CHARACTERS = 6_000_000;
 
 export interface PreparedSnapshot {
   readonly game: GameState;

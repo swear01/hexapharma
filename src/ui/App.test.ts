@@ -3,13 +3,13 @@ import { describe, expect, it } from "vitest";
 import type { EffectMap, MultiMap } from "../sim/phase0_interfaces";
 import { applyTemplate } from "../sim/drug-graph";
 import { generate } from "../sim/mapgen";
-import { defaultGenOptions } from "./Game";
+import { defaultGenOptions, researchRoute } from "./Game";
 import { focusLabCamera } from "../render/labCamera";
 import {
   labPointerToViewport,
-  researchControlPoints,
+  researchDrugPoint,
   researchFitCamera,
-  researchStepResolved,
+  researchTrialResolvedCure,
   researchFocusTarget,
   researchKnownCureLabel,
   researchKnownCureCount,
@@ -142,13 +142,14 @@ describe("Lab pointer projection", () => {
   });
 
   it("focuses the next candidate when present and the current dose otherwise", () => {
-    const dose = { pos: [{ q: 3, r: 4 }], failed: false };
-    const candidate = { pos: [{ q: 12, r: 9 }], failed: false };
+    const dose = { pos: [{ q: 3, r: 4 }], offset: [{ q: 0, r: 0 }], heading: 0 as const, failed: false };
+    const candidate = { pos: [{ q: 12, r: 9 }], offset: [{ q: 1, r: 0 }], heading: 2 as const, failed: false };
 
     expect(researchFocusTarget(dose, candidate, 0)).toEqual({
       label: "Next",
-      position: { q: 12, r: 9 },
+      position: { q: 12.5, r: 9 },
     });
+    expect(researchDrugPoint(candidate, 0)).toEqual({ q: 12.5, r: 9 });
     expect(researchFocusTarget(dose, undefined, 0)).toEqual({
       label: "Dose",
       position: { q: 3, r: 4 },
@@ -167,26 +168,25 @@ describe("Research course controls", () => {
   it("numbers one control per executed step and ends at the run's final position", () => {
     const level = generate(defaultGenOptions(14));
     const program = level.diseases[0]!.reference;
-    const controls = researchControlPoints(level.mm, level.start, program, 0);
-    expect(controls).toHaveLength(program.steps.length);
-    expect(controls.at(-1)).toEqual(applyTemplate(level.mm, level.start, program).pos[0]);
-    expect(researchControlPoints(level.mm, level.start, { steps: [] }, 0)).toEqual([]);
+    const route = researchRoute(level.mm, level.start, program);
+    expect(route.controls).toHaveLength(program.steps.length);
+    expect(route.controls.at(-1)).toEqual(researchDrugPoint(applyTemplate(level.mm, level.start, program), 0));
+    expect(route.drug).toEqual(applyTemplate(level.mm, level.start, program));
+    expect(researchRoute(level.mm, level.start, { steps: [] }).controls).toEqual([]);
   });
 });
 
 describe("Research Cure fit", () => {
-  const push = { typeId: "push", path: [0] } as const;
-  const pull = { typeId: "pull", path: [3] } as const;
-
-  it("fires only for one freshly resolved step, never for a stale or loaded program", () => {
-    const one = { steps: [push] };
-    const two = { steps: [push, pull] };
-    expect(researchStepResolved({ steps: [] }, one)).toBe(true);
-    expect(researchStepResolved(one, { steps: [push, pull] })).toBe(true);
-    expect(researchStepResolved(two, two)).toBe(false);
-    expect(researchStepResolved({ steps: [] }, two)).toBe(false);
-    expect(researchStepResolved({ steps: [pull] }, { steps: [push, pull] })).toBe(false);
-    expect(researchStepResolved(two, { steps: [pull] })).toBe(true);
+  it("fires only for a freshly arrived curing trial, never for a stale, failed, or non-curing one", () => {
+    const cure = { failed: false, final: [{ q: 1, r: 1 }], cured: [0], sideEffects: [] };
+    const miss = { ...cure, cured: [] };
+    const failed = { ...cure, failed: true, cured: [] };
+    expect(researchTrialResolvedCure(null, cure)).toBe(true);
+    expect(researchTrialResolvedCure(miss, { ...cure })).toBe(true);
+    expect(researchTrialResolvedCure(cure, cure)).toBe(false);
+    expect(researchTrialResolvedCure(null, miss)).toBe(false);
+    expect(researchTrialResolvedCure(null, failed)).toBe(false);
+    expect(researchTrialResolvedCure(cure, null)).toBe(false);
   });
 
   it("keeps the whole course inside the uncovered part of the viewport without zooming in", () => {

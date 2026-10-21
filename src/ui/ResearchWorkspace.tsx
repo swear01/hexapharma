@@ -1,18 +1,17 @@
 import { useEffect, useRef } from "react";
 import type {
-  DiscoveredFormula,
   DrugState,
   GeneratedLevel,
+  HexDir,
   MachineCatalogEntry,
   MachineTypeId,
   Outcome,
+  PathStamp,
   Template,
   Vec2,
 } from "../sim/phase0_interfaces";
 import { DEFAULT_CATALOG } from "../sim/phase0_interfaces";
 import { App, researchOutcomeText } from "./App";
-import { diseaseName } from "./effectLabels";
-import { formulaId, sideEffectCountLabel } from "./Formulas";
 import { MachineIcon } from "./MachineIcon";
 import { machineName } from "./machineLabels";
 
@@ -52,54 +51,20 @@ function TargetCompass({ sector }: { readonly sector: string }) {
   );
 }
 
-function ResearchResult({
-  outcome,
-  formulas,
-  steps,
-  cost,
-  onOpenPlan,
-}: {
-  readonly outcome: Outcome;
-  readonly formulas: readonly DiscoveredFormula[];
-  readonly steps: number;
-  readonly cost: number;
-  readonly onOpenPlan: () => void;
-}) {
-  const cured = outcome.failed
-    ? undefined
-    : outcome.cured.find((disease) => formulas.some((formula) => formula.disease === disease));
-  if (cured === undefined) {
-    return (
-      <div className={`research-result research-readout${outcome.failed ? " is-failed" : ""}`} role="status">
-        <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true">
-          {outcome.failed ? <path d="M4 4l12 12M16 4L4 16" /> : <circle cx="10" cy="10" r="6.5" />}
-        </svg>
-        <span data-testid="research-atlas-outcome">{researchOutcomeText(outcome)}</span>
-      </div>
-    );
-  }
-  const effects = outcome.sideEffects.length;
+function ResearchResult({ outcome }: { readonly outcome: Outcome }) {
   return (
-    <section className="research-result research-cure-card" role="status" aria-label="Cure found. Formula saved.">
-      <svg viewBox="0 0 32 32" width="32" height="32" aria-hidden="true">
-        <circle cx="16" cy="16" r="13" />
-        <circle cx="16" cy="16" r="8.5" />
+    <div className={`research-result research-readout${outcome.failed ? " is-failed" : ""}`} role="status">
+      <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true">
+        {outcome.failed ? <path d="M4 4l12 12M16 4L4 16" /> : <circle cx="10" cy="10" r="6.5" />}
       </svg>
-      <div className="research-cure-body">
-        <h2 data-testid="research-atlas-outcome">{formulaId(cured)} · {diseaseName(cured)}</h2>
-        <p className="research-cure-stats">
-          <span>{researchStepCountLabel(steps)}</span>
-          <span>${cost}</span>
-          <span className={effects === 0 ? "is-clean" : "has-effects"}>
-            {sideEffectCountLabel(effects)}
-          </span>
-        </p>
-      </div>
-      <button type="button" className="research-open-plan" onClick={onOpenPlan} data-testid="research-open-plan">
-        Open in Plan
-      </button>
-    </section>
+      <span data-testid="research-atlas-outcome">{researchOutcomeText(outcome)}</span>
+    </div>
   );
+}
+
+/** A machine path as drawn at `heading` (paths are relative to the drug heading). */
+export function researchHeadingPath(path: PathStamp, heading: number): PathStamp {
+  return path.map((direction) => ((direction + heading) % 6) as HexDir);
 }
 
 export interface ResearchWorkspaceProps {
@@ -108,26 +73,28 @@ export interface ResearchWorkspaceProps {
   readonly fog: readonly Uint8Array[];
   readonly missionDisease: number;
   readonly missionSector: string;
-  readonly program: Template;
-  readonly shotActive: boolean;
-  readonly shotCost: number;
+  /** The local planned route; never authoritative until Run. */
+  readonly plan: Template;
+  readonly planCost: number;
   readonly catalog: readonly MachineCatalogEntry[];
-  readonly selectedEntry: MachineCatalogEntry | undefined;
   readonly blockReason: string | null;
+  /** Actual drug after the last trial (or the start). */
   readonly drug: DrugState;
+  /** Actual trail of the last trial on the true map. */
   readonly trails: readonly (readonly (Vec2 | null)[])[];
-  readonly previewTrails: readonly (readonly (Vec2 | null)[])[] | undefined;
-  readonly previewDrug: DrugState | undefined;
+  /** Planned route on the known map. */
+  readonly previewTrails: readonly (readonly (Vec2 | null)[])[];
+  readonly previewDrug: DrugState;
+  readonly controls: readonly Vec2[];
   readonly lastOutcome: Outcome | null;
-  readonly formulas: readonly DiscoveredFormula[];
-  readonly onSelectMachine: (typeId: MachineTypeId) => void;
+  readonly onAppend: (typeId: MachineTypeId) => void;
+  readonly onUndo: () => void;
+  readonly onClear: () => void;
   readonly onRun: () => void;
-  readonly onAbort: () => void;
-  readonly onOpenPlan: () => void;
 }
 
 export function ResearchWorkspace(props: ResearchWorkspaceProps) {
-  const { program, selectedEntry } = props;
+  const { plan } = props;
   const stepListRef = useRef<HTMLOListElement | null>(null);
   useEffect(() => {
     const list = stepListRef.current;
@@ -151,7 +118,8 @@ export function ResearchWorkspace(props: ResearchWorkspaceProps) {
     }
     list.style.setProperty("--strip-width", `${end - first.offsetLeft + padding}px`);
     list.scrollTo({ left: first.offsetLeft - parseFloat(style.paddingLeft) });
-  }, [program.steps.length]);
+  }, [plan.steps.length]);
+  const heading = props.previewDrug.heading;
   return (
     <div className="research-workspace" data-testid="research-workspace">
       <App
@@ -162,10 +130,10 @@ export function ResearchWorkspace(props: ResearchWorkspaceProps) {
         trails={props.trails}
         previewTrails={props.previewTrails}
         previewDrug={props.previewDrug}
-        program={program}
+        controls={props.controls}
         lastOutcome={props.lastOutcome}
-        onWorldActivate={props.onRun}
-        onWorldErase={props.onAbort}
+        onWorldActivate={props.onUndo}
+        onWorldErase={props.onUndo}
       />
       <div className="research-overlay">
         <section className="research-compass" data-testid="research-mission" aria-label="Active assay">
@@ -175,10 +143,10 @@ export function ResearchWorkspace(props: ResearchWorkspaceProps) {
             <span>Look <output data-testid="research-assay-sector">{props.missionSector}</output></span>
           </div>
         </section>
-        {program.steps.length > 0 && (
-          <div className="research-program-strip" data-testid="research-program-strip" aria-label="Research course">
+        {plan.steps.length > 0 && (
+          <div className="research-program-strip" data-testid="research-program-strip" aria-label="Planned route">
             <ol ref={stepListRef}>
-              {program.steps.map((step, index) => (
+              {plan.steps.map((step, index) => (
                 <li key={`${index}-${step.typeId}`}>
                   <span className="research-step-number" aria-hidden="true">{index + 1}</span>
                   <MachineIcon typeId={step.typeId} path={step.path} size={24} />
@@ -189,61 +157,49 @@ export function ResearchWorkspace(props: ResearchWorkspaceProps) {
             </ol>
           </div>
         )}
-        {props.lastOutcome !== null && (
-          <ResearchResult
-            outcome={props.lastOutcome}
-            formulas={props.formulas}
-            steps={program.steps.length}
-            cost={props.shotCost}
-            onOpenPlan={props.onOpenPlan}
-          />
-        )}
+        {props.lastOutcome !== null && <ResearchResult outcome={props.lastOutcome} />}
       </div>
-      <div className="research-path-hotbar" role="toolbar" aria-label="Machine legend" data-testid="research-path-hotbar">
+      <div className="research-path-hotbar" role="toolbar" aria-label="Add a machine to the route" data-testid="research-path-hotbar">
         {props.catalog.map((entry, index) => (
           <button
             key={entry.typeId}
             type="button"
-            className={selectedEntry?.typeId === entry.typeId ? "is-selected" : ""}
-            aria-pressed={selectedEntry?.typeId === entry.typeId}
-            onClick={() => props.onSelectMachine(entry.typeId)}
+            onClick={() => props.onAppend(entry.typeId)}
             data-testid={`research-machine-${entry.typeId}`}
-            title={`${machineName(entry.typeId)} — previews next path (${index + 1})`}
+            title={`Add ${machineName(entry.typeId)} (${index + 1})`}
           >
-            <MachineIcon typeId={entry.typeId} path={entry.path} size={36} variant="token" />
+            <MachineIcon typeId={entry.typeId} path={researchHeadingPath(entry.path, heading)} size={36} variant="token" />
             <span className="research-legend-name">{machineName(entry.typeId)}</span>
             <span className="research-legend-cost">${entry.cost}</span>
             <kbd>{index + 1}</kbd>
           </button>
         ))}
       </div>
-      <div className="research-commandbar" role="toolbar" aria-label="Research run controls">
-        {props.blockReason !== null && <span className="research-block-reason" role="status">{props.blockReason}</span>}
-        <span className="research-run-readout">
-          <strong data-testid="research-program-count">{researchStepCountLabel(program.steps.length)}</strong>
-          {" · "}
-          <output className="research-shot-cost" data-testid="research-shot-cost">${props.shotCost} spent</output>
-        </span>
-        {props.shotActive && (
-          <button
-            type="button"
-            className="research-end-run"
-            title="End run (Backspace). No refund; the revealed map stays."
-            onClick={props.onAbort}
-            data-testid="research-abort"
-          >
-            End run
-          </button>
+      <div className="research-commandbar" role="toolbar" aria-label="Research route controls">
+        {props.blockReason !== null && plan.steps.length > 0 && (
+          <span className="research-block-reason" role="status">{props.blockReason}</span>
         )}
+        <span className="research-run-readout">
+          <strong data-testid="research-program-count">{researchStepCountLabel(plan.steps.length)}</strong>
+        </span>
+        <button
+          type="button"
+          className="research-clear"
+          disabled={plan.steps.length === 0}
+          onClick={props.onClear}
+          data-testid="research-clear"
+        >
+          Clear
+        </button>
         <button
           type="button"
           className="research-run"
           disabled={props.blockReason !== null}
           onClick={props.onRun}
           data-testid="research-command"
-          title={props.blockReason ?? "Run step (Enter)"}
+          title={props.blockReason ?? "Run the route (Enter)"}
         >
-          Run · ${selectedEntry?.cost ?? 0}
+          Run · ${props.planCost}
         </button>
       </div>
     </div>

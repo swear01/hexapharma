@@ -32,13 +32,23 @@ export const LAB_LEG_DRAW_MS = 220;
 export interface LabRenderView {
   readonly activeMap: number;
   readonly camera: LabCamera;
+  /** Actual trail of the last trial (solid); points may sit half-way inside swamp. */
   readonly trail: readonly (Vec2 | null)[];
+  /** Planned route on the known map (dashed). */
   readonly previewTrail?: readonly (Vec2 | null)[];
   readonly previewDrug?: DrugState;
-  /** Endpoint of each executed step, in order (numbered control circles). */
+  /** Endpoint of each planned step, in order (numbered control circles). */
   readonly controls?: readonly Vec2[];
   /** The last control is a Cure: draw it as the orienteering finish. */
   readonly finish?: boolean;
+}
+
+/** Drawn point of a drug: its cell plus half of its doubled-unit swamp offset. */
+function drugPoint(drug: DrugState, mapIndex: number): Vec2 | undefined {
+  const pos = drug.pos[mapIndex];
+  const offset = drug.offset[mapIndex];
+  if (pos === undefined || offset === undefined) return pos;
+  return { q: pos.q + offset.q / 2, r: pos.r + offset.r / 2 };
 }
 
 export interface LabRenderer {
@@ -496,8 +506,7 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
   app.stage.addChild(paper, contours, terrain, grid, cliffs, features, course, marks, labels);
 
   let last: { readonly mm: MultiMap; readonly drug: DrugState; readonly view: LabRenderView } | null = null;
-  let lastControlCount = -1;
-  let lastTrailLength = 0;
+  let lastTrail: readonly (Vec2 | null)[] | null = null;
   let legFrom = -1;
   let legProgress = 1;
   let legStartTime = -1;
@@ -550,8 +559,7 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
       }
 
       const fontSize = Math.round(Math.max(12, 16 * camera.zoom));
-      const inkedControls = animating ? controls.length - 1 : controls.length;
-      for (let index = 0; index < inkedControls; index++) {
+      for (let index = 0; index < controls.length; index++) {
         const center = labCellCenter(camera, controls[index]!);
         marks.circle(center.x, center.y, radius);
         if (view.finish === true && index === controls.length - 1) marks.circle(center.x, center.y, radius * 0.66);
@@ -564,7 +572,7 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
       }
       marks.stroke({ color: LAB_SCHEMATIC_STYLE.course, width: lineWidth });
 
-      const position = drug.pos[view.activeMap];
+      const position = drugPoint(drug, view.activeMap);
       if (head !== null) {
         marks.circle(head.x, head.y, cell * 0.11).fill({ color: LAB_SCHEMATIC_STYLE.course });
       } else if (position !== undefined) {
@@ -573,7 +581,7 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
         else if (view.finish !== true) marks.circle(center.x, center.y, cell * 0.11).fill({ color: LAB_SCHEMATIC_STYLE.course });
       }
 
-      const previewPos = view.previewDrug?.pos[view.activeMap];
+      const previewPos = view.previewDrug === undefined ? undefined : drugPoint(view.previewDrug, view.activeMap);
       if (!animating && view.previewTrail !== undefined) drawDashedTrail(marks, view.previewTrail, nodes, camera, radius);
       if (!animating && previewPos !== undefined) {
         const center = labCellCenter(camera, previewPos);
@@ -621,17 +629,15 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
     canvas: app.canvas,
     render: (mm, drug, view) => {
       for (const layer of mapLayers) layer.clear();
-      const count = view.controls?.length ?? 0;
-      const committed = lastControlCount >= 0 && count > 0 && count !== lastControlCount
-        && (count === lastControlCount + 1 || count === 1);
+      // A new trial ink-draws its whole actual course once.
+      const committed = lastTrail !== null && view.trail !== lastTrail && view.trail.length > 1;
       if (committed && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-        legFrom = count === 1 ? 0 : Math.max(0, lastTrailLength - 1);
+        legFrom = 0;
         legProgress = 0;
         legStartTime = -1;
         if (frame === 0) frame = requestAnimationFrame(tick);
       }
-      lastControlCount = count;
-      lastTrailLength = view.trail.length;
+      lastTrail = view.trail;
       last = { mm, drug, view };
       const map = mm.maps[view.activeMap];
       if (map !== undefined) {

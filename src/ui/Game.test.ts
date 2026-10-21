@@ -3,18 +3,28 @@ import {
   defaultGenOptions,
   parseNewGameSeed,
   playerFacingIntentError,
-  researchCandidateTrails,
   researchAssaySector,
-  researchDisplayDrug,
   researchKeyboardAction,
   researchPlanningMap,
+  researchPlanningPreview,
   researchPlanningTrails,
   researchProgramCost,
-  researchTestBlockReason,
+  researchRoute,
+  researchRunBlockReason,
   researchTrailsForProgram,
   transientSaveMessage,
 } from "./Game";
 import { researchOutcomeText } from "./App";
+import { researchHeadingPath } from "./ResearchWorkspace";
+import { createGameState } from "../sim/game";
+import type { DrugState } from "../sim/phase0_interfaces";
+
+const startAt = (q: number, r: number): DrugState => ({
+  pos: [{ q, r }],
+  offset: [{ q: 0, r: 0 }],
+  heading: 0,
+  failed: false,
+});
 import { CellKind, DEFAULT_CATALOG, type MultiMap } from "../sim/phase0_interfaces";
 import { MAX_GAME_MAP_CELLS, MAX_GAME_MAP_DIMENSION } from "../sim/phase0_interfaces";
 import { generate } from "../sim/mapgen";
@@ -67,20 +77,19 @@ describe("default Lab world options", () => {
       .toBe("Machine footprint overlaps another machine.");
     expect(playerFacingIntentError(new Error("game intent: product 19 is duplicated, unavailable, or not a cure")))
       .toBe("That product is no longer available to ship.");
-    expect(playerFacingIntentError(new Error("game intent: Research stamp requires 42 cash")))
-      .toBe("Need $42 to run that step.");
+    expect(playerFacingIntentError(new Error("game intent: Research trial requires 42 cash")))
+      .toBe("Need $42 to run this route.");
     expect(playerFacingIntentError(new Error("game intent: Production construction requires 42 cash")))
       .toBe("Need $42 to build in Production.");
     expect(playerFacingIntentError(new Error("another failure"))).toBe("another failure");
   });
 
-  it("blocks a step before opening a run that cannot advance", () => {
+  it("blocks Run for an empty plan or one the cash cannot pay for", () => {
     const machine = DEFAULT_CATALOG[0]!;
-    expect(researchTestBlockReason(machine.cost - 1, 0, true, machine))
-      .toBe(`Need $${machine.cost} to run that step.`);
-    expect(researchTestBlockReason(machine.cost, 256, true, machine)).toMatch(/end this run/i);
-    expect(researchTestBlockReason(machine.cost, 256, false, machine)).toBeNull();
-    expect(researchTestBlockReason(machine.cost, 0, true, machine)).toBeNull();
+    const plan = { steps: [machine, machine] };
+    expect(researchRunBlockReason(1_000, { steps: [] })).toMatch(/add a machine/i);
+    expect(researchRunBlockReason(machine.cost * 2 - 1, plan)).toBe(`Need $${machine.cost * 2} to run this route.`);
+    expect(researchRunBlockReason(machine.cost * 2, plan)).toBeNull();
   });
 
   it("never exposes cross-layer phase exchange", () => {
@@ -96,14 +105,42 @@ describe("default Lab world options", () => {
     expect(trails[0]![0]).toEqual(level.start.pos[0]);
   });
 
-  it("keeps the dose marker at the committed endpoint while a candidate path is previewed", () => {
-    const level = generate(defaultGenOptions(14));
-    const candidate = level.diseases[0]!.reference.steps[0]!;
-    const trails = researchTrailsForProgram(level.mm, level.start, { steps: [candidate] }, 1);
-    const displayed = researchDisplayDrug(level.start, null, null);
+  it("previews the planned route on the known map only, so fog secrecy holds", () => {
+    const options = defaultGenOptions(14);
+    const level = generate(options);
+    const game = createGameState(options, 1_000, 0);
+    const plan = level.diseases[0]!.reference;
+    const planned = researchPlanningPreview(level.mm, game.fog, level.start, plan);
+    const onKnownMap = researchRoute(researchPlanningMap(level.mm, game.fog), level.start, plan);
 
-    expect(trails[0]!.length).toBeGreaterThan(1);
-    expect(displayed.pos[0]).toEqual(level.mm.maps[0]!.start);
+    expect(planned).toEqual(onKnownMap);
+    expect(planned.controls).toHaveLength(plan.steps.length);
+    expect(planned.drug.failed).toBe(false);
+  });
+
+  it("draws swamp half steps as half-cell points and rotates hotbar glyphs to the heading", () => {
+    const width = 7;
+    const cells = width * width;
+    const cell = new Uint8Array(cells);
+    cell[3 * width + 4] = CellKind.Swamp;
+    const mm: MultiMap = { maps: [{
+      width,
+      height: width,
+      origin: { q: 3, r: 3 },
+      start: { q: 3, r: 3 },
+      cell,
+      cureId: new Int16Array(cells).fill(-1),
+      sideEffectId: new Int32Array(cells).fill(-1),
+      portalTo: new Int32Array(cells).fill(-1),
+      fog: new Uint8Array(cells),
+    }] };
+    const program = { steps: [{ typeId: "two-east", path: [0, 0] as const, turn: 2 }] };
+    const route = researchRoute(mm, startAt(3, 3), program);
+
+    expect(route.trails[0]).toEqual([{ q: 3, r: 3 }, { q: 4, r: 3 }, { q: 4.5, r: 3 }]);
+    expect(route.controls).toEqual([{ q: 4.5, r: 3 }]);
+    expect(route.drug.heading).toBe(2);
+    expect(researchHeadingPath([0, 1, 5], 2)).toEqual([2, 3, 1]);
   });
 
   it("keeps a portal out of planning until both endpoints are discovered", () => {
@@ -124,10 +161,11 @@ describe("default Lab world options", () => {
       portalTo,
       fog: new Uint8Array(cells),
     }] };
-    const start = { pos: [{ q: 3, r: 3 }], failed: false };
+    const start = startAt(3, 3);
     const program = { steps: [{
       typeId: DEFAULT_CATALOG[0]!.typeId,
       path: DEFAULT_CATALOG[0]!.path,
+      turn: DEFAULT_CATALOG[0]!.turn,
     }] };
 
     expect(researchPlanningTrails(mm, [new Uint8Array(cells)], start, program)[0]).toEqual([
@@ -167,10 +205,11 @@ describe("default Lab world options", () => {
       portalTo,
       fog: new Uint8Array(cells),
     }] };
-    const start = { pos: [{ q: 3, r: 3 }], failed: false };
+    const start = startAt(3, 3);
     const program = { steps: [{
       typeId: "known-wall",
       path: [0, 1] as const,
+      turn: 0,
     }] };
     const fog = new Uint8Array(cells);
     fog[3 * width + 4] = 1;
@@ -220,16 +259,13 @@ describe("default Lab world options", () => {
     expect(planning.sideEffectId[5]).toBe(-1);
   });
 
-  it("draws only the held candidate as the preview suffix", () => {
-    expect(researchCandidateTrails(
-      [[{ q: 3, r: 3 }, { q: 4, r: 3 }]],
-      [[{ q: 3, r: 3 }, { q: 4, r: 3 }, { q: 4, r: 4 }]],
-    )).toEqual([[{ q: 4, r: 3 }, { q: 4, r: 4 }]]);
-  });
-
-  it("maps Enter to the next step and Backspace to ending the active run", () => {
-    expect(researchKeyboardAction("Enter")).toBe("apply");
-    expect(researchKeyboardAction("Backspace")).toBe("abort");
+  it("maps Enter to Run and Backspace or Ctrl+Z to removing the last planned step", () => {
+    expect(researchKeyboardAction("Enter")).toBe("run");
+    expect(researchKeyboardAction("Backspace")).toBe("undo");
+    expect(researchKeyboardAction("z", true)).toBe("undo");
+    expect(researchKeyboardAction("Z", true)).toBe("undo");
+    expect(researchKeyboardAction("z")).toBeNull();
+    expect(researchKeyboardAction("Enter", true)).toBeNull();
     expect(researchKeyboardAction("x")).toBeNull();
   });
 
@@ -283,10 +319,11 @@ describe("default Lab world options", () => {
       portalTo: new Int32Array(cells).fill(-1),
       fog: new Uint8Array(cells),
     }] };
-    const start = { pos: [{ q: 2, r: 2 }], failed: false };
+    const start = startAt(2, 2);
     const program = { steps: [{
       typeId: DEFAULT_CATALOG[0]!.typeId,
       path: [0] as const,
+      turn: 0,
     }] };
 
     expect(researchTrailsForProgram(mm, start, program, 1)[0]).toEqual([{ q: 2, r: 2 }]);

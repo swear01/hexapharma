@@ -22,7 +22,7 @@ function product(
   return {
     id: inventoryId,
     inventoryId,
-    drug: { pos: [{ q: 0, r: 0 }], failed: false },
+    drug: { pos: [{ q: 0, r: 0 }], offset: [{ q: 0, r: 0 }], heading: 0, failed: false },
     productionCost,
     outcome: {
       failed: false,

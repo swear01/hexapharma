@@ -7,7 +7,6 @@ import type {
   DrugState,
   Machine,
   MultiMap,
-  Outcome,
   Template,
   Vec2,
 } from "../sim/phase0_interfaces";
@@ -19,7 +18,7 @@ import {
   MAX_TEMPLATE_STEPS,
 } from "../sim/phase0_interfaces";
 import { generate } from "../sim/mapgen";
-import { applyTemplate, previewStep } from "../sim/drug-graph";
+import { previewStep } from "../sim/drug-graph";
 import { hexDistance, hexIndex } from "../sim/hex";
 import { serializeSnapshot } from "../sim/save";
 import {
@@ -41,7 +40,7 @@ import { blockingDialogOpen } from "./blockingDialog";
 import { hexToPixel } from "../render/hexProjection";
 import { machineName } from "./machineLabels";
 import { ResearchWorkspace, researchMachineCost } from "./ResearchWorkspace";
-import { Formulas } from "./Formulas";
+import { researchDrugPoint, researchKnownCureLocations } from "./App";
 import { FieldGuide } from "./FieldGuide";
 import { currentObjective, type ObjectiveTarget } from "./objective";
 import { profitableMarketProducts } from "./Shop";
@@ -98,22 +97,64 @@ export function researchPlanningMap(
   };
 }
 
-interface ResearchPlanningPreview {
+export interface ResearchRoute {
+  /** Per map: drawn points (cell + half the swamp offset), with `null` breaks at portal jumps. */
   readonly trails: readonly (readonly (Vec2 | null)[])[];
+  /** Drug after the last executed step. */
   readonly drug: DrugState;
+  /** Map-0 point after each executed step: the numbered controls of the course. */
+  readonly controls: readonly Vec2[];
 }
 
-function researchPlanningPreview(
+/** Run `program` (up to `limit` steps) on `mm` and collect the drawn route. */
+export function researchRoute(
+  mm: MultiMap,
+  start: DrugState,
+  program: Template,
+  limit = program.steps.length,
+): ResearchRoute {
+  const trails: (Vec2 | null)[][] = mm.maps.map((_map, index) => {
+    const point = researchDrugPoint(start, index);
+    return point === undefined ? [] : [point];
+  });
+  const controls: Vec2[] = [];
+  let drug = start;
+  for (let step = 0; step < Math.min(limit, program.steps.length); step++) {
+    const machine = program.steps[step];
+    if (machine === undefined || drug.failed) break;
+    const preview = previewStep(mm, drug, machine);
+    for (let mapIndex = 0; mapIndex < trails.length; mapIndex++) {
+      const map = mm.maps[mapIndex];
+      const cells = preview.trails[mapIndex] ?? [];
+      const points = preview.points[mapIndex] ?? [];
+      let previous = drug.pos[mapIndex];
+      for (let index = 0; index < cells.length; index++) {
+        const cell = cells[index]!;
+        const point = points[index]!;
+        if (previous !== undefined && map !== undefined) {
+          const previousKind = map.cell[hexIndex(map.width, previous.q, previous.r)];
+          const jumped = hexDistance(previous.q, previous.r, cell.q, cell.r) > 1;
+          if (previousKind === CellKind.Portal || jumped) trails[mapIndex]!.push(null);
+        }
+        trails[mapIndex]!.push({ q: point.q / 2, r: point.r / 2 });
+        previous = cell;
+      }
+    }
+    drug = preview.next;
+    const control = researchDrugPoint(drug, 0);
+    if (control !== undefined) controls.push(control);
+  }
+  return { trails, drug, controls };
+}
+
+/** The planned route traversed on the known (fog-masked) map. */
+export function researchPlanningPreview(
   mm: MultiMap,
   fog: readonly Uint8Array[],
   start: DrugState,
   program: Template,
-): ResearchPlanningPreview {
-  const planningMap = researchPlanningMap(mm, fog);
-  return {
-    trails: researchTrailsForProgram(planningMap, start, program, program.steps.length),
-    drug: applyTemplate(planningMap, start, program),
-  };
+): ResearchRoute {
+  return researchRoute(researchPlanningMap(mm, fog), start, program);
 }
 
 export function researchPlanningTrails(
@@ -125,28 +166,12 @@ export function researchPlanningTrails(
   return researchPlanningPreview(mm, fog, start, program).trails;
 }
 
-export function researchCandidateTrails(
-  committed: readonly (readonly (Vec2 | null)[])[],
-  combined: readonly (readonly (Vec2 | null)[])[],
-): readonly (readonly (Vec2 | null)[])[] {
-  return combined.map((trail, mapIndex) => {
-    const prefix = committed[mapIndex] ?? [];
-    let endpoint: Vec2 | null = null;
-    for (let index = prefix.length - 1; index >= 0; index--) {
-      const point = prefix[index];
-      if (point !== null && point !== undefined) {
-        endpoint = point;
-        break;
-      }
-    }
-    const suffix = trail.slice(Math.min(prefix.length, trail.length));
-    return endpoint === null ? suffix : [endpoint, ...suffix];
-  });
-}
+export type ResearchKeyAction = "run" | "undo";
 
-export function researchKeyboardAction(key: string): "apply" | "abort" | null {
-  if (key === "Enter") return "apply";
-  if (key === "Backspace") return "abort";
+export function researchKeyboardAction(key: string, modifier = false): ResearchKeyAction | null {
+  if (key === "Enter" && !modifier) return "run";
+  if (key === "Backspace" && !modifier) return "undo";
+  if (modifier && key.toLowerCase() === "z") return "undo";
   return null;
 }
 
@@ -159,23 +184,16 @@ export function researchAssaySector(start: Vec2, target: Vec2): string {
   return ["east", "south-east", "south-west", "west", "north-west", "north-east"][direction]!;
 }
 
-export function researchTestBlockReason(
-  cash: number,
-  completedSteps: number,
-  active: boolean,
-  machine: { readonly cost: number } | undefined,
-): string | null {
-  if (machine === undefined) return "Select a machine.";
-  if (active && completedSteps >= MAX_TEMPLATE_STEPS) {
-    return `End this run before adding more than ${MAX_TEMPLATE_STEPS} steps.`;
-  }
-  return cash < machine.cost ? `Need $${machine.cost} to run that step.` : null;
-}
-
 export function researchProgramCost(program: Template): number {
   let total = 0;
   for (const step of program.steps) total += researchMachineCost(step.typeId);
   return total;
+}
+
+export function researchRunBlockReason(cash: number, plan: Template): string | null {
+  if (plan.steps.length === 0) return "Add a machine to plan a route.";
+  const cost = researchProgramCost(plan);
+  return cash < cost ? `Need $${cost} to run this route.` : null;
 }
 
 export function researchTrailsForProgram(
@@ -184,46 +202,7 @@ export function researchTrailsForProgram(
   program: Template,
   completedSteps: number,
 ): readonly (readonly (Vec2 | null)[])[] {
-  const trails: (Vec2 | null)[][] = mm.maps.map((_map, index) => {
-    const position = start.pos[index];
-    return position === undefined ? [] : [{ q: position.q, r: position.r }];
-  });
-  let drug = start;
-  const limit = Math.min(completedSteps, program.steps.length);
-  for (let step = 0; step < limit; step++) {
-    const machine = program.steps[step];
-    if (machine === undefined) break;
-    const preview = previewStep(mm, drug, machine);
-    for (let mapIndex = 0; mapIndex < trails.length; mapIndex++) {
-      const map = mm.maps[mapIndex];
-      const entered = preview.trails[mapIndex] ?? [];
-      if (entered.length > 0) {
-        let previous = drug.pos[mapIndex];
-        for (const position of entered) {
-          if (previous !== undefined && map !== undefined) {
-            const previousKind = map.cell[hexIndex(map.width, previous.q, previous.r)];
-            const jumped = hexDistance(previous.q, previous.r, position.q, position.r) !== 1;
-            if (previousKind === CellKind.Portal || jumped) trails[mapIndex]!.push(null);
-          }
-          trails[mapIndex]!.push(position);
-          previous = position;
-        }
-      }
-    }
-    drug = preview.next;
-    if (drug.failed) break;
-  }
-  return trails;
-}
-
-export function researchDisplayDrug(
-  start: DrugState,
-  shotDrug: DrugState | null,
-  lastOutcome: Outcome | null,
-): DrugState {
-  if (shotDrug !== null) return shotDrug;
-  if (lastOutcome !== null) return { pos: lastOutcome.final, failed: lastOutcome.failed };
-  return start;
+  return researchRoute(mm, start, program, completedSteps).trails;
 }
 
 export function defaultGenOptions(seed: number): GenOptions {
@@ -286,8 +265,8 @@ export function playerFacingIntentError(error: unknown): string {
     };
     return placementMessages[machinePlacement] ?? "Machine layout is invalid.";
   }
-  const researchCash = /^game intent: Research stamp requires (\d+) cash$/u.exec(message)?.[1];
-  if (researchCash !== undefined) return `Need $${researchCash} to run that step.`;
+  const researchCash = /^game intent: Research trial requires (\d+) cash$/u.exec(message)?.[1];
+  if (researchCash !== undefined) return `Need $${researchCash} to run this route.`;
   const productionCash = /^game intent: Production construction requires (\d+) cash$/u.exec(message)?.[1];
   if (productionCash !== undefined) return `Need $${productionCash} to build in Production.`;
   if (/^game intent: product \d+ is duplicated, unavailable, or not a cure$/u.test(message)) {
@@ -319,7 +298,7 @@ type Building = "research" | "pilot" | "production";
 function objectiveIsHere(target: ObjectiveTarget, building: Building, drawer: string | null): boolean {
   return target === "market" || target === "technology" ? drawer === target : drawer === null && building === target;
 }
-type Drawer = "market" | "technology" | "blueprints" | "menu" | "formulas" | "help" | null;
+type Drawer = "market" | "technology" | "blueprints" | "menu" | "help" | null;
 type PendingSaveAction =
   | {
       readonly kind: "load";
@@ -341,15 +320,7 @@ function sameGameState(first: GameState, second: GameState): boolean {
 export function Game() {
   const [building, setBuilding] = useState<Building>("research");
   const [drawer, setDrawer] = useState<Drawer>(null);
-  const [compact, setCompact] = useState(() => window.matchMedia("(max-width: 768px)").matches);
-  useEffect(() => {
-    const media = window.matchMedia("(max-width: 768px)");
-    const update = () => setCompact(media.matches);
-    media.addEventListener("change", update);
-    update();
-    return () => media.removeEventListener("change", update);
-  }, []);
-  const worldInputActive = drawer === null || (drawer === "formulas" && !compact);
+  const worldInputActive = drawer === null;
   const [visited, setVisited] = useState<Record<Building, boolean>>({
     research: true,
     pilot: false,
@@ -358,7 +329,7 @@ export function Game() {
   const openBuilding = useCallback((next: Building) => {
     setVisited((current) => current[next] ? current : { ...current, [next]: true });
     setBuilding(next);
-    setDrawer((current) => current === "formulas" ? current : null);
+    setDrawer(null);
   }, []);
 
   const [game, setGame] = useState<GameState>(() =>
@@ -475,22 +446,16 @@ export function Game() {
     [game.economy.sold, game.genOptions],
   );
   const activeContract = contracts.find((contract) => !contract.completed) ?? contracts[contracts.length - 1]!;
-  const formulas = game.research.discoveredFormulas;
-  const [formulaDisease, setFormulaDisease] = useState<DiseaseId | null>(null);
-  const newestFormula = formulas.at(-1);
-  const currentFormula = formulas.find((formula) => formula.disease === formulaDisease) ?? newestFormula;
-  const previousFormulas = useRef(formulas);
-  useEffect(() => {
-    if (formulas === previousFormulas.current) return;
-    previousFormulas.current = formulas;
-    if (newestFormula !== undefined) setFormulaDisease(newestFormula.disease);
-  }, [formulas, newestFormula]);
+  const knownCureDiseases = useMemo(
+    () => researchKnownCureLocations(level.mm, game.fog).map((location) => location.cureId),
+    [game.fog, level.mm],
+  );
   const researchMission = level.diseases.find((disease) => disease.id === activeContract.disease)!;
   const researchMissionStart = level.start.pos[researchMission.map]!;
   const researchMissionSector = researchAssaySector(researchMissionStart, researchMission.node);
   const objective = useMemo(() => currentObjective({
     contracts,
-    formulaDiseases: formulas.map((formula) => formula.disease),
+    knownCureDiseases,
     unlockedPatents: game.patents.unlocked,
     gatedPatents: GATED_PATENTS,
     profitableUnits: (disease) => {
@@ -504,18 +469,13 @@ export function Game() {
     producingOther: game.inventory.some((product) => product.outcome.cured.length > 0)
       && !game.inventory.some((product) => product.outcome.cured.includes(activeContract.disease)),
     sector: researchMissionSector,
-  }), [activeContract.disease, contracts, formulas, game.economy.sold, game.inventory, game.patents.unlocked, game.production.layout.machines.length, level.diseases, researchMissionSector]);
+  }), [activeContract.disease, contracts, knownCureDiseases, game.economy.sold, game.inventory, game.patents.unlocked, game.production.layout.machines.length, level.diseases, researchMissionSector]);
   const knownResearchMap = useMemo(
     () => researchPlanningMap(level.mm, game.fog),
     [game.fog, level.mm],
   );
   const catalog = useMemo(() => availableCatalog(game.patents), [game.patents]);
-  const [researchMachineType, setResearchMachineType] = useState(() => catalog[0]?.typeId ?? "");
-  const selectedResearchEntry = catalog.find((entry) => entry.typeId === researchMachineType) ?? catalog[0];
-  useEffect(() => {
-    if (selectedResearchEntry === undefined) return;
-    setResearchMachineType(selectedResearchEntry.typeId);
-  }, [selectedResearchEntry]);
+  const [researchPlan, setResearchPlan] = useState<readonly Machine[]>([]);
   const patentEffects = useMemo(
     () => activeEffects(DEFAULT_PATENTS, game.patents),
     [game.patents],
@@ -529,6 +489,7 @@ export function Game() {
   const replaceGame = useCallback((next: GameState) => {
     gameRef.current = next;
     setGame(next);
+    setResearchPlan([]);
     setIntentError("");
   }, []);
   const openNewGameConfirmation = useCallback(() => {
@@ -575,64 +536,34 @@ export function Game() {
   }, [dispatch]);
   const unlock = useCallback((id: string) => dispatch({ kind: "unlockPatent", id }), [dispatch]);
 
-  const selectedResearchMachine = useMemo<Machine | null>(() => selectedResearchEntry === undefined
-    ? null
-    : {
-        typeId: selectedResearchEntry.typeId,
-        path: selectedResearchEntry.path,
-      }, [selectedResearchEntry]);
-  const planningPreview = useMemo(() => {
-    if (selectedResearchMachine === null) return null;
-    return researchPlanningPreview(
-      level.mm,
-      game.fog,
-      game.research.shot?.drug ?? level.start,
-      { steps: [selectedResearchMachine] },
-    );
-  }, [
-    game.fog,
-    game.research.shot,
-    level,
-    selectedResearchMachine,
-  ]);
-  const researchTrails = useMemo(
-    () => researchTrailsForProgram(
-      level.mm,
-      level.start,
-      game.research.program,
-      game.research.program.steps.length,
-    ),
-    [game.research.program, level],
+  const researchProgram = useMemo<Template>(() => ({ steps: researchPlan }), [researchPlan]);
+  const planningPreview = useMemo(
+    () => researchPlanningPreview(level.mm, game.fog, level.start, researchProgram),
+    [game.fog, level, researchProgram],
   );
-  const displayDrug = useMemo(() => researchDisplayDrug(
-      level.start,
-      game.research.shot?.drug ?? null,
-      game.research.lastOutcome,
-  ), [game.research.lastOutcome, game.research.shot, level.start]);
-  const researchAction = useCallback(() => {
-    const blockReason = researchTestBlockReason(
-      gameRef.current.economy.cash,
-      gameRef.current.research.program.steps.length,
-      gameRef.current.research.shot !== null,
-      selectedResearchEntry,
-    );
-    if (blockReason !== null || selectedResearchMachine === null) {
-      if (blockReason !== null) setIntentError(`Action rejected: ${blockReason}`);
+  const lastTrial = game.research.lastTrial;
+  const actualRoute = useMemo(
+    () => researchRoute(level.mm, level.start, lastTrial?.program ?? { steps: [] }),
+    [lastTrial, level],
+  );
+  const appendResearchStep = useCallback((typeId: string) => {
+    const entry = catalog.find((candidate) => candidate.typeId === typeId);
+    if (entry === undefined) return;
+    setResearchPlan((plan) => plan.length >= MAX_TEMPLATE_STEPS
+      ? plan
+      : [...plan, { typeId: entry.typeId, path: entry.path, turn: entry.turn }]);
+  }, [catalog]);
+  const undoResearchStep = useCallback(() => setResearchPlan((plan) => plan.slice(0, -1)), []);
+  const clearResearchPlan = useCallback(() => setResearchPlan([]), []);
+  const researchBlockReason = researchRunBlockReason(game.economy.cash, researchProgram);
+  const runResearch = useCallback(() => {
+    const blockReason = researchRunBlockReason(gameRef.current.economy.cash, researchProgram);
+    if (blockReason !== null) {
+      setIntentError(`Action rejected: ${blockReason}`);
       return;
     }
-    dispatch({ kind: "advanceResearchShot", machine: selectedResearchMachine });
-  }, [dispatch, selectedResearchEntry, selectedResearchMachine]);
-  const abortResearch = useCallback(
-    () => dispatch({ kind: "abortResearchShot" }),
-    [dispatch],
-  );
-  const researchShotCost = game.research.shot?.cost ?? researchProgramCost(game.research.program);
-  const researchBlockReason = researchTestBlockReason(
-    game.economy.cash,
-    game.research.program.steps.length,
-    game.research.shot !== null,
-    selectedResearchEntry,
-  );
+    dispatch({ kind: "runResearchTrial", program: researchProgram });
+  }, [dispatch, researchProgram]);
   const buildPilotInProduction = useCallback((layout: FactoryLayout) => {
     if (gameRef.current.pilot.layout !== layout && !dispatch({ kind: "setPilotLayout", layout })) return;
     if (dispatch({ kind: "buildProductionLayout", layout })) openBuilding("production");
@@ -810,12 +741,16 @@ export function Game() {
         const entry = catalog[Number(event.code.slice(5)) - 1];
         if (entry !== undefined) {
           event.preventDefault();
-          setResearchMachineType(entry.typeId);
+          appendResearchStep(entry.typeId);
         }
-      } else if (building === "research" && worldInputActive && researchKeyboardAction(event.key) !== null) {
+      } else if (
+        building === "research" &&
+        worldInputActive &&
+        researchKeyboardAction(event.key, event.ctrlKey || event.metaKey) !== null
+      ) {
         event.preventDefault();
-        if (researchKeyboardAction(event.key) === "apply") researchAction();
-        else abortResearch();
+        if (researchKeyboardAction(event.key, event.ctrlKey || event.metaKey) === "run") runResearch();
+        else undoResearchStep();
       } else if (event.key.toLowerCase() === "m") {
         event.preventDefault();
         setDrawer((current) => current === "market" ? null : "market");
@@ -831,15 +766,15 @@ export function Game() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [
     building,
-    abortResearch,
+    appendResearchStep,
     catalog,
     drawer,
     openBuilding,
     pendingSaveAction,
     newGameSeed,
-    researchAction,
+    runResearch,
     save,
-    selectedResearchEntry,
+    undoResearchStep,
     worldInputActive,
   ]);
 
@@ -898,12 +833,11 @@ export function Game() {
           <button type="button" data-testid="view-market" aria-pressed={drawer === "market"} onClick={() => setDrawer((current) => current === "market" ? null : "market")}>Market <kbd>M</kbd></button>
           <button type="button" data-testid="view-technology" aria-pressed={drawer === "technology"} onClick={() => setDrawer((current) => current === "technology" ? null : "technology")}>Technology <kbd>T</kbd></button>
           <button type="button" data-testid="view-blueprints" aria-pressed={drawer === "blueprints"} onClick={() => setDrawer((current) => current === "blueprints" ? null : "blueprints")}>Blueprints <kbd>B</kbd></button>
-          <button type="button" data-testid="view-formulas" disabled={formulas.length === 0} aria-expanded={drawer === "formulas"} onClick={() => setDrawer((current) => current === "formulas" ? null : "formulas")}>Formulas <span className="utility-count">{formulas.length}</span></button>
           <button type="button" data-testid="view-help" aria-label="Help" aria-pressed={drawer === "help"} onClick={() => setDrawer((current) => current === "help" ? null : "help")}>Guide</button>
         </div>
       </nav>
 
-      <main className={`game-stage${drawer === "formulas" ? " has-formula-reference" : ""}`} data-testid="game-stage">
+      <main className="game-stage" data-testid="game-stage">
         <section className="view-layer" hidden={building !== "research"}>
           {visited.research && (
             <ResearchWorkspace
@@ -912,22 +846,20 @@ export function Game() {
               fog={game.fog}
               missionDisease={researchMission.id}
               missionSector={researchMissionSector}
-              program={game.research.program}
-              shotActive={game.research.shot !== null}
-              shotCost={researchShotCost}
+              plan={researchProgram}
+              planCost={researchProgramCost(researchProgram)}
               catalog={catalog}
-              selectedEntry={selectedResearchEntry}
               blockReason={researchBlockReason}
-              drug={displayDrug}
-              trails={researchTrails}
-              previewTrails={planningPreview?.trails}
-              previewDrug={planningPreview?.drug}
-              lastOutcome={game.research.lastOutcome}
-              formulas={formulas}
-              onSelectMachine={setResearchMachineType}
-              onRun={researchAction}
-              onAbort={abortResearch}
-              onOpenPlan={() => openBuilding("pilot")}
+              drug={actualRoute.drug}
+              trails={actualRoute.trails}
+              previewTrails={planningPreview.trails}
+              previewDrug={planningPreview.drug}
+              controls={planningPreview.controls}
+              lastOutcome={lastTrial?.outcome ?? null}
+              onAppend={appendResearchStep}
+              onUndo={undoResearchStep}
+              onClear={clearResearchPlan}
+              onRun={runResearch}
             />
           )}
         </section>
@@ -1007,7 +939,7 @@ export function Game() {
           </section>
         </aside>
         {drawer !== null && drawer !== "menu" && (
-          <aside className={`game-drawer${drawer === "formulas" ? " formula-reference" : ""}`} data-testid={`${drawer}-drawer`}>
+          <aside className="game-drawer" data-testid={`${drawer}-drawer`}>
             <button type="button" className="drawer-close" onClick={() => setDrawer(null)} aria-label={`Close ${drawer}`}><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M3 3 13 13M13 3 3 13" /></svg></button>
             {drawer === "market" ? (
               <Shop level={level} economy={game.economy} inventory={game.inventory} onSell={sellProducts} />
@@ -1027,8 +959,6 @@ export function Game() {
                 onBuildProduction={changeProduction}
                 quoteProduction={(layout) => quoteProductionBuild(game.production.layout, layout)}
               />
-            ) : drawer === "formulas" ? (
-              <Formulas formulas={formulas} current={currentFormula} onSelect={setFormulaDisease} />
             ) : (
               <FieldGuide />
             )}

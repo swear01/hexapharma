@@ -32,15 +32,15 @@ test("a default run starts with a viable budget and four independent disease mar
   await expect(page.getByText(/complexity|difficulty/i)).toHaveCount(0);
 });
 
-test("keyboard focus and selected tools remain distinct", async ({ page }) => {
+test("keyboard focus stays visible on Research machine buttons that append to the plan", async ({ page }) => {
   await page.goto("/");
   const tool = page.getByTestId("research-machine-push2");
   await tool.click();
-  await expect(tool).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("research-program-count")).toHaveText("1 step");
   await page.keyboard.press("Tab");
   await page.keyboard.press("Shift+Tab");
   expect(await tool.evaluate((element) => getComputedStyle(element).outlineStyle)).not.toBe("none");
-  await expect(page.getByTestId("research-machine-push")).toHaveAttribute("aria-pressed", "false");
+  await expect(tool).not.toHaveAttribute("aria-pressed");
 });
 
 test("the complete HUD stays reachable across narrow widths", async ({ page }) => {
