@@ -12,6 +12,7 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 - 在伺服器本機開啟 `http://127.0.0.1:53346/`。
 - 從遠端開啟 <http://138.2.52.9:53346/>。
 - 只能使用 53346；若 port 被占用，先處理占用程序，不要改 port。
+- 公開試玩版：<https://hexapharma.5334601.xyz/>（備援 <https://swear01.github.io/hexapharma/>）。只在 main 的 `check` 通過後由 `.github/workflows/pages.yml` 自動部署；存檔留在你用的瀏覽器 localStorage。
 
 ## 全域操作
 
