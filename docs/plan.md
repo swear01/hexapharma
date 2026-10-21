@@ -1,61 +1,63 @@
 # Plan
 
-## Current milestone — viable fresh loop and replayable Atlas
+## Current milestone — v2 rules, map and interface (decided 2026-10-21)
 
-這是 structural TDD pass，不是單純調平衡。舊 build 的測試數量、截圖、準備資金存檔與 reference-generated layout 都不能作完成證據；每個最終 commit 重新跑 gate，並另外完成人類 fresh-save loop。
+使用者已逐項確認；每一步一個 PR，各自跑完整 gate。sim 權威規則改動依早期存檔政策直接換 Save 版本，不做 migration。示範地圖與窄段驗證在 `tools/map-prototype/`。
 
-### TDD implementation order
+### 1. sim 規則
+- **Research＝開圖**：玩家先規劃整條路線，預估只用已知地圖，霧當平地。按 `Run · $N` 才付一次費，從起點跑完整試驗，實際結果可能因霧下牆、沼澤、黑格而偏離；只揭露實際走過的路徑。Research 不產生配方，取代舊的「每步立即付費 reveal–decide」與 Research 產生 `DiscoveredFormula`。
+- **朝向**：藥帶朝向（六方向之一）。每台機器的路徑相對目前朝向旋轉，執行後依該機器固定轉向角改變朝向。不提供便宜的純轉向機器；Production 產品同樣隨機器順序改變朝向。
+- **沼澤半格**：沼澤內每步走半格，sim 以兩倍整數座標表示；離開沼澤的那一步，往移動方向對齊到最近的完整格。停在沼澤半格時，算作最後進入的那一格。
+- **黑格**：合成失敗。Production 中該單位成為廢品，Research 試跑失敗。
+- **二級療效格（★）**：命中的產品售價較高；後期合約可指定 ★。
+- Save 版本跳號；Blueprint 的 `research-program` 視需要調整或移除。
 
-1. **Freeze gameplay contracts and RED tests**
-   - Research與Factory凍結為pointy-top axial `{q,r}`；六方向E／SE／SW／W／NW／NE、六個60° rotations及dense `r * width + q`索引都有direct contract tests。
-   - 單一大型 Atlas 正常生成 4 種獨立疾病，generator 支援 1–8 種。
-   - fresh fog 恰為start-centered hex distance radius 2（正常邊界內19 cells）；只有 Wall 穿霧可見。
-   - Cure／SideEffect 是可重疊欄位，Outcome 可同時含 cure 與 side effect。
-   - 正常 starting cash 是 $1000；無注資 fresh run 必須可達 first sale。
-   - 先寫 seed diversity、terrain relevance、solver region-minima、endpoint commit、finite demand、profitable Market與fresh-start integration tests。
+### 2. 地圖生成器重寫
+- 六角形地圖，邊界一圈薄山。依 seed 決定骨架：內區平地、厚 2–3 格的環形山（只留彎曲隘口）、外區湖泊與深淵、環形山盆地（各一條 S 形入口）。
+- **隘口**：以帶雜訊成本的最短路徑，經過一個側向轉折點挖出；兩端 2–3 格寬，中段為長的 1 格窄道。
+- **細節**：用梯度雜訊（fBm／ridged／domain warp）做起伏，只用整數雜湊加多項式，保證確定性。
+- **清理**：封閉口袋填成山；全圖連通。
+- **藥效**：好到的區 3–5 格，全一級；難到的盆地 9–12 格，含 2–3 格 ★。離所有特徵都太遠的空白區要補 3–5 格藥效。
+- **黑格**：放在 ★ 周圍、窄段出口側面，加上平地上的偷坑單格與約 5 格長的黑帶。放置時必須保持連通。
+- **驗證**：每條窄段用 BFS 機器序列確認可通過；保留確定性、seed 多樣性與 balance 測試。
 
-2. **Terrain-first seeded mapgen**
-   - 先依 seed 生成 radial/motif terrain、swamp/abyss/portal，再在權威 terrain traversal 上 constructive 地找reference。
-   - 移除 protected reference corridor；正常尺寸reference的actual endpoint必須反映terrain，而不是空白圖答案。
-   - 每個疾病有不同reference signature、endpoint與不重疊cure region；跨seed不可由單一Blueprint通殺。
-   - constructed endpoint是乾淨Cure；同區部分其他Cure cells加SideEffect overlay。
-   - default 4 disease references依initial、`skew`、`dilute`、`settle`逐tier可用catalog；第一個目標只需initial machines。
-   - 同seed + 完整GenOptions仍逐欄位相等。
+### 3. 等高線
+- 霧中可見，是刻意提供的提示：畫「離平地高差的壓縮絕對值」加上低幅誘餌起伏，單一墨色。
+- 山與水都只是一圈線，玩家只知道那裡有東西，不知道是什麼。
+- 壓縮強度與誘餌強度為生成參數。
+- 更新 invariants：霧下可見的資訊是 Wall 輪廓與這組等高線，不是地表內容。
 
-3. **Solver and balance truth**
-   - solver goal是整個Cure region，不只第一個cell；回報minimum steps與minimum cost。
-   - balance sweep驗reference quality、疾病／seed diversity、terrain relevance、clean/contaminated coverage與fresh-loop affordability。
-   - solver只留tests/tools；runtime、UI與generator rejection loop禁止依賴solver。
+### 4. 平衡
+- 機器路徑形狀先維持 demo；轉向角由 dev-only 平衡掃描決定。示範暫定：Hook pump +60°、Wave reactor 0、Return coil 180°、Elbow press −60°。
+- 驗收：每台機器都要在一定比例的最佳解中出現，沒有固定的最佳組合。
+- solver 照舊不進遊戲。
 
-4. **Research direct interaction and feedback**
-   - 第一個`advanceResearchShot`原子建立並執行reveal–decide session；selected machine只產生從目前actual drug state接續的完整candidate ghost。
-   - 一次commit一個canonical完整stamp；當步立即扣款、執行、揭露與evaluate。blank map click不改program，沒有batch route submission或editable pending queue。
-   - no-cure保留session供下一次決定；Failure／Cure結束，Abort不退款也不回滾fog。
-   - 成功Cure自動建立或覆寫每疾病唯一的`DiscoveredFormula`；Formulas 面板顯示已執行steps、累積cost與side effects。
-   - assay mission只提示local或canonical六方向的寬廣sector；不暴露座標、距離或reference。
-   - 保持complete fixed PathStamp、no partial path、planning不揭霧、actual segments才揭霧。
+### 5. Research UI
+- 路線規劃：點機器接到末端；點最後一個控制點，或 Backspace／Ctrl+Z 回退；可清除路線。
+- `Run · $N`：預估總價與現金並排顯示。
+- 結果：實際路線為實線，預估留淡虛線，偏離原因標在地圖上。
+- 控制只有 Center、清除、Undo、Run；拿掉 revealed 計數與 Cure sites。
+- hotbar 圖示依目前朝向旋轉；羅盤顯示朝向與目標方位。
 
-5. **Bootstrap, economy and Market**
-   - default cash改為$1000，保證人工Research後仍能直接或經optional Production Plan支付第一條有效Production line。
-   - base price固定為`12 + 4 × difficulty + 2 × referenceCost`。
-   - 每疾病gross由base開始，每售一件next=`floor(previous × 19 / 20)`直到0；移除永久正值floor。
-   - Cure與SideEffect overlap完整流入physical inventory與sale penalty。
-   - Market stable order是side effects少、production cost低、inventory ID早；`Ship best`／`Ship profitable`只出售正net產品。
-   - 每疾病shipping contract quota=3；Disease 1／2／3合約分別gate Skew／Dilute／Settle patents。
-   - Production Plan維持free/no-clock/optional、使用Commission玩家文案；Production維持direct/paid，不能重加頁面前置。
+### 6. Plan／Production
+- Plan 維持免費工廠草稿，產線的藥效路徑疊在同一張已知地圖上預估。
+- 起步工具只有 Source、Belt、Sink 與機器；Split／Merge 由科技樹解鎖。
 
-6. **Integration, docs and repeated audit**
-   - focused unit/property → typecheck/lint → integration/E2E → full `npm run check`。
-   - residue scan：batch Research route、partial path、blank-click append、非Wall穿霧、universal corridor、default one disease、互斥effects、$200 start、permanent price floor、Pilot Plant玩家文案、generated bitmap manifest與fixture-only full loop都不得留作active truth。
-   - 更新README、design、overview、notes、decisions、invariants、structure、UI contract、player guide、roadmap與playtest。
-   - 定向越野地圖語言的嚴格俯視 2D：紙底＋近黑墨印；ISOM 色語（牆＝黑色斷崖墨、沼澤＝藍色水平線、治療＝綠、副作用＝琥珀、失敗＝紅、流動＝藍）；路線紫只屬玩家自己的線（研究路線、candidate、選取、Plan overprint）。Production 為黑墨實印、Plan 為紫色 overprint。手繪感只來自確定性墨線抖動，不用於 port、belt 接點、hit-test 幾何或文字；Pixi vector runtime 保留 canonical true hex。完整規格見 [design.md](design.md#visual-language)。
-   - 重建Research／Factory／effects／Market screenshots，做至少一輪邏輯、視覺與文件audit；確認pointy-top polygon、q/r picking、六鄰接routing與六個60° rotations在sim／renderer／UI一致。
+### 7. 解鎖與科技樹
+- 科技樹做成真正的樹狀圖：依階層排列、連線表示前置條件、三種狀態，並標出缺什麼。
+- 機器與基底藥物都要解鎖（參考 Big Pharma）。**每種基底是一張地圖**（類似 Potion Craft 的水／油／酒），也是之後多圖疊加的入口。
+- 解鎖條件為現金＋Knowledge，部分節點另需里程碑，例如合約完成或發現某個盆地。
 
-7. **Human fun validation on 53346**
-   - 清Save與Blueprint Library；不用`?cash`／`?research`、hidden reference、solver、compiler、預製Blueprint或注入Knowledge。
-   - 人工完成stepwise Research → DiscoveredFormula → affordable direct build或Plan Commission → Production → first profitable sale，再嘗試完成quota-3 contract並理解下一疾病。
-   - 記錄首次理解、嘗試數、first cure／sale時間、最低cash、layout重做、困惑點與是否願意繼續。
-   - automated correctness不能代替這份human evidence；任何無資訊、破產或不可達first sale都是blocker。
+### 8. 介面清理
+- 拿掉重複標記（`PLAN · FREE`／`PRODUCTION`），只在 Play 旁留一個小的狀態圖示。
+- Guide 收進 Menu。
+- Blueprints 面板改用遊戲的字型系統。
+- Objective 依新循環改寫。
+- 每項資訊都要能影響決策，否則移除。最後用 impeccable 重新審一輪。
+
+### 9. 收尾
+- 更新 design、overview、invariants、decisions、player-guide、ui-interaction、roadmap。
+- 跑完整 gate，部署到 `https://hexapharma.5334601.xyz/`，進行真人 fresh-loop 試玩並記錄。
 
 ## Completion rule
 
@@ -69,4 +71,4 @@
 - final art/audio polish、帳戶、雲端Blueprint repository。
 - release candidate前的跨build save migration。
 
-平衡可逐步調整；fresh-loop可達性、stepwise reveal–decide、auto formula、quota-3 contracts／patent gates、seed／disease解法差異、finite demand、overlap effects、完整PathStamp、Wall-only穿霧、direct paid Production、optional Production Plan、true-hex geometry、Blueprint v4、Save v11與strict gate不能後置。
+平衡可逐步調整；fresh-loop可達性、規劃後一次試驗的Research、朝向與轉向角、窄段可通過驗證、全圖連通、quota-3 contracts／tech gates、seed／disease解法差異、finite demand、overlap effects、完整PathStamp、霧下只露Wall與等高線、direct paid Production、optional Production Plan、true-hex geometry與strict gate不能後置。
