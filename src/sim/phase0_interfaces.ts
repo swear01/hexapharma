@@ -11,8 +11,10 @@
  *
  * ───────────────────────────── Phase 0 invariants ─────────────────────────────
  * drug-graph:
- *   INV-1  path: machines apply their complete six-neighbor path independently on
- *          every map. Wall/OOB cancel one delta; Abyss fails; Swamp costs 2 energy.
+ *   INV-1  path: machines apply their complete six-neighbor path, rotated by the drug's
+ *          heading, independently on every map. Wall/OOB cancel one delta; Abyss fails;
+ *          inside Swamp each delta is a half step (doubled-unit offset). After a
+ *          non-failing stamp the heading turns by the machine's fixed `turn`.
  *   INV-2  portal: entering a Portal records entry + same-map exit, then continues.
  *   INV-3  every machine always traverses its complete fixed catalog path.
  *   INV-4  evaluate: each map's FINAL position alone determines cure / side-effect;
@@ -97,18 +99,30 @@ export interface MultiMap {
   readonly maps: readonly EffectMap[];
 }
 
-/** Dynamic per-drug state: one position per map + a sticky failure flag. */
+/**
+ * Dynamic per-drug state: one cell per map, a doubled-unit residual per map, one
+ * shared heading, and a sticky failure flag. The exact point on map i is
+ * `2 * pos[i] + offset[i]` (axial, integer). `offset[i]` is the zero vector except
+ * while the drug rests half-way inside a Swamp cell, where it is one unit direction.
+ */
 export interface DrugState {
   readonly pos: readonly HexCoord[]; // length N
+  readonly offset: readonly HexCoord[]; // length N
+  /** World direction of path entry 0; machine paths are relative to it. */
+  readonly heading: HexDir;
   readonly failed: boolean; // true once a path has entered an abyss
 }
 
 // ─────────────────────────────── machines / paths ───────────────────────────────
 
-/** A complete fixed chemical path, applied to every map. */
+/**
+ * A complete fixed chemical path, applied to every map relative to the drug heading.
+ * `turn` (signed 60° steps, clockwise positive) is added to the heading afterwards.
+ */
 export interface Machine {
   readonly typeId: MachineTypeId;
   readonly path: PathStamp;
+  readonly turn: number;
 }
 
 /** A recipe = an ordered sequence of fixed chemical path steps. */
@@ -138,7 +152,7 @@ export type ApplyTemplateFn = (mm: MultiMap, start: DrugState, t: Template) => D
 /** Evaluate a template into a cure/side-effect/failure outcome. INV-4, INV-5. */
 export type EvaluateFn = (mm: MultiMap, start: DrugState, t: Template) => Outcome;
 
-/** Reveal fog along every entered path cell (research experimentation). Returns a new MultiMap. */
+/** Reveal fog along every entered path cell. Returns a new MultiMap. */
 export type RevealAlongFn = (mm: MultiMap, start: DrugState, t: Template) => MultiMap;
 
 // ─────────────────────────────── rng API ───────────────────────────────
@@ -171,6 +185,8 @@ export type RestoreRngFn = (state: RngState) => Rng;
 export interface MachineCatalogEntry {
   readonly typeId: MachineTypeId;
   readonly path: PathStamp;
+  /** Signed 60° heading change applied after the stamp (clockwise positive). */
+  readonly turn: number;
   readonly cost: number;
   /** Fixed ticks to process one unit in the factory. */
   readonly speed: number;
@@ -233,9 +249,10 @@ export type DifficultyToBasePriceFn = (difficulty: number, refCost: number) => n
 // ─────────────────────────────── shared data ───────────────────────────────
 
 /**
- * Default Phase 0 machine catalog. Frozen shared data so CLI, solver, mapgen and
- * tests all agree. Paths are fixed chemical routes; physical footprint rotation
- * never rotates these deltas.
+ * Default machine catalog. Frozen shared data so CLI, solver, mapgen and tests all
+ * agree. Paths are fixed chemical routes relative to the drug heading; physical
+ * footprint rotation never rotates these deltas. `turn` values are tentative balance
+ * data and live only in this table.
  */
 function deepFreezeData<T>(value: T): T {
   if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
@@ -253,25 +270,28 @@ const NORTH_WEST: HexDir = 4;
 const NORTH_EAST: HexDir = 5;
 
 export const DEFAULT_CATALOG: readonly MachineCatalogEntry[] = deepFreezeData([
-  { typeId: "push", path: [EAST, EAST, SOUTH_EAST], cost: 2, speed: 2 },
+  { typeId: "push", path: [EAST, EAST, SOUTH_EAST], turn: 1, cost: 2, speed: 2 },
   {
     typeId: "push2",
     path: [EAST, NORTH_EAST, EAST, SOUTH_EAST, EAST, SOUTH_EAST, EAST],
+    turn: 0,
     cost: 6,
     speed: 7,
   },
-  { typeId: "pull", path: [WEST, WEST, NORTH_WEST], cost: 2, speed: 3 },
-  { typeId: "shear", path: [NORTH_WEST, NORTH_WEST, NORTH_EAST, SOUTH_EAST], cost: 4, speed: 5 },
-  { typeId: "skew", path: [SOUTH_EAST, EAST, SOUTH_WEST, WEST, SOUTH_EAST, NORTH_EAST], cost: 5, speed: 6 },
+  { typeId: "pull", path: [WEST, WEST, NORTH_WEST], turn: 3, cost: 2, speed: 3 },
+  { typeId: "shear", path: [NORTH_WEST, NORTH_WEST, NORTH_EAST, SOUTH_EAST], turn: -1, cost: 4, speed: 5 },
+  { typeId: "skew", path: [SOUTH_EAST, EAST, SOUTH_WEST, WEST, SOUTH_EAST, NORTH_EAST], turn: 2, cost: 5, speed: 6 },
   {
     typeId: "dilute",
     path: [EAST, SOUTH_EAST, SOUTH_WEST, WEST, NORTH_WEST, NORTH_EAST, EAST, SOUTH_EAST],
+    turn: 0,
     cost: 6,
     speed: 8,
   },
   {
     typeId: "settle",
     path: [SOUTH_EAST, SOUTH_EAST, EAST, EAST, NORTH_WEST, NORTH_WEST, NORTH_EAST, WEST, SOUTH_WEST],
+    turn: -2,
     cost: 7,
     speed: 9,
   },
@@ -312,6 +332,7 @@ export const MAX_GAME_REPLAY_WORK = 100_000_000;
 export interface FactoryMachineDef {
   readonly typeId: MachineTypeId;
   readonly path: PathStamp;
+  readonly turn: number;
   readonly cost: number; // processing cost charged per unit produced
   readonly speed: number; // ticks to process one unit (integer >= 1; larger = slower = bottleneck)
 }
@@ -398,9 +419,13 @@ export interface FactoryProductEventBuffer {
   readonly ids: Int32Array;
   readonly productionCosts: Int32Array;
   readonly failed: Uint8Array;
+  readonly heading: Uint8Array;
   /** Flat `[eventIndex * mapCount + mapIndex]` positions. */
   readonly drugX: Int32Array;
   readonly drugY: Int32Array;
+  /** Flat `[eventIndex * mapCount + mapIndex]` doubled-unit swamp offsets. */
+  readonly drugOffsetQ: Int8Array;
+  readonly drugOffsetR: Int8Array;
 }
 
 /**
@@ -418,9 +443,14 @@ export interface FactoryRuntime {
   readonly unitMachineIds: Int32Array;
   readonly unitProductionCosts: Int32Array;
   readonly unitFailed: Uint8Array;
+  /** Drug heading (0..5) per unit. */
+  readonly unitHeading: Uint8Array;
   /** Flat `[unitIndex * mapCount + mapIndex]` positions. */
   readonly unitDrugX: Int32Array;
   readonly unitDrugY: Int32Array;
+  /** Flat `[unitIndex * mapCount + mapIndex]` doubled-unit swamp offsets. */
+  readonly unitDrugOffsetQ: Int8Array;
+  readonly unitDrugOffsetR: Int8Array;
   /** Next output index for each splitter, in row-major splitter order. */
   readonly splitterCursors: Int32Array;
   readonly producedEvents: FactoryProductEventBuffer;
@@ -466,7 +496,7 @@ export type RestoreFactoryFn = (
   snapshot: FactoryState,
 ) => FactoryRuntime;
 
-/** Copy one product event as `[id, cost, failed, x0, y0, ...]` into caller storage. */
+/** Copy one product event as `[id, cost, failed, heading, x0, y0, oq0, or0, ...]` into caller storage. */
 export type CopyFactoryProductEventFn = (
   runtime: FactoryRuntime,
   eventIndex: number,
@@ -710,27 +740,17 @@ export interface InventoryProduct extends ProducedUnit {
   readonly outcome: Outcome;
 }
 
-export interface ResearchShot {
-  /** Number of machine stamps executed in this active reveal-decide session. */
-  readonly step: number;
-  /** The physical drug state after `step` completed effects. */
-  readonly drug: DrugState;
-  /** Cumulative cash charged for stamps already executed in this session. */
-  readonly cost: number;
-}
-
-export interface DiscoveredFormula {
-  readonly disease: DiseaseId;
+/** One paid Research trial: the whole program run from the level start on the true maps. */
+export interface ResearchTrial {
   readonly program: Template;
-  readonly researchCost: number;
+  /** Σ catalog cost of the program, charged once. */
+  readonly cost: number;
   readonly outcome: Outcome;
 }
 
 export interface ResearchFacilityState {
-  readonly program: Template;
-  readonly shot: ResearchShot | null;
-  readonly lastOutcome: Outcome | null;
-  readonly discoveredFormulas: readonly DiscoveredFormula[];
+  /** Most recent trial (enough to redraw its actual trail by replay), or null. */
+  readonly lastTrial: ResearchTrial | null;
 }
 
 export interface ShippingContractProgress {
@@ -752,9 +772,7 @@ export interface ProductionFacilityState {
 
 /** Every authoritative whole-game state transition. */
 export type GameIntent =
-  | { readonly kind: "beginResearchShot" }
-  | { readonly kind: "advanceResearchShot"; readonly machine: Machine }
-  | { readonly kind: "abortResearchShot" }
+  | { readonly kind: "runResearchTrial"; readonly program: Template }
   | { readonly kind: "setPilotLayout"; readonly layout: FactoryLayout }
   | { readonly kind: "buildProductionLayout"; readonly layout: FactoryLayout }
   | { readonly kind: "productionTicks"; readonly ticks: number }

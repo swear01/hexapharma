@@ -34,11 +34,8 @@ describe("fresh-save playable loop", () => {
     const program = level.diseases[0]!.reference;
     let game = createGameState(genOptions, DEFAULT_STARTING_CASH, 0);
 
-    game = applyGameIntent(game, { kind: "beginResearchShot" });
-    for (const machine of program.steps) {
-      game = applyGameIntent(game, { kind: "advanceResearchShot", machine });
-    }
-    expect(game.research.lastOutcome?.cured).toContain(level.diseases[0]!.id);
+    game = applyGameIntent(game, { kind: "runResearchTrial", program });
+    expect(game.research.lastTrial?.outcome.cured).toContain(level.diseases[0]!.id);
 
     const layout = compileEntitledPrototype(
       program,

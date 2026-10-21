@@ -62,11 +62,7 @@ function buildTemplate(
 ): ReturnType<typeof createGameState> {
   let game = initial;
   if (runResearch) {
-    game = applyGameIntent(game, { kind: "beginResearchShot" });
-    for (const machine of template.steps) {
-      game = applyGameIntent(game, { kind: "advanceResearchShot", machine });
-    }
-    if (game.research.shot !== null) throw new Error("test Research shot did not finish");
+    game = applyGameIntent(game, { kind: "runResearchTrial", program: template });
   }
   const layout = entitledLayout(template);
   game = applyGameIntent(game, { kind: "setPilotLayout", layout });
@@ -335,7 +331,7 @@ describe("whole-game deterministic state", () => {
   it("uses a Pilot plan as an optional paid Production build without aliasing it", () => {
     const layout = entitledLayout(recipe());
     let game = createGameState(opts, 500, 0);
-    expect(game.research.program.steps).toEqual([]);
+    expect(game.research.lastTrial).toBeNull();
     game = applyGameIntent(game, { kind: "setPilotLayout", layout });
     const pilot = game.pilot.layout!;
     game = applyGameIntent(game, { kind: "buildProductionLayout", layout: pilot });
@@ -362,14 +358,13 @@ describe("whole-game deterministic state", () => {
   it("rejects locked fixed paths and non-entitled physical floors at every boundary", () => {
     const skew = DEFAULT_CATALOG.find((entry) => entry.typeId === "skew")!;
     const lockedProgram = {
-      steps: [{ typeId: skew.typeId, path: skew.path }],
+      steps: [{ typeId: skew.typeId, path: skew.path, turn: skew.turn }],
     };
     const locked = entitledLayout(lockedProgram);
     const game = createGameState(opts, 500, 0);
-    const session = applyGameIntent(game, { kind: "beginResearchShot" });
-    expect(() => applyGameIntent(session, {
-      kind: "advanceResearchShot",
-      machine: lockedProgram.steps[0]!,
+    expect(() => applyGameIntent(game, {
+      kind: "runResearchTrial",
+      program: lockedProgram,
     })).toThrow(/locked/i);
     expect(() => applyGameIntent(game, { kind: "setPilotLayout", layout: locked })).toThrow(/locked/i);
     const built = buildTemplate(game);
@@ -407,11 +402,11 @@ describe("whole-game deterministic state", () => {
     })).toThrow(/entitled.*26x12/i);
   });
 
-  it("expands facilities without interrupting or rewriting an active Research shot", () => {
+  it("expands facilities without rewriting the last Research trial", () => {
     let game = createGameState(opts, 10_000, 100);
-    game = applyGameIntent(game, { kind: "beginResearchShot" });
+    game = applyGameIntent(game, { kind: "runResearchTrial", program: recipe() });
     const research = game.research;
-    expect(research.shot).not.toBeNull();
+    expect(research.lastTrial).not.toBeNull();
 
     game = applyGameIntent(game, { kind: "unlockPatent", id: "bench-2" });
 
@@ -446,6 +441,7 @@ describe("whole-game deterministic state", () => {
         def: {
           typeId: push.typeId,
           path: push.path,
+          turn: push.turn,
           cost: 0,
           speed: push.speed,
         },
@@ -487,6 +483,7 @@ describe("whole-game deterministic state", () => {
       def: {
         typeId: push.typeId,
         path: push.path,
+        turn: push.turn,
         cost: push.cost,
         speed: push.speed,
       },
@@ -614,20 +611,19 @@ describe("whole-game deterministic state", () => {
     expect(availableCatalog(game.patents).map((entry) => entry.typeId)).toContain("skew");
     game = applyGameIntent(game, { kind: "unlockPatent", id: "bench-2" });
     expect(game.production.layout?.width).toBe(BASE_GAME_FACTORY_WIDTH + 2);
-    const program = game.research.program;
+    const research = game.research;
     game = applyGameIntent(game, { kind: "unlockPatent", id: "floor-depth" });
     expect(game.production.layout?.height).toBe(BASE_GAME_FACTORY_HEIGHT + 2);
     expect(game.pilot.layout?.height).toBe(BASE_GAME_FACTORY_HEIGHT + 2);
     expect(game.genOptions.nMaps).toBe(1);
-    expect(game.research.program).toEqual(program);
+    expect(game.research).toEqual(research);
   });
 
   it("replays and serializes the three-facility trace deterministically", () => {
     const initial = createGameState(opts, 500, 0);
     const template = recipe();
     const intents: GameIntent[] = [
-      { kind: "beginResearchShot" },
-      ...template.steps.map((machine): GameIntent => ({ kind: "advanceResearchShot", machine })),
+      { kind: "runResearchTrial", program: template },
       { kind: "setPilotLayout", layout: entitledLayout(template) },
       { kind: "buildProductionLayout", layout: entitledLayout(template) },
       { kind: "productionTicks", ticks: 80 },

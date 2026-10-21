@@ -1,5 +1,4 @@
 import type {
-  HexCoord,
   MultiMap,
   DrugState,
   Machine,
@@ -10,7 +9,15 @@ import type {
   SolveFn,
 } from "../phase0_interfaces";
 import { CellKind } from "../phase0_interfaces";
-import { applyStep, evaluate } from "../drug-graph";
+import {
+  evaluate,
+  PATH_OUT_STRIDE,
+  turnHeading,
+  validateDrugState,
+  validateEffectMap,
+  validateMachinePath,
+  walkValidatedPathInto,
+} from "../drug-graph";
 import { hashInts } from "../hash";
 
 // Dev/test-only search. NEVER wire into an in-game auto-solver (D14). INV-13.
@@ -47,26 +54,28 @@ function expandCatalog(catalog: readonly MachineCatalogEntry[]): ConcreteMachine
   const out: ConcreteMachine[] = [];
   for (const entry of catalog) {
     if (!Array.isArray(entry.path) || entry.path.length < 1) continue;
-    out.push({ machine: { typeId: entry.typeId, path: entry.path }, cost: entry.cost });
+    out.push({ machine: { typeId: entry.typeId, path: entry.path, turn: entry.turn }, cost: entry.cost });
   }
   return out;
 }
 
 /**
- * Deterministic, collision-proof visited key for a DrugState's positions.
- * The numeric FNV hash (hashInts, folding each map's x then y) is the spec's
- * primary key; we suffix the exact (x,y) signature so two states that merely
+ * Deterministic, collision-proof visited key for a DrugState's search state
+ * (heading + per-map cell and swamp offset). The numeric FNV hash is the primary
+ * key; we suffix the exact signature so two states that merely
  * collide in the hash are never conflated — soundness must not depend on luck.
  */
-function positionKey(pos: readonly HexCoord[]): string {
-  const ints: number[] = [];
-  for (const p of pos) {
-    ints.push(p.q, p.r);
+function positionKey(state: DrugState): string {
+  const ints: number[] = [state.heading];
+  for (let index = 0; index < state.pos.length; index++) {
+    const p = state.pos[index]!;
+    const o = state.offset[index]!;
+    ints.push(p.q, p.r, o.q, o.r);
   }
   const h = hashInts(ints);
-  // Suffix the exact (x,y) signature so distinct states that merely collide in the
-  // FNV hash are never conflated — soundness/minimality must not depend on luck.
-  return `${h}:${pos.map((p) => `${p.q},${p.r}`).join("|")}`;
+  // Suffix the exact (heading, cell, offset) signature so distinct states that merely
+  // collide in the FNV hash are never conflated — soundness/minimality must not depend on luck.
+  return `${h}:${ints.join(",")}`;
 }
 
 /** True once every target is present at one of the drug's final map positions. */
@@ -89,6 +98,33 @@ function isGoal(mm: MultiMap, s: DrugState, targets: readonly DiseaseId[]): bool
   return true;
 }
 
+/** applyStep over pre-validated maps and machines (validation once per solve, not per expansion). */
+function applyValidatedStep(mm: MultiMap, s: DrugState, machine: Machine, out: Int32Array): DrugState {
+  if (s.failed) return s;
+  const pos = new Array<DrugState["pos"][number]>(mm.maps.length);
+  const offset = new Array<DrugState["offset"][number]>(mm.maps.length);
+  let failed = false;
+  for (let mapIndex = 0; mapIndex < mm.maps.length; mapIndex++) {
+    const from = s.pos[mapIndex]!;
+    const fromOffset = s.offset[mapIndex]!;
+    walkValidatedPathInto(
+      mm.maps[mapIndex]!,
+      from.q,
+      from.r,
+      fromOffset.q,
+      fromOffset.r,
+      s.heading,
+      machine,
+      out,
+      0,
+    );
+    pos[mapIndex] = { q: out[0]!, r: out[1]! };
+    offset[mapIndex] = { q: out[2]!, r: out[3]! };
+    if (out[4] === 1) failed = true;
+  }
+  return { pos, offset, heading: failed ? s.heading : turnHeading(s.heading, machine.turn), failed };
+}
+
 interface QueueNode {
   readonly state: DrugState;
   /** Concrete machines applied so far, in order. */
@@ -100,6 +136,10 @@ export const solve: SolveFn = (mm, start, opts) => {
   if (!hasCureRegions(mm, opts.targets)) return null;
 
   const machines = expandCatalog(opts.catalog);
+  for (const map of mm.maps) validateEffectMap(map);
+  for (const cm of machines) validateMachinePath(cm.machine);
+  validateDrugState(mm, start);
+  const walkOut = new Int32Array(PATH_OUT_STRIDE);
 
   // The start may already be the goal (zero-step solution).
   if (isGoal(mm, start, opts.targets)) {
@@ -108,10 +148,10 @@ export const solve: SolveFn = (mm, start, opts) => {
 
   if (opts.maxDepth <= 0) return null;
 
-  // BFS over DrugState. Each depth keeps the cheapest path per position and the
+  // BFS over DrugState (heading, cells, offsets). Each depth keeps the cheapest path per state and the
   // cheapest goal, with fixed expansion order breaking equal-cost ties.
   const visited = new Set<string>();
-  visited.add(positionKey(start.pos));
+  visited.add(positionKey(start));
 
   let frontier: QueueNode[] = [{ state: start, path: [], cost: 0 }];
   let depth = 0;
@@ -122,9 +162,9 @@ export const solve: SolveFn = (mm, start, opts) => {
     let bestGoal: QueueNode | null = null;
     for (const cur of frontier) {
       for (const cm of machines) {
-        const child = applyStep(mm, cur.state, cm.machine);
+        const child = applyValidatedStep(mm, cur.state, cm.machine, walkOut);
         if (child.failed) continue; // never expand a spoiled drug
-        const key = positionKey(child.pos);
+        const key = positionKey(child);
         if (visited.has(key)) continue;
         const path = [...cur.path, cm];
         const candidate: QueueNode = { state: child, path, cost: cur.cost + cm.cost };
@@ -142,7 +182,7 @@ export const solve: SolveFn = (mm, start, opts) => {
       }
     }
     if (bestGoal !== null) return finalize(mm, start, bestGoal.path, opts.targets);
-    for (const node of next) visited.add(positionKey(node.state.pos));
+    for (const node of next) visited.add(positionKey(node.state));
     frontier = next;
     depth++;
   }

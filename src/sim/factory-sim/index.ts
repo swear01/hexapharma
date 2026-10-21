@@ -1,5 +1,8 @@
 import type {
   Dir,
+  DrugState,
+  HexCoord,
+  HexDir,
   FactoryLayout,
   FactoryRuntime,
   InitFactoryFn,
@@ -26,6 +29,8 @@ import {
 } from "../phase0_interfaces";
 import {
   initialState,
+  PATH_OUT_STRIDE,
+  validateDrugState,
   validateEffectMap,
   validateMachinePath,
   walkValidatedPathInto,
@@ -70,8 +75,11 @@ interface MutableProductEvents {
   ids: Int32Array;
   productionCosts: Int32Array;
   failed: Uint8Array;
+  heading: Uint8Array;
   drugX: Int32Array;
   drugY: Int32Array;
+  drugOffsetQ: Int8Array;
+  drugOffsetR: Int8Array;
 }
 
 interface MutableFactoryRuntime {
@@ -84,8 +92,11 @@ interface MutableFactoryRuntime {
   unitMachineIds: Int32Array;
   unitProductionCosts: Int32Array;
   unitFailed: Uint8Array;
+  unitHeading: Uint8Array;
   unitDrugX: Int32Array;
   unitDrugY: Int32Array;
+  unitDrugOffsetQ: Int8Array;
+  unitDrugOffsetR: Int8Array;
   splitterCursors: Int32Array;
   producedEvents: MutableProductEvents;
   tick: number;
@@ -112,6 +123,9 @@ interface RuntimeInternals {
   readonly targetSplitterNext: Int32Array;
   readonly sourceDrugX: Int32Array;
   readonly sourceDrugY: Int32Array;
+  readonly sourceDrugOffsetQ: Int8Array;
+  readonly sourceDrugOffsetR: Int8Array;
+  readonly sourceHeading: number;
   readonly sourceFailed: number;
   readonly pathOut: Int32Array;
 }
@@ -756,8 +770,11 @@ function resetProductEvents(events: MutableProductEvents): void {
   events.ids.fill(0);
   events.productionCosts.fill(0);
   events.failed.fill(0);
+  events.heading.fill(0);
   events.drugX.fill(0);
   events.drugY.fill(0);
+  events.drugOffsetQ.fill(0);
+  events.drugOffsetR.fill(0);
 }
 
 export function clearFactoryProductEvents(runtime: FactoryRuntime): void {
@@ -771,7 +788,7 @@ export const copyFactoryProductEvent: CopyFactoryProductEventFn = (
   outOffset,
 ) => {
   const events = runtime.producedEvents;
-  const needed = 3 + runtime.mapCount * 2;
+  const needed = 4 + runtime.mapCount * 4;
   if (
     !Number.isInteger(eventIndex) ||
     eventIndex < 0 ||
@@ -785,10 +802,13 @@ export const copyFactoryProductEvent: CopyFactoryProductEventFn = (
   out[outOffset] = events.ids[eventIndex] ?? 0;
   out[outOffset + 1] = events.productionCosts[eventIndex] ?? 0;
   out[outOffset + 2] = events.failed[eventIndex] ?? 0;
+  out[outOffset + 3] = events.heading[eventIndex] ?? 0;
   const base = eventIndex * runtime.mapCount;
   for (let mapIndex = 0; mapIndex < runtime.mapCount; mapIndex++) {
-    out[outOffset + 3 + mapIndex * 2] = events.drugX[base + mapIndex] ?? 0;
-    out[outOffset + 4 + mapIndex * 2] = events.drugY[base + mapIndex] ?? 0;
+    out[outOffset + 4 + mapIndex * 4] = events.drugX[base + mapIndex] ?? 0;
+    out[outOffset + 5 + mapIndex * 4] = events.drugY[base + mapIndex] ?? 0;
+    out[outOffset + 6 + mapIndex * 4] = events.drugOffsetQ[base + mapIndex] ?? 0;
+    out[outOffset + 7 + mapIndex * 4] = events.drugOffsetR[base + mapIndex] ?? 0;
   }
 };
 
@@ -800,11 +820,14 @@ function clearUnitSlot(runtime: MutableFactoryRuntime, data: RuntimeInternals, s
   runtime.unitMachineIds[slot] = -1;
   runtime.unitProductionCosts[slot] = 0;
   runtime.unitFailed[slot] = 0;
+  runtime.unitHeading[slot] = 0;
   data.unitMachineSlots[slot] = -1;
   const base = slot * runtime.mapCount;
   for (let mapIndex = 0; mapIndex < runtime.mapCount; mapIndex++) {
     runtime.unitDrugX[base + mapIndex] = 0;
     runtime.unitDrugY[base + mapIndex] = 0;
+    runtime.unitDrugOffsetQ[base + mapIndex] = 0;
+    runtime.unitDrugOffsetR[base + mapIndex] = 0;
   }
 }
 
@@ -821,12 +844,15 @@ function copyUnitSlot(
   runtime.unitMachineIds[to] = runtime.unitMachineIds[from] ?? -1;
   runtime.unitProductionCosts[to] = runtime.unitProductionCosts[from] ?? 0;
   runtime.unitFailed[to] = runtime.unitFailed[from] ?? 0;
+  runtime.unitHeading[to] = runtime.unitHeading[from] ?? 0;
   data.unitMachineSlots[to] = data.unitMachineSlots[from] ?? -1;
   const fromBase = from * runtime.mapCount;
   const toBase = to * runtime.mapCount;
   for (let mapIndex = 0; mapIndex < runtime.mapCount; mapIndex++) {
     runtime.unitDrugX[toBase + mapIndex] = runtime.unitDrugX[fromBase + mapIndex] ?? 0;
     runtime.unitDrugY[toBase + mapIndex] = runtime.unitDrugY[fromBase + mapIndex] ?? 0;
+    runtime.unitDrugOffsetQ[toBase + mapIndex] = runtime.unitDrugOffsetQ[fromBase + mapIndex] ?? 0;
+    runtime.unitDrugOffsetR[toBase + mapIndex] = runtime.unitDrugOffsetR[fromBase + mapIndex] ?? 0;
   }
 }
 
@@ -842,11 +868,14 @@ function appendProductFromUnit(
   events.ids[eventIndex] = runtime.unitIds[unitIndex] ?? 0;
   events.productionCosts[eventIndex] = runtime.unitProductionCosts[unitIndex] ?? 0;
   events.failed[eventIndex] = runtime.unitFailed[unitIndex] ?? 0;
+  events.heading[eventIndex] = runtime.unitHeading[unitIndex] ?? 0;
   const unitBase = unitIndex * runtime.mapCount;
   const eventBase = eventIndex * runtime.mapCount;
   for (let mapIndex = 0; mapIndex < runtime.mapCount; mapIndex++) {
     events.drugX[eventBase + mapIndex] = runtime.unitDrugX[unitBase + mapIndex] ?? 0;
     events.drugY[eventBase + mapIndex] = runtime.unitDrugY[unitBase + mapIndex] ?? 0;
+    events.drugOffsetQ[eventBase + mapIndex] = runtime.unitDrugOffsetQ[unitBase + mapIndex] ?? 0;
+    events.drugOffsetR[eventBase + mapIndex] = runtime.unitDrugOffsetR[unitBase + mapIndex] ?? 0;
   }
   events.count = eventIndex + 1;
   runtime.producedTotal += 1;
@@ -865,10 +894,13 @@ function appendProductFromSource(
   events.ids[eventIndex] = id;
   events.productionCosts[eventIndex] = 0;
   events.failed[eventIndex] = data.sourceFailed;
+  events.heading[eventIndex] = data.sourceHeading;
   const eventBase = eventIndex * runtime.mapCount;
   for (let mapIndex = 0; mapIndex < runtime.mapCount; mapIndex++) {
     events.drugX[eventBase + mapIndex] = data.sourceDrugX[mapIndex] ?? 0;
     events.drugY[eventBase + mapIndex] = data.sourceDrugY[mapIndex] ?? 0;
+    events.drugOffsetQ[eventBase + mapIndex] = data.sourceDrugOffsetQ[mapIndex] ?? 0;
+    events.drugOffsetR[eventBase + mapIndex] = data.sourceDrugOffsetR[mapIndex] ?? 0;
   }
   events.count = eventIndex + 1;
   runtime.producedTotal += 1;
@@ -886,19 +918,31 @@ function applyMachineInPlace(
   const machine = compiled.machineDefs[machineSlot];
   if (machine === undefined) throw new Error("factory invariant: missing compiled machine path");
   const base = unitIndex * runtime.mapCount;
+  const heading = runtime.unitHeading[unitIndex] ?? 0;
   let failed = 0;
   for (let mapIndex = 0; mapIndex < runtime.mapCount; mapIndex++) {
     const map = mm.maps[mapIndex];
     if (map === undefined) throw new Error("factory invariant: missing validated effect map");
     const index = base + mapIndex;
-    const fromX = runtime.unitDrugX[index] ?? 0;
-    const fromY = runtime.unitDrugY[index] ?? 0;
-    walkValidatedPathInto(map, fromX, fromY, machine, data.pathOut, 0);
-    runtime.unitDrugX[index] = data.pathOut[0] ?? fromX;
-    runtime.unitDrugY[index] = data.pathOut[1] ?? fromY;
-    if (data.pathOut[2] !== 0) failed = 1;
+    walkValidatedPathInto(
+      map,
+      runtime.unitDrugX[index] ?? 0,
+      runtime.unitDrugY[index] ?? 0,
+      runtime.unitDrugOffsetQ[index] ?? 0,
+      runtime.unitDrugOffsetR[index] ?? 0,
+      heading,
+      machine,
+      data.pathOut,
+      0,
+    );
+    runtime.unitDrugX[index] = data.pathOut[0] ?? 0;
+    runtime.unitDrugY[index] = data.pathOut[1] ?? 0;
+    runtime.unitDrugOffsetQ[index] = data.pathOut[2] ?? 0;
+    runtime.unitDrugOffsetR[index] = data.pathOut[3] ?? 0;
+    if (data.pathOut[4] !== 0) failed = 1;
   }
   runtime.unitFailed[unitIndex] = failed;
+  if (failed === 0) runtime.unitHeading[unitIndex] = (((heading + machine.turn) % 6) + 6) % 6;
 }
 
 function emitUnit(
@@ -918,6 +962,7 @@ function emitUnit(
   runtime.unitProc[slot] = 0;
   runtime.unitProductionCosts[slot] = 0;
   runtime.unitFailed[slot] = data.sourceFailed;
+  runtime.unitHeading[slot] = data.sourceHeading;
   data.unitMachineSlots[slot] = machineSlot;
   runtime.unitMachineIds[slot] =
     machineSlot >= 0 ? (data.compiled.machineIds[machineSlot] ?? -1) : -1;
@@ -925,6 +970,8 @@ function emitUnit(
   for (let mapIndex = 0; mapIndex < runtime.mapCount; mapIndex++) {
     runtime.unitDrugX[base + mapIndex] = data.sourceDrugX[mapIndex] ?? 0;
     runtime.unitDrugY[base + mapIndex] = data.sourceDrugY[mapIndex] ?? 0;
+    runtime.unitDrugOffsetQ[base + mapIndex] = data.sourceDrugOffsetQ[mapIndex] ?? 0;
+    runtime.unitDrugOffsetR[base + mapIndex] = data.sourceDrugOffsetR[mapIndex] ?? 0;
   }
   runtime.unitCount = slot + 1;
   runtime.nextUnitId += 1;
@@ -1088,9 +1135,8 @@ export const initFactory: InitFactoryFn = (layout, mm, start) => {
   if (mapCount < 1 || mapCount > 4 || start.pos.length !== mapCount) {
     throw new Error("factory init: start state map count mismatch");
   }
-  if (typeof start.failed !== "boolean") {
-    throw new Error("factory init: invalid start failure flag");
-  }
+  for (const map of mm.maps) validateEffectMap(map);
+  validateDrugState(mm, start);
   let carrierCount = 0;
   for (const tile of layout.tiles) {
     if (tile.kind === "belt" || tile.kind === "splitter" || tile.kind === "merger") {
@@ -1106,8 +1152,11 @@ export const initFactory: InitFactoryFn = (layout, mm, start) => {
     ids: new Int32Array(eventCapacity),
     productionCosts: new Int32Array(eventCapacity),
     failed: new Uint8Array(eventCapacity),
+    heading: new Uint8Array(eventCapacity),
     drugX: new Int32Array(eventCapacity * mapCount),
     drugY: new Int32Array(eventCapacity * mapCount),
+    drugOffsetQ: new Int8Array(eventCapacity * mapCount),
+    drugOffsetR: new Int8Array(eventCapacity * mapCount),
   };
   const runtime: MutableFactoryRuntime = {
     capacity,
@@ -1119,8 +1168,11 @@ export const initFactory: InitFactoryFn = (layout, mm, start) => {
     unitMachineIds: new Int32Array(capacity).fill(-1),
     unitProductionCosts: new Int32Array(capacity),
     unitFailed: new Uint8Array(capacity),
+    unitHeading: new Uint8Array(capacity),
     unitDrugX: new Int32Array(capacity * mapCount),
     unitDrugY: new Int32Array(capacity * mapCount),
+    unitDrugOffsetQ: new Int8Array(capacity * mapCount),
+    unitDrugOffsetR: new Int8Array(capacity * mapCount),
     splitterCursors: new Int32Array(compiled.splitterCells.length),
     producedEvents: productEvents,
     tick: 0,
@@ -1131,6 +1183,8 @@ export const initFactory: InitFactoryFn = (layout, mm, start) => {
   };
   const sourceDrugX = new Int32Array(mapCount);
   const sourceDrugY = new Int32Array(mapCount);
+  const sourceDrugOffsetQ = new Int8Array(mapCount);
+  const sourceDrugOffsetR = new Int8Array(mapCount);
   for (let mapIndex = 0; mapIndex < mapCount; mapIndex++) {
     const map = mm.maps[mapIndex];
     const pos = start.pos[mapIndex];
@@ -1152,6 +1206,8 @@ export const initFactory: InitFactoryFn = (layout, mm, start) => {
     }
     sourceDrugX[mapIndex] = pos.q;
     sourceDrugY[mapIndex] = pos.r;
+    sourceDrugOffsetQ[mapIndex] = start.offset[mapIndex]?.q ?? 0;
+    sourceDrugOffsetR[mapIndex] = start.offset[mapIndex]?.r ?? 0;
   }
   const data: RuntimeInternals = {
     layout,
@@ -1170,8 +1226,11 @@ export const initFactory: InitFactoryFn = (layout, mm, start) => {
     targetSplitterNext: new Int32Array(capacity),
     sourceDrugX,
     sourceDrugY,
+    sourceDrugOffsetQ,
+    sourceDrugOffsetR,
+    sourceHeading: start.heading,
     sourceFailed: start.failed ? 1 : 0,
-    pathOut: new Int32Array(3),
+    pathOut: new Int32Array(PATH_OUT_STRIDE),
   };
   const publicRuntime: FactoryRuntime = runtime;
   runtimeInternals.set(publicRuntime, data);
@@ -1179,6 +1238,80 @@ export const initFactory: InitFactoryFn = (layout, mm, start) => {
   assertRuntime(runtime, data, true);
   return publicRuntime;
 };
+
+interface DrugColumns {
+  readonly x: Int32Array;
+  readonly y: Int32Array;
+  readonly offsetQ: Int8Array;
+  readonly offsetR: Int8Array;
+  readonly heading: Uint8Array;
+  readonly failed: Uint8Array;
+}
+
+/** Cold read of one flat drug row into a DrugState. */
+function readDrug(columns: DrugColumns, mapCount: number, index: number): DrugState {
+  const pos: HexCoord[] = [];
+  const offset: HexCoord[] = [];
+  const base = index * mapCount;
+  for (let mapIndex = 0; mapIndex < mapCount; mapIndex++) {
+    pos.push({ q: columns.x[base + mapIndex] ?? 0, r: columns.y[base + mapIndex] ?? 0 });
+    offset.push({ q: columns.offsetQ[base + mapIndex] ?? 0, r: columns.offsetR[base + mapIndex] ?? 0 });
+  }
+  return {
+    pos,
+    offset,
+    heading: (columns.heading[index] ?? 0) as HexDir,
+    failed: columns.failed[index] !== 0,
+  };
+}
+
+/** Cold validated write of a DrugState into one flat drug row. */
+function writeDrug(
+  mm: MultiMap,
+  drug: DrugState,
+  columns: DrugColumns,
+  mapCount: number,
+  index: number,
+  label: string,
+): void {
+  try {
+    validateDrugState(mm, drug);
+  } catch (error) {
+    throw new Error(`factory restore: invalid ${label} map position`, { cause: error });
+  }
+  columns.heading[index] = drug.heading;
+  columns.failed[index] = drug.failed ? 1 : 0;
+  const base = index * mapCount;
+  for (let mapIndex = 0; mapIndex < mapCount; mapIndex++) {
+    columns.x[base + mapIndex] = drug.pos[mapIndex]!.q;
+    columns.y[base + mapIndex] = drug.pos[mapIndex]!.r;
+    columns.offsetQ[base + mapIndex] = drug.offset[mapIndex]!.q;
+    columns.offsetR[base + mapIndex] = drug.offset[mapIndex]!.r;
+  }
+}
+
+function unitColumns(runtime: FactoryRuntime): DrugColumns {
+  return {
+    x: runtime.unitDrugX,
+    y: runtime.unitDrugY,
+    offsetQ: runtime.unitDrugOffsetQ,
+    offsetR: runtime.unitDrugOffsetR,
+    heading: runtime.unitHeading,
+    failed: runtime.unitFailed,
+  };
+}
+
+function eventColumns(runtime: FactoryRuntime): DrugColumns {
+  const events = runtime.producedEvents;
+  return {
+    x: events.drugX,
+    y: events.drugY,
+    offsetQ: events.drugOffsetQ,
+    offsetR: events.drugOffsetR,
+    heading: events.heading,
+    failed: events.failed,
+  };
+}
 
 export const stepFactory: StepFactoryFn = (layout, mm, publicRuntime) => {
   const runtime = publicRuntime as MutableFactoryRuntime;
@@ -1383,16 +1516,12 @@ export const stepFactory: StepFactoryFn = (layout, mm, publicRuntime) => {
 export const snapshotProducedEvents = (runtime: FactoryRuntime): readonly ProducedUnit[] => {
   const products: ProducedUnit[] = [];
   const events = runtime.producedEvents;
+  const columns = eventColumns(runtime);
   for (let i = 0; i < events.count; i++) {
-    const pos: { q: number; r: number }[] = [];
-    const base = i * runtime.mapCount;
-    for (let mapIndex = 0; mapIndex < runtime.mapCount; mapIndex++) {
-      pos.push({ q: events.drugX[base + mapIndex] ?? 0, r: events.drugY[base + mapIndex] ?? 0 });
-    }
     products.push({
       id: events.ids[i] ?? 0,
       productionCost: events.productionCosts[i] ?? 0,
-      drug: { pos, failed: events.failed[i] !== 0 },
+      drug: readDrug(columns, runtime.mapCount, i),
     });
   }
   return products;
@@ -1401,19 +1530,12 @@ export const snapshotProducedEvents = (runtime: FactoryRuntime): readonly Produc
 export const snapshotFactory: SnapshotFactoryFn = (publicRuntime) => {
   const runtime = publicRuntime as MutableFactoryRuntime;
   const units: Unit[] = [];
+  const columns = unitColumns(runtime);
   for (let i = 0; i < runtime.unitCount; i++) {
-    const pos: { q: number; r: number }[] = [];
-    const base = i * runtime.mapCount;
-    for (let mapIndex = 0; mapIndex < runtime.mapCount; mapIndex++) {
-      pos.push({
-        q: runtime.unitDrugX[base + mapIndex] ?? 0,
-        r: runtime.unitDrugY[base + mapIndex] ?? 0,
-      });
-    }
     units.push({
       id: runtime.unitIds[i] ?? 0,
       pos: { q: runtime.unitX[i] ?? 0, r: runtime.unitY[i] ?? 0 },
-      drug: { pos, failed: runtime.unitFailed[i] !== 0 },
+      drug: readDrug(columns, runtime.mapCount, i),
       proc: runtime.unitProc[i] ?? 0,
       machineId: (runtime.unitMachineIds[i] ?? -1) < 0 ? null : (runtime.unitMachineIds[i] ?? -1),
       productionCost: runtime.unitProductionCosts[i] ?? 0,
@@ -1491,7 +1613,7 @@ export const restoreFactory: RestoreFactoryFn = (layout, mm, start, snapshot) =>
     runtime.unitY[i] = unit.pos.r;
     runtime.unitProc[i] = unit.proc;
     runtime.unitProductionCosts[i] = unit.productionCost;
-    runtime.unitFailed[i] = unit.drug.failed ? 1 : 0;
+    writeDrug(mm, unit.drug, unitColumns(runtime), runtime.mapCount, i, "unit");
     const machineSlot =
       unit.machineId === null ? -1 : (data.compiled.machineSlotById.get(unit.machineId) ?? -2);
     if (machineSlot === -2) {
@@ -1499,25 +1621,6 @@ export const restoreFactory: RestoreFactoryFn = (layout, mm, start, snapshot) =>
     }
     data.unitMachineSlots[i] = machineSlot;
     runtime.unitMachineIds[i] = unit.machineId ?? -1;
-    const base = i * runtime.mapCount;
-    for (let mapIndex = 0; mapIndex < runtime.mapCount; mapIndex++) {
-      const pos = unit.drug.pos[mapIndex];
-      const map = mm.maps[mapIndex];
-      if (
-        pos === undefined ||
-        map === undefined ||
-        !Number.isSafeInteger(pos.q) ||
-        !Number.isSafeInteger(pos.r) ||
-        pos.q < 0 ||
-        pos.r < 0 ||
-        pos.q >= map.width ||
-        pos.r >= map.height
-      ) {
-        throw new Error("factory restore: invalid unit map position");
-      }
-      runtime.unitDrugX[base + mapIndex] = pos.q;
-      runtime.unitDrugY[base + mapIndex] = pos.r;
-    }
   }
 
   runtime.producedEvents.count = snapshot.producedEvents.length;
@@ -1537,26 +1640,7 @@ export const restoreFactory: RestoreFactoryFn = (layout, mm, start, snapshot) =>
     }
     runtime.producedEvents.ids[i] = product.id;
     runtime.producedEvents.productionCosts[i] = product.productionCost;
-    runtime.producedEvents.failed[i] = product.drug.failed ? 1 : 0;
-    const base = i * runtime.mapCount;
-    for (let mapIndex = 0; mapIndex < runtime.mapCount; mapIndex++) {
-      const pos = product.drug.pos[mapIndex];
-      const map = mm.maps[mapIndex];
-      if (
-        pos === undefined ||
-        map === undefined ||
-        !Number.isSafeInteger(pos.q) ||
-        !Number.isSafeInteger(pos.r) ||
-        pos.q < 0 ||
-        pos.r < 0 ||
-        pos.q >= map.width ||
-        pos.r >= map.height
-      ) {
-        throw new Error("factory restore: invalid product map position");
-      }
-      runtime.producedEvents.drugX[base + mapIndex] = pos.q;
-      runtime.producedEvents.drugY[base + mapIndex] = pos.r;
-    }
+    writeDrug(mm, product.drug, eventColumns(runtime), runtime.mapCount, i, "product");
   }
   assertRuntime(runtime, data, true);
   return publicRuntime;

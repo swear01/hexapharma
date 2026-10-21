@@ -17,7 +17,10 @@ function hashDrug(h: number, d: DrugState): number {
     const pos = d.pos[i];
     next = hashU32(next, pos?.q ?? 0);
     next = hashU32(next, pos?.r ?? 0);
+    next = hashU32(next, d.offset[i]?.q ?? 0);
+    next = hashU32(next, d.offset[i]?.r ?? 0);
   }
+  next = hashU32(next, d.heading);
   return hashU32(next, d.failed ? 1 : 0);
 }
 
@@ -38,7 +41,10 @@ function hashRuntime(s: FactoryRuntime): number {
     for (let mapIndex = 0; mapIndex < s.mapCount; mapIndex++) {
       h = hashU32(h, s.unitDrugX[base + mapIndex] ?? 0);
       h = hashU32(h, s.unitDrugY[base + mapIndex] ?? 0);
+      h = hashU32(h, s.unitDrugOffsetQ[base + mapIndex] ?? 0);
+      h = hashU32(h, s.unitDrugOffsetR[base + mapIndex] ?? 0);
     }
+    h = hashU32(h, s.unitHeading[unitIndex] ?? 0);
     h = hashU32(h, s.unitFailed[unitIndex] === 0 ? 0 : 1);
   }
 
@@ -51,7 +57,10 @@ function hashRuntime(s: FactoryRuntime): number {
     for (let mapIndex = 0; mapIndex < s.mapCount; mapIndex++) {
       h = hashU32(h, s.producedEvents.drugX[base + mapIndex] ?? 0);
       h = hashU32(h, s.producedEvents.drugY[base + mapIndex] ?? 0);
+      h = hashU32(h, s.producedEvents.drugOffsetQ[base + mapIndex] ?? 0);
+      h = hashU32(h, s.producedEvents.drugOffsetR[base + mapIndex] ?? 0);
     }
+    h = hashU32(h, s.producedEvents.heading[eventIndex] ?? 0);
     h = hashU32(h, s.producedEvents.failed[eventIndex] === 0 ? 0 : 1);
   }
 

@@ -122,6 +122,7 @@ describe("factory directed transport topology", () => {
       def: {
         typeId: entry.typeId,
         path: entry.path,
+        turn: entry.turn,
         cost: entry.cost,
         speed: entry.speed,
       },

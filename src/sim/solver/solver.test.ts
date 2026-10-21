@@ -59,8 +59,8 @@ const swamp = (map: EffectMap, q: number, r: number): EffectMap =>
   setCell(map, q, r, CellKind.Swamp);
 const maps = (...value: EffectMap[]): MultiMap => ({ maps: value });
 
-function entry(typeId: string, path: readonly HexDir[], cost = 1): MachineCatalogEntry {
-  return { typeId, path, cost, speed: 1 };
+function entry(typeId: string, path: readonly HexDir[], cost = 1, turn = 0): MachineCatalogEntry {
+  return { typeId, path, turn, cost, speed: 1 };
 }
 
 const EAST = [entry("east", [E])];
@@ -134,8 +134,19 @@ describe("fixed-path solver", () => {
     expect(solve(bend, initialState(bend), options(catalog, 1, [2]))).toBeNull();
     const full = maps(cure(emptyMap(7, 7, { q: 2, r: 2 }), 4, 3, 4));
     expect(solve(full, initialState(full), options(catalog, 1, [4]))?.template.steps[0])
-      .toEqual({ typeId: "hook", path: [E, S, E] });
+      .toEqual({ typeId: "hook", path: [E, S, E], turn: 0 });
     expect(solve(north, initialState(north), options(catalog, 3, [3]))).toBeNull();
+  });
+
+  it("searches heading as part of the state, so an in-place turn is a real move", () => {
+    // "spin" returns to the same cell but turns the heading; position-only search would prune it.
+    const catalog = [entry("spin", [E, W], 1, 1), entry("go", [E], 1, 0)];
+    const mm = maps(cure(emptyMap(7, 7, { q: 2, r: 2 }), 2, 3, 9));
+    const start = initialState(mm);
+    const solution = solve(mm, start, options(catalog, 2, [9]));
+
+    expect(solution?.template.steps.map((step) => step.typeId)).toEqual(["spin", "go"]);
+    expectCures(mm, start, solution!, [9]);
   });
 
   it("rewards machine diversity and scores a shaped path deterministically", () => {

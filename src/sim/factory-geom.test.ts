@@ -28,7 +28,7 @@ describe("true-hex factory geometry", () => {
   it("rotates footprint cells and port sides by the same 60-degree steps", () => {
     const machine: PlacedMachine = {
       id: 1,
-      def: { typeId: "test", path: [0], cost: 1, speed: 1 },
+      def: { typeId: "test", path: [0], turn: 0, cost: 1, speed: 1 },
       anchor: { q: 4, r: 4 },
       footRot: 2 as Rotation,
       shape: {

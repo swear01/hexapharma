@@ -38,6 +38,7 @@ function step(typeId: string): Machine {
   return {
     typeId: entry.typeId,
     path: entry.path,
+    turn: entry.turn,
   };
 }
 

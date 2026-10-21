@@ -35,7 +35,9 @@ describe("balance tool failure boundaries", () => {
   it("includes the representative four-disease progression ledger", () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
     try {
-      expect(runBalance(1)).toBe(0);
+      // Exit 1 only because the seed-0 reserve regression is flagged (see progression-ledger.test.ts).
+      expect(runBalance(1)).toBe(1);
+      expect(log).toHaveBeenCalledWith(expect.stringMatching(/seed=0 completed=true min-cash=44 /));
       expect(log).toHaveBeenCalledWith(expect.stringMatching(/four-disease legal progression/));
       for (const seed of [14, 15, 1, 42, 100]) {
         expect(log).toHaveBeenCalledWith(expect.stringMatching(`seed=${seed} completed=true`));

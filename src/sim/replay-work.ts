@@ -178,14 +178,8 @@ export function estimateGameReplayWork(
   for (const intent of intents) {
     let intentWork = 0;
     switch (intent.kind) {
-      case "beginResearchShot":
-        intentWork = 1;
-        break;
-      case "advanceResearchShot":
-        intentWork = mapTraversalWork(mapCells, 1);
-        break;
-      case "abortResearchShot":
-        intentWork = 1;
+      case "runResearchTrial":
+        intentWork = mapTraversalWork(mapCells, intent.program.steps.length);
         break;
       case "setPilotLayout":
         pilot = layoutProfile(intent.layout);

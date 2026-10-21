@@ -23,7 +23,7 @@ import {
   hexDistance,
   rotateHexCoord,
 } from "../hex";
-import { evaluate, walkValidatedPathInto } from "../drug-graph";
+import { evaluate, PATH_OUT_STRIDE, turnHeading, walkValidatedPathInto } from "../drug-graph";
 import { compileEntitledPrototype } from "../recipe";
 import {
   MAX_CONSTRUCTIVE_CANDIDATES,
@@ -237,16 +237,16 @@ function generatedReferenceCures(
 ): boolean {
   const map = level.mm.maps[0]!;
   const start = level.start.pos[0]!;
-  const output = new Int32Array(3);
-  let q = start.q;
-  let r = start.r;
+  const output = new Int32Array(PATH_OUT_STRIDE);
+  output[0] = start.q;
+  output[1] = start.r;
+  let heading: number = level.start.heading;
   for (const machine of reference.steps) {
-    walkValidatedPathInto(map, q, r, machine, output, 0);
-    if (output[2] === 1) return false;
-    q = output[0]!;
-    r = output[1]!;
+    walkValidatedPathInto(map, output[0]!, output[1]!, output[2]!, output[3]!, heading, machine, output, 0);
+    if (output[4] === 1) return false;
+    heading = turnHeading(heading, machine.turn);
   }
-  const index = r * map.width + q;
+  const index = output[1]! * map.width + output[0]!;
   return map.cell[index] === CellKind.Cure && map.cureId[index]! >= 0;
 }
 
@@ -310,6 +310,7 @@ describe("mapgen option validation", () => {
     const catalog = Array.from({ length: MAX_GENERATION_CATALOG_ENTRIES + 1 }, (_, index) => ({
       typeId: `m${index}`,
       path: [0 as const],
+      turn: 0,
       cost: 1,
       speed: 1,
     }));
@@ -320,10 +321,13 @@ describe("mapgen option validation", () => {
     const first = DEFAULT_CATALOG[0]!;
     expect(() => generate(options(1, { catalog: [first, first] }))).toThrow(/duplicate typeId/i);
     expect(() => generate(options(1, {
-      catalog: [{ typeId: "bad", path: [6] as never, cost: 1, speed: 1 }],
+      catalog: [{ typeId: "bad", path: [6] as never, turn: 0, cost: 1, speed: 1 }],
     }))).toThrow(/hex direction/i);
     expect(() => generate(options(1, {
-      catalog: [{ typeId: "empty", path: [], cost: 1, speed: 1 }],
+      catalog: [{ typeId: "bad-turn", path: [0], turn: 6, cost: 1, speed: 1 }],
+    }))).toThrow(/turn/i);
+    expect(() => generate(options(1, {
+      catalog: [{ typeId: "empty", path: [], turn: 0, cost: 1, speed: 1 }],
     }))).toThrow(/path length/i);
   });
 });

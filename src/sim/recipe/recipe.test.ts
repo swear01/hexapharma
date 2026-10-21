@@ -44,7 +44,7 @@ function emptyMap(size: number, start: Vec2): EffectMap {
 function machine(typeId: string): Machine {
   const entry = DEFAULT_CATALOG.find((candidate) => candidate.typeId === typeId);
   if (entry === undefined) throw new Error(`missing test machine ${typeId}`);
-  return { typeId, path: entry.path };
+  return { typeId, path: entry.path, turn: entry.turn };
 }
 
 const template = (...steps: Machine[]): Template => ({ steps });
@@ -60,7 +60,7 @@ function firstProduct(layout: FactoryLayout, mm: MultiMap, ticks: number) {
 }
 
 function defOf(step: Machine): FactoryMachineDef {
-  return { typeId: step.typeId, path: step.path, cost: 0, speed: 1 };
+  return { typeId: step.typeId, path: step.path, turn: step.turn, cost: 0, speed: 1 };
 }
 
 function spacedLine(value: Template, gap: number): FactoryLayout {
@@ -156,13 +156,15 @@ describe("compileTemplate and factoryOutcome", () => {
 
   it("owns a caller's mutable path without freezing it", () => {
     const catalog = structuredClone(DEFAULT_CATALOG.find((entry) => entry.typeId === "push")!);
-    const step: Machine = { typeId: catalog.typeId, path: catalog.path };
+    const step: Machine = { typeId: catalog.typeId, path: catalog.path, turn: catalog.turn };
     const layout = compileTemplate(template(step));
     (catalog.path as number[])[0] = 3;
 
     expect(layout.machines[0]?.def.path[0]).toBe(E);
     expect(() => initFactory(layout, multimaps(emptyMap(31, { q: 15, r: 15 })), {
       pos: [{ q: 15, r: 15 }],
+      offset: [{ q: 0, r: 0 }],
+      heading: 0,
       failed: false,
     })).not.toThrow();
     expect(() => ((catalog.path as number[])[0] = E)).not.toThrow();
@@ -176,7 +178,7 @@ describe("compileTemplate and factoryOutcome", () => {
       tiles: [{ kind: "source", dir: E, period: 1 }, { kind: "empty" }, { kind: "sink" }],
       machines: [{
         id: 0,
-        def: { typeId: "slow", path: [E], cost: 1, speed: MAX_FACTORY_REPLAY_TICKS },
+        def: { typeId: "slow", path: [E], turn: 0, cost: 1, speed: MAX_FACTORY_REPLAY_TICKS },
         anchor: { q: 1, r: 0 },
         footRot: 0,
         shape: SHAPE_1x1,
@@ -233,12 +235,15 @@ describe("compileTemplate and factoryOutcome", () => {
   });
 
   it("rejects unknown machine types", () => {
-    expect(() => compileTemplate(template({ typeId: "missing", path: [E] })))
+    expect(() => compileTemplate(template({ typeId: "missing", path: [E], turn: 0 })))
       .toThrow(/unknown machine/i);
     expect(() => compileTemplate(template({
       typeId: "push",
       path: [3, 3, 4],
+      turn: 1,
     }))).toThrow(/path does not match/i);
+    expect(() => compileTemplate(template({ ...machine("push"), turn: 0 })))
+      .toThrow(/path does not match/i);
   });
 });
 
@@ -263,6 +268,7 @@ describe("factory rearrange invariance", () => {
             return {
               typeId: catalog.typeId,
               path: catalog.path,
+              turn: catalog.turn,
             };
           }),
         };

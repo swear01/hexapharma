@@ -32,7 +32,7 @@ beforeAll(() => {
 function fixture() {
   const entry = DEFAULT_CATALOG[0]!;
   const program: Template = {
-    steps: [{ typeId: entry.typeId, path: entry.path }],
+    steps: [{ typeId: entry.typeId, path: entry.path, turn: entry.turn }],
   };
   return blueprintFromProgram("Reusable Research program", program);
 }

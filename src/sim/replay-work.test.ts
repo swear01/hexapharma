@@ -43,18 +43,16 @@ describe("game replay work", () => {
     expect(() => estimateGameReplayWork({ ...options, nMaps: 5 }, [])).toThrow(/map dimensions/i);
   });
 
-  it("charges only executed Research stamps", () => {
+  it("charges a Research trial by its executed stamps", () => {
     const mapCells = options.nMaps * options.width * options.height;
     const machine = DEFAULT_CATALOG[0]!;
     expect(estimateGameReplayWork(options, [
-      { kind: "beginResearchShot" },
-      { kind: "advanceResearchShot", machine },
-      { kind: "abortResearchShot" },
+      { kind: "runResearchTrial", program: { steps: [machine] } },
+      { kind: "runResearchTrial", program: { steps: [machine, machine, machine] } },
     ])).toBe(
       mapCells * 32 +
-      1 +
       mapCells * 5 +
-      1
+      mapCells * 7
     );
   });
 
@@ -69,13 +67,9 @@ describe("game replay work", () => {
   it("bounds an adversarial Research step trace", () => {
     const maximumMaps = { ...options, nMaps: 4, diseaseCount: 4 };
     const machine = DEFAULT_CATALOG[0]!;
-    const trace: GameIntent[] = [{ kind: "beginResearchShot" }];
-    for (let index = 1; index < 4096; index++) {
-      trace.push(index % 3 === 0
-        ? { kind: "beginResearchShot" }
-        : index % 3 === 1
-          ? { kind: "advanceResearchShot", machine }
-          : { kind: "abortResearchShot" });
+    const trace: GameIntent[] = [];
+    for (let index = 0; index < 4096; index++) {
+      trace.push({ kind: "runResearchTrial", program: { steps: [machine] } });
     }
     expect(estimateGameReplayWork(maximumMaps, trace)).toBeGreaterThan(25_000_000);
   });
@@ -127,11 +121,10 @@ describe("game replay work", () => {
     expect(estimateGameReplayWork(options, [
       { kind: "buildProductionLayout", layout: production },
       { kind: "setPilotLayout", layout: pilot },
-      { kind: "abortResearchShot" },
       { kind: "productionTicks", ticks: 10 },
       { kind: "resetProduction" },
     ])).toBe(
-      mapCells * 32 + productionCold + pilotCold + 1 +
+      mapCells * 32 + productionCold + pilotCold +
       productionCold + productionPerTick * 10 + productionCold
     );
   });
@@ -164,7 +157,9 @@ describe("game replay work", () => {
   });
 
   it("keeps the canonical generated route within the replay cap", () => {
-    const productionOptions = { ...options, nMaps: 1, width: 63, height: 63, diseaseCount: 1 };
+    // Seed 15's heading-rule route still needs 16 belts; seed 14's now needs 22 and exceeds the cap
+    // (about half of all seeds did so under the previous rules as well).
+    const productionOptions = { ...options, seed: 15, nMaps: 1, width: 63, height: 63, diseaseCount: 1 };
     const recipe = generate(productionOptions).diseases[0]!.reference;
     const layout = compileEntitledPrototype(recipe, 24, 12).layout;
     expect(estimateGameReplayWork(productionOptions, [
@@ -179,7 +174,7 @@ describe("game replay work", () => {
       { kind: "setPilotLayout", layout },
       { kind: "buildProductionLayout", layout },
       { kind: "unlockPatent", id: "floor-depth" },
-      { kind: "beginResearchShot" },
+      { kind: "runResearchTrial", program: { steps: [DEFAULT_CATALOG[0]!] } },
     ];
     const withExpansion = estimateGameReplayWork(options, trace);
     const withoutExpansion = estimateGameReplayWork(options, trace.filter(

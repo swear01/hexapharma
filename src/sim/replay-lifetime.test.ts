@@ -34,14 +34,17 @@ it("seed 14 continues through lifetime tick 100001 without requiring Reset", () 
 });
 
 it("continues Research after exhausting the lifetime intent-entry budget", () => {
+  const machine = DEFAULT_CATALOG[0]!;
   let game = createGameState(options, 1000, 0);
-  for (let cycle = 0; cycle <= 4096 / 2; cycle++) {
-    game = applyGameIntent(game, { kind: "beginResearchShot" });
-    game = applyGameIntent(game, { kind: "abortResearchShot" });
+  for (let cycle = 0; cycle <= 4096; cycle++) {
+    game = applyGameIntent(game, { kind: "resetProduction" });
+  }
+  for (let cycle = 0; cycle < 8; cycle++) {
+    game = applyGameIntent(game, { kind: "runResearchTrial", program: { steps: [machine] } });
   }
   expect(game.production.runtime.tick).toBe(0);
-  expect(game.research.shot).toBeNull();
-  expect(game.economy.cash).toBe(1000);
+  expect(game.research.lastTrial?.program.steps).toHaveLength(1);
+  expect(game.economy.cash).toBe(1000 - 8 * machine.cost);
   expect(game).not.toHaveProperty("intentTrace");
   expect(hashGame(deserializeGame(serializeGame(game)))).toBe(hashGame(game));
 });
@@ -77,7 +80,7 @@ it("preserves Research, paid builds, sales, patents and in-flight state through 
     expect(hashGame(resumed)).toBe(hashGame(uninterrupted));
   };
   const recipe = generate(options).diseases[0]!.reference;
-  for (const machine of recipe.steps) apply({ kind: "advanceResearchShot", machine });
+  apply({ kind: "runResearchTrial", program: recipe });
   const layout = compileEntitledPrototype(recipe, 24, 12).layout;
   apply({ kind: "setPilotLayout", layout });
   apply({ kind: "buildProductionLayout", layout });
@@ -86,8 +89,7 @@ it("preserves Research, paid builds, sales, patents and in-flight state through 
     expect(resumed.production.runtime.unitCount).toBeGreaterThan(0);
     const first = resumed.inventory[0]!;
     apply({ kind: "sellProduct", productId: first.inventoryId, disease: first.outcome.cured[0]! });
-    apply({ kind: "advanceResearchShot", machine: recipe.steps[0]! });
-    apply({ kind: "abortResearchShot" });
+    apply({ kind: "runResearchTrial", program: { steps: [recipe.steps[0]!] } });
   }
   apply({ kind: "unlockPatent", id: "reveal-aid" });
   apply({ kind: "unlockPatent", id: "bench-2" });

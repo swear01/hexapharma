@@ -40,6 +40,7 @@ describe("true-hex solver", () => {
     const catalog: readonly MachineCatalogEntry[] = [{
       typeId: "north-east",
       path: [NE] as PathStamp,
+      turn: 0,
       cost: 3,
       speed: 1,
     }];

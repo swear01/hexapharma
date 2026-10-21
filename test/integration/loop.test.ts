@@ -127,12 +127,9 @@ describe("integration: Atlas → program → factory plus economy, patent, and s
       BASE_GAME_FACTORY_WIDTH,
       BASE_GAME_FACTORY_HEIGHT,
     ).layout;
-    g = applyGameIntent(g, { kind: "beginResearchShot" });
-    for (const machine of template.steps) {
-      g = applyGameIntent(g, { kind: "advanceResearchShot", machine });
-    }
+    g = applyGameIntent(g, { kind: "runResearchTrial", program: template });
     g = applyGameIntent(g, { kind: "setPilotLayout", layout });
-    expect(g.research.lastOutcome).not.toBeNull();
+    expect(g.research.lastTrial?.outcome.cured).toContain(0);
     expect(g.production.layout.machines).toEqual([]);
     expect(g.production.layout.tiles.every((tile) => tile.kind === "empty")).toBe(true);
     g = applyGameIntent(g, { kind: "buildProductionLayout", layout });
