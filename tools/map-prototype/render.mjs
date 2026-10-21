@@ -15,6 +15,7 @@ const eff = list.filter((c) => c.effect);
 console.log(JSON.stringify({ cells: list.length, mountain: list.filter(c=>c.kind==="mountain").length, water: list.filter(c=>c.kind==="water").length, black: list.filter(c=>c.kind==="black").length, effectCells: eff.length, tier2: eff.filter(c=>c.effect.tier===2).length, unreachable: unreachable.length, regionsReach: regions.map(rg => `D${rg.d}:${rg.cells.filter(c=>seen.has(c.key)).length}/${rg.cells.length}${rg.stars?"★"+rg.stars:""}`) }));
 const data = { list: list.map(({q,r,kind,effect,pass}) => ({q,r,kind,effect,pass})), narrow: passes.flatMap(p => p.narrowCells), R, unreachable: unreachable.map(c=>[c.q,c.r]) };
 const b = await chromium.launch();
+try {
 for (const mode of ["full", "fog"]) {
   const p = await b.newPage({ viewport: { width: 1100, height: 1000 } });
   await p.setContent(`<body style="margin:0;background:#f6f3ec"><canvas id=c width=1100 height=1000></canvas></body>`);
@@ -29,7 +30,7 @@ for (const mode of ["full", "fog"]) {
     for (const c of data.list) {
       const { x, y } = toPx(c.q, c.r); const show = revealed(c.q, c.r);
       let fill = fog ? "#ece7db" : "#fffdf8";
-      if (show || c.kind === "black" && false) {
+      if (show) {
         if (c.kind === "mountain") fill = "#cdb79a"; else if (c.kind === "water") fill = "#cfe3f1"; else if (c.kind === "black") fill = "#1e1f1c";
         if (c.effect) fill = DCOL[c.effect.d];
       }
@@ -72,7 +73,9 @@ for (const mode of ["full", "fog"]) {
   }, { data: { ...data, elevSrc: `${elevSrcBody()}` }, mode });
   await p.screenshot({ path: `${OUT_DIR}/${mode}.png` });
 }
-await b.close();
+} finally {
+  await b.close();
+}
 function elevSrcBody() {
   // Ship map.mjs's relief code (from the DQ table up to MOUNTAIN) to the page so contours sample the same field.
   const src = readFileSync(new URL("./map.mjs", import.meta.url), "utf8");

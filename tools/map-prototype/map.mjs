@@ -18,6 +18,7 @@ function dijkstra(from, to, k) {
     for (let n = 0; n < 6; n++) { const nq = q + DQ[n], nr = r + DR[n]; if (!inMap(nq, nr)) continue;
       const nd = d + 1 + 5 * hash(nq, nr, k); if (nd < (dist.get(key(nq, nr)) ?? 1e9)) { dist.set(key(nq, nr), nd); prev.set(key(nq, nr), [q, r]); open.push([nd, [nq, nr]]); } }
   }
+  if (!dist.has(key(...to))) throw new Error(`map prototype: no route from ${from} to ${to}`);
   const path = [to]; let cur = to; while (cur[0] !== from[0] || cur[1] !== from[1]) { cur = prev.get(key(...cur)); path.push(cur); } return path.reverse();
 }
 const route = (pts, k) => pts.slice(1).reduce((acc, p, i) => [...acc, ...dijkstra(pts[i], p, k + i).slice(1)], [pts[0]]);
@@ -82,7 +83,9 @@ export function cells() {
   const out = new Map();
   for (let q = -R; q <= R; q++) for (let r = Math.max(-R, -q - R); r <= Math.min(R, -q + R); r++) {
     const { x, y } = px(q, r); const e = elevation(x, y, false); const key = `${q},${r}`;
-    let kind = e > MOUNTAIN ? "mountain" : e < WATER ? "water" : "plain";
+    let kind = "plain";
+    if (e > MOUNTAIN) kind = "mountain";
+    else if (e < WATER) kind = "water";
     if (passCells.has(key)) kind = "plain";
     out.set(key, { q, r, e: elevation(x, y), kind, key, pass: passCells.has(key) });
   }
