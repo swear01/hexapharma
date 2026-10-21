@@ -2,6 +2,7 @@
 node_modules/
 
 # build output
+map-prototype-out/
 dist/
 build/
 .vite/

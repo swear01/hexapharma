@@ -51,6 +51,10 @@
 - 自動 gate只證明 correctness；53346 必須另做人類 fresh-save loop，記錄理解、嘗試、資金、first-sale time與主觀樂趣。
 - 完成標準與執行次序見 [plan.md](plan.md)。
 
+## Next — v2
+
+Research 改為規劃後一次試驗、只開圖；朝向與轉向角；沼澤半格；黑格；★ 二級療效；地圖生成器重寫（骨架＋隘口＋壓縮等高線）；科技樹；每種基底一張地圖；介面清理。順序與驗收見 [plan.md](plan.md)。
+
 ## Later
 
 - 依真人資料調 radial/motif density、terrain比例、Research cost、建造價格、machine throughput、linear price係數與unlock pacing；不得破壞fresh-loop可達性或有限demand。
