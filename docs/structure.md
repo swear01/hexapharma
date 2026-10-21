@@ -6,6 +6,7 @@
 |---|---|
 | `AGENTS.md` | 專案硬規則、唯一 gate、真人 port、文件 lifecycle。 |
 | `.github/workflows/check.yml` | push/PR 到 `main` 時執行 `npm run check`（tsc、eslint、vitest、e2e）。 |
+| `.github/workflows/pages.yml` | main 上 `check` 成功後，以相對 base build 並部署 GitHub Pages（custom domain `hexapharma.5334601.xyz`）。 |
 | `vitest.config.ts`、`test/vitest.setup.ts` | Node test runner 與最小 browser-global setup，讓 Pixi renderer 純函式在 CI Node 20 可載入。 |
 | `docs/` | canonical design、invariants、player guide、plan 與 playtest。 |
 | `src/json-guards.ts` | 共用 JSON object guard；Save v11 與 checkpoint slot envelope 共用。 |
