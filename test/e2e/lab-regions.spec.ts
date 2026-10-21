@@ -183,7 +183,7 @@ async function syntheticRendererScreenshot(
     const mm = { maps: [map] };
     const renderer = await createLabRenderer(mm);
     document.querySelector("#lab-renderer-smoke")!.append(renderer.canvas);
-    renderer.render(mm, { pos: [{ q: 0, r: 0 }], failed: false }, {
+    renderer.render(mm, { pos: [{ q: 0, r: 0 }], offset: [{ q: 0, r: 0 }], heading: 0, failed: false }, {
       activeMap: 0,
       camera,
       trail: [],
