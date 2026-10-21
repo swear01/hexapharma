@@ -25,13 +25,14 @@ describe("single Research Atlas authority", () => {
     }
 
     const machine = DEFAULT_CATALOG[0]!;
-    const session = applyGameIntent(createGameState(singleAtlasOptions, 200, 0), {
-      kind: "beginResearchShot",
+    const game = applyGameIntent(createGameState(singleAtlasOptions, 200, 0), {
+      kind: "runResearchTrial",
+      program: { steps: [machine] },
     });
-    const game = applyGameIntent(session, { kind: "advanceResearchShot", machine });
-    expect(game.research.program.steps[0]).toEqual({
+    expect(game.research.lastTrial?.program.steps[0]).toEqual({
       typeId: machine.typeId,
       path: machine.path,
+      turn: machine.turn,
     });
   });
 

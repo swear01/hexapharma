@@ -9,9 +9,7 @@ import {
   BASE_GAME_FACTORY_WIDTH,
   DEFAULT_CATALOG,
 } from "../../src/sim/phase0_interfaces";
-import { defaultGenOptions, researchPlanningTrails } from "../../src/ui/Game";
-import { focusLabCamera } from "../../src/render/labCamera";
-import type { HexCoord } from "../../src/sim/hex";
+import { defaultGenOptions } from "../../src/ui/Game";
 
 async function confirmLoad(page: import("@playwright/test").Page): Promise<void> {
   await openMenu(page);
@@ -52,38 +50,7 @@ function revealedOf(text: string | null): number {
   return Number(match[1]);
 }
 
-async function clickFirstCandidateEndpoint(page: import("@playwright/test").Page): Promise<void> {
-  const options = defaultGenOptions(14);
-  const level = generate(options);
-  const game = createGameState(options, 9_999, 9_999);
-  const trail = researchPlanningTrails(level.mm, game.fog, level.start, {
-    steps: [DEFAULT_CATALOG[0]!],
-  })[0] ?? [];
-  let endpoint: HexCoord | undefined;
-  for (let index = trail.length - 1; index >= 0; index--) {
-    const point = trail[index];
-    if (point !== null && point !== undefined) {
-      endpoint = point;
-      break;
-    }
-  }
-  if (endpoint === undefined) throw new Error("default Research machine has no preview endpoint");
-
-  const frame = page.getByTestId("lab-map-frame");
-  const canvas = page.getByTestId("lab-canvas");
-  const box = await canvas.boundingBox();
-  if (box === null) throw new Error("Research canvas has no bounds");
-  const cameraX = Number(await frame.getAttribute("data-camera-x"));
-  const cameraY = Number(await frame.getAttribute("data-camera-y"));
-  const zoom = Number(await frame.getAttribute("data-camera-zoom"));
-  const endpointCenter = focusLabCamera(endpoint);
-  await page.mouse.click(
-    box.x + box.width / 2 + (endpointCenter.x - cameraX) * zoom * box.width / 832,
-    box.y + box.height / 2 + (endpointCenter.y - cameraY) * zoom * box.height / 512,
-  );
-}
-
-test("reveal aid spends both resources and expands the next tested cartridge sensor", async ({ page }) => {
+test("reveal aid spends both resources and expands the next Research trial sensor", async ({ page }) => {
   await page.goto("/?cash=9999&research=9999");
   const revealed = page.getByTestId("revealed-count");
   const before = revealedOf(await revealed.textContent());
@@ -96,7 +63,8 @@ test("reveal aid spends both resources and expands the next tested cartridge sen
   await expect(page.getByTestId("research")).toHaveText("9998");
   await page.getByTestId("view-research").click();
   expect(revealedOf(await revealed.textContent())).toBe(before);
-  await clickFirstCandidateEndpoint(page);
+  await page.getByTestId(`research-machine-${DEFAULT_CATALOG[0]!.typeId}`).click();
+  await page.getByTestId("research-command").click();
   await expect.poll(async () => revealedOf(await revealed.textContent())).toBeGreaterThan(before);
 });
 
@@ -109,7 +77,7 @@ test("machine patents add the same fixed path to Research and Production Plan pa
   await expect(page.getByTestId("patent-unlock-skew-unlock")).toBeDisabled();
 
   await page.evaluate((checkpoint) => {
-    localStorage.setItem("hexapharma.save.v11.checkpoint.0", checkpoint);
+    localStorage.setItem("hexapharma.save.v12.checkpoint.0", checkpoint);
   }, productionCheckpoint(true));
   await page.reload();
   await confirmLoad(page);
@@ -146,7 +114,7 @@ test("factory expansion confirms before resetting built Production", async ({ pa
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
   await page.evaluate((checkpoint) => {
-    localStorage.setItem("hexapharma.save.v11.checkpoint.0", checkpoint);
+    localStorage.setItem("hexapharma.save.v12.checkpoint.0", checkpoint);
   }, productionCheckpoint());
   await page.reload();
   await confirmLoad(page);

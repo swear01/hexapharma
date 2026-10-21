@@ -48,7 +48,7 @@ function portal(
   return { ...map, cell, portalTo };
 }
 
-const machine = (path: PathStamp): Machine => ({ typeId: "hex-stamp", path });
+const machine = (path: PathStamp): Machine => ({ typeId: "hex-stamp", path, turn: 0 });
 const maps = (...value: EffectMap[]): MultiMap => ({ maps: value });
 
 describe("true-hex drug paths", () => {
@@ -74,7 +74,7 @@ describe("true-hex drug paths", () => {
 
     const result = previewStep(mm, initialState(mm), machine([dir]));
 
-    expect(result.next).toEqual({ pos: [expected], failed: false });
+    expect(result.next).toEqual({ pos: [expected], offset: [{ q: 0, r: 0 }], heading: 0, failed: false });
     expect(result.trails).toEqual([[expected]]);
   });
 
@@ -89,7 +89,7 @@ describe("true-hex drug paths", () => {
     const start = initialState(mm);
     const preview = previewStep(mm, start, stamp);
 
-    expect(preview.next).toEqual({ pos: [{ q: 4, r: 2 }], failed: false });
+    expect(preview.next).toEqual({ pos: [{ q: 4, r: 2 }], offset: [{ q: 0, r: 0 }], heading: 0, failed: false });
     expect(preview.trails).toEqual([[
       { q: 2, r: 2 },
       { q: 4, r: 1 },

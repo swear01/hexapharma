@@ -75,13 +75,15 @@ function defOf(step: Machine): FactoryMachineDef {
     step.path.some((dir, index) => {
       const expected = entry.path[index];
       return expected === undefined || dir !== expected;
-    })
+    }) ||
+    step.turn !== entry.turn
   ) {
     throw new Error(`compileTemplate: machine "${step.typeId}" path does not match the catalog`);
   }
   return {
     typeId: step.typeId,
     path: step.path.slice(),
+    turn: entry.turn,
     cost: entry.cost,
     speed: entry.speed,
   };
@@ -413,6 +415,7 @@ function machineStep(placed: PlacedMachine): Machine {
   return {
     typeId: placed.def.typeId,
     path: placed.def.path.slice(),
+    turn: placed.def.turn,
   };
 }
 

@@ -4,7 +4,6 @@ import type {
   FactoryTile,
   Dir,
   DiseaseId,
-  DiscoveredFormula,
   DrugState,
   GameIntent as GameIntentContract,
   GameState,
@@ -16,6 +15,7 @@ import type {
   MultiMap,
   Outcome,
   PatentState,
+  ResearchTrial,
   ShippingContractProgress,
   Template,
   HexCoord,
@@ -39,7 +39,7 @@ import {
   MAX_BULK_SALE_PRODUCTS,
   MAX_GAME_REPLAY_WORK,
 } from "./phase0_interfaces";
-import { applyTemplate, evaluate, previewStep } from "./drug-graph";
+import { evaluate, previewStep, validateDrugState as validateDrugGraphState } from "./drug-graph";
 import { sellUnit } from "./economy";
 import { MAX_GENERATION_CATALOG_ENTRIES, generate } from "./mapgen";
 import { DEFAULT_PATENTS, activeEffects, unlockPatent } from "./patent";
@@ -76,7 +76,15 @@ function ownMachine(machine: Machine): Machine {
   return Object.freeze({
     typeId: machine.typeId,
     path: ownPath(machine.path),
+    turn: canonicalNumber(machine.turn),
   });
+}
+
+function ownCoords(coords: readonly HexCoord[]): readonly HexCoord[] {
+  return Object.freeze(coords.map((pos) => Object.freeze({
+    q: canonicalNumber(pos.q),
+    r: canonicalNumber(pos.r),
+  })));
 }
 
 function ownTemplate(template: Template): Template {
@@ -88,10 +96,9 @@ function ownTemplate(template: Template): Template {
 
 function ownDrugState(drug: DrugState): DrugState {
   return Object.freeze({
-    pos: Object.freeze(drug.pos.map((pos) => Object.freeze({
-      q: canonicalNumber(pos.q),
-      r: canonicalNumber(pos.r),
-    }))),
+    pos: ownCoords(drug.pos),
+    offset: ownCoords(drug.offset),
+    heading: canonicalNumber(drug.heading) as DrugState["heading"],
     failed: drug.failed,
   });
 }
@@ -99,21 +106,17 @@ function ownDrugState(drug: DrugState): DrugState {
 function ownOutcome(outcome: Outcome): Outcome {
   return Object.freeze({
     failed: outcome.failed,
-    final: Object.freeze(outcome.final.map((pos) => Object.freeze({
-      q: canonicalNumber(pos.q),
-      r: canonicalNumber(pos.r),
-    }))),
+    final: ownCoords(outcome.final),
     cured: Object.freeze(outcome.cured.map(canonicalNumber)),
     sideEffects: Object.freeze(outcome.sideEffects.map(canonicalNumber)),
   });
 }
 
-function ownDiscoveredFormula(formula: DiscoveredFormula): DiscoveredFormula {
+function ownResearchTrial(trial: ResearchTrial): ResearchTrial {
   return Object.freeze({
-    disease: canonicalNumber(formula.disease),
-    program: ownTemplate(formula.program),
-    researchCost: canonicalNumber(formula.researchCost),
-    outcome: ownOutcome(formula.outcome),
+    program: ownTemplate(trial.program),
+    cost: canonicalNumber(trial.cost),
+    outcome: ownOutcome(trial.outcome),
   });
 }
 
@@ -134,6 +137,7 @@ function ownGenOptions(genOptions: GenOptions): GenOptions {
     catalog: Object.freeze(genOptions.catalog.map((entry) => Object.freeze({
       typeId: entry.typeId,
       path: ownPath(entry.path),
+      turn: canonicalNumber(entry.turn),
       cost: canonicalNumber(entry.cost),
       speed: canonicalNumber(entry.speed),
     }))),
@@ -294,12 +298,10 @@ function ownFactoryLayout(layout: FactoryLayout): FactoryLayout {
 
 function ownGameIntent(intent: GameIntent): GameIntent {
   switch (intent.kind) {
-    case "beginResearchShot":
-    case "abortResearchShot":
     case "resetProduction":
       return Object.freeze({ kind: intent.kind });
-    case "advanceResearchShot":
-      return Object.freeze({ kind: "advanceResearchShot", machine: ownMachine(intent.machine) });
+    case "runResearchTrial":
+      return Object.freeze({ kind: "runResearchTrial", program: ownTemplate(intent.program) });
     case "setPilotLayout":
       return Object.freeze({ kind: "setPilotLayout", layout: ownFactoryLayout(intent.layout) });
     case "buildProductionLayout":
@@ -379,14 +381,10 @@ export function requiredShippingContractForPatent(patentId: string): DiseaseId |
   return null;
 }
 
-export function currentDiscoveredFormula(game: GameState): DiscoveredFormula | null {
-  return game.research.discoveredFormulas[game.research.discoveredFormulas.length - 1] ?? null;
-}
-
 function requireAllowedMachine(game: Pick<GameState, "patents">, machine: Machine): MachineCatalogEntry {
   const entry = availableCatalog(game.patents).find((candidate) => candidate.typeId === machine.typeId);
   if (entry === undefined) throw new Error(`game intent: machine "${machine.typeId}" is locked`);
-  if (canonical(machine.path) !== canonical(entry.path)) {
+  if (canonical(machine.path) !== canonical(entry.path) || machine.turn !== entry.turn) {
     throw new Error(`game intent: machine "${machine.typeId}" path does not match catalog`);
   }
   return entry;
@@ -673,12 +671,7 @@ export function createGameState(genOptions: GenOptions, cash: number, research: 
     genOptions: ownedOptions,
     economy: { cash: ownedCash, research: ownedResearch, sold: [] },
     patents: { unlocked: [] },
-    research: Object.freeze({
-      program: Object.freeze({ steps: Object.freeze([]) }),
-      shot: null,
-      lastOutcome: null,
-      discoveredFormulas: Object.freeze([]),
-    }),
+    research: Object.freeze({ lastTrial: null }),
     pilot: Object.freeze({ layout: null }),
     production: Object.freeze({
       layout: productionLayout,
@@ -722,14 +715,24 @@ function drainProducts(
   if (events.count === 0) return;
   for (let eventIndex = 0; eventIndex < events.count; eventIndex++) {
     const pos: HexCoord[] = [];
+    const offset: HexCoord[] = [];
     const base = eventIndex * events.mapCount;
     for (let mapIndex = 0; mapIndex < events.mapCount; mapIndex++) {
       pos.push({
         q: events.drugX[base + mapIndex] ?? 0,
         r: events.drugY[base + mapIndex] ?? 0,
       });
+      offset.push({
+        q: events.drugOffsetQ[base + mapIndex] ?? 0,
+        r: events.drugOffsetR[base + mapIndex] ?? 0,
+      });
     }
-    const drug = { pos, failed: (events.failed[eventIndex] ?? 0) !== 0 };
+    const drug: DrugState = {
+      pos,
+      offset,
+      heading: (events.heading[eventIndex] ?? 0) as DrugState["heading"],
+      failed: (events.failed[eventIndex] ?? 0) !== 0,
+    };
     const outcome = evaluate(level.mm, drug, { steps: [] });
     if (outcome.failed || outcome.cured.length === 0) {
       if (current.factoryWaste === Number.MAX_SAFE_INTEGER) {
@@ -836,16 +839,35 @@ export function requireEntitledFacilityLayout(game: Pick<GameState, "patents">, 
   }
 }
 
-function researchShotCost(template: Template): number {
+/** Σ catalog cost of a Research program, charged once per trial. */
+export function researchTrialCost(template: Template): number {
   let cost = 0;
   for (const step of template.steps) {
     const entry = DEFAULT_CATALOG.find((candidate) => candidate.typeId === step.typeId);
     if (entry === undefined || cost > Number.MAX_SAFE_INTEGER - entry.cost) {
-      throw new Error("game intent: Research shot cost exceeds safe-integer range");
+      throw new Error("game intent: Research trial cost exceeds safe-integer range");
     }
     cost += entry.cost;
   }
   return cost;
+}
+
+/** Per-map cells entered by running `program` from the level start, in order. */
+function researchTrialTrails(mm: MultiMap, start: DrugState, program: Template): {
+  readonly trails: readonly (readonly HexCoord[])[];
+  readonly final: DrugState;
+} {
+  const trails: HexCoord[][] = mm.maps.map(() => []);
+  let drug = start;
+  for (const machine of program.steps) {
+    if (drug.failed) break;
+    const preview = previewStep(mm, drug, machine);
+    for (let mapIndex = 0; mapIndex < trails.length; mapIndex++) {
+      for (const cell of preview.trails[mapIndex] ?? []) trails[mapIndex]!.push(cell);
+    }
+    drug = preview.next;
+  }
+  return { trails, final: drug };
 }
 
 function requireMachineContract(game: GameState, patentId: string): void {
@@ -859,51 +881,20 @@ function requireMachineContract(game: GameState, patentId: string): void {
   }
 }
 
-function discoverFormulas(
-  existing: readonly DiscoveredFormula[],
-  program: Template,
-  researchCost: number,
-  outcome: Outcome,
-): readonly DiscoveredFormula[] {
-  if (outcome.cured.length === 0) return existing;
-  const next = existing.filter((formula) => !outcome.cured.includes(formula.disease));
-  for (const disease of outcome.cured) {
-    next.push(ownDiscoveredFormula({ disease, program, researchCost, outcome }));
-  }
-  return Object.freeze(next);
-}
-
 function reduceGameIntent(game: GameState, intent: GameIntent): GameState {
   switch (intent.kind) {
-    case "beginResearchShot": {
-      if (game.research.shot !== null) {
-        throw new Error("game intent: a Research shot is already running");
+    case "runResearchTrial": {
+      const program = intent.program;
+      if (program.steps.length < 1 || program.steps.length > MAX_TEMPLATE_STEPS) {
+        throw new Error(`game intent: Research trial requires 1..${MAX_TEMPLATE_STEPS} machines`);
+      }
+      requireAllowedTemplate(game, program);
+      const cost = researchTrialCost(program);
+      if (game.economy.cash < cost) {
+        throw new Error(`game intent: Research trial requires ${cost} cash`);
       }
       const level = levelFor(game.genOptions);
-      return {
-        ...game,
-        research: Object.freeze({
-          ...game.research,
-          program: Object.freeze({ steps: Object.freeze([]) }),
-          shot: Object.freeze({ step: 0, drug: ownDrugState(level.start), cost: 0 }),
-          lastOutcome: null,
-        }),
-      };
-    }
-    case "advanceResearchShot": {
-      const level = levelFor(game.genOptions);
-      const activeShot = game.research.shot;
-      const shot = activeShot ?? { step: 0, drug: ownDrugState(level.start), cost: 0 };
-      const completedSteps = activeShot === null ? [] : game.research.program.steps;
-      if (completedSteps.length >= MAX_TEMPLATE_STEPS) {
-        throw new Error(`game intent: Research session cannot exceed ${MAX_TEMPLATE_STEPS} steps`);
-      }
-      const entry = requireAllowedMachine(game, intent.machine);
-      if (game.economy.cash < entry.cost) {
-        throw new Error(`game intent: Research stamp requires ${entry.cost} cash`);
-      }
-      const preview = previewStep(level.mm, shot.drug, intent.machine);
-      const drug = ownDrugState(preview.next);
+      const run = researchTrialTrails(level.mm, level.start, program);
       const sensorRadius = RESEARCH_SENSOR_RADIUS + activeEffects(
         DEFAULT_PATENTS,
         game.patents,
@@ -911,59 +902,20 @@ function reduceGameIntent(game: GameState, intent: GameIntent): GameState {
       const fog = revealResearchTrails(
         game.fog,
         level.mm,
-        preview.trails,
-        drug.pos,
+        run.trails,
+        run.final.pos,
         sensorRadius,
       );
-      const step = shot.step + 1;
-      if (shot.cost > Number.MAX_SAFE_INTEGER - entry.cost) {
-        throw new Error("game intent: Research session cost exceeds safe-integer range");
-      }
-      const cost = shot.cost + entry.cost;
-      const program = ownTemplate({
-        steps: [...completedSteps, intent.machine],
-      });
-      const outcome = ownOutcome(evaluate(level.mm, drug, { steps: [] }));
-      if (drug.failed || outcome.cured.length > 0) {
-        return {
-          ...game,
-          economy: Object.freeze({ ...game.economy, cash: game.economy.cash - entry.cost }),
-          fog,
-          research: Object.freeze({
-            ...game.research,
-            program,
-            shot: null,
-            lastOutcome: outcome,
-            discoveredFormulas: discoverFormulas(
-              game.research.discoveredFormulas,
-              program,
-              cost,
-              outcome,
-            ),
-          }),
-        };
-      }
       return {
         ...game,
-        economy: Object.freeze({ ...game.economy, cash: game.economy.cash - entry.cost }),
+        economy: Object.freeze({ ...game.economy, cash: game.economy.cash - cost }),
         fog,
         research: Object.freeze({
-          ...game.research,
-          program,
-          shot: Object.freeze({ step, drug, cost }),
-          lastOutcome: outcome,
-        }),
-      };
-    }
-    case "abortResearchShot": {
-      if (game.research.shot === null) return game;
-      return {
-        ...game,
-        research: Object.freeze({
-          ...game.research,
-          program: Object.freeze({ steps: Object.freeze([]) }),
-          shot: null,
-          lastOutcome: null,
+          lastTrial: ownResearchTrial({
+            program,
+            cost,
+            outcome: evaluate(level.mm, level.start, program),
+          }),
         }),
       };
     }
@@ -1191,21 +1143,12 @@ function validateDrugState(
   level: GeneratedLevel,
   path: string,
 ): void {
-  if (typeof drug.failed !== "boolean" || drug.pos.length !== level.mm.maps.length) {
-    throw new Error(`${path} has an invalid map count or failed flag`);
-  }
-  for (let mapIndex = 0; mapIndex < drug.pos.length; mapIndex++) {
-    const pos = drug.pos[mapIndex];
-    const map = level.mm.maps[mapIndex];
-    if (
-      pos === undefined ||
-      map === undefined ||
-      !Number.isSafeInteger(pos.q) ||
-      !Number.isSafeInteger(pos.r) ||
-      !hexInBounds(map.width, map.height, pos.q, pos.r)
-    ) {
-      throw new Error(`${path}.pos[${mapIndex}] is outside its effect map`);
-    }
+  try {
+    validateDrugGraphState(level.mm, drug);
+  } catch (error) {
+    throw new Error(`${path} is invalid: ${error instanceof Error ? error.message : String(error)}`, {
+      cause: error,
+    });
   }
 }
 
@@ -1235,6 +1178,7 @@ function validateRuntime(
     runtime.unitMachineIds,
     runtime.unitProductionCosts,
     runtime.unitFailed,
+    runtime.unitHeading,
   ];
   if (
     !(runtime.unitIds instanceof Int32Array) ||
@@ -1244,8 +1188,11 @@ function validateRuntime(
     !(runtime.unitMachineIds instanceof Int32Array) ||
     !(runtime.unitProductionCosts instanceof Int32Array) ||
     !(runtime.unitFailed instanceof Uint8Array) ||
+    !(runtime.unitHeading instanceof Uint8Array) ||
     !(runtime.unitDrugX instanceof Int32Array) ||
     !(runtime.unitDrugY instanceof Int32Array) ||
+    !(runtime.unitDrugOffsetQ instanceof Int8Array) ||
+    !(runtime.unitDrugOffsetR instanceof Int8Array) ||
     !(runtime.splitterCursors instanceof Int32Array)
   ) {
     throw new Error("game state: factory runtime buffers must use canonical TypedArrays");
@@ -1255,7 +1202,9 @@ function validateRuntime(
   }
   if (
     runtime.unitDrugX.length !== capacity * runtime.mapCount ||
-    runtime.unitDrugY.length !== capacity * runtime.mapCount
+    runtime.unitDrugY.length !== capacity * runtime.mapCount ||
+    runtime.unitDrugOffsetQ.length !== capacity * runtime.mapCount ||
+    runtime.unitDrugOffsetR.length !== capacity * runtime.mapCount
   ) {
     throw new Error("game state: factory runtime drug buffers have invalid capacity");
   }
@@ -1276,8 +1225,11 @@ function validateRuntime(
     !(events.ids instanceof Int32Array) ||
     !(events.productionCosts instanceof Int32Array) ||
     !(events.failed instanceof Uint8Array) ||
+    !(events.heading instanceof Uint8Array) ||
     !(events.drugX instanceof Int32Array) ||
-    !(events.drugY instanceof Int32Array)
+    !(events.drugY instanceof Int32Array) ||
+    !(events.drugOffsetQ instanceof Int8Array) ||
+    !(events.drugOffsetR instanceof Int8Array)
   ) {
     throw new Error("game state: factory product events must use canonical TypedArrays");
   }
@@ -1287,8 +1239,11 @@ function validateRuntime(
     events.ids.length !== eventCapacity ||
     events.productionCosts.length !== eventCapacity ||
     events.failed.length !== eventCapacity ||
+    events.heading.length !== eventCapacity ||
     events.drugX.length !== eventCapacity * runtime.mapCount ||
-    events.drugY.length !== eventCapacity * runtime.mapCount
+    events.drugY.length !== eventCapacity * runtime.mapCount ||
+    events.drugOffsetQ.length !== eventCapacity * runtime.mapCount ||
+    events.drugOffsetR.length !== eventCapacity * runtime.mapCount
   ) {
     throw new Error("game state: factory product-event buffers have invalid capacity");
   }
@@ -1318,13 +1273,19 @@ function validateRuntime(
       runtime.unitProc[i] !== 0 ||
       runtime.unitMachineIds[i] !== -1 ||
       runtime.unitProductionCosts[i] !== 0 ||
-      runtime.unitFailed[i] !== 0
+      runtime.unitFailed[i] !== 0 ||
+      runtime.unitHeading[i] !== 0
     ) {
       throw new Error(`game state: factory unused unit slot ${i} is not canonical`);
     }
     const base = i * runtime.mapCount;
     for (let mapIndex = 0; mapIndex < runtime.mapCount; mapIndex++) {
-      if (runtime.unitDrugX[base + mapIndex] !== 0 || runtime.unitDrugY[base + mapIndex] !== 0) {
+      if (
+        runtime.unitDrugX[base + mapIndex] !== 0 ||
+        runtime.unitDrugY[base + mapIndex] !== 0 ||
+        runtime.unitDrugOffsetQ[base + mapIndex] !== 0 ||
+        runtime.unitDrugOffsetR[base + mapIndex] !== 0
+      ) {
         throw new Error(`game state: factory unused drug slot ${i} is not canonical`);
       }
     }
@@ -1333,13 +1294,19 @@ function validateRuntime(
     if (
       events.ids[i] !== 0 ||
       events.productionCosts[i] !== 0 ||
-      events.failed[i] !== 0
+      events.failed[i] !== 0 ||
+      events.heading[i] !== 0
     ) {
       throw new Error(`game state: drained product-event slot ${i} is not canonical`);
     }
     const base = i * runtime.mapCount;
     for (let mapIndex = 0; mapIndex < runtime.mapCount; mapIndex++) {
-      if (events.drugX[base + mapIndex] !== 0 || events.drugY[base + mapIndex] !== 0) {
+      if (
+        events.drugX[base + mapIndex] !== 0 ||
+        events.drugY[base + mapIndex] !== 0 ||
+        events.drugOffsetQ[base + mapIndex] !== 0 ||
+        events.drugOffsetR[base + mapIndex] !== 0
+      ) {
         throw new Error(`game state: drained product-event position ${i} is not canonical`);
       }
     }
@@ -1390,91 +1357,22 @@ export function validateGameState(game: GameState): GameState {
     }
     unlocked.add(id);
   }
-  requireAllowedTemplate(game, game.research.program);
-  if (
-    !Array.isArray(game.research.discoveredFormulas) ||
-    game.research.discoveredFormulas.length > level.diseases.length
-  ) {
-    throw new Error("game state: discovered formulas exceed generated diseases");
-  }
-  const formulaDiseases = new Set<number>();
-  for (let index = 0; index < game.research.discoveredFormulas.length; index++) {
-    const formula = game.research.discoveredFormulas[index];
-    if (formula === undefined) continue;
-    requireSafeInteger(formula.disease, `game state: discovered formula ${index} disease`, 0);
-    if (!diseaseIds.has(formula.disease) || formulaDiseases.has(formula.disease)) {
-      throw new Error(`game state: discovered formula ${index} disease is unknown or duplicated`);
-    }
-    formulaDiseases.add(formula.disease);
-    requireAllowedTemplate(game, formula.program);
-    if (formula.program.steps.length === 0) {
-      throw new Error(`game state: discovered formula ${index} requires a non-empty program`);
-    }
-    requireSafeInteger(formula.researchCost, `game state: discovered formula ${index} cost`, 1);
-    if (formula.researchCost !== researchShotCost(formula.program)) {
-      throw new Error(`game state: discovered formula ${index} cost does not match its program`);
-    }
-    const expected = evaluate(level.mm, level.start, formula.program);
+  const trial = game.research.lastTrial;
+  if (trial !== null) {
     if (
-      !expected.cured.includes(formula.disease) ||
-      canonical(expected) !== canonical(formula.outcome)
+      !Array.isArray(trial.program.steps) ||
+      trial.program.steps.length < 1 ||
+      trial.program.steps.length > MAX_TEMPLATE_STEPS
     ) {
-      throw new Error(`game state: discovered formula ${index} outcome does not match its program`);
+      throw new Error(`game state: Research trial requires 1..${MAX_TEMPLATE_STEPS} machines`);
     }
-  }
-  if (game.research.shot !== null) {
-    requireSafeInteger(game.research.shot.step, "game state: Research shot step", 0);
-    requireSafeInteger(game.research.shot.cost, "game state: Research shot cost", 0);
-    if (game.research.shot.step !== game.research.program.steps.length) {
-      throw new Error("game state: Research shot step must equal its executed program length");
+    requireAllowedTemplate(game, trial.program);
+    requireSafeInteger(trial.cost, "game state: Research trial cost", 0);
+    if (trial.cost !== researchTrialCost(trial.program)) {
+      throw new Error("game state: Research trial cost does not match its program");
     }
-    validateDrugState(game.research.shot.drug, level, "game state: Research shot drug");
-    const expectedDrug = applyTemplate(level.mm, level.start, game.research.program);
-    if (canonical(expectedDrug) !== canonical(game.research.shot.drug)) {
-      throw new Error("game state: Research shot drug does not match completed route steps");
-    }
-    if (researchShotCost(game.research.program) !== game.research.shot.cost) {
-      throw new Error("game state: Research shot cost does not match its program");
-    }
-    if (game.research.program.steps.length === 0) {
-      if (game.research.lastOutcome !== null) {
-        throw new Error("game state: empty Research session cannot have an outcome");
-      }
-    } else {
-      const expected = evaluate(level.mm, level.start, game.research.program);
-      if (expected.failed || expected.cured.length > 0) {
-        throw new Error("game state: terminal Research outcome cannot keep a session active");
-      }
-      if (
-        game.research.lastOutcome === null ||
-        canonical(expected) !== canonical(game.research.lastOutcome)
-      ) {
-        throw new Error("game state: active Research outcome does not match its executed program");
-      }
-    }
-  } else if (game.research.program.steps.length === 0) {
-    if (game.research.lastOutcome !== null) {
-      throw new Error("game state: empty Research state cannot have an outcome");
-    }
-  } else {
-    if (game.research.lastOutcome === null) {
-      throw new Error("game state: ended Research session requires its terminal outcome");
-    }
-    const expected = evaluate(level.mm, level.start, game.research.program);
-    if (canonical(expected) !== canonical(game.research.lastOutcome)) {
-      throw new Error("game state: Research outcome does not match its program");
-    }
-    if (!expected.failed && expected.cured.length === 0) {
-      throw new Error("game state: non-terminal Research outcome must keep its session active");
-    }
-    const expectedFormulas = discoverFormulas(
-      game.research.discoveredFormulas,
-      game.research.program,
-      researchShotCost(game.research.program),
-      expected,
-    );
-    if (canonical(expectedFormulas) !== canonical(game.research.discoveredFormulas)) {
-      throw new Error("game state: latest successful Research outcome requires its recorded formula suffix");
+    if (canonical(evaluate(level.mm, level.start, trial.program)) !== canonical(trial.outcome)) {
+      throw new Error("game state: Research trial outcome does not match its program");
     }
   }
 
@@ -1537,13 +1435,7 @@ export function validateGameState(game: GameState): GameState {
     economy: { ...game.economy, sold: game.economy.sold.map((sold) => ({ ...sold })) },
     patents: { unlocked: [...game.patents.unlocked] },
     research: Object.freeze({
-      program: ownTemplate(game.research.program),
-      shot: game.research.shot === null ? null : Object.freeze({
-        ...game.research.shot,
-        drug: ownDrugState(game.research.shot.drug),
-      }),
-      lastOutcome: game.research.lastOutcome === null ? null : ownOutcome(game.research.lastOutcome),
-      discoveredFormulas: Object.freeze(game.research.discoveredFormulas.map(ownDiscoveredFormula)),
+      lastTrial: trial === null ? null : ownResearchTrial(trial),
     }),
     pilot: Object.freeze({
       layout: game.pilot.layout === null ? null : ownFactoryLayout(game.pilot.layout),

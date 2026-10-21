@@ -2,15 +2,15 @@
 
 ## Current design gotchas
 
-- **Research 不是小工廠**：只有 Atlas + reveal–decide full PathStamps；不要加入 source／belt／sink、FactoryLayout、batch route editor 或 DOM timeline。
+- **Research 不是小工廠**：只有 Atlas + 規劃後一次付費試驗的 full PathStamps；不要加入 source／belt／sink、FactoryLayout、batch route editor 或 DOM timeline。
 - **完整 path 才是 puzzle piece**：機器的奇形 path cells 屬 catalog content。UI、Blueprint、Save、footRot 或 CSS transform 都不能截短或改寫它。
-- **candidate endpoint 才是下一步 target**：選機器只產生接在目前actual drug state的完整ghost；點中後立即付費／執行／揭露／evaluate並append已執行program。空白world click不能充當確認按鈕。
-- **program 不是待送出的route**：session program只記錄已實際執行的stamps，不能重排或刪步，也沒有aggregate Dispense。no-cure再決定下一台；Failure／Cure結束，Abort不退款、不回滾fog。
+- **規劃不是 authority**：規劃路線只存在 UI，預覽跑在 fog-masked planning map；只有 `runResearchTrial` 付費、在真實地圖跑完整條並揭露。點最後一個控制點只移除該步；空白world click不能充當確認按鈕。
+- **heading 與 Swamp 半格是 sim 規則**：path 相對 heading，turn 只在未失敗的 stamp 後套用；Swamp 用兩倍整數座標。preview、試驗、factory unit 與 solver 共用同一 traversal，不要在 UI 另寫近似。
 - **terrain 與 discovery 分層**：只有 Wall 在未揭露區仍可見並影響 preview；Abyss／Swamp／Portal／Cure／SideEffect 都在揭露前完全中性化。
 - **portal 是同層 A→B**：成對、有向、trail 斷段；B 不是回程入口。單獨揭露一端不公開配對、方向或 preview jump。
-- **Research 逐步探索**：選machine與hover不改fog；每個已付費stamp的actual segments立即揭露。assay只給broad sector，不提供座標或距離。
-- **Cure 自動成為formula**：每疾病最多一份`DiscoveredFormula`；重複發現以最新完整session覆寫。formula是可讀成果，不是自動建廠指令。
-- **Radius-two 起始視野**：fresh fog只揭露中心start周圍hex distance≤2的19-cell disk；每個stamp在單一intent中立即resolve，camera不虛構timed Dose phase。
+- **Research 只開圖**：規劃與hover不改fog；每次付費試驗只揭露實際走過的格。assay只給broad sector，不提供座標或距離。Research 不產生 formula。
+- **Radius-two 起始視野**：fresh fog只揭露中心start周圍hex distance≤2的19-cell disk（起點周圍的沼澤環常讓第一步停在半格）；每次試驗在單一intent中resolve，camera不虛構timed Dose phase。
+- **暫定 turn 有已知平衡退化**：pull 的 180° 讓兩個 pull 互相抵消，mapgen reference 因此偏向較貴機器；seed 0 的進度最低 cash 降到 $44（< $100），以明示的 known-regression 測試保留，等平衡步驟處理。
 - **mapgen terrain-first**：先由 seed 完成 radial bands／motifs／terrain，再在真實 traversal 上 constructive 地找 diverse references。禁止先造答案再保護一條 universal corridor。
 - **單圖多疾病**：預設 4 種、支援 1–8 種；default references 由 initial machines 到 `skew`／`dilute`／`settle` 分 tier。reference 只供 tests/tools，runtime 不提示答案。
 - **effect fields 可重疊**：constructed endpoint 是乾淨 Cure；區域其他 Cure cell 可同時有 SideEffect。renderer、Outcome 與 Market 不能用互斥 cell-kind 假設丟掉其中一種效果。
@@ -22,7 +22,7 @@
 - **建造差異就是經濟 authority**：tile/machine新建收費；拆除不退款。只有接受的edit停止播放並重建runtime；rejection原子不變，累積waste保留。
 - **Blueprint v4 factory kind 是通用的**：`factory-layout`不記錄來自Production Plan或Production；同文件可開到Plan或付費Commission到Production。codec仍讀現行`research-program`，但UI不capture/apply它；Library key是`hexapharma.blueprint-library.v4`。
 - **Blueprint ≠ save**：Library lifecycle 獨立；不含 fog、seed、economy、runtime 或結果。Load／Rewind 不能改 Library。
-- **Save v11 不兼容舊開發版**：full／compact／slots／rewind 保存完整 cold state，包括 stepwise Research／formulas、結算後 cash 與 non-null Production。plain JSON 可由玩家編輯，不驗資源來源；外層獨立 checkpoint/history 仍是 v2，內層 key 帶 Save v11。sim／mapgen 邏輯改變須明確 bump contentBuild 的 rules revision，詳見 [存檔規格](save.md)。
+- **Save v12 不兼容舊開發版**：full／compact／slots／rewind 保存完整 cold state，包括 Research `lastTrial`、drug heading／offset、結算後 cash 與 non-null Production。plain JSON 可由玩家編輯，不驗資源來源；外層獨立 checkpoint/history 仍是 v2，內層 key 帶 Save v12。sim／mapgen 邏輯改變須明確 bump contentBuild 的 rules revision，詳見 [存檔規格](save.md)。
 - **connected texture 不是鄰居 skin**：只畫 sim 真正形成的 accept→emit edge；錯向相鄰格必須看得出沒有連接。
 - **hidden mounted ≠ active**：已造訪建築可 mounted 保存 camera/tool/history；hidden page 不接 gameplay input。
 - **renderer failure 必須可見**：asset/init 失敗不能用空 canvas 或 debug fallback 冒充成功。
@@ -42,7 +42,7 @@
 - Production Plan 提供免費畫藍圖的便利，但不限制直接Production建造；Production的成本與runtime後果才是正式風險。
 - 多疾病獨立有限需求把 Research、工廠重建與市場輪替接成循環，避免一條產線永久印錢。
 - connected topology 讓 factory 一眼可讀，也讓拖曳轉彎、split／merge 與 machine ports 使用一致視覺語言。
-- `research-program`與`factory-layout`仍是兩個明確Blueprint payload，但只有FactoryLayout可由目前UI capture/apply；Research由stepwise session與auto formula承擔玩家流程。
+- `research-program`與`factory-layout`仍是兩個明確Blueprint payload，但只有FactoryLayout可由目前UI capture/apply；Research由本地規劃與付費試驗承擔玩家流程。
 
 - **Browser harness output**：Playwright Page／Browser 物件包含 SDK internals，可能連帶印出環境資料；Node REPL 操作以 `void` 結尾，只輸出明確選取的文字、數值與檔案路徑，不 dump 整個物件。
 
@@ -52,7 +52,7 @@
 
 - Headless probes should reuse repository import paths: `src/sim/mapgen` is a directory entry point, not a `mapgen.ts` file.
 
-- Formula reference 的桌面／行動 breakpoint 必須同時套用 component world input 與 Game 的 Research cartridge／Enter hotkeys；resize 後可見 world 與鍵盤 authority 使用同一個 `worldInputActive`。
+- 任何 drawer 開啟時 component world input 與 Game 的 Research 數字鍵／Enter／Backspace／Ctrl+Z 都停用；兩者使用同一個 `worldInputActive`。
 
 - **Alpha reader 移除時同步更新 E2E fixtures**：完整 Save JSON 不能再寫入已停用的 `hexapharma.save.slot.0` 期待自動 migration；fixtures 必須經公開 snapshot codec 寫入當前 versioned checkpoint envelope。舊 namespace 只保留「忽略且不覆寫」測試。
 

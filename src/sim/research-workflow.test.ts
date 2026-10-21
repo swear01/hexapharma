@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
-import type { FactoryLayout, GameIntent, GenOptions, Machine, Template } from "./phase0_interfaces";
+import type { FactoryLayout, GameIntent, GenOptions, Machine, MultiMap, Template } from "./phase0_interfaces";
 import {
   BASE_GAME_FACTORY_HEIGHT,
   BASE_GAME_FACTORY_WIDTH,
+  CellKind,
   DEFAULT_CATALOG,
 } from "./phase0_interfaces";
-import { applyGameIntent, createGameState, currentDiscoveredFormula } from "./game";
-import { previewStep } from "./drug-graph";
+import { applyGameIntent, createGameState } from "./game";
+import { evaluate, previewStep } from "./drug-graph";
 import { HEX_DIRS, HEX_DQ, HEX_DR } from "./hex";
 import { generate } from "./mapgen";
 import { compileEntitledPrototype } from "./recipe";
@@ -41,10 +42,32 @@ function fogSnapshot(game: ReturnType<typeof createGameState>): readonly number[
   return game.fog.map((layer) => [...layer]);
 }
 
-function shotCost(program: Template): number {
-  return Math.max(1, program.steps.reduce((total, machine) => (
+function trialCost(program: Template): number {
+  return program.steps.reduce((total, machine) => (
     total + DEFAULT_CATALOG.find((entry) => entry.typeId === machine.typeId)!.cost
-  ), 0));
+  ), 0);
+}
+
+/** Fog-masked planning map: unknown cells read as Empty (walls stay as outlines). */
+function researchPlanningOnFog(mm: MultiMap, fog: readonly Uint8Array[]): MultiMap {
+  return {
+    maps: mm.maps.map((map, mapIndex) => {
+      const known = fog[mapIndex]!;
+      const cell = Uint8Array.from(map.cell);
+      const cureId = Int16Array.from(map.cureId);
+      const sideEffectId = Int32Array.from(map.sideEffectId);
+      const portalTo = Int32Array.from(map.portalTo);
+      for (let index = 0; index < cell.length; index++) {
+        if (known[index] === 1 && cell[index] !== CellKind.Portal) continue;
+        if (cell[index] === CellKind.Wall) continue;
+        cell[index] = CellKind.Empty;
+        cureId[index] = -1;
+        sideEffectId[index] = -1;
+        portalTo[index] = -1;
+      }
+      return { ...map, cell, cureId, sideEffectId, portalTo };
+    }),
+  };
 }
 
 function emptyPilotLayout(): FactoryLayout {
@@ -62,189 +85,136 @@ function emptyPilotLayout(): FactoryLayout {
   };
 }
 
-describe("ResearchProgram workflow", () => {
-  it("starts and advances the first cartridge atomically in one intent", () => {
-    const machine = DEFAULT_CATALOG[0]!;
-    const initial = createGameState(options, 500, 0);
-    const advanced = dispatch(initial, { kind: "advanceResearchShot", machine });
-
-    expect(advanced.economy.cash).toBe(500 - machine.cost);
-    expect(advanced.research.program.steps).toEqual([{ typeId: machine.typeId, path: machine.path }]);
-    expect(advanced.research.lastOutcome).not.toBeNull();
-  });
-
-  it("starts free and executes exactly one owned full stamp with immediate feedback", () => {
-    const machine = DEFAULT_CATALOG[0]!;
-    const initial = createGameState(options, 500, 0);
-    const started = dispatch(initial, { kind: "beginResearchShot" });
-
-    expect(started.economy.cash).toBe(500);
-    expect(started.research.program.steps).toEqual([]);
-    expect(started.research.shot).toMatchObject({ step: 0, cost: 0 });
-
-    const expected = previewStep(generate(options).mm, started.research.shot!.drug, machine);
-    const advanced = dispatch(started, { kind: "advanceResearchShot", machine });
-
-    expect(advanced.economy.cash).toBe(500 - machine.cost);
-    expect(advanced.research.program.steps).toEqual([{ typeId: machine.typeId, path: machine.path }]);
-    expect(advanced.research.shot).toMatchObject({
-      step: 1,
-      cost: machine.cost,
-      drug: expected.next,
-    });
-    expect(advanced.research.lastOutcome).toEqual(expect.objectContaining({ cured: [] }));
-  });
-
-  it("builds a discovered formula from the whole reveal-decide session", () => {
+describe("Run-based Research trials", () => {
+  it("runs the whole program from the start, charges Σ catalog cost once, and keeps the trial", () => {
     const { program } = reference();
-    let game = dispatch(createGameState(options, 500, 0), { kind: "beginResearchShot" });
-    let paid = 0;
+    const level = generate(options);
+    const initial = createGameState(options, 500, 0);
+    const game = dispatch(initial, { kind: "runResearchTrial", program });
 
-    for (const machine of program.steps) {
-      const entry = DEFAULT_CATALOG.find(({ typeId }) => typeId === machine.typeId)!;
-      const before = game.economy.cash;
-      game = dispatch(game, { kind: "advanceResearchShot", machine });
-      paid += entry.cost;
-      expect(game.economy.cash).toBe(before - entry.cost);
-      if (game.research.lastOutcome?.cured.length === 0) {
-        expect(game.research.shot).not.toBeNull();
-      }
-    }
-
-    expect(game.research.shot).toBeNull();
-    expect(currentDiscoveredFormula(game)).toEqual({
-      disease: game.research.lastOutcome!.cured[0],
+    expect(game.economy.cash).toBe(500 - trialCost(program));
+    expect(game.research.lastTrial).toEqual({
       program,
-      researchCost: paid,
-      outcome: game.research.lastOutcome,
+      cost: trialCost(program),
+      outcome: evaluate(level.mm, level.start, program),
     });
+    expect(game.research.lastTrial?.outcome.cured).toEqual([0]);
+    expect(Object.keys(game.research)).toEqual(["lastTrial"]);
+    expect(game.research.lastTrial?.program).not.toBe(program);
+    expect(Object.isFrozen(game.research.lastTrial)).toBe(true);
+    expect(Object.isFrozen(game.research.lastTrial?.program.steps)).toBe(true);
+    expect(Object.isFrozen(game.research.lastTrial?.outcome.cured)).toBe(true);
   });
 
-  it("aborts without refund and rejects the removed batch-program path", () => {
+  it("never creates formulas; a later trial simply replaces the last one", () => {
+    const { program } = reference();
+    let game = dispatch(createGameState(options, 500, 0), { kind: "runResearchTrial", program });
     const machine = DEFAULT_CATALOG[0]!;
-    let game = dispatch(createGameState(options, 500, 0), { kind: "beginResearchShot" });
-    game = dispatch(game, { kind: "advanceResearchShot", machine });
-    const cash = game.economy.cash;
+    game = dispatch(game, { kind: "runResearchTrial", program: { steps: [machine] } });
 
-    game = dispatch(game, { kind: "abortResearchShot" });
-    expect(game.economy.cash).toBe(cash);
-    expect(game.research).toMatchObject({
-      program: { steps: [] },
-      shot: null,
-      lastOutcome: null,
-    });
-    expect(() => dispatch(game, { kind: "setResearchProgram", program: reference().program }))
-      .toThrow(/unknown|removed|unsupported/i);
+    expect(game.research.lastTrial?.program.steps).toEqual([
+      { typeId: machine.typeId, path: machine.path, turn: machine.turn },
+    ]);
+    expect(game.economy.cash).toBe(500 - trialCost(program) - machine.cost);
+    expect("discoveredFormulas" in game.research).toBe(false);
   });
 
-  it("does not erase a terminal route and outcome when there is no active assay to abort", () => {
-    let game = dispatch(createGameState(options, 500, 0), { kind: "beginResearchShot" });
-    for (const machine of reference().program.steps) {
-      game = dispatch(game, { kind: "advanceResearchShot", machine });
-      if (game.research.shot === null) break;
-    }
-    expect(game.research.shot).toBeNull();
-    expect(game.research.lastOutcome).not.toBeNull();
-
-    expect(dispatch(game, { kind: "abortResearchShot" })).toBe(game);
-  });
-
-  it("rejects partial and unaffordable stamps atomically", () => {
+  it("rejects unaffordable, empty, forged, locked, and removed intents atomically", () => {
+    const { program } = reference();
+    const poor = createGameState(options, trialCost(program) - 1, 0);
+    const before = fogSnapshot(poor);
     const machine = DEFAULT_CATALOG[0]!;
-    const started = dispatch(createGameState(options, machine.cost - 1, 0), {
-      kind: "beginResearchShot",
-    });
     const partial: Machine = { ...machine, path: machine.path.slice(0, -1) };
+    const turned: Machine = { ...machine, turn: machine.turn + 1 };
+    const locked = DEFAULT_CATALOG.find((entry) => entry.typeId === "settle")!;
 
-    expect(() => dispatch(started, { kind: "advanceResearchShot", machine: partial }))
+    expect(() => dispatch(poor, { kind: "runResearchTrial", program })).toThrow(/requires.*cash/i);
+    expect(() => dispatch(poor, { kind: "runResearchTrial", program: { steps: [] } })).toThrow(/1\.\.256/);
+    expect(() => dispatch(poor, { kind: "runResearchTrial", program: { steps: [partial] } }))
       .toThrow(/path does not match/i);
-    expect(() => dispatch(started, { kind: "advanceResearchShot", machine }))
-      .toThrow(/requires.*cash/i);
-    expect(started.economy.cash).toBe(machine.cost - 1);
-    expect(started.research.program.steps).toEqual([]);
+    expect(() => dispatch(poor, { kind: "runResearchTrial", program: { steps: [turned] } }))
+      .toThrow(/path does not match/i);
+    expect(() => dispatch(poor, { kind: "runResearchTrial", program: { steps: [locked] } }))
+      .toThrow(/locked/i);
+    for (const kind of ["beginResearchShot", "advanceResearchShot", "abortResearchShot"]) {
+      expect(() => dispatch(poor, { kind, machine })).toThrow(/unknown|removed/i);
+    }
+    expect(poor.economy.cash).toBe(trialCost(program) - 1);
+    expect(poor.research.lastTrial).toBeNull();
+    expect(fogSnapshot(poor)).toEqual(before);
   });
 
-  it("starts in a centered radius-two hex disk and the first available stamp reveals new ground", () => {
+  it("starts in a centered radius-two hex disk and a trial reveals new ground", () => {
     const entry = DEFAULT_CATALOG[0]!;
     let game = createGameState(options, 500, 0);
     const before = game.fog[0]!.reduce((sum, value) => sum + value, 0);
     expect(before).toBe(19);
 
-    game = dispatch(game, { kind: "beginResearchShot" });
-    game = dispatch(game, { kind: "advanceResearchShot", machine: entry });
+    game = dispatch(game, { kind: "runResearchTrial", program: { steps: [entry] } });
 
     expect(game.fog[0]!.reduce((sum, value) => sum + value, 0)).toBeGreaterThan(before);
-    expect(game.research.lastOutcome?.cured).toEqual([]);
-    expect(game.research.discoveredFormulas).toEqual([]);
+    expect(game.research.lastTrial?.outcome.cured).toEqual([]);
   });
 
-  it("reveals radius one around only the completed path trail", () => {
+  it("reveals radius one around exactly the actual trail of every step", () => {
     const { program } = reference();
-    let game = createGameState(options, 500, 0);
-    game = dispatch(game, { kind: "beginResearchShot" });
-    const before = game.fog.map((layer) => Uint8Array.from(layer));
     const level = generate(options);
-    const preview = previewStep(level.mm, level.start, program.steps[0]!);
-    const expected = before.map((layer) => Uint8Array.from(layer));
-
-    for (let mapIndex = 0; mapIndex < expected.length; mapIndex++) {
-      const map = level.mm.maps[mapIndex]!;
-      const points = [...(preview.trails[mapIndex] ?? []), preview.next.pos[mapIndex]!];
-      for (const point of points) {
-        expected[mapIndex]![point.r * map.width + point.q] = 1;
-        for (const direction of HEX_DIRS) {
-          const q = point.q + (HEX_DQ[direction] ?? 0);
-          const r = point.r + (HEX_DR[direction] ?? 0);
-          if (q >= 0 && r >= 0 && q < map.width && r < map.height) {
-            expected[mapIndex]![r * map.width + q] = 1;
+    const initial = createGameState(options, 500, 0);
+    const expected = initial.fog.map((layer) => Uint8Array.from(layer));
+    let drug = level.start;
+    for (const machine of program.steps) {
+      const preview = previewStep(level.mm, drug, machine);
+      for (let mapIndex = 0; mapIndex < expected.length; mapIndex++) {
+        const map = level.mm.maps[mapIndex]!;
+        const points = [...(preview.trails[mapIndex] ?? []), preview.next.pos[mapIndex]!];
+        for (const point of points) {
+          expected[mapIndex]![point.r * map.width + point.q] = 1;
+          for (const direction of HEX_DIRS) {
+            const q = point.q + (HEX_DQ[direction] ?? 0);
+            const r = point.r + (HEX_DR[direction] ?? 0);
+            if (q >= 0 && r >= 0 && q < map.width && r < map.height) {
+              expected[mapIndex]![r * map.width + q] = 1;
+            }
           }
         }
       }
+      drug = preview.next;
     }
 
-    game = dispatch(game, { kind: "advanceResearchShot", machine: program.steps[0]! });
+    const game = dispatch(initial, { kind: "runResearchTrial", program });
     expect(fogSnapshot(game)).toEqual(expected.map((layer) => [...layer]));
     expect(game.production.runtime.tick).toBe(0);
   });
 
-  it("keeps the latest successful Cure as an immutable discovered formula", () => {
-    const { program } = reference();
-    let game = createGameState(options, 500, 0);
-    game = dispatch(game, { kind: "beginResearchShot" });
-    for (const machine of program.steps) {
-      game = dispatch(game, { kind: "advanceResearchShot", machine });
+  it("runs on the true map, so hidden terrain can make the actual trail differ from a fog plan", () => {
+    const level = generate(options);
+    const game = createGameState(options, 5_000, 0);
+    const mm = level.mm;
+    const plan = researchPlanningOnFog(mm, game.fog);
+    const machines = DEFAULT_CATALOG.slice(0, 4);
+    let differs = 0;
+    for (let code = 0; code < 4 ** 4; code++) {
+      const program = { steps: [0, 1, 2, 3].map((digit) => machines[Math.floor(code / 4 ** digit) % 4]!) };
+      const actual = dispatch(game, { kind: "runResearchTrial", program }).research.lastTrial!.outcome;
+      expect(actual).toEqual(evaluate(mm, level.start, program));
+      if (JSON.stringify(actual) !== JSON.stringify(evaluate(plan, level.start, program))) differs++;
     }
-
-    const formula = currentDiscoveredFormula(game);
-    expect(game.research.discoveredFormulas).toHaveLength(1);
-    expect(formula).toEqual({
-      disease: game.research.lastOutcome!.cured[0],
-      program,
-      researchCost: shotCost(program),
-      outcome: game.research.lastOutcome,
-    });
-    expect(formula?.program).not.toBe(program);
-    expect(Object.isFrozen(formula)).toBe(true);
-    expect(Object.isFrozen(formula?.program.steps)).toBe(true);
-    expect(Object.isFrozen(formula?.outcome.cured)).toBe(true);
-
-    game = dispatch(game, { kind: "beginResearchShot" });
-    for (const machine of program.steps) {
-      game = dispatch(game, { kind: "advanceResearchShot", machine });
-    }
-    expect(game.research.discoveredFormulas).toHaveLength(1);
+    expect(differs).toBeGreaterThan(0);
   });
 
-  it("owns an executed stamp instead of aliasing the caller", () => {
+  it("owns the executed program instead of aliasing the caller", () => {
     const catalog = structuredClone(DEFAULT_CATALOG[0]!);
     const mutable: Machine = {
       typeId: catalog.typeId,
       path: catalog.path,
+      turn: catalog.turn,
     };
-    let game = dispatch(createGameState(options, 500, 0), { kind: "beginResearchShot" });
-    game = dispatch(game, { kind: "advanceResearchShot", machine: mutable });
+    const game = dispatch(createGameState(options, 500, 0), {
+      kind: "runResearchTrial",
+      program: { steps: [mutable] },
+    });
     (catalog.path as number[])[0] = 3;
-    expect(game.research.program.steps[0]?.path[0]).toBe(0);
+    expect(game.research.lastTrial?.program.steps[0]?.path[0]).toBe(0);
   });
 
   it("contains no phase-exchange machine or cross-layer calibration", () => {
@@ -261,10 +231,8 @@ describe("ResearchProgram workflow", () => {
     const aided = dispatch(initial, { kind: "unlockPatent", id: "reveal-aid" });
     expect(fogSnapshot(aided)).toEqual(before);
 
-    const run = (game: ReturnType<typeof createGameState>) => {
-      const next = dispatch(game, { kind: "beginResearchShot" });
-      return dispatch(next, { kind: "advanceResearchShot", machine });
-    };
+    const run = (game: ReturnType<typeof createGameState>) =>
+      dispatch(game, { kind: "runResearchTrial", program: { steps: [machine] } });
     const revealed = (game: ReturnType<typeof createGameState>) => game.fog[0]!
       .reduce((sum, value) => sum + value, 0);
     expect(revealed(run(aided))).toBeGreaterThan(revealed(run(initial)));
@@ -289,7 +257,7 @@ describe("optional Pilot and direct Production construction", () => {
   it("does not require or infer a Research route before building a Pilot design", () => {
     const { layout } = reference();
     let game = createGameState(options, 10_000, 0);
-    expect(game.research.program.steps).toEqual([]);
+    expect(game.research.lastTrial).toBeNull();
 
     game = dispatch(game, { kind: "setPilotLayout", layout });
     game = dispatch(game, { kind: "buildProductionLayout", layout });

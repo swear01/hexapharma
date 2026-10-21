@@ -6,6 +6,7 @@ import type {
   EffectMap,
   EvaluateFn,
   HexCoord,
+  HexDir,
   InitialStateFn,
   Machine,
   MultiMap,
@@ -13,33 +14,74 @@ import type {
   SideEffectId,
 } from "../phase0_interfaces";
 import { CellKind } from "../phase0_interfaces";
+import { HEX_DQ, HEX_DR } from "../hex";
 import { walkPath } from "./path";
 import { validateEffectMap, validateMachinePath } from "./validation";
 
 export {
+  cellOfDoubledPoint,
+  PATH_OUT_STRIDE,
   walkPath,
   walkPathInto,
   walkValidatedPathInto,
   type PathWalkResult,
 } from "./path";
-export { validateEffectMap, validateMachinePath, validatePathStamp } from "./validation";
+export {
+  validateEffectMap,
+  validateMachinePath,
+  validateMachineTurn,
+  validatePathStamp,
+} from "./validation";
 
 export interface PreviewStepResult {
   readonly next: DrugState;
+  /** Per map: cells entered by this step, in order (fog reveal). */
   readonly trails: readonly (readonly HexCoord[])[];
+  /** Per map: doubled-unit points (2·cell + offset) matching `trails` (half-step drawing). */
+  readonly points: readonly (readonly HexCoord[])[];
 }
 
-function validateState(mm: MultiMap, state: DrugState): void {
-  if (state.pos.length !== mm.maps.length) {
-    throw new Error("drug graph: state position count must match map count");
+/** Heading after a machine turn: `(heading + turn) mod 6`. */
+export function turnHeading(heading: number, turn: number): HexDir {
+  return ((((heading + turn) % 6) + 6) % 6) as HexDir;
+}
+
+/** True for the zero vector or one of the six unit axial directions. */
+export function isDrugOffset(offset: HexCoord): boolean {
+  if (offset.q === 0 && offset.r === 0) return true;
+  for (let dir = 0; dir < 6; dir++) {
+    if (offset.q === HEX_DQ[dir] && offset.r === HEX_DR[dir]) return true;
+  }
+  return false;
+}
+
+/**
+ * Structural validity of a drug against its maps: in-bounds cells, heading 0..5, and an
+ * offset that is zero off-swamp and zero-or-unit inside a Swamp cell.
+ */
+export function validateDrugState(mm: MultiMap, state: DrugState): void {
+  if (state.pos.length !== mm.maps.length || state.offset.length !== mm.maps.length) {
+    throw new Error("drug graph: state position/offset count must match map count");
+  }
+  if (!Number.isSafeInteger(state.heading) || state.heading < 0 || state.heading > 5) {
+    throw new Error("drug graph: state heading must be a hex direction in 0..5");
+  }
+  if (typeof state.failed !== "boolean") {
+    throw new Error("drug graph: state failed flag must be boolean");
   }
   for (let index = 0; index < state.pos.length; index++) {
     const position = state.pos[index];
+    const offset = state.offset[index];
     const map = mm.maps[index];
-    if (position === undefined || map === undefined) {
+    if (position === undefined || offset === undefined || map === undefined) {
       throw new Error("drug graph: state is missing a map position");
     }
-    if (!Number.isSafeInteger(position.q) || !Number.isSafeInteger(position.r)) {
+    if (
+      !Number.isSafeInteger(position.q) ||
+      !Number.isSafeInteger(position.r) ||
+      !Number.isSafeInteger(offset.q) ||
+      !Number.isSafeInteger(offset.r)
+    ) {
       throw new Error("drug graph: state positions must be safe-integer coordinates");
     }
     if (
@@ -50,40 +92,52 @@ function validateState(mm: MultiMap, state: DrugState): void {
     ) {
       throw new Error("drug graph: state position is outside its map");
     }
+    const swamp = map.cell[position.r * map.width + position.q] === CellKind.Swamp;
+    if (!isDrugOffset(offset) || (!swamp && (offset.q !== 0 || offset.r !== 0))) {
+      throw new Error("drug graph: state offset must be zero off-swamp and at most one half step");
+    }
   }
 }
 
 export function previewStep(mm: MultiMap, state: DrugState, machine: Machine): PreviewStepResult {
   validateMachinePath(machine);
   for (const map of mm.maps) validateEffectMap(map);
-  validateState(mm, state);
+  validateDrugState(mm, state);
 
   const emptyTrails: HexCoord[][] = mm.maps.map(() => []);
-  if (state.failed) return { next: state, trails: emptyTrails };
+  if (state.failed) return { next: state, trails: emptyTrails, points: emptyTrails };
 
   const positions: HexCoord[] = new Array<HexCoord>(mm.maps.length);
+  const offsets: HexCoord[] = new Array<HexCoord>(mm.maps.length);
   const trails: HexCoord[][] = new Array<HexCoord[]>(mm.maps.length);
+  const points: HexCoord[][] = new Array<HexCoord[]>(mm.maps.length);
   let failed = false;
 
   for (let index = 0; index < mm.maps.length; index++) {
     const map = mm.maps[index];
     const from = state.pos[index];
-    if (map === undefined || from === undefined) {
+    const offset = state.offset[index];
+    if (map === undefined || from === undefined || offset === undefined) {
       throw new Error("drug graph: validated map/state arrays diverged");
     }
-    const result = walkPath(map, from, machine);
+    const result = walkPath(map, from, machine, state.heading, offset);
     positions[index] = result.pos;
+    offsets[index] = result.offset;
     trails[index] = result.entered.slice();
+    points[index] = result.points.slice();
     if (result.failed) failed = true;
   }
 
-  return { next: { pos: positions, failed }, trails };
+  const heading = failed ? state.heading : turnHeading(state.heading, machine.turn);
+  return { next: { pos: positions, offset: offsets, heading, failed }, trails, points };
 }
 
 export const initialState: InitialStateFn = (mm) => {
   for (const map of mm.maps) validateEffectMap(map);
   return {
     pos: mm.maps.map((map) => ({ q: map.start.q, r: map.start.r })),
+    offset: mm.maps.map(() => ({ q: 0, r: 0 })),
+    heading: 0,
     failed: false,
   };
 };

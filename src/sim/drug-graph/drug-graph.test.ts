@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import type {
+  DrugState,
   EffectMap,
   HexCoord,
   HexDir,
@@ -14,10 +15,13 @@ import { HEX_DIRS, HEX_DQ, HEX_DR, oppositeHexDir } from "../hex";
 import {
   applyStep,
   applyTemplate,
+  cellOfDoubledPoint,
   evaluate,
   initialState,
   previewStep,
   revealAlong,
+  turnHeading,
+  validateDrugState,
   validateEffectMap,
   validateMachinePath,
   validatePathStamp,
@@ -68,9 +72,19 @@ function withCell(
   return { ...map, cell, cureId, sideEffectId, portalTo };
 }
 
-const machine = (path: PathStamp): Machine => ({
+const machine = (path: PathStamp, turn = 0): Machine => ({
   typeId: "test-stamp",
   path,
+  turn,
+});
+const drug = (
+  pos: readonly HexCoord[],
+  options: { readonly heading?: HexDir; readonly failed?: boolean; readonly offset?: readonly HexCoord[] } = {},
+): DrugState => ({
+  pos,
+  offset: options.offset ?? pos.map(() => ({ q: 0, r: 0 })),
+  heading: options.heading ?? 0,
+  failed: options.failed ?? false,
 });
 const template = (...steps: Machine[]): Template => ({ steps });
 const multiMap = (...maps: EffectMap[]): MultiMap => ({ maps });
@@ -178,7 +192,7 @@ describe("path stepping", () => {
     const stamp = machine([east, east, south, west, north]);
     const result = previewStep(multiMap(map), initialState(multiMap(map)), stamp);
 
-    expect(result.next).toEqual({ pos: [{ q: 5, r: 4 }], failed: false });
+    expect(result.next).toEqual(drug([{ q: 5, r: 4 }]));
     expect(result.trails).toEqual([
       [
         { q: 5, r: 4 },
@@ -235,12 +249,12 @@ describe("path stepping", () => {
     const second = machine([south, south]);
     const preview = previewStep(maps, initialState(maps), first);
 
-    expect(preview.next).toEqual({ pos: [{ q: 3, r: 2 }], failed: true });
+    expect(preview.next).toEqual(drug([{ q: 3, r: 2 }], { failed: true }));
     expect(preview.trails).toEqual([[{ q: 2, r: 2 }, { q: 3, r: 2 }]]);
     expect(applyTemplate(maps, initialState(maps), template(first, second))).toEqual(preview.next);
   });
 
-  it("charges two energy to enter swamp and stops once path energy is insufficient", () => {
+  it("moves half a cell per delta inside swamp and snaps to the grid on exit", () => {
     const base = emptyMap(8, 5, { q: 1, r: 2 });
     const map = withCell(base, 2, 2, CellKind.Swamp);
     const result = previewStep(
@@ -249,21 +263,85 @@ describe("path stepping", () => {
       machine([east, east, east]),
     );
 
-    expect(result.next.pos).toEqual([{ q: 3, r: 2 }]);
-    expect(result.trails).toEqual([[{ q: 2, r: 2 }, { q: 3, r: 2 }]]);
+    // Full step into the swamp centre, half step to its east edge (tie → stays), half step
+    // reaches the next centre, which is not swamp, so the drug snaps there.
+    expect(result.next).toEqual(drug([{ q: 3, r: 2 }]));
+    expect(result.trails).toEqual([[{ q: 2, r: 2 }, { q: 2, r: 2 }, { q: 3, r: 2 }]]);
+    expect(result.points).toEqual([[{ q: 4, r: 4 }, { q: 5, r: 4 }, { q: 6, r: 4 }]]);
   });
 
-  it("does not enter swamp when the remaining path energy is one", () => {
-    const base = emptyMap(5, 5, { q: 1, r: 2 });
+  it("rests half-way inside swamp with a unit offset and counts as that swamp cell", () => {
+    const base = emptyMap(6, 5, { q: 1, r: 2 });
     const map = withCell(base, 2, 2, CellKind.Swamp);
-    const result = previewStep(
-      multiMap(map),
-      initialState(multiMap(map)),
-      machine([east]),
-    );
+    const maps = multiMap(map);
+    const result = applyStep(maps, initialState(maps), machine([east, east]));
 
-    expect(result.next.pos).toEqual([{ q: 1, r: 2 }]);
-    expect(result.trails).toEqual([[]]);
+    expect(result).toEqual(drug([{ q: 2, r: 2 }], { offset: [{ q: 1, r: 0 }] }));
+    expect(() => validateDrugState(maps, result)).not.toThrow();
+    expect(evaluate(maps, initialState(maps), template(machine([east, east]))).final).toEqual([{ q: 2, r: 2 }]);
+  });
+
+  it("two half steps the same way inside a swamp field move exactly one cell", () => {
+    let map = emptyMap(8, 5, { q: 1, r: 2 });
+    for (const q of [2, 3, 4]) map = withCell(map, q, 2, CellKind.Swamp);
+    const maps = multiMap(map);
+    const result = applyStep(maps, initialState(maps), machine([east, east, east]));
+
+    expect(result).toEqual(drug([{ q: 3, r: 2 }]));
+  });
+
+  it("breaks a 60° half-step tie between two neighbours by direction order", () => {
+    // Offset E then half step SE lands on the shared edge of the E and SE neighbours.
+    expect(cellOfDoubledPoint(1 + 0 + 2 * 3, 0 + 1 + 2 * 3, 3, 3)).toBe(0);
+    // A unit offset alone is a tie with the current cell, which wins.
+    for (const dir of HEX_DIRS) {
+      expect(cellOfDoubledPoint(6 + HEX_DQ[dir]!, 6 + HEX_DR[dir]!, 3, 3)).toBe(-1);
+      expect(cellOfDoubledPoint(6 + 2 * HEX_DQ[dir]!, 6 + 2 * HEX_DR[dir]!, 3, 3)).toBe(dir);
+    }
+    let map = emptyMap(7, 7, { q: 2, r: 2 });
+    map = withCell(map, 2, 2, CellKind.Swamp);
+    map = withCell(map, 3, 2, CellKind.Swamp);
+    const maps = multiMap(map);
+    const state = drug([{ q: 2, r: 2 }], { offset: [{ q: 1, r: 0 }] });
+    // East neighbour (3,2) is swamp, so the drug stays off-grid there: P=(5,5) → offset (-1,1).
+    expect(applyStep(maps, state, machine([south]))).toEqual(
+      drug([{ q: 3, r: 2 }], { offset: [{ q: -1, r: 1 }] }),
+    );
+  });
+
+  it("cancels a wall-blocked half step inside swamp and continues", () => {
+    let map = emptyMap(7, 5, { q: 2, r: 2 });
+    map = withCell(map, 2, 2, CellKind.Swamp);
+    map = withCell(map, 3, 2, CellKind.Wall);
+    const maps = multiMap(map);
+    const result = previewStep(maps, initialState(maps), machine([east, east, south]));
+
+    // East half step stays inside the swamp (edge tie → current cell); the second reaches the
+    // wall's centre and is cancelled; the SE half step lands on the E/SE edge, where the
+    // direction order picks E (the wall), so it is cancelled too.
+    expect(result.next).toEqual(drug([{ q: 2, r: 2 }], { offset: [{ q: 1, r: 0 }] }));
+    expect(result.trails).toEqual([[{ q: 2, r: 2 }]]);
+  });
+
+  it("fails on abyss from a swamp half step and keeps the old heading", () => {
+    let map = emptyMap(7, 5, { q: 2, r: 2 });
+    map = withCell(map, 2, 2, CellKind.Swamp);
+    map = withCell(map, 3, 2, CellKind.Abyss);
+    const maps = multiMap(map);
+    const result = applyStep(maps, initialState(maps), machine([east, east, east], 2));
+
+    expect(result).toEqual(drug([{ q: 3, r: 2 }], { failed: true }));
+  });
+
+  it("enters a portal only at a cell centre after leaving swamp", () => {
+    let map = emptyMap(9, 3, { q: 1, r: 1 });
+    map = withCell(map, 1, 1, CellKind.Swamp);
+    map = withCell(map, 2, 1, CellKind.Portal, { portalTo: { q: 6, r: 1 } });
+    const maps = multiMap(map);
+    const result = previewStep(maps, initialState(maps), machine([east, east, east]));
+
+    expect(result.next).toEqual(drug([{ q: 7, r: 1 }]));
+    expect(result.points).toEqual([[{ q: 3, r: 2 }, { q: 4, r: 2 }, { q: 12, r: 2 }, { q: 14, r: 2 }]]);
   });
 
   it("records portal entry and exit, then continues the same stamp from the exit", () => {
@@ -316,18 +394,19 @@ describe("path stepping", () => {
     map = withCell(map, 5, 1, CellKind.Swamp);
     map = withCell(map, 7, 1, CellKind.Abyss);
     const stamp = machine([east, east, east, east, east]);
-    const out = new Int32Array(7).fill(-99);
-    const prevalidatedOut = new Int32Array(3);
+    const out = new Int32Array(9).fill(-99);
+    const prevalidatedOut = new Int32Array(5);
 
-    walkPathInto(map, 0, 1, stamp, out, 2);
+    walkPathInto(map, 0, 1, 0, 0, 0, stamp, out, 2);
     validateEffectMap(map);
     validateMachinePath(stamp);
-    walkValidatedPathInto(map, 0, 1, stamp, prevalidatedOut, 0);
+    walkValidatedPathInto(map, 0, 1, 0, 0, 0, stamp, prevalidatedOut, 0);
     const preview = previewStep(multiMap(map), initialState(multiMap(map)), stamp);
 
-    expect(Array.from(out)).toEqual([-99, -99, 7, 1, 1, -99, -99]);
-    expect(Array.from(prevalidatedOut)).toEqual([7, 1, 1]);
-    expect(preview.next).toEqual({ pos: [{ q: out[2], r: out[3] }], failed: out[4] === 1 });
+    // Portal to (4,1), full step into swamp (5,1), two half steps snap to (6,1), then abyss (7,1).
+    expect(Array.from(out)).toEqual([-99, -99, 7, 1, 0, 0, 1, -99, -99]);
+    expect(Array.from(prevalidatedOut)).toEqual([7, 1, 0, 0, 1]);
+    expect(preview.next).toEqual(drug([{ q: out[2]!, r: out[3]! }], { failed: out[6] === 1 }));
   });
 
   it("is deterministic and does not mutate map, state, path, or typed arrays", () => {
@@ -351,6 +430,48 @@ describe("path stepping", () => {
     expect(map.portalTo).toEqual(before.portalTo);
     expect(state).toEqual(before.state);
     expect(path).toEqual(before.path);
+  });
+
+  it("rotates every path delta by the heading in all six headings", () => {
+    const map = emptyMap(21, 21, { q: 10, r: 10 });
+    const maps = multiMap(map);
+    for (const heading of HEX_DIRS) {
+      const result = applyStep(maps, drug([map.start], { heading }), machine([east, east, south]));
+      const first = heading;
+      const second = (heading + 1) % 6;
+      expect(result.pos).toEqual([{
+        q: 10 + 2 * HEX_DQ[first]! + HEX_DQ[second]!,
+        r: 10 + 2 * HEX_DR[first]! + HEX_DR[second]!,
+      }]);
+      expect(result.heading).toBe(heading);
+    }
+  });
+
+  it("applies the machine turn after a completed stamp, modulo six, clockwise positive", () => {
+    const map = emptyMap(41, 41, { q: 20, r: 20 });
+    const maps = multiMap(map);
+    expect(turnHeading(0, -1)).toBe(5);
+    expect(turnHeading(5, 2)).toBe(1);
+    expect(turnHeading(3, 3)).toBe(0);
+    const right = machine([east], 1);
+    const after = applyTemplate(maps, initialState(maps), template(right, right, right));
+    // E, then SE, then SW; heading ends at 3 (W).
+    expect(after).toEqual(drug([{ q: 20 + 1 + 0 - 1, r: 20 + 0 + 1 + 1 }], { heading: 3 }));
+    for (const entry of DEFAULT_CATALOG) {
+      expect(Number.isSafeInteger(entry.turn) && entry.turn >= -5 && entry.turn <= 5).toBe(true);
+      const turned = applyStep(maps, initialState(maps), entry);
+      expect(turned.heading).toBe(turnHeading(0, entry.turn));
+    }
+  });
+
+  it("rejects drug states with a bad heading or an off-grid offset outside swamp", () => {
+    const map = withCell(emptyMap(5, 5, { q: 2, r: 2 }), 1, 1, CellKind.Swamp);
+    const maps = multiMap(map);
+    expect(() => validateDrugState(maps, drug([{ q: 2, r: 2 }], { heading: 6 as HexDir }))).toThrow(/heading/);
+    expect(() => validateDrugState(maps, drug([{ q: 2, r: 2 }], { offset: [{ q: 1, r: 0 }] }))).toThrow(/offset/);
+    expect(() => validateDrugState(maps, drug([{ q: 1, r: 1 }], { offset: [{ q: 1, r: 1 }] }))).toThrow(/offset/);
+    expect(() => validateDrugState(maps, drug([{ q: 1, r: 1 }], { offset: [{ q: -1, r: 1 }] }))).not.toThrow();
+    expect(() => validateMachinePath(machine([east], 6))).toThrow(/turn/);
   });
 
   it("on an open map, generated paths end at the axial sum of the complete path", () => {

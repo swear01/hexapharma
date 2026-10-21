@@ -6,10 +6,8 @@ import type {
   GeneratedLevel,
   MultiMap,
   Outcome,
-  Template,
   Vec2,
 } from "../sim/phase0_interfaces";
-import { previewStep } from "../sim/drug-graph";
 import type { LabRenderer } from "../render/labRenderer";
 import type { PixelPoint } from "../render/hexProjection";
 import {
@@ -57,41 +55,37 @@ export function researchPointerAction(
   return null;
 }
 
+/**
+ * True when the pointer's cell touches the drawn endpoint. A swamp half-step endpoint sits on the
+ * edge between two cells, so either cell (hex distance ≤ ½ from the drawn point) counts.
+ */
 export function researchPreviewEndpointHit(
   pointerWorld: Vec2,
   endpoint: Vec2 | undefined,
 ): boolean {
-  return endpoint !== undefined && pointerWorld.q === endpoint.q && pointerWorld.r === endpoint.r;
+  if (endpoint === undefined) return false;
+  const dq = pointerWorld.q - endpoint.q;
+  const dr = pointerWorld.r - endpoint.r;
+  return Math.max(Math.abs(dq), Math.abs(dr), Math.abs(dq + dr)) <= 0.5;
 }
 
 export function researchOutcomeText(lastOutcome: Outcome | null): string | null {
   return lastOutcome === null ? null : outcomeEffectText(lastOutcome);
 }
 
-/** Endpoint of each executed step from the run start: the numbered controls of the course. */
-export function researchControlPoints(
-  mm: MultiMap,
-  start: DrugState,
-  program: Template,
-  mapIndex: number,
-): readonly Vec2[] {
-  const controls: Vec2[] = [];
-  let drug = start;
-  for (const machine of program.steps) {
-    drug = previewStep(mm, drug, machine).next;
-    const position = drug.pos[mapIndex];
-    if (position !== undefined) controls.push(position);
-    if (drug.failed) break;
-  }
-  return controls;
+/** Drawn point of a drug on one map: its cell plus half of its doubled-unit swamp offset. */
+export function researchDrugPoint(drug: DrugState, mapIndex: number): Vec2 | undefined {
+  const pos = drug.pos[mapIndex];
+  const offset = drug.offset[mapIndex];
+  if (pos === undefined) return undefined;
+  return offset === undefined || (offset.q === 0 && offset.r === 0)
+    ? pos
+    : { q: pos.q + offset.q / 2, r: pos.r + offset.r / 2 };
 }
 
-/** True only when `next` is `previous` plus one freshly resolved step (or the first step of a new run). */
-export function researchStepResolved(previous: Template, next: Template): boolean {
-  if (next === previous || next.steps.length === 0) return false;
-  if (next.steps.length === 1) return true;
-  return next.steps.length === previous.steps.length + 1
-    && previous.steps.every((step, index) => step.typeId === next.steps[index]?.typeId);
+/** True only when a new trial outcome arrived that cures something (fit the course once). */
+export function researchTrialResolvedCure(previous: Outcome | null, next: Outcome | null): boolean {
+  return next !== null && next !== previous && !next.failed && next.cured.length > 0;
 }
 
 export interface LabFitInsets {
@@ -162,11 +156,11 @@ export function researchFocusTarget(
   previewDrug: DrugState | undefined,
   mapIndex: number,
 ): ResearchFocusTarget {
-  const candidate = previewDrug?.pos[mapIndex];
+  const candidate = previewDrug === undefined ? undefined : researchDrugPoint(previewDrug, mapIndex);
   if (candidate !== undefined) {
     return { label: "Next", position: candidate };
   }
-  return { label: "Dose", position: drug.pos[mapIndex] };
+  return { label: "Dose", position: researchDrugPoint(drug, mapIndex) };
 }
 
 export function researchKnownCureCount(
@@ -238,12 +232,17 @@ interface AppProps {
   readonly active: boolean;
   readonly level: GeneratedLevel;
   readonly fog: readonly Uint8Array[];
+  /** Actual drug after the last trial (or the start). */
   readonly drug: DrugState;
+  /** Actual trail of the last trial (solid). */
   readonly trails: readonly (readonly (Vec2 | null)[])[];
+  /** Planned route on the known map (dashed). */
   readonly previewTrails?: readonly (readonly (Vec2 | null)[])[];
   readonly previewDrug?: DrugState;
-  readonly program: Template;
+  /** Planned step endpoints: the numbered controls. */
+  readonly controls: readonly Vec2[];
   readonly lastOutcome: Outcome | null;
+  /** Click on the last control. */
   readonly onWorldActivate?: () => void;
   readonly onWorldErase?: () => void;
 }
@@ -256,7 +255,7 @@ export function App({
   trails,
   previewTrails,
   previewDrug,
-  program,
+  controls,
   lastOutcome,
   onWorldActivate,
   onWorldErase,
@@ -277,22 +276,17 @@ export function App({
     ),
   ));
   const camera = cameras[activeMap] ?? focusLabCamera(drug.pos[activeMap] ?? { q: 0, r: 0 });
-  const controls = useMemo(
-    () => researchControlPoints(mm, start, program, activeMap),
-    [activeMap, mm, program, start],
-  );
-  const finish = lastOutcome !== null && lastOutcome.cured.length > 0;
+  const planned = controls.length > 0 ? previewDrug : undefined;
   const view = useMemo(
     () => ({
       activeMap,
       camera,
       trail: trails[activeMap] ?? [],
-      previewTrail: previewTrails?.[activeMap],
-      previewDrug,
+      previewTrail: planned === undefined ? undefined : previewTrails?.[activeMap],
+      previewDrug: planned,
       controls,
-      finish,
     }),
-    [activeMap, camera, controls, finish, previewDrug, previewTrails, trails],
+    [activeMap, camera, controls, planned, previewTrails, trails],
   );
   const renderMapRef = useRef(renderMap);
   renderMapRef.current = renderMap;
@@ -311,7 +305,7 @@ export function App({
   const cureFocusIndexRef = useRef(0);
   const focusTarget = researchFocusTarget(
     drug,
-    previewDrug,
+    planned,
     activeMap,
   );
   const focusDescription = focusTarget.label === "Next" ? "next endpoint" : "dose";
@@ -390,19 +384,17 @@ export function App({
   }, []);
   useEffect(() => cancelCameraEase, [cancelCameraEase]);
 
-  // Only the step that resolves a Cure fits the printed course; a stale outcome never moves the camera.
-  const resolvedProgramRef = useRef(program);
+  // Only a trial that resolves a Cure fits its actual course; a stale outcome never moves the camera.
+  const resolvedOutcomeRef = useRef(lastOutcome);
   useEffect(() => {
-    const previous = resolvedProgramRef.current;
-    resolvedProgramRef.current = program;
-    if (!researchStepResolved(previous, program) || lastOutcome === null || lastOutcome.cured.length === 0) return;
+    const previous = resolvedOutcomeRef.current;
+    resolvedOutcomeRef.current = lastOutcome;
+    if (!researchTrialResolvedCure(previous, lastOutcome)) return;
     const map = mm.maps[activeMap];
     const canvasWidth = mountRef.current?.getBoundingClientRect().width ?? 0;
     if (map === undefined || canvasWidth === 0) return;
     const points: Vec2[] = [];
     for (const point of trails[activeMap] ?? []) if (point !== null) points.push(point);
-    const finishControl = controls.at(-1);
-    if (finishControl !== undefined) points.push(finishControl);
     const scale = LAB_VIEWPORT.width / canvasWidth;
     const css = researchFitInsets(window.matchMedia("(max-width: 768px)").matches);
     const target = researchFitCamera(points, visibleViewportRef.current, {
@@ -435,7 +427,7 @@ export function App({
       cameraEaseRef.current = t < 1 ? requestAnimationFrame(step) : 0;
     };
     cameraEaseRef.current = requestAnimationFrame(step);
-  }, [activeMap, camera, cancelCameraEase, controls, lastOutcome, mm.maps, program, trails]);
+  }, [activeMap, camera, cancelCameraEase, lastOutcome, mm.maps, trails]);
 
   const focusResearch = useCallback(() => {
     cancelCameraEase();
@@ -480,7 +472,7 @@ export function App({
   const [endpointHovered, setEndpointHovered] = useState(false);
   useEffect(() => {
     setEndpointHovered(false);
-  }, [activeMap, camera.x, camera.y, camera.zoom, previewDrug?.pos]);
+  }, [activeMap, camera.x, camera.y, camera.zoom, planned?.pos]);
   const onPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0 && event.button !== 1 && event.button !== 2) return;
     cancelCameraEase();
@@ -504,7 +496,7 @@ export function App({
     if (drag === null) {
       const viewportPoint = labPointerToViewport(event.clientX, event.clientY, rect);
       const pointerWorld = labScreenToWorld(camera, LAB_VIEWPORT, viewportPoint);
-      setEndpointHovered(researchPreviewEndpointHit(pointerWorld, previewDrug?.pos[activeMap]));
+      setEndpointHovered(researchPreviewEndpointHit(pointerWorld, planned === undefined ? undefined : researchDrugPoint(planned, activeMap)));
       return;
     }
     setEndpointHovered(false);
@@ -527,7 +519,7 @@ export function App({
       next[activeMap] = panLabCamera(current[activeMap] ?? camera, dx, dy, visibleViewportRef.current, map);
       return next;
     });
-  }, [activeMap, camera, mm.maps, previewDrug?.pos]);
+  }, [activeMap, camera, mm.maps, planned]);
   const finishPointer = useCallback((
     event: ReactPointerEvent<HTMLDivElement>,
     completion: "commit" | "cancel",
@@ -541,7 +533,7 @@ export function App({
     const rect = mountRef.current?.getBoundingClientRect() ?? event.currentTarget.getBoundingClientRect();
     const viewportPoint = labPointerToViewport(event.clientX, event.clientY, rect);
     const pointerWorld = labScreenToWorld(camera, LAB_VIEWPORT, viewportPoint);
-    const candidateEndpoint = previewDrug?.pos[activeMap];
+    const candidateEndpoint = planned === undefined ? undefined : researchDrugPoint(planned, activeMap);
     const action = researchPointerAction(
       drag.button,
       drag.moved,
@@ -551,7 +543,7 @@ export function App({
     if (action === "place") onWorldActivate?.();
     else if (action === "erase") onWorldErase?.();
     setEndpointHovered(false);
-  }, [activeMap, camera, onWorldActivate, onWorldErase, previewDrug?.pos]);
+  }, [activeMap, camera, onWorldActivate, onWorldErase, planned]);
   const onWheel = useCallback((event: ReactWheelEvent<HTMLDivElement>) => {
     const map = mm.maps[activeMap];
     if (map === undefined) return;
@@ -609,7 +601,7 @@ export function App({
           data-camera-zoom={camera.zoom}
           data-placement-target={endpointHovered}
           tabIndex={-1}
-          title={endpointHovered ? "Run step" : "Drag map"}
+          title={endpointHovered ? "Remove last step" : "Drag map"}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerLeave={() => {

@@ -30,15 +30,15 @@ export function MapSymbol({ kind, size = 32 }: { readonly kind: MapSymbolKind; r
 const LEGEND: readonly { readonly group: string; readonly items: readonly (readonly [MapSymbolKind, string, string])[] }[] = [
   { group: "Your course", items: [
     ["start", "Start", "Every run begins here."],
-    ["control", "Step", "A machine you ran, numbered in order."],
-    ["candidate", "Candidate leg", "Preview of the next step; nothing is spent yet."],
-    ["finish", "Finish", "The run reached a Cure and became a formula."],
+    ["control", "Step", "A planned machine, numbered in order. Click the last one to remove it."],
+    ["candidate", "Planned route", "Predicted on the known map; fog counts as flat ground."],
+    ["finish", "Finish", "The run reached a Cure."],
   ] },
   { group: "Terrain", items: [
     ["cure", "Cure", "A step that ends here cures that disease."],
     ["sideEffect", "Side effect", "Ending here adds a side effect: −$25 per unit sold."],
     ["wall", "Wall", "Skips that move. The only terrain shown through fog."],
-    ["marsh", "Marsh", "Entering costs two moves, so the step ends sooner."],
+    ["marsh", "Marsh", "Each move inside goes only half a cell."],
     ["abyss", "Abyss", "A step that enters it fails the run."],
     ["portal", "Portal", "One-way jump to its paired exit; the step continues there."],
   ] },
@@ -56,10 +56,10 @@ export function FieldGuide() {
     <section className="help-panel">
       <h1>Field guide</h1>
       <h2>Research</h2>
-      <p>Pick a machine to preview its leg, then press <strong>Run · $N</strong> (Enter) or click the hollow control. Each step costs cash and prints the land it crosses. <strong>End run</strong> stops without a refund; the printed map stays.</p>
-      <p>A run that ends on a Cure is saved as formula <span className="nowrap">F-01</span>, <span className="nowrap">F-02</span>… in Formulas.</p>
+      <p>Click machines (or press 1–9) to plan a route; each machine turns the drug, so later paths rotate. <strong>Run · $N</strong> (Enter) pays once and runs the whole route on the real map, which can differ under fog. The solid line is what happened; only that land is revealed.</p>
+      <p>Backspace or <kbd>Ctrl</kbd>+<kbd>Z</kbd> removes the last step; <strong>Clear</strong> empties the plan.</p>
       <h2>Build and ship</h2>
-      <p><strong>Plan</strong> is free and has no clock. <strong>Production</strong> is paid and runs; <strong>Commission $N</strong> builds your Plan there. Lay Source → the formula’s steps in order → Sink, with belts from each output port to the next input port.</p>
+      <p><strong>Plan</strong> is free and has no clock. <strong>Production</strong> is paid and runs; <strong>Commission $N</strong> builds your Plan there. Lay Source → your route’s machines in order → Sink, with belts from each output port to the next input port.</p>
       <p>Ship stock in Market for cash and Knowledge; each unit lowers that disease’s next price. Ship 3 of a disease to fill its contract. Contracts and Knowledge unlock Technology.</p>
       <h2>Legend</h2>
       {LEGEND.map(({ group, items }) => (
@@ -79,7 +79,7 @@ export function FieldGuide() {
       <dl className="legend-keys">
         <div><dt><kbd>F1</kbd>–<kbd>F3</kbd></dt><dd>Research · Plan · Production</dd></div>
         <div><dt><kbd>M</kbd> <kbd>T</kbd> <kbd>B</kbd></dt><dd>Market · Technology · Blueprints</dd></div>
-        <div><dt><kbd>Enter</kbd></dt><dd>Run the candidate step</dd></div>
+        <div><dt><kbd>Enter</kbd></dt><dd>Run the planned route</dd></div>
         <div><dt><kbd>F</kbd></dt><dd>Find the next control</dd></div>
         <div><dt><kbd>R</kbd> <kbd>Q</kbd></dt><dd>Rotate · pick a tool</dd></div>
         <div><dt><kbd>Space</kbd> <kbd>.</kbd></dt><dd>Play/pause · single tick</dd></div>

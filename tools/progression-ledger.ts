@@ -94,14 +94,12 @@ export function progressionLedger(seed: number, startingCash = DEFAULT_STARTING_
       for (const id of patentIds) game = unlock(game, id);
       minimumCash = Math.min(minimumCash, game.economy.cash);
 
-      for (const machine of disease.reference.steps) {
-        game = applyGameIntent(game, { kind: "advanceResearchShot", machine });
-        minimumCash = Math.min(minimumCash, game.economy.cash);
-      }
-      if (!game.research.lastOutcome?.cured.includes(disease.id)) {
+      game = applyGameIntent(game, { kind: "runResearchTrial", program: disease.reference });
+      minimumCash = Math.min(minimumCash, game.economy.cash);
+      if (!game.research.lastTrial?.outcome.cured.includes(disease.id)) {
         throw new Error(`reference did not cure disease ${disease.id}`);
       }
-      const researchCost = game.research.discoveredFormulas.at(-1)!.researchCost;
+      const researchCost = game.research.lastTrial.cost;
       const effects = activeEffects(DEFAULT_PATENTS, game.patents);
       const layout = compileEntitledPrototype(
         disease.reference,

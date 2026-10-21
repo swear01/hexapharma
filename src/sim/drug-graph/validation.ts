@@ -19,8 +19,16 @@ export function validatePathStamp(path: PathStamp): void {
   }
 }
 
+/** A machine turn is a signed 60° step count in -5..5. */
+export function validateMachineTurn(turn: number): void {
+  if (!Number.isSafeInteger(turn) || turn < -5 || turn > 5) {
+    throw new Error("drug graph: machine turn must be an integer in -5..5");
+  }
+}
+
 export function validateMachinePath(machine: Machine): void {
   validatePathStamp(machine.path);
+  validateMachineTurn(machine.turn);
 }
 
 export function validateEffectMap(map: EffectMap): void {

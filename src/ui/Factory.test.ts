@@ -83,7 +83,7 @@ describe("direct machine manipulation", () => {
       ...base,
       machines: [{
         id: 7,
-        def: { typeId: entry.typeId, path: entry.path, cost: entry.cost, speed: entry.speed },
+        def: { typeId: entry.typeId, path: entry.path, turn: entry.turn, cost: entry.cost, speed: entry.speed },
         anchor: { q: 2, r: 2 },
         footRot: 0,
         shape: DEFAULT_SHAPES[entry.typeId]!,
@@ -175,7 +175,7 @@ describe("Factory clipboard tile payload", () => {
       ...base,
       machines: [{
         id: 3,
-        def: { typeId: entry.typeId, path: entry.path, cost: entry.cost, speed: entry.speed },
+        def: { typeId: entry.typeId, path: entry.path, turn: entry.turn, cost: entry.cost, speed: entry.speed },
         anchor: { q: 2, r: 2 },
         footRot: 0,
         shape: DEFAULT_SHAPES[entry.typeId]!,

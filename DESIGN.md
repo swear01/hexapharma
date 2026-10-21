@@ -205,8 +205,8 @@ Density follows the factory-game floor: tabular numerals everywhere, compact con
 The palette is a printed map: three warm paper tones, three ink greys, two paper rules, one course purple, and map inks that each carry exactly one meaning.
 
 ### Primary
-- **Course Purple** (`course`): the player's line. It covers the Atlas research course (start triangle, numbered control circles, legs, double-circle finish), the dashed candidate leg, the active nav tab underline, selected legend entries, the cure result card border, the Run and Open in Plan buttons, Plan-mode overprint in the Factory, and focus rings.
-- **Course Ink** (`course-ink`): purple used for text and for hover on course buttons. Control numbers, the active tab label, formula IDs and step numbers use it because it reads better at small sizes than `course`.
+- **Course Purple** (`course`): the player's line. It covers the Atlas research course (start triangle, numbered planned controls, the dashed planned route, the solid actual route of the last trial), the active nav tab underline, selected legend entries, the Run button, Plan-mode overprint in the Factory, and focus rings.
+- **Course Ink** (`course-ink`): purple used for text and for hover on course buttons. Control numbers, the active tab label and step numbers use it because it reads better at small sizes than `course`.
 - **Course Tint** (`course-tint`): the wash behind an active or selected control (`is-active`, `is-selected`, pressed toggles) and behind text selection.
 
 ### Secondary
@@ -215,7 +215,7 @@ The palette is a printed map: three warm paper tones, three ink greys, two paper
 
 ### Tertiary
 - **Cure Green** (`cure`) / **Cure Ink** (`cure-ink`): cure zones (green screen and cross) and clean results ("Clean", cure counts, owned patents, sale feedback). Cure symbols always pair the colour with a cross or double circle.
-- **Side-effect Amber** (`effect`) / **Effect Ink** (`effect-ink`): side-effect screen dots on the Atlas and tainted values in Market and Formulas. When Cure and Side effect share a cell, both screens stay visible.
+- **Side-effect Amber** (`effect`) / **Effect Ink** (`effect-ink`): side-effect screen dots on the Atlas and tainted values in Market. When Cure and Side effect share a cell, both screens stay visible.
 - **Failure Red** (`failure-border`, `failure-ink`, `failure-surface`): failed steps (red cross), blocked Production, invalid placement ghosts (dashed red), the danger button and error alerts. Failure always comes with a cross, a dash or text.
 
 ### Neutral
@@ -242,9 +242,9 @@ The palette is a printed map: three warm paper tones, three ink greys, two paper
 
 ### Hierarchy
 - **Display** (600, 30px, line-height 1, uppercase): drawer and inspector titles (`h1`). The inspector uses 24px.
-- **Headline** (600, 26px, 1.1, uppercase): modal titles, the cure card's formula title, formula IDs.
+- **Headline** (600, 26px, 1.1, uppercase): modal titles.
 - **Title** (600, 19px, 1.1, uppercase): section headings (`h2`), patent names and market values. Legend and machine names use the same face at 15–17px.
-- **Numeral** (600, 22px, 1, tabular): HUD resources (Cash, Knowledge, Stock, Contract) and other headline numbers. Market net uses 23px and formula step numbers use 22px.
+- **Numeral** (600, 22px, 1, tabular): HUD resources (Cash, Knowledge, Stock, Contract) and other headline numbers. Market net uses 23px.
 - **Nav** (600, 18px, 1, 0.03em, uppercase): Research, Plan and Production tabs, and the compass disease name. The Run button uses the same face at 19px.
 - **Action** (600, 16px, 1, 0.05em, uppercase): primary buttons. Factory and utility controls use 15px.
 - **Label** (600, 13px, 1.2, 0.06em, uppercase, `ink-3`): field labels, sheet `dt` labels, patent group headings and resource labels.
@@ -260,7 +260,7 @@ The palette is a printed map: three warm paper tones, three ink greys, two paper
 
 The game is a full-viewport grid (`100dvw × 100dvh`, no page scroll). On desktop it has three rows: a 56px top bar (wordmark, field tabs, resource strip, Menu), a 44px utility row (Objective line with a direct action on the left, drawer links on the right) and the world stage. The world fills the stage. Map-margin furniture is inset 12px from the stage edges: compass and disease card top-left, course list below it, result card top-right, atlas status bottom-left. Below the world, the legend hotbar and the command bar share a bottom row separated from the map by a 2px ink rule.
 
-The Factory uses a canvas / toolbelt / status-and-controls grid with a 56px bottom bar and an optional 280px inspector. Drawers slide over from the right at `min(560px, 100%)`. The formula reference stays docked at 340px above 769px.
+The Factory uses a canvas / toolbelt / status-and-controls grid with a 56px bottom bar and an optional 280px inspector. Drawers slide over from the right at `min(560px, 100%)`.
 
 Spacing runs on a 4px base: 4, 8, 12, 16, 20 and 24px. Gaps inside controls are 8–12px, edge insets are 12px, shell gutters are 20px and drawer padding is 24px. Breakpoints:
 - **1180px** hides the wordmark and legend hotkeys.
@@ -276,7 +276,7 @@ Spacing runs on a 4px base: 4, 8, 12, 16, 20 and 24px. Gaps inside controls are 
 The system is flat print. Depth comes from paper tone (sunk fog, map paper, printed cells and cards) and from rule weight, not from shadows. Furniture printed on the map has a border and no shadow ("printed on paper, never glass"). Only surfaces that physically cover the map get an ambient shadow, and the strength follows how much they cover.
 
 ### Shadow Vocabulary
-- **Drawer edge** (`box-shadow: -12px 0 32px rgb(30 31 28 / 10%)`): the right-hand drawer over the world. The docked formula reference has no shadow.
+- **Drawer edge** (`box-shadow: -12px 0 32px rgb(30 31 28 / 10%)`): the right-hand drawer over the world.
 - **Toast** (`box-shadow: 0 6px 18px rgb(30 31 28 / 12%)`): transient status and error messages, top-right.
 - **Modal** (`box-shadow: 0 18px 48px rgb(30 31 28 / 22%)`): blocking confirmations over a `rgb(30 31 28 / 45%)` ink scrim.
 
@@ -285,10 +285,10 @@ The system is flat print. Depth comes from paper tone (sunk fog, map paper, prin
 
 ## Shapes
 
-Corners are nearly square: 3px on buttons, inputs, cards, toasts and modals, and 2px on legend keycaps. Field tabs are square, with a 4px underline. Circles are reserved for orienteering controls: numbered control circles (24px in the course list, 18px on the Factory floor), the start triangle, the double-circle finish and the cure card's ring symbol. Both worlds use pointy-top true hexes.
+Corners are nearly square: 3px on buttons, inputs, cards, toasts and modals, and 2px on legend keycaps. Field tabs are square, with a 4px underline. Circles are reserved for orienteering controls: numbered control circles (24px in the course list, 18px on the Factory floor), the start triangle and the double-circle finish. Both worlds use pointy-top true hexes.
 
 Line weight follows a fixed hierarchy:
-- **2px ink:** sheet edges (top bar bottom, hotbar top, drawer left, modal, formula ribbon).
+- **2px ink:** sheet edges (top bar bottom, hotbar top, drawer left, modal).
 - **1.5px ink:** print marks (Factory mode mark, machine selection legend, quoted cost).
 - **1px rule:** row dividers.
 
@@ -316,13 +316,13 @@ Square, printed and plainly labelled.
 Field tabs are display caps (18px) on the paper top bar. The active tab is `course-ink` with a 4px `course` underline sitting on the 2px ink rule. Hover shows a `rule-strong` underline. On touch they share a 48px row with Menu. Menu is an outlined ink button in display caps.
 
 ### Map-margin cards
-The compass and disease card, the course list, the step readout, the cure card and the atlas status are printed boxes: `paper-raised`, a 1px `rule-strong` border, 3px corners and no shadow. The course list numbers each row with a control circle (2px `course` ring, `course-ink` numeral). A failed readout switches to the failure surface with a red cross.
+The compass and disease card, the course list, the trial readout and the atlas status are printed boxes: `paper-raised`, a 1px `rule-strong` border, 3px corners and no shadow. The course list numbers each row with a control circle (2px `course` ring, `course-ink` numeral). A failed readout switches to the failure surface with a red cross.
 
-### Cure card (signature)
-When a Cure lands, the last control becomes a double-circle finish on the map, and a 320px card bordered in 2px `course` shows the ring symbol, the formula title (Headline, e.g. "F-01 · Disease 1"), tabular stats with "Clean" in `cure-ink` or effects in `effect-ink`, and a full-width course button to Open in Plan.
+### Trial readout
+A Run's result is a single printed line in the map margin (`Cure Disease N · …`, `No cure · …`, `Failed · …`); there is no formula card. A cure is celebrated by the Objective turning to "Plan a line to Disease N".
 
 ### Legend hotbar / toolbelt
-The machine key is printed in the map margin. In Research each entry is a 36px machine symbol beside the name (display caps 15px), the cost (12px tabular) and a hotkey. In the Factory, tool slots are 76px wide with the symbol stacked over the name. Entries are transparent. The selected entry gets a `course` border with a `course-tint` wash. Locked entries fade the symbol to 0.45 and show a lock. A machine's symbol is the same path/footprint SVG (`MachineIcon`) on the map, in the hotbar, on the floor and in formulas.
+The machine key is printed in the map margin. In Research each entry is a 36px machine symbol beside the name (display caps 15px), the cost (12px tabular) and a hotkey. In the Factory, tool slots are 76px wide with the symbol stacked over the name. Entries are transparent. The selected entry gets a `course` border with a `course-tint` wash. Locked entries fade the symbol to 0.45 and show a lock. A machine's symbol is the same path/footprint SVG (`MachineIcon`) on the map, in the hotbar and on the floor; the Research hotbar draws the path rotated to the heading at the end of the planned route.
 
 ### Inputs / Fields
 - **Style:** same face as buttons: `paper-raised`, 1px `rule-strong`, 3px corners, 44px tall. The caret is `course`.
@@ -330,7 +330,7 @@ The machine key is printed in the map margin. In Research each entry is a 36px m
 - **Error:** `failure-border` border with a 12px `failure-ink` message below. A field label uses the Label style above the input.
 
 ### Drawers and sheets
-Market, Technology, Blueprints, Formulas, Guide and Menu are legend and control-description sheets: `paper-raised`, with a 2px ink rule under the Display title and rows divided by 1px rules. Values use display numerals, and labels use the Label style. The Formula ribbon is a 2px-ink-bordered sheet whose step rows have column rules (icon, `course-ink` step number, name).
+Market, Technology, Blueprints, Guide and Menu are legend and control-description sheets: `paper-raised`, with a 2px ink rule under the Display title and rows divided by 1px rules. Values use display numerals, and labels use the Label style.
 
 ### Factory mode mark
 A small top-left print mark names the sheet ("Production ▸ Running"): 1.5px ink border, display caps with 0.08em tracking. In Plan it is dashed `course`, and when blocked it has a `failure-border` border.

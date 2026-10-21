@@ -19,7 +19,7 @@ import { fnv1a32Hex } from "../sim/hash";
 
 export const BLUEPRINT_FORMAT = "hexapharma-blueprint" as const;
 export const BLUEPRINT_VERSION = 4 as const;
-export const BLUEPRINT_RULESET = 4 as const;
+export const BLUEPRINT_RULESET = 5 as const;
 export const MAX_BLUEPRINT_BYTES = 1_048_576;
 export const MAX_BLUEPRINT_NAME_LENGTH = 80;
 
@@ -30,6 +30,7 @@ function contentFingerprint(): string {
     catalog: DEFAULT_CATALOG.map((entry) => ({
       typeId: entry.typeId,
       path: entry.path,
+      turn: entry.turn,
       cost: entry.cost,
       speed: entry.speed,
     })),
@@ -362,6 +363,7 @@ function materializeProgramCanonical(blueprint: PortableResearchBlueprint): Temp
       return {
         typeId: entry.typeId,
         path: [...entry.path],
+        turn: entry.turn,
       };
     }),
   };
@@ -402,6 +404,7 @@ function materializeLayoutCanonical(blueprint: PortableFactoryBlueprint): Factor
       def: {
         typeId: entry.typeId,
         path: [...entry.path],
+        turn: entry.turn,
         cost: entry.cost,
         speed: entry.speed,
       },
@@ -546,7 +549,7 @@ export function blueprintFromProgram(name: string, program: Template): PortableR
   if (!Array.isArray(program.steps)) throw new Error("blueprint: source program steps must be an array");
   const steps = program.steps.map((step, index): PortableResearchStep => {
     const entry = catalogEntry(step.typeId, `source program.steps[${index}].typeId`);
-    if (!sameData(step.path, entry.path)) {
+    if (!sameData(step.path, entry.path) || step.turn !== entry.turn) {
       throw new Error(`blueprint: source program.steps[${index}].path does not match the catalog`);
     }
     return { typeId: entry.typeId };
@@ -590,7 +593,7 @@ export function blueprintFromFactoryLayout(name: string, layout: FactoryLayout):
     if (shape === undefined) {
       throw new Error(`blueprint: source layout.machines[${index}] has no local factory shape`);
     }
-    if (!sameData(machine.def.path, entry.path)) {
+    if (!sameData(machine.def.path, entry.path) || machine.def.turn !== entry.turn) {
       throw new Error(`blueprint: source layout.machines[${index}].path does not match the catalog`);
     }
     if (machine.def.cost !== entry.cost || machine.def.speed !== entry.speed) {

@@ -20,7 +20,7 @@ import { analyzeThroughput } from "../src/sim/factory-sim/index";
 import { solve } from "../src/sim/solver/index";
 import { quoteProductionBuild } from "../src/sim/construction/index";
 import { DEFAULT_STARTING_CASH } from "../src/sim/game";
-import { walkValidatedPathInto } from "../src/sim/drug-graph";
+import { PATH_OUT_STRIDE, turnHeading, walkValidatedPathInto } from "../src/sim/drug-graph";
 import {
   BASE_GAME_FACTORY_HEIGHT,
   BASE_GAME_FACTORY_WIDTH,
@@ -150,16 +150,16 @@ function generatedReferenceCures(level: GeneratedLevel, reference: Template): re
   if (map === undefined || start === undefined) {
     throw new Error("balance all-pairs requires the active one-Atlas level");
   }
-  const output = new Int32Array(3);
-  let q = start.q;
-  let r = start.r;
+  const output = new Int32Array(PATH_OUT_STRIDE);
+  output[0] = start.q;
+  output[1] = start.r;
+  let heading: number = level.start.heading;
   for (const machine of reference.steps) {
-    walkValidatedPathInto(map, q, r, machine, output, 0);
-    if (output[2] === 1) return [];
-    q = output[0]!;
-    r = output[1]!;
+    walkValidatedPathInto(map, output[0]!, output[1]!, output[2]!, output[3]!, heading, machine, output, 0);
+    if (output[4] === 1) return [];
+    heading = turnHeading(heading, machine.turn);
   }
-  const index = r * map.width + q;
+  const index = output[1]! * map.width + output[0]!;
   const disease = map.cureId[index];
   return map.cell[index] === CellKind.Cure && disease !== undefined && disease >= 0
     ? [disease]
@@ -609,6 +609,10 @@ export function runBalance(count: number, overrides: SweepOverrides = {}): 0 | 1
     ...diversityFailures(result),
     ...bootstrapFailures(result),
     ...puzzleBlockerFailures(result),
+    ...progression
+      .filter((ledger) => !ledger.completed || ledger.minimumCash < PROGRESSION_RETRY_BUDGET)
+      .map((ledger) => `seed=${ledger.seed} progression reserve ${ledger.minimumCash} < ${PROGRESSION_RETRY_BUDGET}` +
+        (ledger.completed ? "" : " (blocked)")),
   ]) {
     console.error(`FAILED ${failure}`);
   }

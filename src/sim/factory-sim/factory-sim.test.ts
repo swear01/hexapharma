@@ -94,7 +94,7 @@ function machineDef(
   path: PathStamp,
   speed: number,
 ): FactoryMachineDef {
-  return { typeId, path, cost: 1, speed };
+  return { typeId, path, turn: 0, cost: 1, speed };
 }
 
 function placeMachine(
@@ -217,6 +217,8 @@ describe("factory-sim straight line", () => {
     const mm = twoMaps();
     const start: DrugState = {
       pos: [{ q: 12, r: 13 }, { q: 14, r: 15 }],
+      offset: [{ q: 0, r: 0 }, { q: 0, r: 0 }],
+      heading: 4,
       failed: true,
     };
     const runtime = initFactory(layout, mm, start);
@@ -249,14 +251,40 @@ describe("path correctness", () => {
     expect(last.producedTotal).toBeGreaterThan(0);
 
     let expected = start;
-    expected = applyStep(mm, expected, { typeId: a.typeId, path: a.path });
-    expected = applyStep(mm, expected, { typeId: bdef.typeId, path: bdef.path });
+    expected = applyStep(mm, expected, a);
+    expected = applyStep(mm, expected, bdef);
 
     for (const product of products(states)) {
       expect(product.drug.pos).toEqual(expected.pos);
       expect(product.drug.failed).toBe(expected.failed);
       expect(product.productionCost).toBe(a.cost + bdef.cost);
     }
+  });
+
+  it("carries heading and swamp half-step offsets exactly like applyTemplate", () => {
+    // Two turning machines over a swamp field: the second stamp runs rotated and ends half-way.
+    const turnRight = { ...machineDef("turnRight", [E, E] as const, 2), turn: 1 };
+    const turnBack = { ...machineDef("turnBack", [E] as const, 3), turn: -2 };
+    let map = emptyMap(12, { q: 2, r: 2 });
+    for (const [q, r] of [[4, 2], [4, 3], [5, 2], [3, 3]] as const) {
+      map = withTerrain(map, q, r, CellKind.Swamp);
+    }
+    const mm = { maps: [map] };
+    const b = blank(5, 1);
+    set(b, 0, 0, { kind: "source", dir: E, period: 100 });
+    set(b, 2, 0, { kind: "belt", dir: E });
+    set(b, 4, 0, { kind: "sink" });
+    const layout = finish(b, [
+      placeMachine(0, turnRight, SHAPE_1x1, { q: 1, r: 0 }),
+      placeMachine(1, turnBack, SHAPE_1x1, { q: 3, r: 0 }),
+    ]);
+    const start = initialState(mm);
+    const expected = applyStep(mm, applyStep(mm, start, turnRight), turnBack);
+    expect(expected.heading).toBe(5);
+    expect(expected.offset).not.toEqual([{ q: 0, r: 0 }]);
+    const produced = products(run(layout, mm, start, 40));
+    expect(produced.length).toBeGreaterThan(0);
+    for (const product of produced) expect(product.drug).toEqual(expected);
   });
 
   it("each path applies exactly once (east then west returns to start)", () => {
@@ -281,7 +309,7 @@ describe("path correctness", () => {
     }
   });
 
-  it("matches applyStep for wall/OOB cancellation, swamp energy, abyss, and portals", () => {
+  it("matches applyStep for wall/OOB cancellation, swamp half steps, abyss, and portals", () => {
     const wall = withTerrain(emptyMap(8, { q: 2, r: 2 }), 3, 2, CellKind.Wall);
     const abyss = withTerrain(emptyMap(8, { q: 1, r: 2 }), 3, 2, CellKind.Abyss);
     const swamp = withTerrain(emptyMap(8, { q: 1, r: 2 }), 2, 2, CellKind.Swamp);
@@ -317,6 +345,7 @@ describe("path correctness", () => {
       const expected = applyStep(maps, start, {
         typeId: def.typeId,
         path: def.path,
+        turn: def.turn,
       });
       const produced = products(run(layout, maps, start, 20));
 
@@ -789,7 +818,7 @@ describe("factory hot-loop caches", () => {
     const mm = twoMaps();
     const runtime = initFactory(layout, mm, initialState(mm));
     const eventIds = runtime.producedEvents.ids;
-    const copied = new Int32Array(3 + runtime.mapCount * 2);
+    const copied = new Int32Array(4 + runtime.mapCount * 4);
     let consumed = 0;
     for (let tick = 0; tick < 200; tick++) {
       stepFactory(layout, mm, runtime);
@@ -946,7 +975,7 @@ describe("cold factory layout authority", () => {
   it("validates portal authority once during initialization", () => {
     const map = emptyMap(5, { q: 2, r: 2 });
     map.cell[3 * map.width + 2] = CellKind.Portal;
-    const start: DrugState = { pos: [map.start], failed: false };
+    const start: DrugState = { pos: [map.start], offset: [{ q: 0, r: 0 }], heading: 0, failed: false };
     expect(() => initFactory(finish(blank(1, 1), []), { maps: [map] }, start)).toThrow(
       /portal destination/i,
     );

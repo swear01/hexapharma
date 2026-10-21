@@ -12,7 +12,7 @@ Solo players of puzzle-factory games (Big Pharma, shapez, Factorio, Opus Magnum 
 
 ## Product Purpose
 
-HexaPharma joins Potion Craft–style map exploration with Big Pharma–style physical production. The player explores a fogged hex Atlas one paid machine stamp at a time until a disease is cured, then designs (free Plan) and builds (paid Production) a factory that produces that formula, ships it into finite demand, and unlocks the next machines. Success: a fresh player understands the next step at every moment, reaches a first profitable sale from $1000 without outside help, and wants to research the next disease.
+HexaPharma joins Potion Craft–style map exploration with Big Pharma–style physical production. The player plans a whole machine route on a fogged hex Atlas (predicted on the known map only), pays once to run it on the real map, and keeps revising until a Cure is revealed; then designs (free Plan) and builds (paid Production) a factory that runs that machine sequence, ships it into finite demand, and unlocks the next machines. Success: a fresh player understands the next step at every moment, reaches a first profitable sale from $1000 without outside help, and wants to research the next disease.
 
 ## Positioning
 
@@ -20,7 +20,7 @@ The same machine is both a path on the map and a footprint on the factory floor:
 
 ## Operating Context
 
-- Three world pages switched constantly: Research (F1), Production Plan (F2), Production (F3); management drawers Market (M), Technology (T), Blueprints (B), Formulas, Menu.
+- Three world pages switched constantly: Research (F1), Production Plan (F2), Production (F3); management drawers Market (M), Technology (T), Blueprints (B), Guide, Menu.
 - Production keeps running while the player visits other pages; blocking confirmations pause it.
 - Keyboard-heavy play: hotbar 1–0, R rotate, Q pick, Space play/pause, Ctrl+Z/Y/C/X/V, F focus.
 - Playtests happen on a remote dev server; save files are open JSON.
@@ -31,11 +31,11 @@ The same machine is both a path on the map and a footprint on the factory floor:
 - Code-as-truth: no engine editors, scene files or raster asset pipelines; the world is drawn by code at runtime. One self-hosted font file is permitted (user-approved 2026-10-20); no other new dependencies.
 - Pointy-top axial true hex in both Atlas and Factory; six directions E/SE/SW/W/NW/NE; six 60° footprint rotations.
 - Fog secrecy is a game rule: only Walls show through fog; nothing hidden may leak through visuals, hover, preview, tooltips or camera.
-- Research is reveal–decide: one complete PathStamp per paid step; no batch route, partial path or auto-solve.
+- Research is plan-then-run: complete heading-relative PathStamps (each machine turns the drug; swamp halves the step) planned for free, one paid trial reveals only the actual path; Research never creates formulas; no partial path or auto-solve.
 - Plan is free/no clock; Production edits cost cash (diff quote); Commission builds a Plan into Production.
 - Finite per-disease demand; shipping contracts (quota 3) gate patents.
 - Hot render loops must not allocate per tick.
-- Terminology for players: Research, Plan, Production, Commission, Formula, Cure, Side effect, Market, Technology, Knowledge, Blueprint. Internal `pilot` naming is never player copy.
+- Terminology for players: Research, Run, Plan, Production, Commission, Cure, Side effect, Market, Technology, Knowledge, Blueprint. Internal `pilot` naming is never player copy.
 
 ## Brand Commitments
 
@@ -51,9 +51,9 @@ The same machine is both a path on the map and a footprint on the factory floor:
 ## Product Principles
 
 1. The world is the interface: map and factory lead; chrome serves them.
-2. Always show the next step: the loop Research → Formula → Build → Ship → Unlock must be legible without the guide.
+2. Always show the next step: the loop Research → Plan → Build → Ship → Unlock must be legible without the guide.
 3. Discovery is the peak: a Cure is the moment the game celebrates; everything else stays fast.
-4. One machine, one identity across map, hotbar, factory floor and formula.
+4. One machine, one identity across map, hotbar, factory floor and route list.
 5. Cost is always visible before it is spent.
 
 ## Accessibility & Inclusion

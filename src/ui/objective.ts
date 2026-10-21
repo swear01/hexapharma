@@ -13,7 +13,8 @@ export interface Objective {
 
 export interface ObjectiveInput {
   readonly contracts: readonly ShippingContractProgress[];
-  readonly formulaDiseases: readonly DiseaseId[];
+  /** Diseases with at least one Cure cell already revealed in fog. */
+  readonly knownCureDiseases: readonly DiseaseId[];
   readonly unlockedPatents: readonly string[];
   readonly gatedPatents: readonly string[];
   readonly profitableUnits: (disease: DiseaseId) => number;
@@ -41,18 +42,18 @@ export function currentObjective(input: ObjectiveInput): Objective {
   if (input.profitableUnits(contract.disease) > 0) {
     return { text: `Ship ${name} · ${contract.sold} of ${contract.quota}`, target: "market", actionLabel: "Ship" };
   }
-  if (!input.formulaDiseases.includes(contract.disease)) {
+  if (!input.knownCureDiseases.includes(contract.disease)) {
     const where = input.sector === "local" ? "near the start" : `look ${input.sector}`;
-    return { text: `Find a cure for ${name} · ${where}`, target: "research", actionLabel: "Research" };
+    return { text: `Find ${name} · ${where}`, target: "research", actionLabel: "Research" };
   }
   if (input.stockFor(contract.disease) > 0) {
     return { text: `${name} stock no longer earns · improve the line`, target: "production", actionLabel: "Production" };
   }
   if (!input.productionHasMachines) {
-    return { text: `Build the ${name} formula`, target: "pilot", actionLabel: "Open Plan" };
+    return { text: `Plan a line to ${name}`, target: "pilot", actionLabel: "Open Plan" };
   }
   if (input.producingOther) {
-    return { text: `Build the ${name} formula · Production makes another cure`, target: "pilot", actionLabel: "Open Plan" };
+    return { text: `Plan a line to ${name} · Production makes another cure`, target: "pilot", actionLabel: "Open Plan" };
   }
   return { text: `Run Production to make ${name}`, target: "production", actionLabel: "Production" };
 }

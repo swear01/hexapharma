@@ -78,6 +78,7 @@ describe("factory machine visual language", () => {
       def: {
         typeId: entry.typeId,
         path: entry.path,
+        turn: entry.turn,
         cost: entry.cost,
         speed: entry.speed,
       },
@@ -145,7 +146,7 @@ describe("factory blocked units", () => {
     const entry = DEFAULT_CATALOG[0]!;
     const machine: PlacedMachine = {
       id: 3,
-      def: { typeId: entry.typeId, path: entry.path, cost: entry.cost, speed: entry.speed },
+      def: { typeId: entry.typeId, path: entry.path, turn: entry.turn, cost: entry.cost, speed: entry.speed },
       anchor: { q: 2, r: 2 },
       footRot: 0,
       shape: SHAPE_1x1,

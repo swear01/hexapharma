@@ -176,6 +176,7 @@ function machineDef(typeId: MachineTypeId): FactoryMachineDef {
   return {
     typeId,
     path: entry.path,
+    turn: entry.turn,
     cost: entry.cost,
     speed: entry.speed,
   };

@@ -14,7 +14,13 @@ import type {
   HexDir,
 } from "../phase0_interfaces";
 import { CellKind, MAX_TEMPLATE_STEPS } from "../phase0_interfaces";
-import { initialState, walkValidatedPathInto } from "../drug-graph";
+import {
+  initialState,
+  PATH_OUT_STRIDE,
+  turnHeading,
+  validateMachineTurn,
+  walkValidatedPathInto,
+} from "../drug-graph";
 import {
   HEX_DIRS,
   HEX_DQ,
@@ -186,6 +192,7 @@ function ownMachine(entry: MachineCatalogEntry): Machine {
   return Object.freeze({
     typeId: entry.typeId,
     path: Object.freeze(entry.path.slice()),
+    turn: entry.turn,
   });
 }
 
@@ -200,23 +207,23 @@ function referenceDifficulty(reference: Template): number {
   return reference.steps.length + Math.max(0, signatures.size - 1);
 }
 
-function stepEndpoint(position: HexCoord, machine: Machine, width: number, height: number): HexCoord {
-  let q = position.q;
-  let r = position.r;
-  for (const dir of machine.path) {
-    const nextQ = q + HEX_DQ[dir]!;
-    const nextR = r + HEX_DR[dir]!;
-    if (nextQ < 0 || nextR < 0 || nextQ >= width || nextR >= height) continue;
-    q = nextQ;
-    r = nextR;
+/** Endpoint of `reference` on an empty board of the same size (heading-relative paths). */
+function programEndpoint(start: HexCoord, reference: Template, width: number, height: number): HexCoord {
+  let q = start.q;
+  let r = start.r;
+  let heading = 0;
+  for (const machine of reference.steps) {
+    for (const relative of machine.path) {
+      const dir = (relative + heading) % 6;
+      const nextQ = q + HEX_DQ[dir]!;
+      const nextR = r + HEX_DR[dir]!;
+      if (nextQ < 0 || nextR < 0 || nextQ >= width || nextR >= height) continue;
+      q = nextQ;
+      r = nextR;
+    }
+    heading = turnHeading(heading, machine.turn);
   }
   return { q, r };
-}
-
-function programEndpoint(start: HexCoord, reference: Template, width: number, height: number): HexCoord {
-  let position = start;
-  for (const machine of reference.steps) position = stepEndpoint(position, machine, width, height);
-  return position;
 }
 
 function simulateReference(
@@ -228,47 +235,51 @@ function simulateReference(
   readonly final: readonly HexCoord[];
   readonly strictPrefixCells: readonly ReadonlySet<number>[];
 } {
-  const positions = new Int32Array(terrain.maps.length * 2);
-  const walk = new Int32Array(terrain.maps.length * 3);
+  const stride = PATH_OUT_STRIDE;
+  const walk = new Int32Array(terrain.maps.length * stride);
   const strictPrefixCells = terrain.maps.map(() => new Set<number>());
   for (let mapIndex = 0; mapIndex < terrain.maps.length; mapIndex++) {
-    positions[mapIndex * 2] = start.pos[mapIndex]!.q;
-    positions[mapIndex * 2 + 1] = start.pos[mapIndex]!.r;
+    walk[mapIndex * stride] = start.pos[mapIndex]!.q;
+    walk[mapIndex * stride + 1] = start.pos[mapIndex]!.r;
+    walk[mapIndex * stride + 2] = start.offset[mapIndex]!.q;
+    walk[mapIndex * stride + 3] = start.offset[mapIndex]!.r;
   }
+  let heading: number = start.heading;
   let failed = false;
   for (let stepIndex = 0; stepIndex < reference.steps.length; stepIndex++) {
     const machine = reference.steps[stepIndex]!;
     for (let mapIndex = 0; mapIndex < terrain.maps.length; mapIndex++) {
       const map = terrain.maps[mapIndex]!;
+      const base = mapIndex * stride;
       walkValidatedPathInto(
         map,
-        positions[mapIndex * 2]!,
-        positions[mapIndex * 2 + 1]!,
+        walk[base]!,
+        walk[base + 1]!,
+        walk[base + 2]!,
+        walk[base + 3]!,
+        heading,
         machine,
         walk,
-        mapIndex * 3,
+        base,
       );
-    }
-    for (let mapIndex = 0; mapIndex < terrain.maps.length; mapIndex++) {
-      positions[mapIndex * 2] = walk[mapIndex * 3]!;
-      positions[mapIndex * 2 + 1] = walk[mapIndex * 3 + 1]!;
-      if (walk[mapIndex * 3 + 2] === 1) failed = true;
+      if (walk[base + 4] === 1) failed = true;
     }
     if (failed) break;
+    heading = turnHeading(heading, machine.turn);
     if (stepIndex + 1 < reference.steps.length) {
       for (let mapIndex = 0; mapIndex < terrain.maps.length; mapIndex++) {
         const map = terrain.maps[mapIndex]!;
         strictPrefixCells[mapIndex]!.add(idx(
           map.width,
-          positions[mapIndex * 2]!,
-          positions[mapIndex * 2 + 1]!,
+          walk[mapIndex * stride]!,
+          walk[mapIndex * stride + 1]!,
         ));
       }
     }
   }
   const final = Array.from({ length: terrain.maps.length }, (_, mapIndex) => ({
-    q: positions[mapIndex * 2]!,
-    r: positions[mapIndex * 2 + 1]!,
+    q: walk[mapIndex * stride]!,
+    r: walk[mapIndex * stride + 1]!,
   }));
   return { failed, final, strictPrefixCells };
 }
@@ -521,6 +532,7 @@ function makeProgramCandidate(
   }
   const steps: Machine[] = [];
   const entryUses = new Int32Array(entries.length);
+  let heading = 0;
   let cost = 0;
   let totalPathLength = 0;
   for (let stepIndex = 0; stepIndex < stepCount; stepIndex++) {
@@ -541,7 +553,8 @@ function makeProgramCandidate(
         const entry = entries[index]!;
         let netQ = 0;
         let netR = 0;
-        for (const dir of entry.path) {
+        for (const relative of entry.path) {
+          const dir = (relative + heading) % 6;
           netQ += HEX_DQ[dir]!;
           netR += HEX_DR[dir]!;
         }
@@ -572,6 +585,7 @@ function makeProgramCandidate(
     if (entry === undefined) return null;
     entryUses[entryIndex] = entryUses[entryIndex]! + 1;
     steps.push(ownMachine(entry));
+    heading = turnHeading(heading, entry.turn);
     totalPathLength += entry.path.length;
     cost += entry.cost;
   }
@@ -1181,6 +1195,11 @@ function validateCatalog(catalog: readonly MachineCatalogEntry[]): void {
       ) {
         throw new Error(`mapgen.generate: ${path}.path[${pathIndex}] must be a hex direction in 0..5`);
       }
+    }
+    try {
+      validateMachineTurn(entry.turn);
+    } catch {
+      throw new Error(`mapgen.generate: ${path}.turn must be an integer in -5..5`);
     }
   }
 }

@@ -39,7 +39,7 @@ function catalog(typeId: string): MachineCatalogEntry {
 
 function machine(typeId: string) {
   const entry = catalog(typeId);
-  return { typeId, path: [...entry.path] };
+  return { typeId, path: [...entry.path], turn: entry.turn };
 }
 
 const program: Template = {
@@ -67,6 +67,7 @@ function factoryLayout(): FactoryLayout {
       def: {
         typeId: entry.typeId,
         path: entry.path,
+        turn: entry.turn,
         cost: entry.cost,
         speed: entry.speed,
       },
@@ -95,9 +96,9 @@ function unsignedDocument(blueprint: unknown, version: unknown = BLUEPRINT_VERSI
 }
 
 describe("blueprint format v4", () => {
-  it("freezes the breaking wire and ruleset at v4", () => {
+  it("freezes the breaking wire at v4 and the heading ruleset at v5", () => {
     expect(BLUEPRINT_VERSION).toBe(4);
-    expect(BLUEPRINT_RULESET).toBe(4);
+    expect(BLUEPRINT_RULESET).toBe(5);
   });
 
   it("encodes a strict human-readable ResearchProgram without paths or private world state", async () => {
@@ -111,7 +112,7 @@ describe("blueprint format v4", () => {
       blueprint: {
         kind: "research-program",
         name: "Atlas route",
-        ruleset: 4,
+        ruleset: 5,
         content: BLUEPRINT_CONTENT_FINGERPRINT,
         program: {
           steps: [
@@ -175,6 +176,7 @@ describe("blueprint format v4", () => {
       def: {
         typeId: "push",
         path: [...entry.path],
+        turn: entry.turn,
         cost: entry.cost,
         speed: entry.speed,
       },
@@ -282,8 +284,11 @@ describe("blueprint format v4", () => {
 
   it("rejects unknown machine types and source authorities that disagree with the catalog", () => {
     expect(() => blueprintFromProgram("Forged", {
-      steps: [{ typeId: "push", path: [3] }],
+      steps: [{ typeId: "push", path: [3], turn: 1 }],
     })).toThrow(/path|catalog/i);
+    expect(() => blueprintFromProgram("Forged turn", {
+      steps: [{ ...machine("push"), turn: 0 }],
+    })).toThrow(/catalog/i);
 
     const layout = factoryLayout();
     expect(() => blueprintFromFactoryLayout("Forged", {

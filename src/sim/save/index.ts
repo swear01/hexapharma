@@ -34,9 +34,9 @@ import {
   MAX_GAME_FACTORY_DIMENSION,
 } from "../phase0_interfaces";
 import { restoreFactory, snapshotFactory } from "../factory-sim";
+import { isDrugOffset } from "../drug-graph";
 import {
   MAX_GENERATION_CATALOG_ENTRIES,
-  MAX_GENERATION_DISEASES,
   generate,
 } from "../mapgen";
 import { DEFAULT_PATENTS } from "../patent";
@@ -60,15 +60,16 @@ import { DEFAULT_CATALOG, DEFAULT_SHAPES } from "../phase0_interfaces";
 // blob field-by-field and rebuilding a structurally-equal GameState — never
 // defaulting silently on missing/wrong fields.
 
-export const SAVE_VERSION = 11;
+export const SAVE_VERSION = 12;
 export const SAVE_CONTENT_BUILD = fnv1a32Hex(canonical({
-  rules: 2,
+  rules: 3,
   catalog: DEFAULT_CATALOG,
   shapes: DEFAULT_SHAPES,
   patents: DEFAULT_PATENTS,
 }));
 export const MAX_SLOT_STATES = 20;
-export const MAX_SAVE_CHARACTERS = 5_000_000;
+// A full save of the 24,500-product warehouse is ~5.36M characters once drugs carry heading + offset.
+export const MAX_SAVE_CHARACTERS = 6_000_000;
 
 export interface PreparedSnapshot {
   readonly game: GameState;
@@ -224,10 +225,11 @@ function parseCatalog(v: unknown, catalogPath: string): GenOptions["catalog"] {
   }
   return arr.map((e, i) => {
     const path = `${catalogPath}[${i}]`;
-    const o = reqExactObject(e, path, ["typeId", "path", "cost", "speed"]);
+    const o = reqExactObject(e, path, ["typeId", "path", "turn", "cost", "speed"]);
     return {
       typeId: reqString(o.typeId, `${path}.typeId`),
       path: parsePathStamp(o.path, `${path}.path`),
+      turn: parseTurn(o.turn, `${path}.turn`),
       cost: reqNumber(o.cost, `${path}.cost`),
       speed: reqInt(o.speed, `${path}.speed`),
     };
@@ -265,11 +267,18 @@ function parsePatents(v: unknown): PatentState {
   };
 }
 
+function parseTurn(v: unknown, path: string): number {
+  const turn = reqInt(v, path);
+  if (turn < -5 || turn > 5) throw new SaveError(`${path}: expected turn -5..5, got ${turn}`);
+  return turn;
+}
+
 function parseMachine(v: unknown, path: string): Machine {
-  const o = reqExactObject(v, path, ["typeId", "path"]);
+  const o = reqExactObject(v, path, ["typeId", "path", "turn"]);
   return {
     typeId: reqString(o.typeId, `${path}.typeId`),
     path: parsePathStamp(o.path, `${path}.path`),
+    turn: parseTurn(o.turn, `${path}.turn`),
   };
 }
 
@@ -287,13 +296,23 @@ function parseTemplate(v: unknown, path: string): Template {
 }
 
 function parseDrugState(v: unknown, path: string, expectedMaps?: number): DrugState {
-  const o = reqExactObject(v, path, ["pos", "failed"]);
+  const o = reqExactObject(v, path, ["pos", "offset", "heading", "failed"]);
   const pos = reqArray(o.pos, `${path}.pos`);
+  const offset = reqArray(o.offset, `${path}.offset`);
   if (expectedMaps !== undefined && pos.length !== expectedMaps) {
     throw new SaveError(`${path}.pos: map count mismatch`);
   }
+  if (offset.length !== pos.length) {
+    throw new SaveError(`${path}.offset: map count mismatch`);
+  }
   return {
     pos: pos.map((p, i) => parseHexCoord(p, `${path}.pos[${i}]`)),
+    offset: offset.map((p, i) => {
+      const coord = parseHexCoord(p, `${path}.offset[${i}]`);
+      if (!isDrugOffset(coord)) throw new SaveError(`${path}.offset[${i}]: expected at most one half step`);
+      return coord;
+    }),
+    heading: parseDir(o.heading, `${path}.heading`),
     failed: reqBool(o.failed, `${path}.failed`),
   };
 }
@@ -378,10 +397,11 @@ function parseDir(v: unknown, path: string): Dir {
 }
 
 function parseMachineDef(v: unknown, path: string): FactoryMachineDef {
-  const o = reqExactObject(v, path, ["typeId", "path", "cost", "speed"]);
+  const o = reqExactObject(v, path, ["typeId", "path", "turn", "cost", "speed"]);
   return {
     typeId: reqString(o.typeId, `${path}.typeId`),
     path: parsePathStamp(o.path, `${path}.path`),
+    turn: parseTurn(o.turn, `${path}.turn`),
     cost: reqNumber(o.cost, `${path}.cost`),
     speed: reqInt(o.speed, `${path}.speed`),
   };
@@ -689,41 +709,16 @@ function parseRng(v: unknown): RngState {
 
 function parseResearchFacility(v: unknown, expectedMaps: number): GameState["research"] {
   const path = "research";
-  const o = reqExactObject(v, path, ["program", "shot", "lastOutcome", "discoveredFormulas"]);
-  const discoveredFormulas = reqArray(o.discoveredFormulas, `${path}.discoveredFormulas`);
-  if (discoveredFormulas.length > MAX_GENERATION_DISEASES) {
-    throw new SaveError(`${path}.discoveredFormulas: exceeds generated disease limit`);
-  }
-  const shotObject = o.shot === null
-    ? null
-    : reqExactObject(o.shot, `${path}.shot`, ["step", "drug", "cost"]);
+  const o = reqExactObject(v, path, ["lastTrial"]);
+  if (o.lastTrial === null) return { lastTrial: null };
+  const trialPath = `${path}.lastTrial`;
+  const trial = reqExactObject(o.lastTrial, trialPath, ["program", "cost", "outcome"]);
   return {
-    program: parseTemplate(o.program, `${path}.program`),
-    shot: shotObject === null
-      ? null
-      : {
-          step: reqInt(shotObject.step, `${path}.shot.step`),
-          drug: parseDrugState(shotObject.drug, `${path}.shot.drug`, expectedMaps),
-          cost: reqInt(shotObject.cost, `${path}.shot.cost`),
-        },
-    lastOutcome: o.lastOutcome === null
-      ? null
-      : parseOutcome(o.lastOutcome, `${path}.lastOutcome`, expectedMaps),
-    discoveredFormulas: discoveredFormulas.map((value, index) => {
-      const formulaPath = `${path}.discoveredFormulas[${index}]`;
-      const formula = reqExactObject(value, formulaPath, [
-        "disease",
-        "program",
-        "researchCost",
-        "outcome",
-      ]);
-      return {
-        disease: reqInt(formula.disease, `${formulaPath}.disease`),
-        program: parseTemplate(formula.program, `${formulaPath}.program`),
-        researchCost: reqInt(formula.researchCost, `${formulaPath}.researchCost`),
-        outcome: parseOutcome(formula.outcome, `${formulaPath}.outcome`, expectedMaps),
-      };
-    }),
+    lastTrial: {
+      program: parseTemplate(trial.program, `${trialPath}.program`),
+      cost: reqInt(trial.cost, `${trialPath}.cost`),
+      outcome: parseOutcome(trial.outcome, `${trialPath}.outcome`, expectedMaps),
+    },
   };
 }
 

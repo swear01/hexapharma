@@ -31,11 +31,7 @@ function preparedFacilitiesSave(seed = 14): string {
     BASE_GAME_FACTORY_HEIGHT,
   ).layout;
   let game = createGameState(options, DEFAULT_STARTING_CASH, 0);
-  game = applyGameIntent(game, { kind: "beginResearchShot" });
-  for (const machine of program.steps) {
-    game = applyGameIntent(game, { kind: "advanceResearchShot", machine });
-    if (game.research.shot === null) break;
-  }
+  game = applyGameIntent(game, { kind: "runResearchTrial", program });
   game = applyGameIntent(game, { kind: "setPilotLayout", layout });
   return serializeGame(game);
 }
@@ -47,21 +43,17 @@ async function loadPrepared(page: import("@playwright/test").Page, seed = 14): P
   await confirmLoad(page);
 }
 
-test("full loop: paid Research → Formula → Production Plan → Production → shipping contract", async ({
+test("full loop: paid Research trial → Production Plan → Production → shipping contract", async ({
   page,
 }) => {
   await loadPrepared(page);
-  await expect(page.getByTestId("research-atlas-outcome")).toBeVisible();
-  await page.getByTestId("view-formulas").click();
-  await expect(page.getByTestId("formula-ribbon")).toContainText("Disease 1");
-  await expect(page.getByTestId("formula-ribbon")).toContainText("F-01 · Disease 1");
-  await expect(page.getByTestId("formula-ribbon").locator(".formula-ribbon-cost")).toHaveText(/^\$[1-9][0-9]*$/);
+  await expect(page.getByTestId("research-atlas-outcome")).toContainText("Cure Disease 1");
+  await expect(page.getByTestId("view-formulas")).toHaveCount(0);
   await expect(page.getByTestId("shipping-contract")).toContainText("0 / 3");
+  await expect(page.getByTestId("objective-text")).toHaveText("Plan a line to Disease 1");
 
-  await page.getByTestId("view-pilot").click();
+  await page.getByTestId("objective-action").click();
   await expect(page.getByTestId("pilot-facility-workspace")).toBeVisible();
-  await expect(page.getByTestId("formula-ribbon")).toBeVisible();
-  await page.keyboard.press("Escape");
   await page.getByTestId("pilot-command").click();
   await expect(page.getByTestId("production-facility-workspace")).toBeVisible();
   await page.getByTestId("factory-play").click();

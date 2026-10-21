@@ -18,7 +18,7 @@
 
 ### Phase 3 — Economy / Technology / save
 
-完成 Market、Knowledge、shipping contracts、patents、獨立 intent replay debug／開放 checkpoint。當前 wire 是 Save v11，早期 schema 不再支援。
+完成 Market、Knowledge、shipping contracts、patents、獨立 intent replay debug／開放 checkpoint。當前 wire 是 Save v12（v2 Step 1），早期 schema 不再支援。
 
 ### Phase 4 — Direct-operation shell
 
@@ -53,7 +53,7 @@
 
 ## Next — v2
 
-Research 改為規劃後一次試驗、只開圖；朝向與轉向角；沼澤半格；黑格；★ 二級療效；地圖生成器重寫（骨架＋隘口＋壓縮等高線）；科技樹；每種基底一張地圖；介面清理。順序與驗收見 [plan.md](plan.md)。
+Step 1 已完成（`feat/v2-sim-rules`）：Research 改為規劃後一次試驗、只開圖；朝向與轉向角；沼澤半格；Save v12。其餘：黑格；★ 二級療效；地圖生成器重寫（骨架＋隘口＋壓縮等高線）；科技樹；每種基底一張地圖；介面清理。順序與驗收見 [plan.md](plan.md)。
 
 ## Later
 

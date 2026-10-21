@@ -25,6 +25,7 @@ function placed(id: number, q: number, r: number, footRot: 0 | 1 | 2 | 3 | 4 | 5
     def: {
       typeId: entry.typeId,
       path: entry.path,
+      turn: entry.turn,
       cost: entry.cost,
       speed: entry.speed,
     },

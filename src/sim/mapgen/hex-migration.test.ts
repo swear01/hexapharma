@@ -19,6 +19,7 @@ const NE = 5 as HexDir;
 const catalog: readonly MachineCatalogEntry[] = [{
   typeId: "north-east",
   path: [NE] as PathStamp,
+  turn: 0,
   cost: 1,
   speed: 1,
 }];
@@ -42,7 +43,7 @@ describe("true-hex map generation", () => {
     expect(first).toEqual(second);
     expect(first.mm.maps[0]!.start).toEqual({ q: 16, r: 16 });
     expect(first.mm.maps[0]!.origin).toEqual({ q: 16, r: 16 });
-    expect(disease.reference.steps).toEqual([{ typeId: "north-east", path: [NE] }]);
+    expect(disease.reference.steps).toEqual([{ typeId: "north-east", path: [NE], turn: 0 }]);
     expect(evaluate(first.mm, first.start, disease.reference)).toMatchObject({
       failed: false,
       cured: [disease.id],
