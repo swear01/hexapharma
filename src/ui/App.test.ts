@@ -139,6 +139,10 @@ describe("Lab pointer projection", () => {
       { q: 12, r: 8 },
     )).toBe(false);
     expect(researchPreviewEndpointHit({ q: 12, r: 8 }, undefined)).toBe(false);
+    // a swamp half-step endpoint drawn on the edge between (33,31) and (33,32) is hit from either cell
+    expect(researchPreviewEndpointHit({ q: 33, r: 31 }, { q: 33, r: 31.5 })).toBe(true);
+    expect(researchPreviewEndpointHit({ q: 33, r: 32 }, { q: 33, r: 31.5 })).toBe(true);
+    expect(researchPreviewEndpointHit({ q: 34, r: 31 }, { q: 33, r: 31.5 })).toBe(false);
   });
 
   it("focuses the next candidate when present and the current dose otherwise", () => {

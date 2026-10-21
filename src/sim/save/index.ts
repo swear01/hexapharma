@@ -299,11 +299,11 @@ function parseDrugState(v: unknown, path: string, expectedMaps?: number): DrugSt
   const o = reqExactObject(v, path, ["pos", "offset", "heading", "failed"]);
   const pos = reqArray(o.pos, `${path}.pos`);
   const offset = reqArray(o.offset, `${path}.offset`);
-  if (
-    (expectedMaps !== undefined && pos.length !== expectedMaps) ||
-    offset.length !== pos.length
-  ) {
+  if (expectedMaps !== undefined && pos.length !== expectedMaps) {
     throw new SaveError(`${path}.pos: map count mismatch`);
+  }
+  if (offset.length !== pos.length) {
+    throw new SaveError(`${path}.offset: map count mismatch`);
   }
   return {
     pos: pos.map((p, i) => parseHexCoord(p, `${path}.pos[${i}]`)),

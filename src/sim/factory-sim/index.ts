@@ -34,6 +34,7 @@ import {
   validateEffectMap,
   validateMachinePath,
   walkValidatedPathInto,
+  turnHeading,
 } from "../drug-graph";
 import { worldCells, worldInPorts, worldOutPorts } from "../factory-geom";
 import { HEX_DQ, HEX_DR, hexInBounds, hexIndex, oppositeHexDir } from "../hex";
@@ -942,7 +943,7 @@ function applyMachineInPlace(
     if (data.pathOut[4] !== 0) failed = 1;
   }
   runtime.unitFailed[unitIndex] = failed;
-  if (failed === 0) runtime.unitHeading[unitIndex] = (((heading + machine.turn) % 6) + 6) % 6;
+  if (failed === 0) runtime.unitHeading[unitIndex] = turnHeading(heading, machine.turn);
 }
 
 function emitUnit(

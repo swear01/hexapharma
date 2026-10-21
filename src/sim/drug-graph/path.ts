@@ -69,7 +69,7 @@ function walkPathCore(
   for (let stepIndex = 0; stepIndex < machine.path.length; stepIndex++) {
     const relative = machine.path[stepIndex];
     if (relative === undefined) throw new Error("drug graph: validated path is missing a direction");
-    const dir = (relative + heading) % 6;
+    const dir = (((relative + heading) % 6) + 6) % 6;
     const scale = map.cell[r * map.width + q] === CellKind.Swamp ? 1 : 2;
     const nextPQ = pq + HEX_DQ[dir]! * scale;
     const nextPR = pr + HEX_DR[dir]! * scale;

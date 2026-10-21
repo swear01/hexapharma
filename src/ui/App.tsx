@@ -55,11 +55,18 @@ export function researchPointerAction(
   return null;
 }
 
+/**
+ * True when the pointer's cell touches the drawn endpoint. A swamp half-step endpoint sits on the
+ * edge between two cells, so either cell (hex distance ≤ ½ from the drawn point) counts.
+ */
 export function researchPreviewEndpointHit(
   pointerWorld: Vec2,
   endpoint: Vec2 | undefined,
 ): boolean {
-  return endpoint !== undefined && pointerWorld.q === endpoint.q && pointerWorld.r === endpoint.r;
+  if (endpoint === undefined) return false;
+  const dq = pointerWorld.q - endpoint.q;
+  const dr = pointerWorld.r - endpoint.r;
+  return Math.max(Math.abs(dq), Math.abs(dr), Math.abs(dq + dr)) <= 0.5;
 }
 
 export function researchOutcomeText(lastOutcome: Outcome | null): string | null {
@@ -489,7 +496,7 @@ export function App({
     if (drag === null) {
       const viewportPoint = labPointerToViewport(event.clientX, event.clientY, rect);
       const pointerWorld = labScreenToWorld(camera, LAB_VIEWPORT, viewportPoint);
-      setEndpointHovered(researchPreviewEndpointHit(pointerWorld, planned?.pos[activeMap]));
+      setEndpointHovered(researchPreviewEndpointHit(pointerWorld, planned === undefined ? undefined : researchDrugPoint(planned, activeMap)));
       return;
     }
     setEndpointHovered(false);
@@ -512,7 +519,7 @@ export function App({
       next[activeMap] = panLabCamera(current[activeMap] ?? camera, dx, dy, visibleViewportRef.current, map);
       return next;
     });
-  }, [activeMap, camera, mm.maps, planned?.pos]);
+  }, [activeMap, camera, mm.maps, planned]);
   const finishPointer = useCallback((
     event: ReactPointerEvent<HTMLDivElement>,
     completion: "commit" | "cancel",
@@ -526,7 +533,7 @@ export function App({
     const rect = mountRef.current?.getBoundingClientRect() ?? event.currentTarget.getBoundingClientRect();
     const viewportPoint = labPointerToViewport(event.clientX, event.clientY, rect);
     const pointerWorld = labScreenToWorld(camera, LAB_VIEWPORT, viewportPoint);
-    const candidateEndpoint = planned?.pos[activeMap];
+    const candidateEndpoint = planned === undefined ? undefined : researchDrugPoint(planned, activeMap);
     const action = researchPointerAction(
       drag.button,
       drag.moved,
@@ -536,7 +543,7 @@ export function App({
     if (action === "place") onWorldActivate?.();
     else if (action === "erase") onWorldErase?.();
     setEndpointHovered(false);
-  }, [activeMap, camera, onWorldActivate, onWorldErase, planned?.pos]);
+  }, [activeMap, camera, onWorldActivate, onWorldErase, planned]);
   const onWheel = useCallback((event: ReactWheelEvent<HTMLDivElement>) => {
     const map = mm.maps[activeMap];
     if (map === undefined) return;
