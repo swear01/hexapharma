@@ -45,17 +45,17 @@ describe("default Lab world options", () => {
     expect(defaultGenOptions(14)).toMatchObject({
       seed: 14,
       nMaps: 1,
-      width: 63,
-      height: 63,
+      width: 49,
+      height: 49,
       diseaseCount: 4,
     });
     expect(defaultGenOptions(14).catalog).toEqual(DEFAULT_CATALOG);
   });
 
-  it("authorizes the 63×63 world without opening the full public mapgen bound", () => {
+  it("authorizes the 49×49 world without opening the full public mapgen bound", () => {
     expect(MAX_GAME_MAP_DIMENSION).toBe(64);
     expect(MAX_GAME_MAP_CELLS).toBe(4_096);
-    expect(63 * 63).toBeLessThanOrEqual(MAX_GAME_MAP_CELLS);
+    expect(49 * 49).toBeLessThanOrEqual(MAX_GAME_MAP_CELLS);
   });
 
   it("accepts only canonical unsigned 32-bit New Game seeds", () => {
@@ -130,8 +130,10 @@ describe("default Lab world options", () => {
       start: { q: 3, r: 3 },
       cell,
       cureId: new Int16Array(cells).fill(-1),
+      cureTier: new Uint8Array(cells),
       sideEffectId: new Int32Array(cells).fill(-1),
       portalTo: new Int32Array(cells).fill(-1),
+      elevation: new Int16Array(cells),
       fog: new Uint8Array(cells),
     }] };
     const program = { steps: [{ typeId: "two-east", path: [0, 0] as const, turn: 2 }] };
@@ -157,8 +159,10 @@ describe("default Lab world options", () => {
       start: { q: 3, r: 3 },
       cell,
       cureId: new Int16Array(cells).fill(-1),
+      cureTier: new Uint8Array(cells),
       sideEffectId: new Int32Array(cells).fill(-1),
       portalTo,
+      elevation: new Int16Array(cells),
       fog: new Uint8Array(cells),
     }] };
     const start = startAt(3, 3);
@@ -201,8 +205,10 @@ describe("default Lab world options", () => {
       start: { q: 3, r: 3 },
       cell,
       cureId: new Int16Array(cells).fill(-1),
+      cureTier: new Uint8Array(cells),
       sideEffectId: new Int32Array(cells).fill(-1),
       portalTo,
+      elevation: new Int16Array(cells),
       fog: new Uint8Array(cells),
     }] };
     const start = startAt(3, 3);
@@ -242,8 +248,10 @@ describe("default Lab world options", () => {
       start: { q: 1, r: 1 },
       cell,
       cureId,
+      cureTier: Uint8Array.from(cell, (kind) => (kind === CellKind.Cure ? 1 : 0)),
       sideEffectId,
       portalTo,
+      elevation: new Int16Array(cells),
       fog: new Uint8Array(cells),
     }] };
 
@@ -285,12 +293,14 @@ describe("default Lab world options", () => {
       failed: false,
       final: [{ q: 7, r: 4 }],
       cured: [0],
+      premium: [],
       sideEffects: [101, 102],
     })).toBe("Cure Disease 1 · 2 side effects");
     expect(researchOutcomeText({
       failed: false,
       final: [{ q: 7, r: 4 }],
       cured: [],
+      premium: [],
       sideEffects: [],
     })).toBe("No cure · No side effects");
   });
@@ -315,8 +325,10 @@ describe("default Lab world options", () => {
       start: { q: 2, r: 2 },
       cell,
       cureId: new Int16Array(cells).fill(-1),
+      cureTier: new Uint8Array(cells),
       sideEffectId: new Int32Array(cells).fill(-1),
       portalTo: new Int32Array(cells).fill(-1),
+      elevation: new Int16Array(cells),
       fog: new Uint8Array(cells),
     }] };
     const start = startAt(2, 2);

@@ -19,6 +19,8 @@ export interface CellTerrainVisual {
   readonly rimColor: number;
   readonly opaque: true;
   readonly sideEffectOverlay: boolean;
+  /** A revealed tier-2 (★) Cure: drawn as a star instead of the cross. */
+  readonly premium?: boolean;
 }
 
 export interface PortalTerrainVisual {
@@ -132,17 +134,16 @@ export function labTerrainVisual(map: EffectMap, q: number, r: number): LabTerra
       : EMPTY_TERRAIN_VISUAL;
   }
 
-  if (!revealed(map, index) && map.cell[index] !== CellKind.Wall) {
-    return EMPTY_TERRAIN_VISUAL;
-  }
+  // Under fog every cell, mountains included, prints as plain substrate; only contours show.
+  if (!revealed(map, index)) return EMPTY_TERRAIN_VISUAL;
 
   switch (map.cell[index]) {
     case CellKind.Wall:
       return {
         kind: "wall",
         motif: "solid-masonry",
-        baseColor: SHARED_SCHEMATIC_STYLE.structure,
-        rimColor: SHARED_SCHEMATIC_STYLE.structure,
+        baseColor: SHARED_SCHEMATIC_STYLE.mountain,
+        rimColor: SHARED_SCHEMATIC_STYLE.mountainRim,
         opaque: true,
         sideEffectOverlay: false,
       };
@@ -150,7 +151,7 @@ export function labTerrainVisual(map: EffectMap, q: number, r: number): LabTerra
       return {
         kind: "abyss",
         motif: "void-rim",
-        baseColor: 0x1c3a58,
+        baseColor: SHARED_SCHEMATIC_STYLE.structure,
         rimColor: SHARED_SCHEMATIC_STYLE.structure,
         opaque: true,
         sideEffectOverlay: false,
@@ -159,7 +160,7 @@ export function labTerrainVisual(map: EffectMap, q: number, r: number): LabTerra
       return {
         kind: "swamp",
         motif: "viscous-drag",
-        baseColor: 0xe3eff6,
+        baseColor: 0xdce9f2,
         rimColor: SHARED_SCHEMATIC_STYLE.flow,
         opaque: true,
         sideEffectOverlay: false,
@@ -187,6 +188,7 @@ export function labTerrainVisual(map: EffectMap, q: number, r: number): LabTerra
         rimColor: colors.rimColor,
         opaque: true,
         sideEffectOverlay: (map.sideEffectId[index] ?? -1) >= 0,
+        premium: map.cureTier[index] === 2,
       };
     }
     default:

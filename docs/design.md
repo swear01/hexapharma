@@ -31,11 +31,13 @@ Active Research 只有一張單層 Atlas；不提供 layer tabs、跨層座標�
 
 Atlas 採 pointy-top axial true hex。離散位置是整數 `{q,r}`；六鄰接方向固定按 E／SE／SW／W／NW／NE 編號 0–5，dense map fields 一律以 `r * width + q` 索引。screen pixels 只存在 camera／renderer projection，不能回流成第二套 sim 座標 authority。
 
+Atlas 是半徑 R 的六角形（R = ⌊(min(width,height)−1)/2⌋；正常新局 49×49 dense arrays、R=24、1801 可玩格），六角形外與最外一圈是 Wall（薄邊山）。地形詞彙：山＝`Wall`、水＝`Swamp`、失敗（黑格）＝`Abyss`；v2 generator 不產生 Portal（sim 支援保留）。
+
 地圖資訊分成兩個探索層：
 
-- **只有牆始終可見**：Wall 的輪廓與阻擋規則不受探索遮罩影響。
-- **其他互動物藏在霧下**：Abyss、Swamp、Portal、治療區與副作用區在揭露前都當作普通基底繪製，也不能由 hover、ghost、藍圖載入、preview 或 outcome 文案洩漏。
-- pure planning map 只保留未揭露區的 Wall；已揭露的互動物才進入固定路徑預覽。Portal 必須入口與出口都揭露後才公開配對、方向與 preview jump；單獨揭露一端只顯示未配對 portal，不洩漏另一端。真正出藥仍依完整權威地圖執行，因此未知危險保留試錯成本。
+- **霧下只有等高線**：未揭露格（山也一樣）一律印成未印紙；唯一可見的是由生成地勢 `EffectMap.elevation` 畫出的等高線——壓縮的**絕對**起伏加低幅 seeded decoys、單一墨色——所以山與水在霧下都只是一圈線，玩家只知道那裡「有東西」。起點 radius-2 disk 開局即揭露。
+- **其他互動物藏在霧下**：Wall、Abyss、Swamp、Portal、治療區與副作用區在揭露前都當作普通基底繪製，也不能由 hover、ghost、藍圖載入、preview 或 outcome 文案洩漏。揭露後山印成淡褐填色、水是藍色水平線、黑格是黑墨。
+- pure planning map 只保留未揭露區的 Wall（Wall 規則穿霧：預覽會停在霧下的山前，但 renderer 不畫它）；已揭露的互動物才進入固定路徑預覽。Portal 必須入口與出口都揭露後才公開配對、方向與 preview jump；單獨揭露一端只顯示未配對 portal，不洩漏另一端。真正出藥仍依完整權威地圖執行，因此未知危險保留試錯成本。
 - 只有明示出藥後，實際走過的 path segment 才更新探索遮罩。傳送跳躍不揭露兩點之間不存在的直線。
 
 互動語意：
@@ -52,6 +54,8 @@ Atlas 起點位於 generator 宣告的世界中心附近；新局只揭露以起
 
 Cure 與 SideEffect 是同一格上的獨立效果欄位，不是互斥 cell kind。已揭露Cure使用綠色十字標記；constructed reference 精確命中的 cure endpoint 必須乾淨；同一治療區的部分其他格可同時帶有副作用，讓玩家在「碰到療效」與「命中乾淨位置」之間繼續最佳化。
 
+每個 Cure 格另有 tier（`EffectMap.cureTier`：1，或 2＝★）。難區的 2–3 格 ★ 核心是 tier 2；`Outcome.premium` 列出終點落在 ★ 的疾病（⊆ `cured`），Market 對該疾病的這件產品付 `floor(gross × 3 / 2)`。後期合約指定 ★ 留給之後的步驟。
+
 ## 1.3 Run-based Research 試驗與完整 PathStamp
 
 Research 不使用 FactoryLayout、source／belt／sink、線性 route descriptor 或 DOM recipe timeline。
@@ -66,15 +70,19 @@ Research 不使用 FactoryLayout、source／belt／sink、線性 route descripto
 ## 1.4 程序地圖
 
 - mapgen 只由 canonical seed 與完整 generation options 決定；禁止 `Math.random()`、wall-clock 與有副作用的容器 iteration 假設。同 seed + 完整 options 必須逐欄位重現 terrain、疾病、reference、cure／side-effect overlays、difficulty 與 price。
-- generator 先建立中心起點、radial progression、motifs 與可通行地形，再在這份**已完成地形**上 constructive 地尋找彼此不同的 reference endpoint；不得先畫固定答案再保護一條不受地形影響的安全走廊。
-- wall／abyss／swamp／portal 由 motif rules 放置並通過各自 invariants；portal 必須一對一且同層有向。reference 必須實際受到 terrain traversal 影響，而不是等同空白地圖的路線。
+- **骨架（依 seed）**：整數 elevation 場（Int16，1024＝1.0，存在 `EffectMap.elevation`）＝內環山（≈0.375R，厚 2–3 格）、2–3 條外圈部分弧（≈0.77R）、至多一條徑向支脈、1–3 個環形盆地（環狀山緣＋下沉底）、2–4 個湖、1–2 個內區小丘／池，再加 domain-warped fBm／ridged gradient noise。全部只用整數雜湊、多項式 fade／kernel、整數平方根與常數角度表；`src/sim/mapgen` 禁用 `Math.sin/cos/exp/sqrt/pow/random`。≥ mountain level → Wall、≤ water level → Swamp。
+- **隘口**：內環 2–3 條、每條外弧 1 條、每個盆地恰 1 條（S 形入口）；以帶雜訊成本的最短路徑經過側向轉折點挖出，兩端 2–3 格寬、中段約 40–60% 長的 1 格窄道。隘口格強制可走，elevation 壓到鞍部讓等高線出現缺口。每條隘口在生成時以 bounded local BFS 驗證：狀態（cell、半格 offset、heading），用 initial catalog 與真實 drug-graph traversal，只能走走廊加兩端 2 格 pocket，≤10 步；失敗就依序換角度／salt 重挖（有上限、確定性）。這只是生成期檢查，不 import solver、不給玩家。
+- **清理**：不連到起點的可走格改成山；單格湖移除。全圖可走格（含黑格放置後）永遠連通。
+- **references**：在 single-Atlas skeleton 上以 BFS 樹（cell、offset、heading；疾病的 catalog tier，後續 tier 以新機器作最後一步）取得每個狀態的最短 program，依 seeded 目標 difficulty（寬 band 時 ≥ 8）、半徑、方向與「不貼牆」評分；Disease 0 的終點在內環內，其他疾病在內環外（需要穿過隘口）。找不到時退回 sampled construction；若某疾病仍無法構造，從衍生 stream 重畫地形（≤4 次，確定性）。reference 必須實際受到 terrain traversal 影響，而不是等同空白地圖的路線；不保護安全走廊。
+- **效果區**：每疾病至少一個 easy 區（reference 終點所在的 3–5 格、全 tier 1）與一個 hard 區（先放盆地底，其餘放在離起點步行最遠、內環外的開闊處；9–12 格，含 2–3 格 ★）。hard 區與 void-fill 區和其他疾病的效果保持 1 格間隔，任何區都不重疊。**void filling**：只要還有平地（起點 disk 外）離所有特徵（效果、Wall、Swamp、Abyss、隘口）≥4 格，就在最遠處長一個 3–5 格 tier-1 區。副作用：easy 區非終點格約一半、hard 區外緣約 1/3（不含 ★）、fill 區一格；reference 終點永遠乾淨。
+- **黑格（Abyss）**：每個 ★ 核心周圍 3–4 格、每條窄道出口後方側一格陷阱（直衝會掉、小心可避）、8–12 個平地偷坑單格、2–3 條約 5 格的黑帶（不同方位）。不放在隘口走廊、效果、起點 radius 3 內或任何 reference 實際經過的格；每次放置都必須保持全圖連通，否則拒絕。放完後若某隘口的 BFS 驗證失敗，清掉其兩端 pocket 內的黑格。
 - 一張 Atlas 支援 1–8 種疾病，正常新局為 4 種。各疾病的 reference signature、endpoint、cure region、difficulty 與 price 必須有 seed／疾病差異，且 cure regions 不重疊。
 - default 4-disease progression 採 catalog tier：第一種只用 initial machines，後續 reference 依序可使用 `skew`、`dilute`、`settle`；第一個可解目標不得要求尚未解鎖的進階機器。
 - 每個 cure region 都在起始 radius-two hex disk 之外，以乾淨 constructed endpoint 為權威 reference 命中點；區域維持連通但不是固定模板，其餘格中有一部分是 Cure + SideEffect overlay，保留更短但污染或更精準乾淨的多解空間。
-- generator 輸出 reference ResearchProgram 只供 property/balance tests 驗證 solvability、portal pairing、bounds、seed diversity 與同 seed相等；runtime UI 不讀取或提示 reference。
-- solver 只供 tests/tools 做 soundness、整個 cure region 的 minimum steps／cost、reference quality 與跨 seed退化檢查，不進遊戲內自動解，也不作 production rejection loop。
+- generator 輸出 reference ResearchProgram 只供 property/balance tests 驗證 solvability、bounds、seed diversity 與同 seed相等；runtime UI 不讀取或提示 reference。`generateWithDiagnostics` 另回傳隘口、盆地、效果區與黑格清單，只給 tests/tools。
+- solver 只供 tests/tools 做 soundness、整個 cure region 的 minimum steps／cost、reference quality 與跨 seed退化檢查，不進遊戲內自動解，也不作 production rejection loop。generator 自己的 bounded 隘口 BFS 與 reference BFS 樹是生成期構造，不是 solver，結果也不進 runtime／UI。dev balance 另記錄每個 ★ 在 12 台機器內是否可達。
 
-radial band、motif 權重、地形比例、治療區密度與獎勵 pacing 是後續平衡項；確定性與 constructive validity 不是。
+骨架比例、雜訊幅度、區域大小、黑格數量與獎勵 pacing 是後續平衡項；確定性、連通、隘口可通過與 constructive validity 不是。
 
 ## 1.5 Production Plan
 
@@ -125,6 +133,7 @@ Production 是唯一持續推進 factory tick 的場域。source、transport、m
 - Market demand board是公開的外部需求資訊，可列出本局所有疾病及Base／Sold／Next；它不代表Atlas上的Cure已發現，也不得提供Cure座標、region或hidden reference。
 - Market 只販售 Production 產生且仍在 inventory 的實體 cure；一顆產品只能賣一次。
 - 每個疾病的 mapgen base price 使用整數線性式 `12 + 4 × difficulty + 2 × referenceCost`；不同疾病各有獨立 demand/sold counter。
+- 終點在該疾病 ★（tier 2）Cure 的產品，gross 是 `floor(demand price × 3 / 2)`；仍只消耗一件 demand。Market 的 Stock 列出 ★ 件數，Next unit 在最佳庫存是 ★ 時顯示加成後的價格與「★ price」。
 - 某疾病第 0 件的 gross 是 base price；每次出售後下一件是 `floor(previous × 19 / 20)`，持續衰減到 0，沒有永久正值底價。net 再扣實際 production cost 與每個 side effect 的 $25 penalty。
 - Market 對同一疾病先排 side effect 較少、再排 production cost 較低、最後排 inventory ID 較早的產品。`Ship best` 掃描此順序並賣第一件正 net產品；`Ship profitable` 依同一順序掃描全部庫存、略過不賺錢的候選，只讓實際選中的產品消耗後續demand，不得因較前面的昂貴產品而封鎖後面的正net產品，也不得自動虧本出售。
 - 每件成功出售增加1 Knowledge。Market card必須把最佳庫存的Next gross、production cost、每effect $25 penalty與net直接列出；Clean／Tainted是庫存件數。Ship disabled時顯示「沒有治療庫存」或「沒有正net庫存」的原因；只有authority接受出售後才顯示Knowledge成功回饋。
@@ -180,23 +189,23 @@ Blueprint 與 save slot 完全分離，Library envelope version 是 4，使用 `
 
 整體是「邊跑邊印出來的定向越野地圖」；產品真相見 `PRODUCT.md`，方向契約見 `.impeccable/surfaces/src-ui-game-tsx.md`。
 
-- **紙與墨**：紙底 `#F6F3EC`、近黑墨 `#1E1F1C`；ISOM 色語——牆是黑色斷崖墨、沼澤是藍色水平線、治療區是綠色網點＋十字、副作用是琥珀網點、失敗是紅；Cure＋SideEffect 同格時兩種網點都要看得見。
+- **紙與墨**：紙底 `#F6F3EC`、近黑墨 `#1E1F1C`；ISOM 色語——山是淡褐填色（`#CDB79A`，細褐邊）、水是藍色水平線、黑格（Abyss）是黑墨斷崖刻痕、治療區是綠色網點＋十字、副作用是琥珀網點、失敗是紅；Cure＋SideEffect 同格時兩種網點都要看得見。
 - **路線紫 `#7B2CBF` 只屬玩家自己的線**：研究路線（起點三角、編號控制點圓、實線＝最近試驗的實際路線、虛線＝規劃路線）、選取與 Plan overprint。Production 以黑墨實印；Plan 以紫色 overprint 區分免費草稿與付費實體。
-- **霧**：未揭露是未印的紙，只有與 seed／座標有關、與隱藏地形無關的淡等高線紋理；牆仍穿霧可見。格線只畫在已揭露格。
+- **霧與等高線**：未揭露是未印的紙，山也不填色。等高線由 `EffectMap.elevation` 畫出：顯示場 `1 − exp(−k·|e|)`（k＝`CONTOUR_COMPRESSION`）加 seeded 低幅 decoys（`CONTOUR_DECOY_STRENGTH`），5 個 level、單一墨色、沒有計曲線色差；它穿霧可見（刻意的提示），也印在已揭露地面上，從不讀 fog、cell 或效果欄位。格線只畫在已揭露格；六角形外不畫。
 - **字**：標題、數字、標籤用自帶 Barlow Condensed 600（`src/ui/fonts/`，OFL），內文系統字；所有數字 tabular。
-- **手繪感**：只來自 `src/render/ink.ts` 的確定性抖動，用於等高線、斷崖刻痕、陰影線與路線墨線；不得作用於 port、belt 接點、hit-test 幾何或文字，同一狀態必須逐幀一致。
+- **手繪感**：只來自 `src/render/ink.ts` 的確定性抖動，用於斷崖刻痕、陰影線與路線墨線；不得作用於 port、belt 接點、hit-test 幾何或文字，同一狀態必須逐幀一致。
 - **動態**：每個場域只有一個 authored moment（研究步驟的墨線描出 ≤250 ms），`prefers-reduced-motion` 時立即完成；Pixi auto-ticker 維持關閉。
 - **Shell**：頂列（場域分頁、Cash／Knowledge／Stock→Market／合約）與 Objective 列（依遊戲狀態指出下一步並提供直接動作）；Market／Technology／Blueprints／Guide 是右側 legend 式抽屜（沒有 Formulas）。
 
-## 1.11 Save v12 — 開放、可編輯的 alpha 存檔
+## 1.11 Save v13 — 開放、可編輯的 alpha 存檔
 
 - 存檔是 plain JSON、可攜且可由玩家修改；不加密、不簽章、不持有 browser key，也不要求 Cash／Knowledge 的收入 trace 或 checksum。合法資源修改必須能載入。
-- full envelope 是 `{version:12, contentBuild, game}`；直接保存完整冷狀態。compact envelope 是 `{version:12, contentBuild, snapshot}`，只有 inventory 將連續相同的產品資料分組、列出各件 ID，以便滿倉 24,500 件仍可放入原有 slot 預算。兩者都不重播歷史。
+- full envelope 是 `{version:13, contentBuild, game}`；直接保存完整冷狀態。compact envelope 是 `{version:13, contentBuild, snapshot}`，只有 inventory 將連續相同的產品資料分組、列出各件 ID，以便滿倉 24,500 件仍可放入原有 slot 預算。兩者都不重播歷史。
 - GameState 不保存 `origin`、`intentTrace` 或 `replayTicks`。Research `lastTrial`／fog、Plan、Production layout／cold runtime／waste、economy／sold、patents、inventory／nextInventoryId／rng 都必須完整還原；在途 unit、加工進度、分流游標與 counters 不重設。
 - replay 只供以明確 initial state + intents 重現行為；同一輸入仍須逐欄位／hash 相同。生產的 tick／work 限制只約束單次 API batch，不累積成遊戲壽命。存檔不接受或執行附帶的 trace。
 - decoder 驗 exact fields、整數與 typed-array 可表示範圍、bounded collections、canonical machine content、合法 layout／runtime、heading 0–5、offset 只在 Swamp 內非零、`lastTrial` 重播後 cost／outcome 一致、inventory 結果等可執行狀態不變式；不驗證資源或揭霧的歷史來源。
 - `contentBuild` 是 catalog／shapes／patents 加手動 rules revision 的確定性相容性識別，不是存檔驗真。sim／mapgen／經濟邏輯改動須明確提升 rules revision；它不自動掃描所有原始碼。不同版本／content build 顯式拒絕。
-- checkpoint 外層仍為 `{version:2, head, history}`；head/history 是 compact snapshot 字串，key 為 `hexapharma.save.v12.checkpoint.${slot}`。history 是最多 20 個獨立快照，按數量／characters（`string.length` 的 UTF-16 code units） 刪去最舊項並回報；不驗證 trace-prefix 或資源來源。同設定同 seed 的編輯狀態可保留在同一 history；不同地圖保存時替換 history。
+- checkpoint 外層仍為 `{version:2, head, history}`；head/history 是 compact snapshot 字串，key 為 `hexapharma.save.v13.checkpoint.${slot}`。history 是最多 20 個獨立快照，按數量／characters（`string.length` 的 UTF-16 code units） 刪去最舊項並回報；不驗證 trace-prefix 或資源來源。同設定同 seed 的編輯狀態可保留在同一 history；不同地圖保存時替換 history。
 - Load／Rewind 維持可取消的覆蓋確認；Rewind 成功後截斷後續快照。正常 Load 嚴格驗 envelope；明確 Recover 可另從同版本、可解析且字元／history array 數量有界的部分損壞 envelope，獨立驗證已知欄位的字串快照並取最新有效同地圖 suffix。讀取／復原檢查不寫入 storage，寫入失敗保留原 blob；storage 讀取失敗顯示原始原因且停用 Recovery。舊 alpha namespace 不讀取、不 migration、不自動刪除；新版存檔不可 silent reinterpret。
 - 明確容量、數值上限及編輯方式見 [save.md](save.md)；alpha 不承諾跨 build migration，見 [development-policy.md](development-policy.md)。
 
@@ -218,12 +227,12 @@ Pure TS sim core  → authoritative deterministic transitions
 ## 2.2 關鍵模組
 
 - `drug-graph`：heading-relative fixed PathStamp traversal、machine turn、Swamp 半格、terrain／portal、preview／execution。
-- `mapgen`：terrain-first seeded radial + motif Atlas、多疾病／重疊效果區、diverse constructive references。
+- `mapgen`：六角 Atlas 的整數 elevation 骨架（內環／外弧／盆地／湖）、BFS 驗證的隘口、tiered 效果區（★）、void filling、黑格、diverse constructive references。
 - `construction`：Production layout 差異報價。
 - `factory-geom`／`factory-sim`：footprint、ports、routing、tick、throughput、cold snapshot。
 - `game`：三場域、Run-based Research 試驗、shipping contracts、paid Production build、inventory／economy。
 - `blueprint`：Blueprint v4 strict codec 與跨存檔 Library。
-- `save`：Save v12 開放冷快照與結構驗證；`replay-work`：單次 Production batch 的 work 估算。
+- `save`：Save v13 開放冷快照與結構驗證；`replay-work`：單次 Production batch 的 work 估算。
 - `render`：vector-only minimal flat hex Atlas 與 connected factory topology。
 - `ui`：world-first shell、shared Factory editor、drawers/checkpoints。
 

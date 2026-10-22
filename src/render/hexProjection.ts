@@ -1,4 +1,5 @@
 import { hexDistance, type HexCoord } from "../sim/hex";
+import type { DrugState } from "../sim/phase0_interfaces";
 
 export interface PixelPoint {
   readonly x: number;
@@ -69,4 +70,14 @@ export function hexLine(start: HexCoord, end: HexCoord): readonly HexCoord[] {
     ));
   }
   return line;
+}
+
+/** Drawn point of a drug on one map: its cell plus half its doubled-unit swamp offset. */
+export function drugDrawPoint(drug: DrugState, mapIndex: number): HexCoord | undefined {
+  const pos = drug.pos[mapIndex];
+  const offset = drug.offset[mapIndex];
+  if (pos === undefined) return undefined;
+  return offset === undefined || (offset.q === 0 && offset.r === 0)
+    ? pos
+    : { q: pos.q + offset.q / 2, r: pos.r + offset.r / 2 };
 }

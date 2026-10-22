@@ -253,6 +253,7 @@ describe("facility sample visibility", () => {
       failed: false,
       final: [{ q: 2, r: -1 }],
       cured: [7],
+      premium: [],
       sideEffects: [200, 201],
     })).toBe("Cure Disease 8 · 2 side effects");
 
@@ -260,6 +261,7 @@ describe("facility sample visibility", () => {
       failed: false,
       final: [{ q: 4, r: 3 }],
       cured: [],
+      premium: [],
       sideEffects: [202],
     })).toBe("No cure · 1 side effect");
   });

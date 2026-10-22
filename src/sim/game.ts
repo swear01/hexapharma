@@ -39,7 +39,7 @@ import {
   MAX_BULK_SALE_PRODUCTS,
   MAX_GAME_REPLAY_WORK,
 } from "./phase0_interfaces";
-import { evaluate, previewStep, validateDrugState as validateDrugGraphState } from "./drug-graph";
+import { evaluate, outcomeOf, previewStep, validateDrugState as validateDrugGraphState } from "./drug-graph";
 import { sellUnit } from "./economy";
 import { MAX_GENERATION_CATALOG_ENTRIES, generate } from "./mapgen";
 import { DEFAULT_PATENTS, activeEffects, unlockPatent } from "./patent";
@@ -108,6 +108,7 @@ function ownOutcome(outcome: Outcome): Outcome {
     failed: outcome.failed,
     final: ownCoords(outcome.final),
     cured: Object.freeze(outcome.cured.map(canonicalNumber)),
+    premium: Object.freeze(outcome.premium.map(canonicalNumber)),
     sideEffects: Object.freeze(outcome.sideEffects.map(canonicalNumber)),
   });
 }
@@ -805,6 +806,7 @@ function sellPhysicalProducts(
       disease.basePrice,
       product.productionCost,
       penalty,
+      product.outcome.premium.includes(diseaseId),
     ).econ;
   }
   return {
@@ -914,7 +916,8 @@ function reduceGameIntent(game: GameState, intent: GameIntent): GameState {
           lastTrial: ownResearchTrial({
             program,
             cost,
-            outcome: evaluate(level.mm, level.start, program),
+            // The same traversal drives the fog reveal and the outcome, so they cannot drift.
+            outcome: outcomeOf(level.mm, run.final),
           }),
         }),
       };

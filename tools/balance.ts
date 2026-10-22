@@ -43,8 +43,8 @@ export const MAX_BALANCE_SEEDS = 100_000;
 export const MAX_ALL_PAIRS_LEVELS = 100;
 export const BALANCE_CONFIG = Object.freeze({
   nMaps: 1,
-  width: 63,
-  height: 63,
+  width: 49,
+  height: 49,
   diseaseCount: 4,
   difficulty: Object.freeze({ min: 4, max: 12 }),
 });
@@ -74,6 +74,68 @@ export interface Sample {
   readonly rateDen: number;
   /** First-unit net profit/tick; float is reporting-only, never sim state. */
   readonly profitPerTick: number;
+  /** Fewest machines to land on one of this disease's ★ (tier-2) cells: its catalog tier / full catalog. */
+  readonly premiumTierSteps: number | null;
+  readonly premiumFullSteps: number | null;
+}
+
+export const PREMIUM_REACH_DEPTH = 12;
+
+/**
+ * Dev-only BFS over (cell, swamp offset, heading) from the level start: the fewest machines from
+ * `catalog` whose actual endpoint is a ★ Cure of `diseaseId` (null if none within `maxDepth`).
+ */
+export function premiumReachSteps(
+  level: GeneratedLevel,
+  diseaseId: number,
+  catalog: readonly MachineCatalogEntry[],
+  maxDepth = PREMIUM_REACH_DEPTH,
+): number | null {
+  const map = level.mm.maps[0];
+  if (level.mm.maps.length !== 1 || map === undefined || !(map.cureTier instanceof Uint8Array)) return null;
+  const isGoal = (cell: number) => map.cureTier[cell] === 2 && map.cureId[cell] === diseaseId;
+  let hasGoal = false;
+  for (let cell = 0; cell < map.cell.length; cell++) if (isGoal(cell)) hasGoal = true;
+  if (!hasGoal) return null;
+  const machines = catalog.map((entry) => ({ typeId: entry.typeId, path: entry.path, turn: entry.turn }));
+  const seen = new Uint8Array(map.cell.length * 42);
+  const root = (map.start.r * map.width + map.start.q) * 42;
+  seen[root] = 1;
+  let layer = [root];
+  const out = new Int32Array(PATH_OUT_STRIDE);
+  const dq = [1, 0, -1, -1, 0, 1];
+  const dr = [0, 1, 1, 0, -1, -1];
+  for (let depth = 1; depth <= maxDepth && layer.length > 0; depth++) {
+    const next: number[] = [];
+    for (const state of layer) {
+      const heading = state % 6;
+      const slot = Math.floor(state / 6) % 7;
+      const cell = Math.floor(state / 42);
+      for (const machine of machines) {
+        walkValidatedPathInto(
+          map,
+          cell % map.width,
+          Math.floor(cell / map.width),
+          slot === 0 ? 0 : dq[slot - 1]!,
+          slot === 0 ? 0 : dr[slot - 1]!,
+          heading,
+          machine,
+          out,
+          0,
+        );
+        if (out[4] === 1) continue;
+        const landed = out[1]! * map.width + out[0]!;
+        if (isGoal(landed)) return depth;
+        const nslot = out[2] === 0 && out[3] === 0 ? 0 : 1 + dq.findIndex((q, index) => q === out[2] && dr[index] === out[3]);
+        const nstate = landed * 42 + nslot * 6 + turnHeading(heading, machine.turn);
+        if (seen[nstate] === 1) continue;
+        seen[nstate] = 1;
+        next.push(nstate);
+      }
+    }
+    layer = next;
+  }
+  return null;
 }
 
 export interface BootstrapSample {
@@ -274,6 +336,8 @@ export function sweep(count: number, overrides: SweepOverrides = {}): SweepResul
           rateNum: report.rateNum,
           rateDen: report.rateDen,
           profitPerTick: rate * (disease.basePrice - cost),
+          premiumTierSteps: premiumReachSteps(level, disease.id, catalog.slice(0, availableCount)),
+          premiumFullSteps: premiumReachSteps(level, disease.id, catalog),
         });
         if (disease.id === 0) {
           const proposed = compileEntitled(
@@ -521,6 +585,20 @@ function printPuzzleQuality(samples: readonly Sample[]): void {
   );
 }
 
+function printPremiumReach(samples: readonly Sample[]): void {
+  const tier = samples.map((sample) => sample.premiumTierSteps).filter((steps): steps is number => steps !== null);
+  const full = samples.map((sample) => sample.premiumFullSteps).filter((steps): steps is number => steps !== null);
+  console.log(`\n★ (tier-2) reachability (dev BFS over cell/offset/heading, ≤${PREMIUM_REACH_DEPTH} machines):`);
+  console.log(
+    `  disease's catalog tier: ${tier.length}/${samples.length} reachable` +
+      (tier.length > 0 ? `  min=${minMax(tier).min} median=${fmt(median(tier), 1)} max=${minMax(tier).max}` : ""),
+  );
+  console.log(
+    `  full catalog:           ${full.length}/${samples.length} reachable` +
+      (full.length > 0 ? `  min=${minMax(full).min} median=${fmt(median(full), 1)} max=${minMax(full).max}` : ""),
+  );
+}
+
 function printBootstrap(bootstraps: readonly BootstrapSample[]): void {
   console.log("\ndisease-0 bootstrap (Research + entitled 24×12 Production build → first clean sale):");
   for (const bootstrap of bootstraps) {
@@ -593,6 +671,7 @@ export function runBalance(count: number, overrides: SweepOverrides = {}): 0 | 1
   printProfitSpread(samples);
   printDiversity(result);
   printPuzzleQuality(samples);
+  printPremiumReach(samples);
   printBootstrap(result.bootstraps);
   console.log(`\nfour-disease legal progression ($${PROGRESSION_RETRY_BUDGET} retry/build allowance):`);
   const progression = PROGRESSION_SEEDS.map((seed) => progressionLedger(seed));

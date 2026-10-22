@@ -60,9 +60,9 @@ import { DEFAULT_CATALOG, DEFAULT_SHAPES } from "../phase0_interfaces";
 // blob field-by-field and rebuilding a structurally-equal GameState — never
 // defaulting silently on missing/wrong fields.
 
-export const SAVE_VERSION = 12;
+export const SAVE_VERSION = 13;
 export const SAVE_CONTENT_BUILD = fnv1a32Hex(canonical({
-  rules: 3,
+  rules: 4,
   catalog: DEFAULT_CATALOG,
   shapes: DEFAULT_SHAPES,
   patents: DEFAULT_PATENTS,
@@ -318,13 +318,15 @@ function parseDrugState(v: unknown, path: string, expectedMaps?: number): DrugSt
 }
 
 function parseOutcome(v: unknown, path: string, expectedMaps: number): Outcome {
-  const o = reqExactObject(v, path, ["failed", "final", "cured", "sideEffects"]);
+  const o = reqExactObject(v, path, ["failed", "final", "cured", "premium", "sideEffects"]);
   const final = reqArray(o.final, `${path}.final`);
   const cured = reqArray(o.cured, `${path}.cured`);
+  const premium = reqArray(o.premium, `${path}.premium`);
   const sideEffects = reqArray(o.sideEffects, `${path}.sideEffects`);
   if (
     final.length !== expectedMaps ||
     cured.length > expectedMaps ||
+    premium.length > expectedMaps ||
     sideEffects.length > expectedMaps
   ) {
     throw new SaveError(`${path}: outcome collection exceeds map count`);
@@ -333,6 +335,7 @@ function parseOutcome(v: unknown, path: string, expectedMaps: number): Outcome {
     failed: reqBool(o.failed, `${path}.failed`),
     final: final.map((p, i) => parseHexCoord(p, `${path}.final[${i}]`)),
     cured: cured.map((id, i) => reqInt(id, `${path}.cured[${i}]`)),
+    premium: premium.map((id, i) => reqInt(id, `${path}.premium[${i}]`)),
     sideEffects: sideEffects.map((id, i) =>
       reqInt(id, `${path}.sideEffects[${i}]`),
     ),

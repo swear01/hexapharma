@@ -14,14 +14,16 @@ function map(): EffectMap {
     start: { q: 3, r: 1 },
     cell: new Uint8Array(length),
     cureId: new Int16Array(length).fill(-1),
+    cureTier: new Uint8Array(length),
     sideEffectId: new Int32Array(length).fill(-1),
     portalTo: new Int32Array(length).fill(-1),
+    elevation: new Int16Array(length),
     fog: new Uint8Array(length),
   };
 }
 
 describe("Lab terrain visual language", () => {
-  it("keeps only walls readable before discovery", () => {
+  it("prints no terrain under fog, mountains included (only contours show there)", () => {
     const level = map();
     const terrain = [CellKind.Wall, CellKind.Abyss, CellKind.Swamp, CellKind.Portal] as const;
     for (let index = 0; index < terrain.length; index++) {
@@ -29,12 +31,14 @@ describe("Lab terrain visual language", () => {
     }
     level.portalTo[3] = 6;
 
+    const empty = labTerrainVisual(level, 4, 0);
+    expect(labTerrainVisual(level, 0, 0)).toEqual(empty);
+    level.fog[0] = 1;
     expect(labTerrainVisual(level, 0, 0)).toMatchObject({
       kind: "wall",
       motif: "solid-masonry",
       opaque: true,
     });
-    const empty = labTerrainVisual(level, 4, 0);
     expect(labTerrainVisual(level, 1, 0)).toEqual(empty);
     expect(labTerrainVisual(level, 2, 0)).toEqual(empty);
     expect(labTerrainVisual(level, 3, 0)).toEqual(empty);
@@ -105,6 +109,21 @@ describe("Lab terrain visual language", () => {
     });
   });
 
+  it("marks a revealed tier-2 Cure as premium (★) and a tier-1 Cure as plain", () => {
+    const level = map();
+    level.cell[1] = CellKind.Cure;
+    level.cureId[1] = 2;
+    level.cureTier[1] = 2;
+    level.cell[2] = CellKind.Cure;
+    level.cureId[2] = 2;
+    level.cureTier[2] = 1;
+    expect(labTerrainVisual(level, 1, 0)).toEqual(labTerrainVisual(level, 0, 0));
+    level.fog[1] = 1;
+    level.fog[2] = 1;
+    expect(labTerrainVisual(level, 1, 0)).toMatchObject({ kind: "cure", premium: true });
+    expect(labTerrainVisual(level, 2, 0)).toMatchObject({ kind: "cure", premium: false });
+  });
+
   it("gives different revealed diseases distinct Cure region colors", () => {
     const level = map();
     level.cell[1] = CellKind.Cure;
@@ -128,12 +147,19 @@ describe("Lab terrain visual language", () => {
     level.cell[1] = CellKind.Cure;
     level.cureId[1] = 0;
     level.cell[2] = CellKind.SideEffect;
+    level.cell[3] = CellKind.Abyss;
+    level.fog[0] = 1;
     level.fog[1] = 1;
     level.fog[2] = 1;
+    level.fog[3] = 1;
 
     expect(labTerrainVisual(level, 0, 0)).toMatchObject({
+      baseColor: 0xcdb79a,
+      rimColor: 0xa48a68,
+    });
+    expect(labTerrainVisual(level, 3, 0)).toMatchObject({
+      kind: "abyss",
       baseColor: 0x1e1f1c,
-      rimColor: 0x1e1f1c,
     });
     expect(labTerrainVisual(level, 1, 0)).toMatchObject({
       baseColor: 0xd8ecd9,

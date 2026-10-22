@@ -13,6 +13,7 @@ describe("player-facing effect labels", () => {
       failed: false,
       final: [{ q: 91, r: 73 }],
       cured: [0],
+      premium: [],
       sideEffects: [4001, 9002],
     });
     expect(text).toBe("Cure Disease 1 · 2 side effects");

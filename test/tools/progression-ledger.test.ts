@@ -7,18 +7,11 @@ import {
   progressionLedger,
 } from "../../tools/progression-ledger";
 
-/**
- * Known v2 Step-1 regression, kept visible instead of loosening the reserve: with the tentative
- * heading turns (pull = 180°, so two pulls cancel) seed 0's disease-3 reference becomes
- * settle/dilute/push2 ($57 Research, $636 build) and the reserve dips to $44. Over seeds 0..199
- * the reserve now fails on 4 seeds (0, 105, 151, 175) versus 1 (139) before; the median minimum
- * is unchanged ($464 vs $466). The balance step (docs/plan.md §4) owns the fix; remove the seed
- * from this set once its reserve is restored.
- */
-const RESERVE_REGRESSION_SEEDS: readonly number[] = [0];
+// The v2 Step-1 seed-0 reserve regression ($44) is gone on the v2 Atlas (Step 2): every
+// progression seed now keeps the $100 retry reserve (seed 0 bottoms out at $766).
 
 describe("four-disease progression ledger", () => {
-  it.each(PROGRESSION_SEEDS.filter((seed) => !RESERVE_REGRESSION_SEEDS.includes(seed)))("completes the legal reference route for seed %i", (seed) => {
+  it.each(PROGRESSION_SEEDS)("completes the legal reference route for seed %i", (seed) => {
     const ledger = progressionLedger(seed);
     expect(ledger, ledger.blockedAction ?? "completed").toMatchObject({
       completed: true,
@@ -29,14 +22,6 @@ describe("four-disease progression ledger", () => {
     expect(ledger.everyDiseasePositiveNet).toBe(true);
     expect(ledger.entries.every((entry) => entry.net > 0 && entry.sold >= 3)).toBe(true);
     expect(ledger.minimumCash).toBeGreaterThanOrEqual(PROGRESSION_RETRY_BUDGET);
-  }, 60_000);
-
-  it.each(RESERVE_REGRESSION_SEEDS)("completes seed %i but still breaches the retry reserve (known regression)", (seed) => {
-    const ledger = progressionLedger(seed);
-    expect(ledger).toMatchObject({ completed: true, blockedAction: null, completedContracts: 4 });
-    expect(ledger.entries.every((entry) => entry.net > 0 && entry.sold >= 3)).toBe(true);
-    expect(ledger.minimumCash).toBeGreaterThan(0);
-    expect(ledger.minimumCash).toBeLessThan(PROGRESSION_RETRY_BUDGET);
   }, 60_000);
 
   it.each(REFERENCE_PROGRESSION_SEEDS)("keeps the original seed %i route legal after a $100 retry", (seed) => {

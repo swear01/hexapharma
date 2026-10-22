@@ -13,4 +13,6 @@ export const SHARED_SCHEMATIC_STYLE = Object.freeze({
   sideEffect: 0xd9822b,
   rule: 0xddd6c6,
   fog: 0xece7db,
+  mountain: 0xcdb79a,
+  mountainRim: 0xa48a68,
 });

@@ -10,6 +10,7 @@ import type {
   InitialStateFn,
   Machine,
   MultiMap,
+  Outcome,
   RevealAlongFn,
   SideEffectId,
 } from "../phase0_interfaces";
@@ -151,13 +152,14 @@ export const applyTemplate: ApplyTemplateFn = (mm, start, template) => {
   return state;
 };
 
-export const evaluate: EvaluateFn = (mm, start, template) => {
-  const state = applyTemplate(mm, start, template);
+/** Read a drug's resting cells into an Outcome (INV-4); `evaluate` = this after `applyTemplate`. */
+export function outcomeOf(mm: MultiMap, state: DrugState): Outcome {
   if (state.failed) {
-    return { failed: true, final: state.pos, cured: [], sideEffects: [] };
+    return { failed: true, final: state.pos, cured: [], premium: [], sideEffects: [] };
   }
 
   const cured: DiseaseId[] = [];
+  const premium: DiseaseId[] = [];
   const sideEffects: SideEffectId[] = [];
   for (let mapIndex = 0; mapIndex < mm.maps.length; mapIndex++) {
     const map = mm.maps[mapIndex];
@@ -169,14 +171,19 @@ export const evaluate: EvaluateFn = (mm, start, template) => {
     const kind = map.cell[cellIndex];
     if (kind === CellKind.Cure) {
       const diseaseId = map.cureId[cellIndex];
-      if (diseaseId !== undefined && diseaseId >= 0) cured.push(diseaseId);
+      if (diseaseId !== undefined && diseaseId >= 0) {
+        cured.push(diseaseId);
+        if (map.cureTier[cellIndex] === 2) premium.push(diseaseId);
+      }
     }
     const sideEffectId = map.sideEffectId[cellIndex];
     if (sideEffectId !== undefined && sideEffectId >= 0) sideEffects.push(sideEffectId);
   }
 
-  return { failed: false, final: state.pos, cured, sideEffects };
-};
+  return { failed: false, final: state.pos, cured, premium, sideEffects };
+}
+
+export const evaluate: EvaluateFn = (mm, start, template) => outcomeOf(mm, applyTemplate(mm, start, template));
 
 export const revealAlong: RevealAlongFn = (mm, start, template) => {
   const fogs = mm.maps.map((map) => Uint8Array.from(map.fog));

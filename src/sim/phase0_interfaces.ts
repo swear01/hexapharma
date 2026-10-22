@@ -86,10 +86,17 @@ export interface EffectMap {
   readonly cell: Uint8Array;
   /** length width*height; DiseaseId at Cure cells, else -1. */
   readonly cureId: Int16Array;
+  /** length width*height; cure tier at Cure cells (1, or 2 = ★ premium), else 0. */
+  readonly cureTier: Uint8Array;
   /** length width*height; globally unique SideEffectId overlay, else -1; may overlap Cure. */
   readonly sideEffectId: Int32Array;
   /** length width*height; same-map destination index at Portal cells, else -1. */
   readonly portalTo: Int32Array;
+  /**
+   * length width*height; generated relief (1024 = 1.0; Wall ≥ mountain, Swamp ≤ water level).
+   * Drawn as contours, never read by traversal.
+   */
+  readonly elevation: Int16Array;
   /** length width*height; 0 = fogged/hidden, 1 = revealed. */
   readonly fog: Uint8Array;
 }
@@ -135,6 +142,8 @@ export interface Outcome {
   readonly failed: boolean;
   readonly final: readonly HexCoord[]; // final position per map
   readonly cured: readonly DiseaseId[]; // diseases whose node a final position landed on
+  /** Subset of `cured` reached on a tier-2 (★) Cure cell; sells at a premium. */
+  readonly premium: readonly DiseaseId[];
   readonly sideEffects: readonly SideEffectId[]; // side-effect overlays landed on
 }
 
@@ -686,6 +695,8 @@ export type SellUnitFn = (
   basePrice: number,
   productionCost: number,
   sideEffectPenalty: number,
+  /** The unit landed on a ★ (tier-2) Cure: gross ×3/2, floored. */
+  premium?: boolean,
 ) => SaleResult;
 
 /** Gross price the next (count-th) unit of a disease would fetch — for UI/preview. */

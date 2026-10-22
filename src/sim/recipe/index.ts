@@ -2,11 +2,6 @@ import type {
   Dir,
   Vec2,
   Rotation,
-  DrugState,
-  DiseaseId,
-  SideEffectId,
-  MultiMap,
-  Outcome,
   FactoryTile,
   FactoryLayout,
   PlacedMachine,
@@ -18,13 +13,13 @@ import type {
   FactoryOutcomeFn,
 } from "../phase0_interfaces";
 import {
-  CellKind,
   DEFAULT_CATALOG,
   DEFAULT_SHAPES,
   MAX_FACTORY_REPLAY_TICKS,
   MAX_TEMPLATE_STEPS,
 } from "../phase0_interfaces";
 import { worldCells, worldInPorts, worldOutPorts } from "../factory-geom";
+import { outcomeOf } from "../drug-graph";
 import {
   initFactory,
   requireFactoryAnalysisBudget,
@@ -991,30 +986,6 @@ function dirBetween(a: Vec2, b: Vec2): Dir {
     if (HEX_DQ[dir]! === dq && HEX_DR[dir]! === dr) return dir;
   }
   throw new Error(`Factory recipe route contains non-adjacent cells ${a.q},${a.r} -> ${b.q},${b.r}`);
-}
-
-/** Read a final DrugState against the maps into an Outcome (mirrors drug-graph.evaluate). */
-function outcomeOf(mm: MultiMap, drug: DrugState): Outcome {
-  const finalPos = drug.pos;
-  if (drug.failed) {
-    return { failed: true, final: finalPos, cured: [], sideEffects: [] };
-  }
-  const cured: DiseaseId[] = [];
-  const sideEffects: SideEffectId[] = [];
-  for (let i = 0; i < mm.maps.length; i++) {
-    const map = mm.maps[i];
-    const p = finalPos[i];
-    if (map === undefined || p === undefined) continue;
-    const idx = p.r * map.width + p.q;
-    const kind = map.cell[idx];
-    if (kind === CellKind.Cure) {
-      const id = map.cureId[idx];
-      if (id !== undefined && id >= 0) cured.push(id);
-    }
-    const sideEffectId = map.sideEffectId[idx];
-    if (sideEffectId !== undefined && sideEffectId >= 0) sideEffects.push(sideEffectId);
-  }
-  return { failed: false, final: finalPos, cured, sideEffects };
 }
 
 /** Bounded first-product budget covering every carrier cell plus each machine's latency once. */

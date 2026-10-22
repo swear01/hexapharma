@@ -25,8 +25,8 @@ describe("balance tool failure boundaries", () => {
   it("uses and reports the representative active one-Atlas configuration", () => {
     expect(BALANCE_CONFIG).toEqual({
       nMaps: 1,
-      width: 63,
-      height: 63,
+      width: 49,
+      height: 49,
       diseaseCount: 4,
       difficulty: { min: 4, max: 12 },
     });
@@ -35,9 +35,9 @@ describe("balance tool failure boundaries", () => {
   it("includes the representative four-disease progression ledger", () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
     try {
-      // Exit 1 only because the seed-0 reserve regression is flagged (see progression-ledger.test.ts).
-      expect(runBalance(1)).toBe(1);
-      expect(log).toHaveBeenCalledWith(expect.stringMatching(/seed=0 completed=true min-cash=44 /));
+      expect(runBalance(1)).toBe(0);
+      expect(log).toHaveBeenCalledWith(expect.stringMatching(/seed=0 completed=true min-cash=766 /));
+      expect(log).toHaveBeenCalledWith(expect.stringMatching(/★ \(tier-2\) reachability/));
       expect(log).toHaveBeenCalledWith(expect.stringMatching(/four-disease legal progression/));
       for (const seed of [14, 15, 1, 42, 100]) {
         expect(log).toHaveBeenCalledWith(expect.stringMatching(`seed=${seed} completed=true`));

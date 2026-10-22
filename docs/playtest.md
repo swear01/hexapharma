@@ -53,26 +53,28 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 8. Outcome同時列Cure／No cure與已知Side effects／No side effects。沒有Formulas按鈕、F-01卡或`Open in Plan`；Cure格揭露後Objective指向Plan。
 9. Blueprint drawer不得提供`Save Research program`或`Load in Research`。匯入現行`research-program`後只可Download／Delete，不能直接改規劃、cash、fog或outcome。
 
-## 5. Terrain / fog / portal / effects
+## 5. Terrain / fog / effects
 
-使用含Wall、Abyss、Swamp、Portal、Cure與SideEffect的固定seed：
+使用含山、水、黑格、Cure、★與SideEffect的固定seed（例如14）：
 
-1. 在未揭露區確認只有Wall可見；Abyss、Swamp、Portal入口/出口、Cure與SideEffect都顯示為普通霧下基底。
-2. 未揭露互動物不得有motif、sprite、colored region、label、hover、preview偏差或outcome洩漏。
-3. 把規劃路線放過known與unknown區；只有Wall在未揭露時改變preview，其他互動物揭露後才改變preview。
-4. 只規劃、切machine或載入Blueprint，revealed count不得改變。
-5. 每次commit的actual traversed segments與sensor radius才揭露。Wall/OOB取消delta、Swamp消耗較多、Abyss sticky fail。
-6. 只以sensor揭露Portal一端時，只能看到未配對端點；不得顯示隱藏配對、方向、座標或preview jump。兩端都揭露後才顯示配對；經A後token到B，trail在jump處斷開，B不能反向觸發，也不能揭露A/B中間直線。
-7. 揭露Cure/SideEffect後，其feature與region邊界才出現。使用重疊fixture確認同一final cell可同時回報Cure與SideEffect，render不丟掉任一overlay。
-8. 對generated cure region確認constructed reference endpoint無SideEffect，且區內至少部分其他Cure cell同時污染；不能把整區都做成乾淨或把reference終點污染。
+1. 新局霧下只看到等高線與起點 disk：山與水都只是一圈圈線（含假起伏），沒有填色或邊框；Abyss、Swamp、Cure與SideEffect都顯示為普通霧下基底。地圖外緣是六角形。
+2. 未揭露互動物不得有motif、sprite、colored region、label、hover、preview偏差或outcome洩漏；等高線在揭露前後形狀不變。
+3. 把規劃路線放過known與unknown區；只有霧下的山會讓preview停下，其他互動物揭露後才改變preview。
+4. 找到一條內環隘口：中段一格寬、兩端較寬；用 initial machines 能穿過。揭露後山是淡褐、水是藍線、黑格是黑。窄道出口外側常有一格黑格。
+5. 只規劃、切machine或載入Blueprint，revealed count不得改變。
+6. 每次commit的actual traversed segments與sensor radius才揭露。Wall/OOB取消delta、Swamp半格、Abyss sticky fail。
+7. （僅sim fixture，generator不再產生Portal）只以sensor揭露Portal一端時，只能看到未配對端點；不得顯示隱藏配對、方向、座標或preview jump。兩端都揭露後才顯示配對；經A後token到B，trail在jump處斷開，B不能反向觸發，也不能揭露A/B中間直線。
+8. 揭露Cure/SideEffect後，其feature與region邊界才出現。使用重疊fixture確認同一final cell可同時回報Cure與SideEffect，render不丟掉任一overlay。
+9. 對generated cure region確認constructed reference endpoint無SideEffect，且區內至少部分其他Cure cell同時污染；不能把整區都做成乾淨或把reference終點污染。★ 格乾淨。
+10. 生產一件終點在 ★ 的產品：Market Stock 顯示`★ pay ×1.5`，Next 顯示`★ price`，出售收入是 `floor(demand × 3 / 2)`。
 
 ## 6. Mapgen diversity / solver balance
 
-1. 以相同完整GenOptions重建同seed兩次，逐欄位比較terrain、portal、cureId、sideEffectId、4種疾病、references、difficulty與basePrice，必須相等。
+1. 以相同完整GenOptions重建同seed兩次，逐欄位比較terrain、elevation、cureId、cureTier、sideEffectId、4種疾病、references、difficulty與basePrice，必須相等。`npx tsx tools/atlas-render.ts <seed> <dir>` 輸出完整揭露圖與霧下圖供目視比對。
 2. 掃多個seed，確認default 4 diseases的reference signatures／endpoints／regions不是固定重複；100-seed all-pairs檢查中，任何單一Research Blueprint命中其他99張Atlas的最壞次數不得超過`floor(99 × 15%)`。
 3. 對每個reference比較空白地圖endpoint與generated terrain上的actual endpoint；正常尺寸地圖必須看出terrain真正改變traversal，不得存在先保護的universal corridor。
 4. 確認default disease 0只使用initial catalog；後續tiers才可引入`skew`、`dilute`、`settle`。1–8疾病options合法，9種顯式拒絕。
-5. 跑dev balance；solver minima以整個Cure region為goal，報告minimum steps／cost、reference quality與seed diversity。minimum depth ≤ 1是阻斷性失敗；reference gap只作後續數值調整FLAG。solver不得被production/runtime import，也不得在遊戲中顯示答案。
+5. 跑dev balance；solver minima以整個Cure region為goal，報告minimum steps／cost、reference quality、seed diversity與 ★ 在 12 台機器內是否可達。minimum depth ≤ 1是阻斷性失敗；reference gap只作後續數值調整FLAG。solver不得被production/runtime import，也不得在遊戲中顯示答案。
 
 ## 7. Production Plan
 
@@ -125,13 +127,13 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 7. 按Delete先顯示entry名稱與cross-save永久刪除警告；Cancel保留card，Confirm才移除Library entry。
 8. 在新局載入含未解鎖machine的跨存檔Blueprint；錯誤要顯示玩家名稱與Technology指引，不得洩漏type ID或machine數字ID。
 
-## 12. Save v12 / recovery
+## 12. Save v13 / recovery
 
 1. Save後做Research trial、Production Plan edit、shipping contract progress、兩次paid Production edit與Production ticks，再Save建立同地圖的獨立快照 history。
 2. Load不同state時先顯示「覆蓋目前遊戲」確認；Cancel不變，Confirm後恢復Atlas/fog/lastTrial outcome、內部pilot layout、non-null Production layout/runtime/waste、inventory、economy/contracts與Technology。
 3. 核對兩次 paid build 的扣款都反映在 cash，快照保留最後 layout 與完整 runtime。直接修改合法 Cash／Knowledge 後仍可 Load，不要求收入 trace。
 4. Rewind先警告永久丟棄最新saved checkpoint並覆蓋current state；Cancel不變，Confirm才回前snapshot，reload後較舊history仍在；Blueprint Library不受影響。
-5. full／compact／slots都是version 12；獨立 checkpoint/history 外層version 2、內層head/history是Save v12，canonical key為`hexapharma.save.v12.checkpoint.${slot}`。Save v11 或更早版本、不同 content build 或 unknown schema顯式拒絕，不silent migrate、部分載入或覆寫舊blob／key。
+5. full／compact／slots都是version 13；獨立 checkpoint/history 外層version 2、內層head/history是Save v13，canonical key為`hexapharma.save.v13.checkpoint.${slot}`。Save v12 或更早版本、不同 content build 或 unknown schema顯式拒絕，不silent migrate、部分載入或覆寫舊blob／key。
 6. corrupt/partial/disagreeing blob 顯示錯誤；正常 Load 拒絕多餘欄位或非字串 head，但同版本、有界 envelope 中的有效快照仍可明確 Recover。錯誤版本、無法解析 JSON、超量輸入不 salvage。Recover 前不得自動刪除或覆寫 raw data；storage 讀取失敗顯示原始原因且不可覆寫復原。
 
 ## 13. Gate、residue與回報
@@ -142,8 +144,8 @@ npm run check
 
 完成前另外確認：
 
-- active docs/source/tests residue scan沒有batch Research route、部分Research path、blank-click append、非Wall互動物穿霧可見、protected universal corridor、預設單疾病、互斥Cure/SideEffect、$200 bootstrap、永久price floor、Production需Plan、Pilot Plant玩家文案、generated lab bitmap／manifest、Blueprint舊schema或Save舊schema的active truth；
-- 定向越野地圖語言的嚴格俯視 2D：紙底＋近黑墨印；ISOM 色語（牆＝黑色斷崖墨、沼澤＝藍色水平線、治療＝綠、副作用＝琥珀、失敗＝紅、流動＝藍）；路線紫只屬玩家自己的線（研究實際路線、規劃虛線、選取、Plan overprint）。Production 為黑墨實印、Plan 為紫色 overprint。手繪感只來自確定性墨線抖動，不用於 port、belt 接點、hit-test 幾何或文字；Pixi vector runtime 保留 canonical true hex。完整規格見 [design.md](design.md#visual-language)。
+- active docs/source/tests residue scan沒有batch Research route、部分Research path、blank-click append、任何地表（含Wall）穿霧填色、protected universal corridor、預設單疾病、互斥Cure/SideEffect、$200 bootstrap、永久price floor、Production需Plan、Pilot Plant玩家文案、generated lab bitmap／manifest、Blueprint舊schema或Save舊schema的active truth；
+- 定向越野地圖語言的嚴格俯視 2D：紙底＋近黑墨印；ISOM 色語（山＝淡褐、水＝藍色水平線、黑格＝黑墨、治療＝綠、副作用＝琥珀、失敗＝紅、流動＝藍；霧下只有單一墨色等高線）；路線紫只屬玩家自己的線（研究實際路線、規劃虛線、選取、Plan overprint）。Production 為黑墨實印、Plan 為紫色 overprint。手繪感只來自確定性墨線抖動，不用於 port、belt 接點、hit-test 幾何或文字；Pixi vector runtime 保留 canonical true hex。完整規格見 [design.md](design.md#visual-language)。
 - 確認Atlas與Factory都是pointy-top axial hex；以`{q,r}`、E／SE／SW／W／NW／NE、六個60° rotations與`r * width + q` fixtures交叉核對hit-test、routing、fog edge及render，並重建radius-two fog／planned-route trials／assay sector／overlap effects、Production Plan、direct Production、contracts、finite-demand Market、connected belts與compact screenshot baselines；
 - 以53346從遠端真人先完成第3節無fixture fresh loop，再走其他correctness smoke；保存human metrics並修完至少一輪UX問題。
 

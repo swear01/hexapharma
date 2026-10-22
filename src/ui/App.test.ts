@@ -29,8 +29,10 @@ function map(size: number): EffectMap {
     start: { q: 1, r: 1 },
     cell: new Uint8Array(size * size),
     cureId: new Int16Array(size * size).fill(-1),
+    cureTier: new Uint8Array(size * size),
     sideEffectId: new Int32Array(size * size).fill(-1),
     portalTo: new Int32Array(size * size).fill(-1),
+    elevation: new Int16Array(size * size),
     fog: new Uint8Array(size * size),
   };
 }
@@ -182,7 +184,7 @@ describe("Research course controls", () => {
 
 describe("Research Cure fit", () => {
   it("fires only for a freshly arrived curing trial, never for a stale, failed, or non-curing one", () => {
-    const cure = { failed: false, final: [{ q: 1, r: 1 }], cured: [0], sideEffects: [] };
+    const cure = { failed: false, final: [{ q: 1, r: 1 }], cured: [0], premium: [], sideEffects: [] };
     const miss = { ...cure, cured: [] };
     const failed = { ...cure, failed: true, cured: [] };
     expect(researchTrialResolvedCure(null, cure)).toBe(true);

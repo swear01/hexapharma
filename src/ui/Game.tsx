@@ -55,7 +55,7 @@ import {
 
 const SAVE_SLOTS = 3;
 const GATED_PATENTS = DEFAULT_PATENTS.map((node) => node.id).filter((id) => requiredShippingContractForPatent(id) !== null);
-const LAB_WORLD_SIZE = 63;
+const LAB_WORLD_SIZE = 49;
 
 export function researchPlanningMap(
   mm: MultiMap,
@@ -69,12 +69,14 @@ export function researchPlanningMap(
       }
       const cell = Uint8Array.from(map.cell);
       const cureId = Int16Array.from(map.cureId);
+      const cureTier = Uint8Array.from(map.cureTier);
       const sideEffectId = Int32Array.from(map.sideEffectId);
       const portalTo = Int32Array.from(map.portalTo);
       for (let index = 0; index < cell.length; index++) {
         if (known[index] !== 1 && cell[index] !== CellKind.Wall) {
           cell[index] = CellKind.Empty;
           cureId[index] = -1;
+          cureTier[index] = 0;
           sideEffectId[index] = -1;
           portalTo[index] = -1;
         }
@@ -92,7 +94,7 @@ export function researchPlanningMap(
           portalTo[index] = -1;
         }
       }
-      return { ...map, cell, cureId, sideEffectId, portalTo, fog: known };
+      return { ...map, cell, cureId, cureTier, sideEffectId, portalTo, fog: known };
     }),
   };
 }

@@ -3,6 +3,7 @@ node_modules/
 
 # build output
 map-prototype-out/
+atlas-render-out/
 dist/
 build/
 .vite/

@@ -29,8 +29,8 @@ export const PROGRESSION_RETRY_BUDGET = 100;
 
 const OPTIONS = Object.freeze({
   nMaps: 1,
-  width: 63,
-  height: 63,
+  width: 49,
+  height: 49,
   catalog: DEFAULT_CATALOG,
   diseaseCount: 4,
   difficulty: Object.freeze({ min: 4, max: 12 }),

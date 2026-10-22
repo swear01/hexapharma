@@ -77,7 +77,7 @@ test("machine patents add the same fixed path to Research and Production Plan pa
   await expect(page.getByTestId("patent-unlock-skew-unlock")).toBeDisabled();
 
   await page.evaluate((checkpoint) => {
-    localStorage.setItem("hexapharma.save.v12.checkpoint.0", checkpoint);
+    localStorage.setItem("hexapharma.save.v13.checkpoint.0", checkpoint);
   }, productionCheckpoint(true));
   await page.reload();
   await confirmLoad(page);
@@ -114,7 +114,7 @@ test("factory expansion confirms before resetting built Production", async ({ pa
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
   await page.evaluate((checkpoint) => {
-    localStorage.setItem("hexapharma.save.v12.checkpoint.0", checkpoint);
+    localStorage.setItem("hexapharma.save.v13.checkpoint.0", checkpoint);
   }, productionCheckpoint());
   await page.reload();
   await confirmLoad(page);

@@ -18,6 +18,7 @@ function product(
   cures: readonly number[],
   sideEffects: readonly number[],
   productionCost: number,
+  premium: readonly number[] = [],
 ): InventoryProduct {
   return {
     id: inventoryId,
@@ -28,6 +29,7 @@ function product(
       failed: false,
       final: [{ q: 0, r: 0 }],
       cured: cures,
+      premium,
       sideEffects,
     },
   };
@@ -75,6 +77,7 @@ describe("Market product choice", () => {
     expect(quote).toEqual({
       productId: 2,
       gross: 50,
+      premium: false,
       productionCost: 0,
       sideEffectCount: 1,
       sideEffectPenaltyEach: 25,
@@ -83,11 +86,18 @@ describe("Market product choice", () => {
     });
   });
 
+  it("quotes a ★ (tier-2) cure at floor(demand × 3 / 2)", () => {
+    const quote = bestMarketQuote([product(1, [0], [], 10, [0])], 0, 51, 0)!;
+    expect(quote).toMatchObject({ premium: true, gross: 76, net: 66 });
+    expect(bestMarketQuote([product(1, [0, 1], [], 10, [1])], 0, 51, 0)).toMatchObject({ premium: false, gross: 51 });
+  });
+
   it("explains whether shipping is disabled by missing or unprofitable stock", () => {
     expect(marketDisabledReason(0, null)).toBe("No curative stock.");
     expect(marketDisabledReason(2, {
       productId: 1,
       gross: 24,
+      premium: false,
       productionCost: 26,
       sideEffectCount: 0,
       sideEffectPenaltyEach: 25,
@@ -97,6 +107,7 @@ describe("Market product choice", () => {
     expect(marketDisabledReason(2, {
       productId: 1,
       gross: 27,
+      premium: false,
       productionCost: 26,
       sideEffectCount: 0,
       sideEffectPenaltyEach: 25,

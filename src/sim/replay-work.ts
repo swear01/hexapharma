@@ -11,6 +11,7 @@ import {
   type FactoryLayout,
   type GameIntent,
   type GenOptions,
+  type Template,
 } from "./phase0_interfaces";
 
 interface FactoryWorkProfile {
@@ -155,8 +156,18 @@ function expandProfile(
   );
 }
 
-function mapTraversalWork(mapCells: number, steps: number): number {
-  return cappedMultiply(mapCells, steps + 4);
+/**
+ * One Research trial: a single traversal (shared by the fog reveal and the outcome) validates every
+ * map once per machine and walks each machine's full path on every map, plus a constant reveal /
+ * outcome pass over the maps.
+ */
+function researchTrialWork(mapCells: number, nMaps: number, program: Template): number {
+  let pathDeltas = 0;
+  for (const step of program.steps) pathDeltas = cappedAdd(pathDeltas, step.path.length);
+  return cappedAdd(
+    cappedMultiply(mapCells, program.steps.length + 4),
+    cappedMultiply(pathDeltas, nMaps),
+  );
 }
 
 export function estimateGameReplayWork(
@@ -179,7 +190,7 @@ export function estimateGameReplayWork(
     let intentWork = 0;
     switch (intent.kind) {
       case "runResearchTrial":
-        intentWork = mapTraversalWork(mapCells, intent.program.steps.length);
+        intentWork = researchTrialWork(mapCells, origin.nMaps, intent.program);
         break;
       case "setPilotLayout":
         pilot = layoutProfile(intent.layout);

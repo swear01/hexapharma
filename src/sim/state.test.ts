@@ -28,8 +28,10 @@ function emptyMap(n: number, start: Vec2): EffectMap {
     start,
     cell: new Uint8Array(len),
     cureId: new Int16Array(len).fill(-1),
+    cureTier: new Uint8Array(len),
     sideEffectId: new Int32Array(len).fill(-1),
     portalTo: new Int32Array(len).fill(-1),
+    elevation: new Int16Array(len),
     fog: new Uint8Array(len),
   };
 }

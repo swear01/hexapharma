@@ -25,7 +25,9 @@
 - 霧中可見，是刻意提供的提示：畫「離平地高差的壓縮絕對值」加上低幅誘餌起伏，單一墨色。
 - 山與水都只是一圈線，玩家只知道那裡有東西，不知道是什麼。
 - 壓縮強度與誘餌強度為生成參數。
-- 更新 invariants：霧下可見的資訊是 Wall 輪廓與這組等高線，不是地表內容。
+- 更新 invariants：霧下可見的資訊只有這組等高線（Wall 也不填色；Wall 規則仍留在 planning map），不是地表內容。
+
+§2–§3 與 ★／黑格已在 Step 2（`feat/v2-mapgen`）實作；規格未明處的選擇見 [decisions.md](decisions.md) D33–D34。
 
 ### 4. 平衡
 - 機器路徑形狀先維持 demo；轉向角由 dev-only 平衡掃描決定。示範暫定：Hook pump +60°、Wave reactor 0、Return coil 180°、Elbow press −60°。

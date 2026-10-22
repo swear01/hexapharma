@@ -10,7 +10,7 @@
 
 ### Phase 1 — Research Atlas
 
-完成 Pixi/React 大型pointy-top axial Atlas、q/r camera picking、fog、terrain/portal 與原創程式化視覺。現行規則是單層、只有 Wall 始終可見，其餘互動物隱藏至揭露。
+完成 Pixi/React 大型pointy-top axial Atlas、q/r camera picking、fog、terrain/portal 與原創程式化視覺。現行規則是單層；霧下只畫由地勢算出的等高線，所有地表與互動物隱藏至揭露（v2 Step 2）。
 
 ### Phase 2 — Factory sim
 
@@ -18,7 +18,7 @@
 
 ### Phase 3 — Economy / Technology / save
 
-完成 Market、Knowledge、shipping contracts、patents、獨立 intent replay debug／開放 checkpoint。當前 wire 是 Save v12（v2 Step 1），早期 schema 不再支援。
+完成 Market、Knowledge、shipping contracts、patents、獨立 intent replay debug／開放 checkpoint。當前 wire 是 Save v13（v2 Step 2），早期 schema 不再支援。
 
 ### Phase 4 — Direct-operation shell
 
@@ -35,7 +35,7 @@
 - Research 是stepwise reveal–decide session：一次commit一個完整candidate stamp，當步立即扣款／執行／揭露／evaluate，再決定下一步；不提交batch route。
 - 新局只揭露中心radius-two 19-cell hex disk；assay只透露寬廣方向sector，每個stamp立即resolve，結果同時顯示已知 Cure 與 SideEffect。
 - Cure自動建立／覆寫每疾病唯一的DiscoveredFormula，Formulas 面板顯示實際steps、累積cost與side effects。
-- 只有 Wall 在霧下仍可見並影響 preview；Abyss、Swamp、Portal、Cure與SideEffect揭露後才影響 preview。
+- （v2 Step 2 前）只有 Wall 在霧下仍可見並影響 preview；Abyss、Swamp、Portal、Cure與SideEffect揭露後才影響 preview。
 - 單一 Atlas 正常產生 4 種獨立疾病，generator 上限 8 種；default references 依 initial／`skew`／`dilute`／`settle` 分 tier。
 - mapgen 先完成 seeded terrain，再 constructive 地尋找 diverse reference／endpoint；沒有 protected universal corridor。reference endpoint 乾淨，部分同區 Cure cell 帶 SideEffect overlay。
 - dev balance 用 solver minima 檢查整個 Cure region、seed/reference diversity與退化，不把 solver 接進遊戲。
@@ -53,7 +53,7 @@
 
 ## Next — v2
 
-Step 1 已完成（`feat/v2-sim-rules`）：Research 改為規劃後一次試驗、只開圖；朝向與轉向角；沼澤半格；Save v12。其餘：黑格；★ 二級療效；地圖生成器重寫（骨架＋隘口＋壓縮等高線）；科技樹；每種基底一張地圖；介面清理。順序與驗收見 [plan.md](plan.md)。
+Step 1 已完成（`feat/v2-sim-rules`）：Research 改為規劃後一次試驗、只開圖；朝向與轉向角；沼澤半格；Save v12。Step 2（`feat/v2-mapgen`）：六角 Atlas 地圖生成器重寫（骨架＋BFS 驗證的隘口＋void filling）、黑格、★ 二級療效與 Market 加價、由地勢畫出的霧下等高線；Save v13。其餘：科技樹；每種基底一張地圖；介面清理。順序與驗收見 [plan.md](plan.md)。
 
 ## Later
 

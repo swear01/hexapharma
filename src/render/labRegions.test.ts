@@ -11,8 +11,10 @@ function map(): EffectMap {
     start: { q: 1, r: 1 },
     cell: new Uint8Array(12),
     cureId: new Int16Array(12).fill(-1),
+    cureTier: new Uint8Array(12),
     sideEffectId: new Int32Array(12).fill(-1),
     portalTo: new Int32Array(12).fill(-1),
+    elevation: new Int16Array(12),
     fog: new Uint8Array(12),
   };
 }
