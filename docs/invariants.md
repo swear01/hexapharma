@@ -17,7 +17,7 @@
 - Wall／OOB、Abyss、Swamp 與 Portal 各有 pure、deterministic、共享於 preview／execution 的語意。
 - 每個 portal entry 恰有一個同層 destination；每個 destination 最多一個 entry。B 不可反向作 A；trail 在 jump 處斷開。
 - 霧下 renderer 只畫等高線（加上開局揭露的起點 disk）：未揭露格一律是普通 substrate，Wall 也不填色、不畫邊。等高線只讀 `EffectMap.elevation`（sign-free 壓縮起伏＋由 |elevation| 決定的 seeded decoys，單一墨色），不得讀 fog、cell 或效果欄位，因此山與水在霧下長得一樣。揭露後才印地表：山＝淡褐填色、Swamp＝水紋、Abyss＝黑。
-- Wall 規則仍穿霧：planning map 保留未揭露的 Wall，預覽會停在霧下的山前。
+- 霧下沒有任何地形資訊進入規劃：planning map 把 Atlas 內所有未揭露格（包括山）當作空地，只有 Atlas 外框視為已知。預估可能穿過霧下的山，實際 Run 撞牆時才揭露；不得用預覽偵測霧下的山或水。
 - Abyss、Swamp、Portal entry／exit、Cure與SideEffect只有揭露後才能出現在 renderer、planning map、region 邊界、hover、ghost 或 outcome UI；未揭露時等價於普通 substrate。Portal pairing、方向與 planning jump 必須兩端都揭露後才可見。
 - planning、加入／移除規劃步驟、載入 Blueprint 或移動 camera 都不改 fog。
 - 只有付費試驗在真實地圖上實際走過的格（含終點）依 sensor radius 揭露；portal 不揭露兩端之間的直線。

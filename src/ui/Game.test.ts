@@ -225,7 +225,7 @@ describe("default Lab world options", () => {
     ]);
   });
 
-  it("keeps only walls in the planning map before discovery", () => {
+  it("plans unrevealed ground, mountains included, as open floor", () => {
     const width = 4;
     const cells = width * width;
     const cell = new Uint8Array(cells);
@@ -256,7 +256,7 @@ describe("default Lab world options", () => {
     }] };
 
     const planning = researchPlanningMap(mm, [new Uint8Array(cells)]).maps[0]!;
-    expect(planning.cell[0]).toBe(CellKind.Wall);
+    expect(planning.cell[0]).toBe(CellKind.Empty);
     expect(planning.cell[1]).toBe(CellKind.Empty);
     expect(planning.cell[2]).toBe(CellKind.Empty);
     expect(planning.cell[3]).toBe(CellKind.Empty);

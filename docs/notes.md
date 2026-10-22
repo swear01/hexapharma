@@ -6,7 +6,7 @@
 - **完整 path 才是 puzzle piece**：機器的奇形 path cells 屬 catalog content。UI、Blueprint、Save、footRot 或 CSS transform 都不能截短或改寫它。
 - **規劃不是 authority**：規劃路線只存在 UI，預覽跑在 fog-masked planning map；只有 `runResearchTrial` 付費、在真實地圖跑完整條並揭露。點最後一個控制點只移除該步；空白world click不能充當確認按鈕。
 - **heading 與 Swamp 半格是 sim 規則**：path 相對 heading，turn 只在未失敗的 stamp 後套用；Swamp 用兩倍整數座標。preview、試驗、factory unit 與 solver 共用同一 traversal，不要在 UI 另寫近似。
-- **terrain 與 discovery 分層**：霧下 renderer 只畫由 `EffectMap.elevation` 算出的等高線（sign-free，山與水一樣）；Wall 不再穿霧填色，但仍留在 planning map 影響 preview；Abyss／Swamp／Cure／SideEffect 都在揭露前完全中性化。等高線只讀 elevation，不能讀 fog、cell 或效果欄位。
+- **terrain 與 discovery 分層**：霧下 renderer 只畫由 `EffectMap.elevation` 算出的等高線（sign-free，山與水一樣）；Wall 不再穿霧填色，也不進入 planning map（霧下一律當空地，只有 Atlas 外框已知）；Abyss／Swamp／Cure／SideEffect 都在揭露前完全中性化。等高線只讀 elevation，不能讀 fog、cell 或效果欄位。
 - **portal 是同層 A→B**：成對、有向、trail 斷段；B 不是回程入口。單獨揭露一端不公開配對、方向或 preview jump。v2 generator 不生成 portal，sim 支援保留。
 - **Research 只開圖**：規劃與hover不改fog；每次付費試驗只揭露實際走過的格。assay只給broad sector，不提供座標或距離。Research 不產生 formula。
 - **Radius-two 起始視野**：fresh fog只揭露中心start周圍hex distance≤2的19-cell disk（v2 Atlas 的起點 disk 一律是平地）；每次試驗在單一intent中resolve，camera不虛構timed Dose phase。

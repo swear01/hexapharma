@@ -17,7 +17,7 @@ import {
   DEFAULT_CATALOG,
   MAX_TEMPLATE_STEPS,
 } from "../sim/phase0_interfaces";
-import { generate } from "../sim/mapgen";
+import { atlasContains, generate } from "../sim/mapgen";
 import { previewStep } from "../sim/drug-graph";
 import { hexDistance, hexIndex } from "../sim/hex";
 import { serializeSnapshot } from "../sim/save";
@@ -73,7 +73,8 @@ export function researchPlanningMap(
       const sideEffectId = Int32Array.from(map.sideEffectId);
       const portalTo = Int32Array.from(map.portalTo);
       for (let index = 0; index < cell.length; index++) {
-        if (known[index] !== 1 && cell[index] !== CellKind.Wall) {
+        // Unrevealed ground plans as open floor (mountains included): only the Atlas outline is known.
+        if (known[index] !== 1 && atlasContains(map, index % map.width, Math.floor(index / map.width))) {
           cell[index] = CellKind.Empty;
           cureId[index] = -1;
           cureTier[index] = 0;
