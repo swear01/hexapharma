@@ -1394,3 +1394,22 @@ export function atlasContains(map: Pick<EffectMap, "width" | "height" | "origin"
   const radius = atlasRadius(map.width, map.height);
   return radius < MIN_SKELETON_RADIUS || hexDistance(map.origin.q, map.origin.r, q, r) <= radius;
 }
+
+// Loaded snapshots carry equal-but-new GenOptions objects; this small content-keyed cache keeps
+// Load, rewind and replay from regenerating the same pure, frozen level. ponytail: 4 entries is
+// enough for the active game plus Load/rewind/New; raise it if more option sets live at once.
+const GENERATED_LEVEL_CACHE_SIZE = 4;
+const generatedLevels = new Map<string, GeneratedLevel>();
+
+/** `generate` memoised by option contents (deterministic, so sharing the frozen result is safe). */
+export function generateCached(opts: GenOptions): GeneratedLevel {
+  const key = JSON.stringify(opts);
+  const cached = generatedLevels.get(key);
+  if (cached !== undefined) return cached;
+  const level = generate(opts);
+  generatedLevels.set(key, level);
+  if (generatedLevels.size > GENERATED_LEVEL_CACHE_SIZE) {
+    generatedLevels.delete(generatedLevels.keys().next().value!);
+  }
+  return level;
+}

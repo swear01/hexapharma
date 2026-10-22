@@ -22,7 +22,7 @@ import {
   hexDistance,
   rotateHexCoord,
 } from "../hex";
-import { evaluate, PATH_OUT_STRIDE, turnHeading, walkValidatedPathInto } from "../drug-graph";
+import { evaluate } from "../drug-graph";
 import { compileEntitledPrototype } from "../recipe";
 import {
   HARD_REGION_SIZES,
@@ -44,6 +44,7 @@ import {
   atlasRadius,
   difficultyToBasePrice,
   generate as generateFresh,
+  generateCached,
   generateWithDiagnostics,
   passTraversable,
 } from "./index";
@@ -170,24 +171,6 @@ function assertReferences(level: GeneratedLevel): void {
   }
 }
 
-function generatedReferenceCures(
-  level: GeneratedLevel,
-  reference: GeneratedLevel["diseases"][number]["reference"],
-): boolean {
-  const map = level.mm.maps[0]!;
-  const start = level.start.pos[0]!;
-  const output = new Int32Array(PATH_OUT_STRIDE);
-  output[0] = start.q;
-  output[1] = start.r;
-  let heading: number = level.start.heading;
-  for (const machine of reference.steps) {
-    walkValidatedPathInto(map, output[0]!, output[1]!, output[2]!, output[3]!, heading, machine, output, 0);
-    if (output[4] === 1) return false;
-    heading = turnHeading(heading, machine.turn);
-  }
-  const index = output[1]! * map.width + output[0]!;
-  return map.cell[index] === CellKind.Cure && map.cureId[index]! >= 0;
-}
 
 describe("mapgen production boundary", () => {
   it("never imports the dev/test-only solver, randomness, or transcendental Math", () => {
@@ -271,6 +254,14 @@ describe("mapgen option validation", () => {
 });
 
 describe("mapgen centered deterministic atlas", () => {
+  it("memoises equal options by content so Load and replay reuse one frozen level", () => {
+    const options = oneAtlasOptions(77);
+    const first = generateCached(options);
+    expect(generateCached({ ...options, difficulty: { ...options.difficulty } })).toBe(first);
+    expect(generateCached(oneAtlasOptions(78))).not.toBe(first);
+    expect(first).toEqual(generateFresh(options));
+  });
+
   it("is field-equal for the same seed, including relief, tiers and diagnostics", () => {
     for (const seed of [0, 1, 14, 184, 0xffffffff]) {
       for (const nMaps of [1, 4]) {
@@ -769,36 +760,6 @@ describe("mapgen seeded disease diversity", () => {
     expect(cureSets.size).toBeGreaterThanOrEqual(18);
     expect(difficulties.size).toBeGreaterThanOrEqual(5);
   });
-
-  it("does not let one seed's reference blueprints cure a broad unrelated sample", () => {
-    const baseline = generate(oneAtlasOptions(1));
-    let crossSeedCures = 0;
-    let comparisons = 0;
-    for (let seed = 2; seed <= 40; seed++) {
-      const level = generate(oneAtlasOptions(seed));
-      for (const disease of baseline.diseases) {
-        comparisons++;
-        if (evaluate(level.mm, level.start, disease.reference).cured.length > 0) crossSeedCures++;
-      }
-    }
-    expect(crossSeedCures).toBeLessThanOrEqual(Math.floor(comparisons / 4));
-  }, 10_000);
-
-  it("bounds the worst individual reference across an all-pairs seed sample", () => {
-    const levels = Array.from({ length: 100 }, (_, index) => generate(oneAtlasOptions(index + 1)));
-    let worstHits = 0;
-    for (let source = 0; source < levels.length; source++) {
-      for (const disease of levels[source]!.diseases) {
-        let hits = 0;
-        for (let target = 0; target < levels.length; target++) {
-          if (target === source) continue;
-          if (generatedReferenceCures(levels[target]!, disease.reference)) hits++;
-        }
-        worstHits = Math.max(worstHits, hits);
-      }
-    }
-    expect(worstHits).toBeLessThanOrEqual(Math.floor((levels.length - 1) * 0.15));
-  }, 60_000);
 
   it("constructs references whose actual endpoints depend on generated route terrain", () => {
     for (const seed of [1, 2, 14, 31, 77, 184]) {

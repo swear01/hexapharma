@@ -41,7 +41,7 @@ import {
 } from "./phase0_interfaces";
 import { evaluate, outcomeOf, previewStep, validateDrugState as validateDrugGraphState } from "./drug-graph";
 import { sellUnit } from "./economy";
-import { MAX_GENERATION_CATALOG_ENTRIES, generate } from "./mapgen";
+import { MAX_GENERATION_CATALOG_ENTRIES, generateCached } from "./mapgen";
 import { DEFAULT_PATENTS, activeEffects, unlockPatent } from "./patent";
 import {
   clearFactoryProductEvents,
@@ -347,7 +347,7 @@ const levelCache = new WeakMap<GenOptions, GeneratedLevel>();
 function levelFor(genOptions: GenOptions): GeneratedLevel {
   const cached = levelCache.get(genOptions);
   if (cached !== undefined) return cached;
-  const level = generate(genOptions);
+  const level = generateCached(genOptions);
   levelCache.set(genOptions, level);
   return level;
 }

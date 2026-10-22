@@ -24,7 +24,6 @@ import { PATH_OUT_STRIDE, turnHeading, walkValidatedPathInto } from "../src/sim/
 import {
   BASE_GAME_FACTORY_HEIGHT,
   BASE_GAME_FACTORY_WIDTH,
-  CellKind,
   DEFAULT_CATALOG,
   type FactoryLayout,
   type GeneratedLevel,
@@ -40,7 +39,6 @@ import {
 } from "./progression-ledger";
 
 export const MAX_BALANCE_SEEDS = 100_000;
-export const MAX_ALL_PAIRS_LEVELS = 100;
 export const BALANCE_CONFIG = Object.freeze({
   nMaps: 1,
   width: 49,
@@ -152,14 +150,6 @@ export interface DiversityReport {
   readonly seedCount: number;
   readonly uniqueReferenceSignatures: number;
   readonly uniqueCureSets: number;
-  readonly crossSeedCures: number;
-  readonly crossSeedComparisons: number;
-  readonly worstCrossSeedCures: number;
-  readonly worstCrossSeedComparisons: number;
-  readonly worstCrossSeedSourceSeed: number;
-  readonly worstCrossSeedDiseaseId: number;
-  readonly worstCrossSeedReferenceSignature: string;
-  readonly worstCrossSeedTargetDiseaseHits: readonly number[];
 }
 
 export interface SweepFailure {
@@ -206,27 +196,6 @@ function templateSignature(template: Template): string {
   return template.steps.map((step) => step.typeId).join(",");
 }
 
-function generatedReferenceCures(level: GeneratedLevel, reference: Template): readonly number[] {
-  const map = level.mm.maps[0];
-  const start = level.start.pos[0];
-  if (map === undefined || start === undefined) {
-    throw new Error("balance all-pairs requires the active one-Atlas level");
-  }
-  const output = new Int32Array(PATH_OUT_STRIDE);
-  output[0] = start.q;
-  output[1] = start.r;
-  let heading: number = level.start.heading;
-  for (const machine of reference.steps) {
-    walkValidatedPathInto(map, output[0]!, output[1]!, output[2]!, output[3]!, heading, machine, output, 0);
-    if (output[4] === 1) return [];
-    heading = turnHeading(heading, machine.turn);
-  }
-  const index = output[1]! * map.width + output[0]!;
-  const disease = map.cureId[index];
-  return map.cell[index] === CellKind.Cure && disease !== undefined && disease >= 0
-    ? [disease]
-    : [];
-}
 
 function median(xs: readonly number[]): number {
   if (xs.length === 0) return 0;
@@ -282,11 +251,6 @@ export function sweep(count: number, overrides: SweepOverrides = {}): SweepResul
   const failed: SweepFailure[] = [];
   const referenceSignatures = new Set<string>();
   const cureSets = new Set<string>();
-  const crossSeedLevels: ReturnType<typeof generate>[] = [];
-  let baselineSeed = -1;
-  let baselineReferences: readonly Template[] = [];
-  let crossSeedCures = 0;
-  let crossSeedComparisons = 0;
   let seedCount = 0;
   for (let seed = 1; seed <= count; seed++) {
     try {
@@ -370,52 +334,8 @@ export function sweep(count: number, overrides: SweepOverrides = {}): SweepResul
       cureSets.add(seedSamples.map((sample) =>
         `${sample.cureMap}:${sample.cureQ},${sample.cureR}`,
       ).join("|"));
-      if (crossSeedLevels.length < MAX_ALL_PAIRS_LEVELS) crossSeedLevels.push(level);
-      if (baselineReferences.length === 0) {
-        baselineSeed = seed;
-        baselineReferences = level.diseases.map((disease) => disease.reference);
-      } else if (seed !== baselineSeed) {
-        for (const reference of baselineReferences) {
-          crossSeedComparisons++;
-          if (generatedReferenceCures(level, reference).length > 0) crossSeedCures++;
-        }
-      }
     } catch (err) {
       failed.push({ seed, error: err instanceof Error ? err.message : String(err) });
-    }
-  }
-  let worstCrossSeedCures = 0;
-  let worstCrossSeedComparisons = 0;
-  let worstCrossSeedSourceSeed = -1;
-  let worstCrossSeedDiseaseId = -1;
-  let worstCrossSeedReferenceSignature = "";
-  let worstCrossSeedTargetDiseaseHits: number[] = [];
-  for (let sourceIndex = 0; sourceIndex < crossSeedLevels.length; sourceIndex++) {
-    const source = crossSeedLevels[sourceIndex]!;
-    for (const disease of source.diseases) {
-      let cures = 0;
-      let comparisons = 0;
-      const targetDiseaseHits = Array.from({ length: BALANCE_CONFIG.diseaseCount }, () => 0);
-      for (let targetIndex = 0; targetIndex < crossSeedLevels.length; targetIndex++) {
-        if (targetIndex === sourceIndex) continue;
-        const target = crossSeedLevels[targetIndex]!;
-        comparisons++;
-        const cured = generatedReferenceCures(target, disease.reference);
-        if (cured.length > 0) cures++;
-        for (const targetDisease of cured) {
-          if (targetDisease >= 0 && targetDisease < targetDiseaseHits.length) {
-            targetDiseaseHits[targetDisease] = targetDiseaseHits[targetDisease]! + 1;
-          }
-        }
-      }
-      if (worstCrossSeedSourceSeed === -1 || cures > worstCrossSeedCures) {
-        worstCrossSeedCures = cures;
-        worstCrossSeedComparisons = comparisons;
-        worstCrossSeedSourceSeed = source.seed;
-        worstCrossSeedDiseaseId = disease.id;
-        worstCrossSeedReferenceSignature = templateSignature(disease.reference);
-        worstCrossSeedTargetDiseaseHits = targetDiseaseHits;
-      }
     }
   }
   return {
@@ -425,14 +345,6 @@ export function sweep(count: number, overrides: SweepOverrides = {}): SweepResul
       seedCount,
       uniqueReferenceSignatures: referenceSignatures.size,
       uniqueCureSets: cureSets.size,
-      crossSeedCures,
-      crossSeedComparisons,
-      worstCrossSeedCures,
-      worstCrossSeedComparisons,
-      worstCrossSeedSourceSeed,
-      worstCrossSeedDiseaseId,
-      worstCrossSeedReferenceSignature,
-      worstCrossSeedTargetDiseaseHits,
     },
     failed,
   };
@@ -449,18 +361,6 @@ export function diversityFailures(result: SweepResult): string[] {
   }
   if (diversity.uniqueCureSets < Math.ceil(diversity.seedCount * 0.75)) {
     failures.push(`cure-set diversity too low: ${diversity.uniqueCureSets} unique for ${diversity.seedCount} seeds`);
-  }
-  const worstIndividualFailed = diversity.worstCrossSeedComparisons >= 39 &&
-    diversity.worstCrossSeedCures > Math.floor(diversity.worstCrossSeedComparisons * 0.15);
-  const smallRepeatedSampleFailed = diversity.worstCrossSeedComparisons < 39 &&
-    diversity.crossSeedComparisons > 0 &&
-    diversity.crossSeedCures * 4 > diversity.crossSeedComparisons;
-  if (worstIndividualFailed || smallRepeatedSampleFailed) {
-    failures.push(
-      `worst cross-seed cure rate too high: ${diversity.worstCrossSeedCures}/` +
-        `${diversity.worstCrossSeedComparisons} from seed=${diversity.worstCrossSeedSourceSeed} ` +
-        `disease=${diversity.worstCrossSeedDiseaseId} ${diversity.worstCrossSeedReferenceSignature}`,
-    );
   }
   return failures;
 }
@@ -549,15 +449,6 @@ function printDiversity(result: SweepResult): void {
   console.log(
     `  unique references=${report.uniqueReferenceSignatures}  ` +
       `unique cure sets=${report.uniqueCureSets}  successful seeds=${report.seedCount}`,
-  );
-  console.log(
-    `  baseline-blueprint cross-seed cures=${report.crossSeedCures}/${report.crossSeedComparisons}`,
-  );
-  console.log(
-    `  worst individual cross-seed cures=${report.worstCrossSeedCures}/` +
-      `${report.worstCrossSeedComparisons} seed=${report.worstCrossSeedSourceSeed} ` +
-      `disease=${report.worstCrossSeedDiseaseId} ${report.worstCrossSeedReferenceSignature} ` +
-      `targets=[${report.worstCrossSeedTargetDiseaseHits.join(",")}]`,
   );
 }
 

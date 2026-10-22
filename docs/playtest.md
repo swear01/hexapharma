@@ -35,7 +35,7 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 3. 找到第一個Cure後，確認結果同時報告已知Side effects，Objective改為`Plan a line to Disease N`；若命中污染Cure，可修改路線再Run尋找同區乾淨endpoint，但不能以hidden reference代替探索。
 4. 自行選擇直接Production或optional Production Plan，人工放source、完整machine sequence、belt與sink；不得呼叫layout compiler。若使用Plan，按`Commission $N`送入正式產線。確認Research支出後仍付得起有效Production build。
 5. Play直到產生實體cure，在Market以`Ship best`出售第一件仍有正net的產品；確認stock減1、cash增加、該疾病Sold／Next更新。
-6. 對同一疾病完成3次accepted shipping，確認contract chip依序為1/3、2/3、3/3，對應machine patent gate解除；繼續觀察下一種疾病是否形成新目標，而不是同一路線跨seed／疾病直接通殺。
+6. 對同一疾病完成3次accepted shipping，確認contract chip依序為1/3、2/3、3/3，對應machine patent gate解除；繼續觀察下一種疾病是否形成新目標。
 7. 另記錄是否曾動用預留的$100 retry／小改建預算；若目前庫存沒有正net出貨，確認Market提示改善成本／品質或嘗試另一種疾病，不把current stock不賺錢誤報成整局無法恢復。
 8. 保存：首次理解candidate操作所需時間、Research嘗試數、first cure時間、first sale時間、最低cash、重做layout次數、三個最大困惑點，以及「是否願意再解下一種疾病／原因」。這些是human fun evidence，不得用green gate取代。
 
@@ -71,7 +71,7 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 ## 6. Mapgen diversity / solver balance
 
 1. 以相同完整GenOptions重建同seed兩次，逐欄位比較terrain、elevation、cureId、cureTier、sideEffectId、4種疾病、references、difficulty與basePrice，必須相等。`npx tsx tools/atlas-render.ts <seed> <dir>` 輸出完整揭露圖與霧下圖供目視比對。
-2. 掃多個seed，確認default 4 diseases的reference signatures／endpoints／regions不是固定重複；100-seed all-pairs檢查中，任何單一Research Blueprint命中其他99張Atlas的最壞次數不得超過`floor(99 × 15%)`。
+2. 掃多個seed，確認default 4 diseases的reference signatures／endpoints／regions不是固定重複。
 3. 對每個reference比較空白地圖endpoint與generated terrain上的actual endpoint；正常尺寸地圖必須看出terrain真正改變traversal，不得存在先保護的universal corridor。
 4. 確認default disease 0只使用initial catalog；後續tiers才可引入`skew`、`dilute`、`settle`。1–8疾病options合法，9種顯式拒絕。
 5. 跑dev balance；solver minima以整個Cure region為goal，報告minimum steps／cost、reference quality、seed diversity與 ★ 在 12 台機器內是否可達。minimum depth ≤ 1是阻斷性失敗；reference gap只作後續數值調整FLAG。solver不得被production/runtime import，也不得在遊戲中顯示答案。

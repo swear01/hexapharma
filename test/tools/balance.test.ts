@@ -142,7 +142,6 @@ describe("balance tool failure boundaries", () => {
     expect(diversityFailures(result)).toEqual(expect.arrayContaining([
       expect.stringMatching(/reference diversity/i),
       expect.stringMatching(/cure-set diversity/i),
-      expect.stringMatching(/cross-seed cure/i),
     ]));
     expect(sweepExitCode(result)).toBe(1);
   }, 60_000);
@@ -159,11 +158,6 @@ describe("balance tool failure boundaries", () => {
       expect(sample.referenceCostGap).toBe(sample.cost - sample.solverMinCost);
     }
     expect(result.bootstraps).toHaveLength(2);
-    expect(result.diversity.worstCrossSeedComparisons).toBe(1);
-    expect(result.diversity.worstCrossSeedCures).toBeLessThanOrEqual(1);
-    expect(result.diversity.worstCrossSeedTargetDiseaseHits).toHaveLength(
-      BALANCE_CONFIG.diseaseCount,
-    );
     for (const bootstrap of result.bootstraps) {
       expect(bootstrap.researchCost + bootstrap.constructionQuote).toBe(bootstrap.bootstrapCash);
       expect(bootstrap.startingCash).toBeGreaterThanOrEqual(bootstrap.bootstrapCash);

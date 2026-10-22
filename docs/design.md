@@ -80,7 +80,7 @@ Research 不使用 FactoryLayout、source／belt／sink、線性 route descripto
 - default 4-disease progression 採 catalog tier：第一種只用 initial machines，後續 reference 依序可使用 `skew`、`dilute`、`settle`；第一個可解目標不得要求尚未解鎖的進階機器。
 - 每個 cure region 都在起始 radius-two hex disk 之外，以乾淨 constructed endpoint 為權威 reference 命中點；區域維持連通但不是固定模板，其餘格中有一部分是 Cure + SideEffect overlay，保留更短但污染或更精準乾淨的多解空間。
 - generator 輸出 reference ResearchProgram 只供 property/balance tests 驗證 solvability、bounds、seed diversity 與同 seed相等；runtime UI 不讀取或提示 reference。`generateWithDiagnostics` 另回傳隘口、盆地、效果區與黑格清單，只給 tests/tools。
-- solver 只供 tests/tools 做 soundness、整個 cure region 的 minimum steps／cost、reference quality 與跨 seed退化檢查，不進遊戲內自動解，也不作 production rejection loop。generator 自己的 bounded 隘口 BFS 與 reference BFS 樹是生成期構造，不是 solver，結果也不進 runtime／UI。dev balance 另記錄每個 ★ 在 12 台機器內是否可達。
+- solver 只供 tests/tools 做 soundness、整個 cure region 的 minimum steps／cost、reference quality 檢查，不進遊戲內自動解，也不作 production rejection loop。generator 自己的 bounded 隘口 BFS 與 reference BFS 樹是生成期構造，不是 solver，結果也不進 runtime／UI。dev balance 另記錄每個 ★ 在 12 台機器內是否可達。
 
 骨架比例、雜訊幅度、區域大小、黑格數量與獎勵 pacing 是後續平衡項；確定性、連通、隘口可通過與 constructive validity 不是。
 

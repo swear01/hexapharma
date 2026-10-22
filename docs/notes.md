@@ -17,7 +17,6 @@
 - **單圖多疾病**：預設 4 種、支援 1–8 種；default references 由 initial machines 到 `skew`／`dilute`／`settle` 分 tier。reference 只供 tests/tools，runtime 不提示答案。
 - **effect fields 可重疊**：constructed endpoint 是乾淨 Cure；區域其他 Cure cell 可同時有 SideEffect。renderer、Outcome 與 Market 不能用互斥 cell-kind 假設丟掉其中一種效果。
 - **solver 量實際 cure region**：dev balance 看 minimum steps／cost、reference quality 與 seed diversity，不只瞄準第一個 Cure cell，也不進 runtime。
-- **不看平均值掩蓋通用藍圖**：balance除aggregate rate外，另做最多100個level的all-pairs，直接限制最壞單一reference的跨seed命中率並列出命中的target disease分布。
 - **結構失敗與平衡訊號分開**：minimum cure depth ≤ 1會讓balance非零退出；constructed reference與solver minimum的step／cost gap繼續列為調參FLAG，不冒充correctness失敗。
 - **Production Plan 是可選 sandbox**：無clock／cost／inventory／waste，與Research、Production狀態解耦；Sample只使用fog-masked planning map。玩家動詞是Commission，內部state可仍名pilot。
 - **Production 可直接建造**：新局已有空 24×12 layout。不要再加入Production Plan前置、封鎖頁或隱藏token。

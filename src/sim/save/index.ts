@@ -37,7 +37,7 @@ import { restoreFactory, snapshotFactory } from "../factory-sim";
 import { isDrugOffset } from "../drug-graph";
 import {
   MAX_GENERATION_CATALOG_ENTRIES,
-  generate,
+  generateCached,
 } from "../mapgen";
 import { DEFAULT_PATENTS } from "../patent";
 import {
@@ -787,7 +787,7 @@ function parseGameState(v: unknown): GameState {
       genOptions.nMaps,
       "production.runtime",
     );
-    const level = generate(genOptions);
+    const level = generateCached(genOptions);
     const parsed: GameState = {
       genOptions,
       economy: parseEconomy(o.economy, genOptions.diseaseCount),
