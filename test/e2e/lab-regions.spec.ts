@@ -25,8 +25,8 @@ async function confirmLoad(page: Page): Promise<void> {
 }
 
 const REGION_SEED = 14;
-const START_CELL = { q: 31, r: 31 } as const;
-const REGION_FOCUS = { q: 8, r: 8 } as const;
+const START_CELL = { q: 24, r: 24 } as const;
+const REGION_FOCUS = { q: 18, r: 30 } as const;
 
 test.setTimeout(60_000);
 
@@ -52,7 +52,7 @@ async function panFromStartToRegion(
   const viewportBox = await frame.getByTestId("lab-canvas").boundingBox();
   if (box === null || viewportBox === null) throw new Error("Lab frame has no bounding box");
   const start = focusLabCamera(START_CELL);
-  const expected = clampLabCamera(focusLabCamera(target), LAB_VIEWPORT, { width: 63, height: 63 });
+  const expected = clampLabCamera(focusLabCamera(target), LAB_VIEWPORT, { width: 49, height: 49 });
   const dragX = (start.x - expected.x) * viewportBox.width / LAB_VIEWPORT.width;
   const dragY = (start.y - expected.y) * viewportBox.height / LAB_VIEWPORT.height;
   const horizontalStartX = box.x + box.width * 0.48;
@@ -164,8 +164,12 @@ async function syntheticRendererScreenshot(
     const fog = new Uint8Array(length);
     fog.fill(fogValue);
     const cureId = new Int16Array(length).fill(-1);
+    const cureTier = new Uint8Array(length);
     const sideEffectId = new Int32Array(length).fill(-1);
-    if (renderedKind === cureKind) cureId[center] = 0;
+    if (renderedKind === cureKind) {
+      cureId[center] = 0;
+      cureTier[center] = 1;
+    }
     if (renderedKind === sideEffectKind) sideEffectId[center] = 100;
     const portalTo = new Int32Array(length).fill(-1);
     if (renderedKind === portalKind) portalTo[center] = center + 2;
@@ -176,8 +180,10 @@ async function syntheticRendererScreenshot(
       start: { q: 10, r: 6 },
       cell,
       cureId,
+      cureTier,
       sideEffectId,
       portalTo,
+      elevation: new Int16Array(length),
       fog,
     };
     const mm = { maps: [map] };
@@ -212,7 +218,7 @@ function terrainResearchFixture(): {
   const game = createGameState(options, 1_000_000, 0);
   const map = level.mm.maps[0]!;
   const targets: Record<number, HexCoord> = {};
-  for (const kind of [CellKind.Wall, CellKind.Abyss, CellKind.Swamp, CellKind.Portal]) {
+  for (const kind of [CellKind.Wall, CellKind.Abyss, CellKind.Swamp]) {
     let best: HexCoord | null = null;
     let bestRadius = Number.POSITIVE_INFINITY;
     for (let index = 0; index < map.cell.length; index++) {
@@ -232,7 +238,7 @@ function terrainResearchFixture(): {
     discovered[target.r * map.width + target.q] = 1;
   }
   const initialMap = { ...map, fog: discovered };
-  const visuals = [CellKind.Wall, CellKind.Abyss, CellKind.Swamp, CellKind.Portal].map((kind) => {
+  const visuals = [CellKind.Wall, CellKind.Abyss, CellKind.Swamp].map((kind) => {
     const target = targets[kind]!;
     return labTerrainVisual(initialMap, target.q, target.r);
   });
@@ -243,15 +249,12 @@ test("Atlas regions pan over the large grid without a reveal-all bypass", async 
   page,
 }) => {
   const counts = fixtureRegionCounts();
-  for (const kind of [CellKind.Wall, CellKind.Abyss, CellKind.Swamp, CellKind.Portal]) {
+  for (const kind of [CellKind.Wall, CellKind.Abyss, CellKind.Swamp, CellKind.Cure]) {
     expect(counts[kind], `seed ${REGION_SEED} viewport must contain cell kind ${kind}`).toBeGreaterThan(0);
   }
-
+  // The v2 generator places no portals (sim support stays).
   const map = generate(defaultGenOptions(REGION_SEED)).mm.maps[0]!;
-  const portal = map.cell.findIndex((kind) => kind === CellKind.Portal);
-  expect(portal).toBeGreaterThanOrEqual(0);
-  expect(map.portalTo[portal]).toBeGreaterThanOrEqual(0);
-  expect(map.portalTo[portal]).toBeLessThan(map.width * map.height);
+  expect(map.cell.includes(CellKind.Portal)).toBe(false);
 
   await page.goto(`/?seed=${REGION_SEED}`);
   const frame = page.getByTestId("lab-map-frame");
@@ -261,18 +264,8 @@ test("Atlas regions pan over the large grid without a reveal-all bypass", async 
   await expect(page.getByTestId("reveal")).toHaveCount(0);
 });
 
-test("survey fog changes empty substrate without changing wall pixels", async ({
-  page,
-}) => {
-  const undiscovered = await syntheticRendererScreenshot(page, false);
-  const discovered = await syntheticRendererScreenshot(page, true);
-
-  expect(await patchDifference(page, undiscovered, discovered)).toBeLessThan(2);
-  expect(await patchDifference(page, undiscovered, discovered, { q: -4, r: 0 }))
-    .toBeGreaterThan(6);
-});
-
 for (const [kind, label] of [
+  [CellKind.Wall, "Wall"],
   [CellKind.Abyss, "Abyss"],
   [CellKind.Swamp, "Swamp"],
   [CellKind.Portal, "Portal"],
@@ -296,7 +289,7 @@ test("survey fog hides Cure pixels until discovery", async ({ page }) => {
   expect(await patchDifference(page, hiddenCure, discoveredCure)).toBeGreaterThan(6);
 });
 
-test("Wall, Abyss, Swamp, and Portal use distinct renderer motifs", async ({
+test("generated mountain, failure and water cells use distinct renderer motifs", async ({
   page,
 }) => {
   const fixture = terrainResearchFixture();
@@ -304,15 +297,14 @@ test("Wall, Abyss, Swamp, and Portal use distinct renderer motifs", async ({
     "wall",
     "abyss",
     "swamp",
-    "portal",
   ]);
   const motifs = fixture.visuals.map((visual) => {
     if (!("motif" in visual)) throw new Error("an Atlas terrain motif was unavailable");
     return visual.motif;
   });
-  expect(new Set(motifs).size).toBe(4);
+  expect(new Set(motifs).size).toBe(3);
   expect(new Set(fixture.visuals.map((visual) => "baseColor" in visual ? visual.baseColor : -1)).size)
-    .toBe(4);
+    .toBe(3);
   await page.goto("/");
   await installSaveFixture(page, fixture.save);
   await page.reload();

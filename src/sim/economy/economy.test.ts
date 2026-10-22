@@ -306,3 +306,15 @@ describe("sellUnit — determinism", () => {
     );
   });
 });
+
+describe("★ (tier-2) premium sale", () => {
+  it("pays floor(gross × 3 / 2) and still advances the same demand counter", () => {
+    const plain = sellUnit(empty, 2, 51, 10, 0);
+    const premium = sellUnit(empty, 2, 51, 10, 0, true);
+    expect(plain.revenue).toBe(51);
+    expect(premium.revenue).toBe(76);
+    expect(premium.net).toBe(66);
+    expect(premium.econ.sold).toEqual(plain.econ.sold);
+    expect(sellUnit(premium.econ, 2, 51, 0, 0, true).revenue).toBe(Math.floor((nextUnitPrice(51, 1) * 3) / 2));
+  });
+});

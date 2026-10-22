@@ -112,8 +112,8 @@
 .map-symbol .ink-marsh { stroke: var(--marsh); }
 .map-symbol .ink-flow { stroke: var(--flow); }
 .map-symbol .fill-marsh { fill: #e3eff6; }
-.map-symbol .fill-abyss { fill: #1c3a58; stroke: var(--ink); }
-.map-symbol .ink-pit { stroke: #5f86ad; }
+.map-symbol .fill-mountain { fill: #cdb79a; stroke: #a48a68; }
+.map-symbol .ink-contour { stroke: #a0673a; }
 
 .menu-panel h1 { color: var(--ink); }
 .menu-panel > .resource-chip { display: flex; align-items: baseline; gap: 10px; margin-top: 16px; }

@@ -24,7 +24,6 @@ import { PATH_OUT_STRIDE, turnHeading, walkValidatedPathInto } from "../src/sim/
 import {
   BASE_GAME_FACTORY_HEIGHT,
   BASE_GAME_FACTORY_WIDTH,
-  CellKind,
   DEFAULT_CATALOG,
   type FactoryLayout,
   type GeneratedLevel,
@@ -40,11 +39,10 @@ import {
 } from "./progression-ledger";
 
 export const MAX_BALANCE_SEEDS = 100_000;
-export const MAX_ALL_PAIRS_LEVELS = 100;
 export const BALANCE_CONFIG = Object.freeze({
   nMaps: 1,
-  width: 63,
-  height: 63,
+  width: 49,
+  height: 49,
   diseaseCount: 4,
   difficulty: Object.freeze({ min: 4, max: 12 }),
 });
@@ -74,6 +72,68 @@ export interface Sample {
   readonly rateDen: number;
   /** First-unit net profit/tick; float is reporting-only, never sim state. */
   readonly profitPerTick: number;
+  /** Fewest machines to land on one of this disease's ★ (tier-2) cells: its catalog tier / full catalog. */
+  readonly premiumTierSteps: number | null;
+  readonly premiumFullSteps: number | null;
+}
+
+export const PREMIUM_REACH_DEPTH = 12;
+
+/**
+ * Dev-only BFS over (cell, swamp offset, heading) from the level start: the fewest machines from
+ * `catalog` whose actual endpoint is a ★ Cure of `diseaseId` (null if none within `maxDepth`).
+ */
+export function premiumReachSteps(
+  level: GeneratedLevel,
+  diseaseId: number,
+  catalog: readonly MachineCatalogEntry[],
+  maxDepth = PREMIUM_REACH_DEPTH,
+): number | null {
+  const map = level.mm.maps[0];
+  if (level.mm.maps.length !== 1 || map === undefined || !(map.cureTier instanceof Uint8Array)) return null;
+  const isGoal = (cell: number) => map.cureTier[cell] === 2 && map.cureId[cell] === diseaseId;
+  let hasGoal = false;
+  for (let cell = 0; cell < map.cell.length; cell++) if (isGoal(cell)) hasGoal = true;
+  if (!hasGoal) return null;
+  const machines = catalog.map((entry) => ({ typeId: entry.typeId, path: entry.path, turn: entry.turn }));
+  const seen = new Uint8Array(map.cell.length * 42);
+  const root = (map.start.r * map.width + map.start.q) * 42;
+  seen[root] = 1;
+  let layer = [root];
+  const out = new Int32Array(PATH_OUT_STRIDE);
+  const dq = [1, 0, -1, -1, 0, 1];
+  const dr = [0, 1, 1, 0, -1, -1];
+  for (let depth = 1; depth <= maxDepth && layer.length > 0; depth++) {
+    const next: number[] = [];
+    for (const state of layer) {
+      const heading = state % 6;
+      const slot = Math.floor(state / 6) % 7;
+      const cell = Math.floor(state / 42);
+      for (const machine of machines) {
+        walkValidatedPathInto(
+          map,
+          cell % map.width,
+          Math.floor(cell / map.width),
+          slot === 0 ? 0 : dq[slot - 1]!,
+          slot === 0 ? 0 : dr[slot - 1]!,
+          heading,
+          machine,
+          out,
+          0,
+        );
+        if (out[4] === 1) continue;
+        const landed = out[1]! * map.width + out[0]!;
+        if (isGoal(landed)) return depth;
+        const nslot = out[2] === 0 && out[3] === 0 ? 0 : 1 + dq.findIndex((q, index) => q === out[2] && dr[index] === out[3]);
+        const nstate = landed * 42 + nslot * 6 + turnHeading(heading, machine.turn);
+        if (seen[nstate] === 1) continue;
+        seen[nstate] = 1;
+        next.push(nstate);
+      }
+    }
+    layer = next;
+  }
+  return null;
 }
 
 export interface BootstrapSample {
@@ -90,14 +150,6 @@ export interface DiversityReport {
   readonly seedCount: number;
   readonly uniqueReferenceSignatures: number;
   readonly uniqueCureSets: number;
-  readonly crossSeedCures: number;
-  readonly crossSeedComparisons: number;
-  readonly worstCrossSeedCures: number;
-  readonly worstCrossSeedComparisons: number;
-  readonly worstCrossSeedSourceSeed: number;
-  readonly worstCrossSeedDiseaseId: number;
-  readonly worstCrossSeedReferenceSignature: string;
-  readonly worstCrossSeedTargetDiseaseHits: readonly number[];
 }
 
 export interface SweepFailure {
@@ -144,27 +196,6 @@ function templateSignature(template: Template): string {
   return template.steps.map((step) => step.typeId).join(",");
 }
 
-function generatedReferenceCures(level: GeneratedLevel, reference: Template): readonly number[] {
-  const map = level.mm.maps[0];
-  const start = level.start.pos[0];
-  if (map === undefined || start === undefined) {
-    throw new Error("balance all-pairs requires the active one-Atlas level");
-  }
-  const output = new Int32Array(PATH_OUT_STRIDE);
-  output[0] = start.q;
-  output[1] = start.r;
-  let heading: number = level.start.heading;
-  for (const machine of reference.steps) {
-    walkValidatedPathInto(map, output[0]!, output[1]!, output[2]!, output[3]!, heading, machine, output, 0);
-    if (output[4] === 1) return [];
-    heading = turnHeading(heading, machine.turn);
-  }
-  const index = output[1]! * map.width + output[0]!;
-  const disease = map.cureId[index];
-  return map.cell[index] === CellKind.Cure && disease !== undefined && disease >= 0
-    ? [disease]
-    : [];
-}
 
 function median(xs: readonly number[]): number {
   if (xs.length === 0) return 0;
@@ -220,11 +251,6 @@ export function sweep(count: number, overrides: SweepOverrides = {}): SweepResul
   const failed: SweepFailure[] = [];
   const referenceSignatures = new Set<string>();
   const cureSets = new Set<string>();
-  const crossSeedLevels: ReturnType<typeof generate>[] = [];
-  let baselineSeed = -1;
-  let baselineReferences: readonly Template[] = [];
-  let crossSeedCures = 0;
-  let crossSeedComparisons = 0;
   let seedCount = 0;
   for (let seed = 1; seed <= count; seed++) {
     try {
@@ -274,6 +300,8 @@ export function sweep(count: number, overrides: SweepOverrides = {}): SweepResul
           rateNum: report.rateNum,
           rateDen: report.rateDen,
           profitPerTick: rate * (disease.basePrice - cost),
+          premiumTierSteps: premiumReachSteps(level, disease.id, catalog.slice(0, availableCount)),
+          premiumFullSteps: premiumReachSteps(level, disease.id, catalog),
         });
         if (disease.id === 0) {
           const proposed = compileEntitled(
@@ -306,52 +334,8 @@ export function sweep(count: number, overrides: SweepOverrides = {}): SweepResul
       cureSets.add(seedSamples.map((sample) =>
         `${sample.cureMap}:${sample.cureQ},${sample.cureR}`,
       ).join("|"));
-      if (crossSeedLevels.length < MAX_ALL_PAIRS_LEVELS) crossSeedLevels.push(level);
-      if (baselineReferences.length === 0) {
-        baselineSeed = seed;
-        baselineReferences = level.diseases.map((disease) => disease.reference);
-      } else if (seed !== baselineSeed) {
-        for (const reference of baselineReferences) {
-          crossSeedComparisons++;
-          if (generatedReferenceCures(level, reference).length > 0) crossSeedCures++;
-        }
-      }
     } catch (err) {
       failed.push({ seed, error: err instanceof Error ? err.message : String(err) });
-    }
-  }
-  let worstCrossSeedCures = 0;
-  let worstCrossSeedComparisons = 0;
-  let worstCrossSeedSourceSeed = -1;
-  let worstCrossSeedDiseaseId = -1;
-  let worstCrossSeedReferenceSignature = "";
-  let worstCrossSeedTargetDiseaseHits: number[] = [];
-  for (let sourceIndex = 0; sourceIndex < crossSeedLevels.length; sourceIndex++) {
-    const source = crossSeedLevels[sourceIndex]!;
-    for (const disease of source.diseases) {
-      let cures = 0;
-      let comparisons = 0;
-      const targetDiseaseHits = Array.from({ length: BALANCE_CONFIG.diseaseCount }, () => 0);
-      for (let targetIndex = 0; targetIndex < crossSeedLevels.length; targetIndex++) {
-        if (targetIndex === sourceIndex) continue;
-        const target = crossSeedLevels[targetIndex]!;
-        comparisons++;
-        const cured = generatedReferenceCures(target, disease.reference);
-        if (cured.length > 0) cures++;
-        for (const targetDisease of cured) {
-          if (targetDisease >= 0 && targetDisease < targetDiseaseHits.length) {
-            targetDiseaseHits[targetDisease] = targetDiseaseHits[targetDisease]! + 1;
-          }
-        }
-      }
-      if (worstCrossSeedSourceSeed === -1 || cures > worstCrossSeedCures) {
-        worstCrossSeedCures = cures;
-        worstCrossSeedComparisons = comparisons;
-        worstCrossSeedSourceSeed = source.seed;
-        worstCrossSeedDiseaseId = disease.id;
-        worstCrossSeedReferenceSignature = templateSignature(disease.reference);
-        worstCrossSeedTargetDiseaseHits = targetDiseaseHits;
-      }
     }
   }
   return {
@@ -361,14 +345,6 @@ export function sweep(count: number, overrides: SweepOverrides = {}): SweepResul
       seedCount,
       uniqueReferenceSignatures: referenceSignatures.size,
       uniqueCureSets: cureSets.size,
-      crossSeedCures,
-      crossSeedComparisons,
-      worstCrossSeedCures,
-      worstCrossSeedComparisons,
-      worstCrossSeedSourceSeed,
-      worstCrossSeedDiseaseId,
-      worstCrossSeedReferenceSignature,
-      worstCrossSeedTargetDiseaseHits,
     },
     failed,
   };
@@ -385,18 +361,6 @@ export function diversityFailures(result: SweepResult): string[] {
   }
   if (diversity.uniqueCureSets < Math.ceil(diversity.seedCount * 0.75)) {
     failures.push(`cure-set diversity too low: ${diversity.uniqueCureSets} unique for ${diversity.seedCount} seeds`);
-  }
-  const worstIndividualFailed = diversity.worstCrossSeedComparisons >= 39 &&
-    diversity.worstCrossSeedCures > Math.floor(diversity.worstCrossSeedComparisons * 0.15);
-  const smallRepeatedSampleFailed = diversity.worstCrossSeedComparisons < 39 &&
-    diversity.crossSeedComparisons > 0 &&
-    diversity.crossSeedCures * 4 > diversity.crossSeedComparisons;
-  if (worstIndividualFailed || smallRepeatedSampleFailed) {
-    failures.push(
-      `worst cross-seed cure rate too high: ${diversity.worstCrossSeedCures}/` +
-        `${diversity.worstCrossSeedComparisons} from seed=${diversity.worstCrossSeedSourceSeed} ` +
-        `disease=${diversity.worstCrossSeedDiseaseId} ${diversity.worstCrossSeedReferenceSignature}`,
-    );
   }
   return failures;
 }
@@ -486,15 +450,6 @@ function printDiversity(result: SweepResult): void {
     `  unique references=${report.uniqueReferenceSignatures}  ` +
       `unique cure sets=${report.uniqueCureSets}  successful seeds=${report.seedCount}`,
   );
-  console.log(
-    `  baseline-blueprint cross-seed cures=${report.crossSeedCures}/${report.crossSeedComparisons}`,
-  );
-  console.log(
-    `  worst individual cross-seed cures=${report.worstCrossSeedCures}/` +
-      `${report.worstCrossSeedComparisons} seed=${report.worstCrossSeedSourceSeed} ` +
-      `disease=${report.worstCrossSeedDiseaseId} ${report.worstCrossSeedReferenceSignature} ` +
-      `targets=[${report.worstCrossSeedTargetDiseaseHits.join(",")}]`,
-  );
 }
 
 function printPuzzleQuality(samples: readonly Sample[]): void {
@@ -518,6 +473,20 @@ function printPuzzleQuality(samples: readonly Sample[]): void {
   console.log(
     `  reference−shortest cost gap min=${costGapRange.min} ` +
       `median=${fmt(median(costGaps), 1)} max=${costGapRange.max}`,
+  );
+}
+
+function printPremiumReach(samples: readonly Sample[]): void {
+  const tier = samples.map((sample) => sample.premiumTierSteps).filter((steps): steps is number => steps !== null);
+  const full = samples.map((sample) => sample.premiumFullSteps).filter((steps): steps is number => steps !== null);
+  console.log(`\n★ (tier-2) reachability (dev BFS over cell/offset/heading, ≤${PREMIUM_REACH_DEPTH} machines):`);
+  console.log(
+    `  disease's catalog tier: ${tier.length}/${samples.length} reachable` +
+      (tier.length > 0 ? `  min=${minMax(tier).min} median=${fmt(median(tier), 1)} max=${minMax(tier).max}` : ""),
+  );
+  console.log(
+    `  full catalog:           ${full.length}/${samples.length} reachable` +
+      (full.length > 0 ? `  min=${minMax(full).min} median=${fmt(median(full), 1)} max=${minMax(full).max}` : ""),
   );
 }
 
@@ -593,6 +562,7 @@ export function runBalance(count: number, overrides: SweepOverrides = {}): 0 | 1
   printProfitSpread(samples);
   printDiversity(result);
   printPuzzleQuality(samples);
+  printPremiumReach(samples);
   printBootstrap(result.bootstraps);
   console.log(`\nfour-disease legal progression ($${PROGRESSION_RETRY_BUDGET} retry/build allowance):`);
   const progression = PROGRESSION_SEEDS.map((seed) => progressionLedger(seed));

@@ -49,6 +49,11 @@ export const nextUnitPrice = (basePrice: number, alreadySold: number): number =>
   return price;
 };
 
+/** Gross for a ★ (tier-2) cure: `floor(gross × 3 / 2)`. */
+export function premiumGross(gross: number): number {
+  return Math.floor((gross * 3) / 2);
+}
+
 /** Cumulative units already sold for `disease` in this economy. */
 function soldSoFar(econ: EconomyState, disease: DiseaseId): number {
   for (const sc of econ.sold) {
@@ -83,7 +88,7 @@ function bumpSold(sold: readonly SoldCount[], disease: DiseaseId): SoldCount[] {
 
 /**
  * Sell one produced unit that cures `disease`.
- * revenue = nextUnitPrice(basePrice, soldSoFar(disease));
+ * revenue = nextUnitPrice(basePrice, soldSoFar(disease)), ×3/2 floored for a ★ cure;
  * net     = revenue − productionCost − sideEffectPenalty;
  * econ    = { cash: cash + net, sold: sold with disease count + 1 }.
  */
@@ -93,6 +98,7 @@ export const sellUnit = (
   basePrice: number,
   productionCost: number,
   sideEffectPenalty: number,
+  premium = false,
 ): SaleResult => {
   if (!Number.isSafeInteger(econ.cash)) throw new Error("economy: cash must be a safe integer");
   if (!Number.isSafeInteger(econ.research) || econ.research < 0) {
@@ -120,7 +126,8 @@ export const sellUnit = (
     }
     previousDisease = sold.disease;
   }
-  const revenue = nextUnitPrice(basePrice, soldSoFar(econ, disease));
+  const gross = nextUnitPrice(basePrice, soldSoFar(econ, disease));
+  const revenue = premium ? premiumGross(gross) : gross;
   const net = revenue - productionCost - sideEffectPenalty;
   const cash = econ.cash + net;
   const research = econ.research + 1;

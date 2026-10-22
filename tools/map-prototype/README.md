@@ -1,6 +1,12 @@
 # Map prototype (dev-only)
 
-Hand-authored v5/v6 Atlas used to agree the v2 map direction with the user (2026-10-21). Not imported by the game; it is the reference for rewriting `src/sim/mapgen`.
+Hand-authored v5/v6 Atlas used to agree the v2 map direction with the user (2026-10-21). Not imported by the game. The real, seeded generator now lives in `src/sim/mapgen/` (`terrain.ts` relief + passes, `features.ts` regions / ★ / black cells, `index.ts` references), with the contour field in `src/render/labContours.ts`; preview any seed with
+
+```bash
+npx tsx tools/atlas-render.ts [seed] [outDir]   # seed-N-full.png (all revealed) + seed-N-fog.png (fresh fog)
+```
+
+The prototype below is kept only as the approved visual reference.
 
 ```bash
 node tools/map-prototype/render.mjs [outDir]   # full.png + fog.png (default outDir: map-prototype-out/)

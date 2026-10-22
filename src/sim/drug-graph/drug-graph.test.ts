@@ -45,8 +45,10 @@ function emptyMap(
     start,
     cell: new Uint8Array(length),
     cureId: new Int16Array(length).fill(-1),
+    cureTier: new Uint8Array(length),
     sideEffectId: new Int32Array(length).fill(-1),
     portalTo: new Int32Array(length).fill(-1),
+    elevation: new Int16Array(length),
     fog: new Uint8Array(length),
   };
 }
@@ -56,20 +58,27 @@ function withCell(
   q: number,
   r: number,
   kind: number,
-  options: { readonly cureId?: number; readonly sideEffectId?: number; readonly portalTo?: HexCoord } = {},
+  options: {
+    readonly cureId?: number;
+    readonly cureTier?: number;
+    readonly sideEffectId?: number;
+    readonly portalTo?: HexCoord;
+  } = {},
 ): EffectMap {
   const cell = Uint8Array.from(map.cell);
   const cureId = Int16Array.from(map.cureId);
+  const cureTier = Uint8Array.from(map.cureTier);
   const sideEffectId = Int32Array.from(map.sideEffectId);
   const portalTo = Int32Array.from(map.portalTo);
   const index = indexOf(map, q, r);
   cell[index] = kind;
   if (options.cureId !== undefined) cureId[index] = options.cureId;
+  cureTier[index] = kind === CellKind.Cure ? options.cureTier ?? 1 : 0;
   if (options.sideEffectId !== undefined) sideEffectId[index] = options.sideEffectId;
   if (options.portalTo !== undefined) {
     portalTo[index] = indexOf(map, options.portalTo.q, options.portalTo.r);
   }
-  return { ...map, cell, cureId, sideEffectId, portalTo };
+  return { ...map, cell, cureId, cureTier, sideEffectId, portalTo };
 }
 
 const machine = (path: PathStamp, turn = 0): Machine => ({
@@ -505,6 +514,7 @@ describe("evaluation and reveal", () => {
       failed: false,
       final: [{ q: 2, r: 2 }],
       cured: [17],
+      premium: [],
       sideEffects: [29],
     });
   });
@@ -525,8 +535,20 @@ describe("evaluation and reveal", () => {
         { q: 2, r: 2 },
       ],
       cured: [17],
+      premium: [],
       sideEffects: [29],
     });
+  });
+
+  it("reports a tier-2 (★) Cure as premium as well as cured", () => {
+    const map = withCell(emptyMap(5, 5, { q: 1, r: 2 }), 2, 2, CellKind.Cure, {
+      cureId: 3,
+      cureTier: 2,
+    });
+    const maps = multiMap(map);
+    const outcome = evaluate(maps, initialState(maps), template(machine([east])));
+    expect(outcome.cured).toEqual([3]);
+    expect(outcome.premium).toEqual([3]);
   });
 
   it("a failed drug reports no cures or side effects", () => {
@@ -538,6 +560,7 @@ describe("evaluation and reveal", () => {
       failed: true,
       final: [{ q: 2, r: 2 }],
       cured: [],
+      premium: [],
       sideEffects: [],
     });
   });

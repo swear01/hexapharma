@@ -9,7 +9,7 @@ import type {
   Vec2,
 } from "../sim/phase0_interfaces";
 import type { LabRenderer } from "../render/labRenderer";
-import type { PixelPoint } from "../render/hexProjection";
+import { drugDrawPoint, type PixelPoint } from "../render/hexProjection";
 import {
   LAB_CELL_PIXELS,
   LAB_MIN_ZOOM,
@@ -74,14 +74,7 @@ export function researchOutcomeText(lastOutcome: Outcome | null): string | null 
 }
 
 /** Drawn point of a drug on one map: its cell plus half of its doubled-unit swamp offset. */
-export function researchDrugPoint(drug: DrugState, mapIndex: number): Vec2 | undefined {
-  const pos = drug.pos[mapIndex];
-  const offset = drug.offset[mapIndex];
-  if (pos === undefined) return undefined;
-  return offset === undefined || (offset.q === 0 && offset.r === 0)
-    ? pos
-    : { q: pos.q + offset.q / 2, r: pos.r + offset.r / 2 };
-}
+export const researchDrugPoint = drugDrawPoint;
 
 /** True only when a new trial outcome arrived that cures something (fit the course once). */
 export function researchTrialResolvedCure(previous: Outcome | null, next: Outcome | null): boolean {

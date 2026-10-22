@@ -43,16 +43,17 @@ describe("game replay work", () => {
     expect(() => estimateGameReplayWork({ ...options, nMaps: 5 }, [])).toThrow(/map dimensions/i);
   });
 
-  it("charges a Research trial by its executed stamps", () => {
+  it("charges a Research trial by its per-step map validation and every walked path delta", () => {
     const mapCells = options.nMaps * options.width * options.height;
     const machine = DEFAULT_CATALOG[0]!;
+    const long = DEFAULT_CATALOG.find((entry) => entry.typeId === "settle")!;
     expect(estimateGameReplayWork(options, [
       { kind: "runResearchTrial", program: { steps: [machine] } },
-      { kind: "runResearchTrial", program: { steps: [machine, machine, machine] } },
+      { kind: "runResearchTrial", program: { steps: [machine, machine, long] } },
     ])).toBe(
       mapCells * 32 +
-      mapCells * 5 +
-      mapCells * 7
+      mapCells * 5 + machine.path.length * options.nMaps +
+      mapCells * 7 + (2 * machine.path.length + long.path.length) * options.nMaps
     );
   });
 
@@ -157,9 +158,9 @@ describe("game replay work", () => {
   });
 
   it("keeps the canonical generated route within the replay cap", () => {
-    // Seed 15's heading-rule route still needs 16 belts; seed 14's now needs 22 and exceeds the cap
-    // (about half of all seeds did so under the previous rules as well).
-    const productionOptions = { ...options, seed: 15, nMaps: 1, width: 63, height: 63, diseaseCount: 1 };
+    // On the v2 Atlas seed 14's disease-0 route fits the cap (27 of seeds 1..40 do; the rest need
+    // longer belt runs and exceed it, as about half did under the previous rules).
+    const productionOptions = { ...options, seed: 14, nMaps: 1, width: 49, height: 49, diseaseCount: 1 };
     const recipe = generate(productionOptions).diseases[0]!.reference;
     const layout = compileEntitledPrototype(recipe, 24, 12).layout;
     expect(estimateGameReplayWork(productionOptions, [

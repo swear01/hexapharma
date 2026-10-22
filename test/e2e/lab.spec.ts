@@ -107,7 +107,7 @@ test("Research is one large centered Atlas with no Route Floor or layer-transfer
 }) => {
   await page.goto("/");
   await expect(page.getByTestId("research-mission")).toContainText("Disease 1");
-  await expect(page.getByTestId("research-assay-sector")).toHaveText("east");
+  await expect(page.getByTestId("research-assay-sector")).toHaveText("north-west");
   const frame = page.getByTestId("lab-map-frame");
   await expect(frame).toBeVisible();
   const level = generate(defaultGenOptions(14));

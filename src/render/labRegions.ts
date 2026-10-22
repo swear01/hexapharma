@@ -22,9 +22,7 @@ function visibleKind(map: EffectMap, index: number): CellKind {
     return map.fog[index] === 1 ? CellKind.Portal : CellKind.Empty;
   }
   const kind = map.cell[index] ?? CellKind.Empty;
-  if (map.fog[index] !== 1 && kind !== CellKind.Wall) {
-    return CellKind.Empty;
-  }
+  if (map.fog[index] !== 1) return CellKind.Empty;
   return kind as CellKind;
 }
 

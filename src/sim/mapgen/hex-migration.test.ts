@@ -47,6 +47,7 @@ describe("true-hex map generation", () => {
     expect(evaluate(first.mm, first.start, disease.reference)).toMatchObject({
       failed: false,
       cured: [disease.id],
+      premium: [],
     });
   });
 
@@ -72,6 +73,7 @@ describe("true-hex map generation", () => {
       }
     }
 
-    expect(visited.size).toBe(5);
+    expect(visited.size).toBeGreaterThanOrEqual(3);
+    expect(visited.size).toBeLessThanOrEqual(5);
   });
 });

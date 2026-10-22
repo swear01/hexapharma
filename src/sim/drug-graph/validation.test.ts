@@ -12,8 +12,10 @@ function map(width = 5, height = 3): EffectMap {
     start: { q: 2, r: 1 },
     cell: new Uint8Array(length),
     cureId: new Int16Array(length).fill(-1),
+    cureTier: new Uint8Array(length),
     sideEffectId: new Int32Array(length).fill(-1),
     portalTo: new Int32Array(length).fill(-1),
+    elevation: new Int16Array(length),
     fog: new Uint8Array(length),
   };
 }
@@ -128,7 +130,25 @@ describe("effect map authority", () => {
     const overlap = map();
     overlap.cell[0] = CellKind.Cure;
     overlap.cureId[0] = 3;
+    overlap.cureTier[0] = 1;
     overlap.sideEffectId[0] = 4;
     expect(() => validateEffectMap(overlap)).not.toThrow();
+  });
+
+  it("requires a tier of 1 or 2 exactly on Cure cells", () => {
+    const untiered = map();
+    untiered.cell[0] = CellKind.Cure;
+    untiered.cureId[0] = 3;
+    expect(() => validateEffectMap(untiered)).toThrow(/cureTier/);
+    untiered.cureTier[0] = 3;
+    expect(() => validateEffectMap(untiered)).toThrow(/cureTier/);
+    untiered.cureTier[0] = 2;
+    expect(() => validateEffectMap(untiered)).not.toThrow();
+
+    const strayTier = map();
+    strayTier.cureTier[1] = 1;
+    expect(() => validateEffectMap(strayTier)).toThrow(/cureTier/);
+    expect(() => validateEffectMap({ ...map(), cureTier: new Uint8Array(1) })).toThrow(/cureTier.*length/);
+    expect(() => validateEffectMap({ ...map(), elevation: new Int16Array(1) })).toThrow(/elevation.*length/);
   });
 });

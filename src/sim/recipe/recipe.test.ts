@@ -35,8 +35,10 @@ function emptyMap(size: number, start: Vec2): EffectMap {
     start,
     cell: new Uint8Array(area),
     cureId: new Int16Array(area).fill(-1),
+    cureTier: new Uint8Array(area),
     sideEffectId: new Int32Array(area).fill(-1),
     portalTo: new Int32Array(area).fill(-1),
+    elevation: new Int16Array(area),
     fog: new Uint8Array(area).fill(1),
   };
 }
@@ -113,11 +115,13 @@ describe("compileTemplate and factoryOutcome", () => {
     const index = final.r * map.width + final.q;
     map.cell[index] = CellKind.Cure;
     map.cureId[index] = 7;
+    map.cureTier[index] = 1;
     map.sideEffectId[index] = 91;
     const mm = multimaps(map);
 
     expect(factoryOutcome(compileTemplate(value), mm, initialState(mm))).toMatchObject({
       cured: [7],
+      premium: [],
       sideEffects: [91],
     });
   });
@@ -128,6 +132,7 @@ describe("compileTemplate and factoryOutcome", () => {
       failed: false,
       final: [{ q: 20, r: 20 }],
       cured: [],
+      premium: [],
       sideEffects: [],
     });
   });
@@ -230,6 +235,7 @@ describe("compileTemplate and factoryOutcome", () => {
     const index = final.r * map.width + final.q;
     map.cell[index] = CellKind.Cure;
     map.cureId[index] = 77;
+    map.cureTier[index] = 1;
     const mm = multimaps(map);
     expect(factoryOutcome(compileTemplate(value), mm, initialState(mm)).cured).toContain(77);
   });

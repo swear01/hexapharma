@@ -2,7 +2,7 @@ const HEX = "16,3 27.3,9.5 27.3,22.5 16,29 4.7,22.5 4.7,9.5";
 
 export type MapSymbolKind =
   | "start" | "control" | "finish" | "candidate" | "cure" | "sideEffect"
-  | "wall" | "marsh" | "abyss" | "portal" | "belt" | "inPort" | "outPort" | "source" | "sink";
+  | "premium" | "contour" | "wall" | "marsh" | "abyss" | "belt" | "inPort" | "outPort" | "source" | "sink";
 
 /** Legend glyphs; they echo the map and factory renderers' shapes so meaning never rests on colour alone. */
 export function MapSymbol({ kind, size = 32 }: { readonly kind: MapSymbolKind; readonly size?: number }) {
@@ -14,10 +14,11 @@ export function MapSymbol({ kind, size = 32 }: { readonly kind: MapSymbolKind; r
       {kind === "candidate" && <><path d="M4 27 19 12" className="ink-course" strokeWidth="2.5" strokeDasharray="3 4" /><circle cx="23" cy="8" r="5" className="ink-course" strokeWidth="2.5" /></>}
       {kind === "cure" && <><polygon points={HEX} className="fill-cure" /><path d="M14 9h4v5h5v4h-5v5h-4v-5H9v-4h5z" className="solid-cure" /></>}
       {kind === "sideEffect" && <><polygon points={HEX} className="fill-effect" /><g className="solid-effect"><circle cx="16" cy="16" r="1.8" /><circle cx="16" cy="9.5" r="1.8" /><circle cx="21.6" cy="12.8" r="1.8" /><circle cx="21.6" cy="19.2" r="1.8" /><circle cx="16" cy="22.5" r="1.8" /><circle cx="10.4" cy="19.2" r="1.8" /><circle cx="10.4" cy="12.8" r="1.8" /></g></>}
-      {kind === "wall" && <><polygon points={HEX} className="solid-ink" /><path d="M16 3V0M27.3 9.5l2.6-1.5M27.3 22.5l2.6 1.5M16 29v3M4.7 22.5l-2.6 1.5M4.7 9.5 2.1 8" className="ink-ink" strokeWidth="2" /></>}
+      {kind === "premium" && <><polygon points={HEX} className="fill-cure" /><path d="M16 8.5l2.2 4.6 5 .6-3.7 3.4 1 5-4.5-2.5-4.5 2.5 1-5-3.7-3.4 5-.6z" className="solid-cure" /></>}
+      {kind === "contour" && <path d="M5 21c4-7 9 1 13-5s7-4 9-2M5 26c5-5 10 1 15-3s5-2 7-1M8 13c3-4 7-3 9-6" className="ink-contour" strokeWidth="1.6" />}
+      {kind === "wall" && <polygon points={HEX} className="fill-mountain" strokeWidth="1.5" />}
       {kind === "marsh" && <><polygon points={HEX} className="fill-marsh" /><path d="M7 11h8m3 0h7M6 15h11m3 0h6M6 19h5m3 0h12M7 23h10m3 0h5" className="ink-flow" strokeWidth="1.6" /></>}
-      {kind === "abyss" && <><polygon points={HEX} className="fill-abyss" strokeWidth="2.5" /><polygon points="16,10 21.2,13 21.2,19 16,22 10.8,19 10.8,13" className="ink-pit" strokeWidth="1.5" /></>}
-      {kind === "portal" && <><polygon points={HEX} className="ink-rule" strokeWidth="1.5" /><rect x="11" y="8" width="10" height="16" className="ink-ink" strokeWidth="2" /><path d="M13 16h6m-2.5-3 3 3-3 3" className="ink-ink" strokeWidth="2" /></>}
+      {kind === "abyss" && <><polygon points={HEX} className="solid-ink" /><path d="M16 3V0M27.3 9.5l2.6-1.5M27.3 22.5l2.6 1.5M16 29v3M4.7 22.5l-2.6 1.5M4.7 9.5 2.1 8" className="ink-ink" strokeWidth="2" /></>}
       {kind === "belt" && <><path d="M3 16h26" className="ink-flow" strokeWidth="4" /><path d="M10 12l4 4-4 4M19 12l4 4-4 4" className="ink-paper" strokeWidth="1.8" /></>}
       {kind === "source" && <path d="M7 7 26 16 7 25z" className="ink-ink" strokeWidth="2" />}
       {kind === "sink" && <><circle cx="16" cy="16" r="11" className="ink-ink" strokeWidth="2" /><circle cx="16" cy="16" r="6.5" className="ink-ink" strokeWidth="2" /></>}
@@ -36,11 +37,12 @@ const LEGEND: readonly { readonly group: string; readonly items: readonly (reado
   ] },
   { group: "Terrain", items: [
     ["cure", "Cure", "A step that ends here cures that disease."],
+    ["premium", "★ Cure", "Ending here sells for 1.5× the price."],
     ["sideEffect", "Side effect", "Ending here adds a side effect: −$25 per unit sold."],
-    ["wall", "Wall", "Skips that move. The only terrain shown through fog."],
-    ["marsh", "Marsh", "Each move inside goes only half a cell."],
-    ["abyss", "Abyss", "A step that enters it fails the run."],
-    ["portal", "Portal", "One-way jump to its paired exit; the step continues there."],
+    ["contour", "Contours", "Seen through fog: something rises or sinks there. Mountain and water look alike."],
+    ["wall", "Mountain", "Skips that move. Hidden under fog: your plan may cross it until a Run hits it."],
+    ["marsh", "Water", "Each move inside goes only half a cell."],
+    ["abyss", "Black ground", "A step that enters it fails the run."],
   ] },
   { group: "Factory", items: [
     ["source", "Source", "Starts units into the line."],

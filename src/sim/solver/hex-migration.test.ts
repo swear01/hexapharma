@@ -28,8 +28,10 @@ function cureMap(start: HexCoord, cure: HexCoord, diseaseId: number): EffectMap 
     start,
     cell,
     cureId,
+    cureTier: Uint8Array.from(cell, (kind) => (kind === CellKind.Cure ? 1 : 0)),
     sideEffectId: new Int32Array(length).fill(-1),
     portalTo: new Int32Array(length).fill(-1),
+    elevation: new Int16Array(length),
     fog: new Uint8Array(length),
   };
 }
@@ -59,6 +61,7 @@ describe("true-hex solver", () => {
     expect(evaluate(mm, start, first!.template)).toMatchObject({
       failed: false,
       cured: [7],
+      premium: [],
       final: [{ q: 3, r: 1 }],
     });
   });

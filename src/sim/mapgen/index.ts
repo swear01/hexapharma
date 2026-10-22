@@ -4,6 +4,8 @@ import type {
   DiseaseSpec,
   EffectMap,
   GenerateFn,
+  GeneratedLevel,
+  GenOptions,
   Machine,
   MachineCatalogEntry,
   MapIndex,
@@ -17,6 +19,7 @@ import { CellKind, MAX_TEMPLATE_STEPS } from "../phase0_interfaces";
 import {
   initialState,
   PATH_OUT_STRIDE,
+  walkPath,
   turnHeading,
   validateMachineTurn,
   walkValidatedPathInto,
@@ -26,28 +29,56 @@ import {
   HEX_DQ,
   HEX_DR,
   hexDistance,
-  rotateHexCoord,
 } from "../hex";
 import { makeRng } from "../rng";
+import {
+  MIN_SKELETON_RADIUS,
+  buildTerrain,
+  mix32,
+  atlasRadius,
+  type Basin,
+  type PassInfo,
+} from "./terrain";
+import {
+  MIN_EASY_REGION,
+  contaminateRegions,
+  placeBlackAndFill,
+  placeHardRegions,
+  type AtlasRegion,
+  type BlackGroup,
+} from "./features";
+
+export {
+  ELEVATION_ONE,
+  MAX_PASS_STEPS,
+  MOUNTAIN_LEVEL,
+  START_DISK_RADIUS,
+  WATER_LEVEL,
+  atlasRadius,
+  passTraversable,
+  type Basin,
+  type PassInfo,
+} from "./terrain";
+export {
+  HARD_REGION_SIZES,
+  HARD_REGION_STARS,
+  MIN_EASY_REGION,
+  VOID_DISTANCE,
+  type AtlasRegion,
+  type BlackGroup,
+} from "./features";
 
 export const MAX_MAP_CELLS = 65_536;
 export const MAX_GENERATION_DIFFICULTY = 64;
 export const MAX_GENERATION_CATALOG_ENTRIES = 256;
 export const MAX_GENERATION_DISEASES = 8;
 export const MAX_CONSTRUCTIVE_CANDIDATES = 32;
-export const TERRAIN_MOTIF_NAMES = Object.freeze([
-  "crescent",
-  "ridge",
-  "canyon",
-  "basin",
-  "swamp-fan",
-  "portal-bypass",
-  "pocket",
-] as const);
-
+export const MAX_CONSTRUCTIVE_FALLBACK = 128;
 const MAX_SAFE_PRICE = BigInt(Number.MAX_SAFE_INTEGER);
 const MAX_PATH_LENGTH = 256;
 const CURE_FRONTIER_SALT = 0xcb30e825;
+const WALL_HUGGING_PENALTY = 400_000;
+const ZONE_PENALTY = 600_000;
 
 export const difficultyToBasePrice: DifficultyToBasePriceFn = (difficulty, refCost) => {
   if (!Number.isSafeInteger(difficulty)) {
@@ -81,9 +112,13 @@ interface ScratchMap {
   readonly start: HexCoord;
   readonly cell: Uint8Array;
   readonly cureId: Int16Array;
+  readonly cureTier: Uint8Array;
   readonly sideEffectId: Int32Array;
   readonly portalTo: Int32Array;
+  readonly elevation: Int16Array;
   readonly protectedCells: Uint8Array;
+  readonly pass: Uint8Array;
+  readonly inside: Uint8Array;
 }
 
 interface ProgramCandidate {
@@ -107,23 +142,6 @@ interface BuiltDisease {
   readonly reference: Template;
   readonly region: readonly number[];
   readonly strictPrefixCells: readonly ReadonlySet<number>[];
-}
-
-type MotifName = (typeof TERRAIN_MOTIF_NAMES)[number];
-
-interface MotifPlacement {
-  readonly name: MotifName;
-  readonly q: number;
-  readonly r: number;
-  readonly rotation: number;
-  readonly size: number;
-}
-
-interface TerrainBand {
-  readonly id: 0 | 1 | 2;
-  readonly min: number;
-  readonly max: number;
-  readonly indices: readonly number[];
 }
 
 const idx = (width: number, q: number, r: number): number => r * width + q;
@@ -162,9 +180,13 @@ function makeScratch(width: number, height: number): ScratchMap {
     start: center,
     cell: new Uint8Array(length),
     cureId: new Int16Array(length).fill(-1),
+    cureTier: new Uint8Array(length),
     sideEffectId: new Int32Array(length).fill(-1),
     portalTo: new Int32Array(length).fill(-1),
+    elevation: new Int16Array(length),
     protectedCells: new Uint8Array(length),
+    pass: new Uint8Array(length),
+    inside: new Uint8Array(length),
   };
   map.protectedCells[idx(width, center.q, center.r)] = 1;
   return map;
@@ -178,8 +200,10 @@ function freezeMap(map: ScratchMap): EffectMap {
     start: { ...map.start },
     cell: map.cell,
     cureId: map.cureId,
+    cureTier: map.cureTier,
     sideEffectId: map.sideEffectId,
     portalTo: map.portalTo,
+    elevation: map.elevation,
     fog: new Uint8Array(map.cell.length),
   };
 }
@@ -286,18 +310,7 @@ function simulateReference(
 
 function normalizedRadius(map: ScratchMap, q: number, r: number): number {
   const radius = hexDistance(map.origin.q, map.origin.r, q, r);
-  const base = mapRadius(map);
-  return Math.floor((radius * 31) / base);
-}
-
-function mapRadius(map: ScratchMap): number {
-  return Math.max(
-    1,
-    hexDistance(map.origin.q, map.origin.r, 0, 0),
-    hexDistance(map.origin.q, map.origin.r, map.width - 1, 0),
-    hexDistance(map.origin.q, map.origin.r, 0, map.height - 1),
-    hexDistance(map.origin.q, map.origin.r, map.width - 1, map.height - 1),
-  );
+  return Math.floor((radius * 31) / Math.max(1, atlasRadius(map.width, map.height)));
 }
 
 function chooseDistinctEntries(
@@ -603,6 +616,12 @@ function makeProgramCandidate(
   const endpointDq = endpoint.q - map.origin.q;
   const endpointDr = endpoint.r - map.origin.r;
   const radius = normalizedRadius(map, endpoint.q, endpoint.r);
+  for (let prefixMap = 0; prefixMap < maps.length; prefixMap++) {
+    // A shorter prefix must never already cure anything (hard regions are placed first).
+    for (const cellIndex of outcome.strictPrefixCells[prefixMap]!) {
+      if (maps[prefixMap]!.cell[cellIndex] === CellKind.Cure) return null;
+    }
+  }
   const occupied = new Set<number>();
   for (const other of built) {
     const candidatePrefixes = outcome.strictPrefixCells[other.map]!;
@@ -620,7 +639,8 @@ function makeProgramCandidate(
       candidateForbidden.add(cellIndex);
     }
   }
-  let cureRegionLimit = Math.min(9, map.cell.length - 1);
+  // Reserve room around the endpoint; past the scored budget accept the smallest visible region.
+  let cureRegionLimit = Math.min(compactMap ? 9 : ordinal < MAX_CONSTRUCTIVE_CANDIDATES ? 6 : MIN_EASY_REGION, map.cell.length - 1);
   if (compactMap) {
     let availableCells = 0;
     for (let cellIndex = 0; cellIndex < map.cell.length; cellIndex++) {
@@ -664,8 +684,17 @@ function makeProgramCandidate(
   );
   const initialIds = new Set(fullCatalog.slice(0, 4).map((entry) => entry.typeId));
   const usesAdvancedMachine = disease > 0 && reference.steps.some((step) => !initialIds.has(step.typeId));
+  // Endpoints pressed against relief are where many unrelated programs pile up (walls cancel
+  // deltas), so prefer open ground for the reference cure.
+  let blockedNear = 0;
+  for (let dir = 0; dir < 6; dir++) {
+    const q = endpoint.q + HEX_DQ[dir]!;
+    const r = endpoint.r + HEX_DR[dir]!;
+    if (q < 0 || r < 0 || q >= map.width || r >= map.height || map.cell[idx(map.width, q, r)] === CellKind.Wall) blockedNear++;
+  }
   const quality =
-    (usesAdvancedMachine ? 2_000_000 : 0) +
+    (usesAdvancedMachine ? 2_000_000 : 0) -
+    blockedNear * WALL_HUGGING_PENALTY +
     entries.length * 100_000 -
     Math.abs(radius - desiredRadius) * radiusWeight +
     forward * 50_000 -
@@ -685,6 +714,210 @@ function makeProgramCandidate(
     region,
     strictPrefixCells: outcome.strictPrefixCells,
   };
+}
+
+const MAX_TREE_DEPTH = 9;
+const MAX_TREE_VALIDATIONS = 48;
+
+/**
+ * Constructive reference by breadth-first search over drug states (cell, swamp offset, heading)
+ * from the start with the disease's catalog tier, so each reached state comes with a shortest
+ * program and references can thread the generated passes into the middle zone instead of piling
+ * up against the inner ring. A later tier appends its newest (frontier) machine as the last step.
+ * Single-Atlas skeleton boards only; otherwise, or when nothing fits, the sampled construction
+ * is used.
+ */
+function treeCandidate(
+  maps: readonly ScratchMap[],
+  terrain: MultiMap,
+  start: ReturnType<typeof initialState>,
+  catalog: readonly MachineCatalogEntry[],
+  minDifficulty: number,
+  maxDifficulty: number,
+  disease: number,
+  seedWord: number,
+  built: readonly BuiltDisease[],
+  usedSignatures: ReadonlySet<string>,
+  forbiddenCures: ReadonlySet<number>,
+  transitions: Map<number, Int32Array>,
+): ProgramCandidate | null {
+  const map = maps[0];
+  const effect = terrain.maps[0];
+  if (maps.length !== 1 || map === undefined || effect === undefined) return null;
+  if (atlasRadius(map.width, map.height) < MIN_SKELETON_RADIUS) return null;
+  const frontier = disease > 0 && catalog.length > 4 ? catalog.length - 1 : -1;
+  const ownedCatalog = catalog.map(ownMachine);
+  const machines = frontier >= 0 ? ownedCatalog.slice(0, frontier) : ownedCatalog;
+  const shapeIds = new Map<string, number>();
+  const shapeOf = catalog.map((entry) => {
+    const signature = pathSignature(entry);
+    if (!shapeIds.has(signature)) shapeIds.set(signature, shapeIds.size);
+    return shapeIds.get(signature)!;
+  });
+  const area = map.width * map.height;
+  // state = (cell · 7 + offset slot) · 6 + heading
+  const stateCount = area * 42;
+  const parent = new Int32Array(stateCount).fill(-1);
+  const via = new Int8Array(stateCount).fill(-1);
+  const depth = new Uint8Array(stateCount).fill(255);
+  const shapes = new Uint16Array(stateCount);
+  const order: number[] = [];
+  const root = idx(map.width, map.start.q, map.start.r) * 42;
+  depth[root] = 0;
+  let layer = [root];
+  const out = new Int32Array(PATH_OUT_STRIDE);
+  // Transitions are shared by every tier (same terrain, same catalog index ⇒ same next state).
+  const step = (state: number, machineIndex: number): number => {
+    let table = transitions.get(machineIndex);
+    if (table === undefined) {
+      table = new Int32Array(stateCount).fill(-2);
+      transitions.set(machineIndex, table);
+    }
+    const cached = table[state]!;
+    if (cached !== -2) return cached;
+    const next = walkState(state, ownedCatalog[machineIndex]!);
+    table[state] = next;
+    return next;
+  };
+  const walkState = (state: number, machine: Machine): number => {
+    const heading = state % 6;
+    const slot = Math.floor(state / 6) % 7;
+    const cell = Math.floor(state / 42);
+    const q = cell % map.width;
+    walkValidatedPathInto(
+      effect,
+      q,
+      (cell - q) / map.width,
+      slot === 0 ? 0 : HEX_DQ[slot - 1]!,
+      slot === 0 ? 0 : HEX_DR[slot - 1]!,
+      heading,
+      machine,
+      out,
+      0,
+    );
+    if (out[4] === 1) return -1;
+    let nslot = 0;
+    for (let dir = 0; dir < 6; dir++) {
+      if (HEX_DQ[dir] === out[2] && HEX_DR[dir] === out[3]) nslot = dir + 1;
+    }
+    return (idx(map.width, out[0]!, out[1]!) * 7 + nslot) * 6 + turnHeading(heading, machine.turn);
+  };
+  const maxDepth = Math.min(
+    maxDifficulty,
+    MAX_TREE_DEPTH,
+    disease === 0 && minDifficulty <= 8 ? 7 : MAX_TREE_DEPTH,
+  ) - (frontier >= 0 ? 1 : 0);
+  for (let level = 0; level < maxDepth && layer.length > 0; level++) {
+    const next: number[] = [];
+    for (const state of layer) {
+      for (let m = 0; m < machines.length; m++) {
+        const nstate = step(state, m);
+        if (nstate < 0 || depth[nstate] !== 255) continue;
+        depth[nstate] = level + 1;
+        parent[nstate] = state;
+        via[nstate] = m;
+        shapes[nstate] = shapes[state]! | (1 << shapeOf[m]!);
+        next.push(nstate);
+        order.push(nstate);
+      }
+    }
+    layer = next;
+  }
+
+  const span = maxDifficulty - minDifficulty + 1;
+  let targetDifficulty = minDifficulty + (mix32(seedWord ^ Math.imul(disease + 1, 0x2545f491)) % span);
+  // As in the sampled construction, a wide band keeps references at difficulty ≥ 8.
+  if (minDifficulty >= 2 && maxDifficulty > 8 && targetDifficulty < 8) targetDifficulty = 8;
+  const desiredDirection = HEX_DIRS[mix32(seedWord ^ Math.imul(disease + 1, 0x51ed270b)) % HEX_DIRS.length]!;
+  // The first disease's easy region sits inside the ring; later ones past a ring pass.
+  const desiredRadius = disease === 0 ? 7 : 11 + (mix32(seedWord ^ Math.imul(disease + 1, 0x6a09e667)) % 3) * 5;
+  const frontierMachine = frontier >= 0 ? ownedCatalog[frontier]! : null;
+  // Inside the inner ring range (its centre line is at 3/8 of the Atlas radius).
+  const innerRadius = Math.floor((atlasRadius(map.width, map.height) * 3) / 8) - 1;
+  const popcount = (mask: number): number => {
+    let count = 0;
+    for (let bits = mask; bits !== 0; bits &= bits - 1) count++;
+    return count;
+  };
+  const scored: { readonly state: number; readonly end: number; readonly score: number }[] = [];
+  for (const state of order) {
+    const end = frontierMachine === null ? state : step(state, frontier);
+    if (end < 0) continue;
+    const cell = Math.floor(end / 42);
+    if (!availableForCure(map, cell) || forbiddenCures.has(cell)) continue;
+    const stepCount = depth[state]! + (frontierMachine === null ? 0 : 1);
+    const distinct = popcount(shapes[state]! | (frontier >= 0 ? 1 << shapeOf[frontier]! : 0));
+    const difficulty = stepCount + distinct - 1;
+    if (difficulty < minDifficulty || difficulty > maxDifficulty) continue;
+    if (distinct < 2 && shapeIds.size >= 2 && maxDifficulty >= 3) continue;
+    if (disease === 0 && minDifficulty <= 8 && stepCount > 7) continue;
+    const q = cell % map.width;
+    const r = (cell - q) / map.width;
+    const dq = q - map.origin.q;
+    const dr = r - map.origin.r;
+    let blockedNear = 0;
+    for (let dir = 0; dir < 6; dir++) {
+      const nq = q + HEX_DQ[dir]!;
+      const nr = r + HEX_DR[dir]!;
+      if (nq < 0 || nr < 0 || nq >= map.width || nr >= map.height || map.cell[idx(map.width, nq, nr)] === CellKind.Wall) blockedNear++;
+    }
+    const score =
+      distinct * 100_000 -
+      Math.abs(difficulty - targetDifficulty) * 200_000 -
+      Math.abs(normalizedRadius(map, q, r) - desiredRadius) * 15_000 +
+      directionScore(dq, dr, desiredDirection) * 30_000 -
+      Math.abs(dq * HEX_DR[desiredDirection]! - dr * HEX_DQ[desiredDirection]!) * 10_000 -
+      blockedNear * WALL_HUGGING_PENALTY -
+      ((disease === 0) === (hexDistance(map.origin.q, map.origin.r, q, r) > innerRadius) ? ZONE_PENALTY : 0) -
+      (mix32(seedWord ^ end) & 0xff);
+    scored.push({ state, end, score });
+  }
+  scored.sort((left, right) => right.score - left.score || left.end - right.end || left.state - right.state);
+
+  for (let rank = 0; rank < scored.length && rank < MAX_TREE_VALIDATIONS; rank++) {
+    const { state, score } = scored[rank]!;
+    const steps: Machine[] = [];
+    for (let cursor = state; cursor !== root; cursor = parent[cursor]!) steps.push(machines[via[cursor]!]!);
+    steps.reverse();
+    if (frontierMachine !== null) steps.push(frontierMachine);
+    const reference: Template = Object.freeze({ steps: Object.freeze(steps) });
+    const signature = templateSignature(reference);
+    if (usedSignatures.has(signature)) continue;
+    const outcome = simulateReference(terrain, start, reference);
+    const endpoint = outcome.final[0];
+    if (outcome.failed || endpoint === undefined) continue;
+    if (endpoint.q === map.start.q && endpoint.r === map.start.r) continue;
+    const prefixes = outcome.strictPrefixCells[0]!;
+    if ([...prefixes].some((cell) => map.cell[cell] === CellKind.Cure)) continue;
+    if (built.some((other) => other.region.some((cell) => prefixes.has(cell)))) continue;
+    const candidateForbidden = new Set(forbiddenCures);
+    for (const cell of prefixes) candidateForbidden.add(cell);
+    const occupied = new Set<number>();
+    for (const other of built) {
+      for (const cell of other.strictPrefixCells[0]!) candidateForbidden.add(cell);
+      for (const cell of other.region) occupied.add(cell);
+    }
+    const word = mix32(seedWord ^ Math.imul(disease + 1, 0x85ebca6b) ^ Math.imul(rank + 1, 0x27d4eb2f));
+    const region = candidateCureRegion(map, endpoint, 6, candidateForbidden, occupied, word ^ 0xc0febabe);
+    if (region === null) continue;
+    if (built.some((other) => hexDistance(endpoint.q, endpoint.r, other.node.q, other.node.r) < 3)) continue;
+    const emptyEndpoint = programEndpoint(map.start, reference, map.width, map.height);
+    if (minDifficulty >= 2 && emptyEndpoint.q === endpoint.q && emptyEndpoint.r === endpoint.r) continue;
+    let cost = 0;
+    for (const machine of steps) cost += catalog.find((entry) => entry.typeId === machine.typeId)!.cost;
+    return {
+      ordinal: rank,
+      reference,
+      endpoint,
+      difficulty: referenceDifficulty(reference),
+      cost,
+      quality: score,
+      signature,
+      region,
+      strictPrefixCells: outcome.strictPrefixCells,
+    };
+  }
+  return null;
 }
 
 function singleStepCureExclusions(
@@ -717,6 +950,7 @@ function constructDiseases(
   const built: BuiltDisease[] = [];
   const usedSignatures = new Set<string>();
   const start = initialState(terrain);
+  const transitions = new Map<number, Int32Array>();
   for (let disease = 0; disease < diseaseCount; disease++) {
     const mapIndex = disease % maps.length;
     const map = maps[mapIndex];
@@ -737,8 +971,39 @@ function constructDiseases(
         }
       }
     }
-    let best: ProgramCandidate | null = null;
-    for (let ordinal = 0; ordinal < MAX_CONSTRUCTIVE_CANDIDATES; ordinal++) {
+    // Reference regions keep a gap to the hard regions placed before them.
+    for (let cellIndex = 0; cellIndex < map.cell.length; cellIndex++) {
+      if (map.cell[cellIndex] !== CellKind.Cure) continue;
+      const q = cellIndex % map.width;
+      const r = (cellIndex - q) / map.width;
+      for (const dir of HEX_DIRS) {
+        const nq = q + HEX_DQ[dir]!;
+        const nr = r + HEX_DR[dir]!;
+        if (nq >= 0 && nr >= 0 && nq < map.width && nr < map.height) forbiddenCures.add(idx(map.width, nq, nr));
+      }
+    }
+    let best = treeCandidate(
+      maps,
+      terrain,
+      start,
+      availableCatalog,
+      minDifficulty,
+      maxDifficulty,
+      disease,
+      seedWord,
+      built,
+      usedSignatures,
+      forbiddenCures,
+      transitions,
+    );
+    // Score the first MAX_CONSTRUCTIVE_CANDIDATES ordinals; only if none fits the terrain, take the
+    // first fitting one up to MAX_CONSTRUCTIVE_FALLBACK.
+    const sampled = best === null;
+    for (
+      let ordinal = 0;
+      sampled && ordinal < MAX_CONSTRUCTIVE_FALLBACK && (best === null || ordinal < MAX_CONSTRUCTIVE_CANDIDATES);
+      ordinal++
+    ) {
       const candidate = makeProgramCandidate(
         maps,
         terrain,
@@ -764,9 +1029,9 @@ function constructDiseases(
       }
     }
     if (best === null) {
-      throw new Error(
+      throw new ConstructionError(
         `mapgen.generate: disease ${disease} difficulty [${minDifficulty},${maxDifficulty}] cannot be constructed ` +
-          `on ${map.width}x${map.height} from at most ${MAX_CONSTRUCTIVE_CANDIDATES} candidates`,
+          `on ${map.width}x${map.height} from at most ${MAX_CONSTRUCTIVE_FALLBACK} candidates`,
       );
     }
     const shapeWord = mix32(
@@ -792,8 +1057,10 @@ function constructDiseases(
 function placeCureRegions(
   rng: Rng,
   map: ScratchMap,
+  mapIndex: number,
   diseases: readonly BuiltDisease[],
   sideEffectBase: number,
+  regions: AtlasRegion[],
 ): number {
   const start = idx(map.width, map.start.q, map.start.r);
   for (const disease of diseases) {
@@ -803,12 +1070,13 @@ function placeCureRegions(
     }
     map.cell[seed] = CellKind.Cure;
     map.cureId[seed] = disease.id;
+    map.cureTier[seed] = 1;
   }
 
   let nextSideEffect = sideEffectBase;
   for (const disease of diseases) {
     const seed = idx(map.width, disease.node.q, disease.node.r);
-    const target = Math.min(5, disease.region.length);
+    const target = Math.min(MIN_EASY_REGION + (mix32(seed ^ Math.imul(disease.id + 1, 0x27d4eb2d)) % 3), disease.region.length);
     const region = disease.region.slice(0, target);
     for (const cellIndex of region) {
       if (cellIndex === seed) continue;
@@ -817,7 +1085,9 @@ function placeCureRegions(
       }
       map.cell[cellIndex] = CellKind.Cure;
       map.cureId[cellIndex] = disease.id;
+      map.cureTier[cellIndex] = 1;
     }
+    regions.push({ map: mapIndex, disease: disease.id, kind: "easy", cells: region.slice(), stars: [] });
     const alternatives = region.slice(1);
     const contaminated = Math.max(1, Math.floor(alternatives.length / 2));
     const offset = rng.int(alternatives.length);
@@ -829,330 +1099,11 @@ function placeCureRegions(
   return nextSideEffect;
 }
 
-function makeBands(map: ScratchMap): readonly TerrainBand[] {
-  const indices: [number[], number[], number[]] = [[], [], []];
-  for (let y = 0; y < map.height; y++) {
-    for (let x = 0; x < map.width; x++) {
-      const radius = normalizedRadius(map, x, y);
-      const cellIndex = idx(map.width, x, y);
-      if (radius >= 7 && radius <= 14) indices[0].push(cellIndex);
-      else if (radius >= 15 && radius <= 22) indices[1].push(cellIndex);
-      else if (radius >= 23) indices[2].push(cellIndex);
-    }
-  }
-  return [
-    { id: 0, min: 7, max: 14, indices: indices[0] },
-    { id: 1, min: 15, max: 22, indices: indices[1] },
-    { id: 2, min: 23, max: 31, indices: indices[2] },
-  ];
-}
-
-function rotateLocal(q: number, r: number, rotation: number): HexCoord {
-  return rotateHexCoord({ q, r }, (rotation % 6) as HexDir);
-}
-
-function motifDistance(placement: MotifPlacement, q: number, r: number): number {
-  const rotated = rotateLocal(
-    q - placement.q,
-    r - placement.r,
-    (6 - placement.rotation) % 6,
-  );
-  const ax = Math.abs(rotated.q);
-  const ay = Math.abs(rotated.r);
-  const radial = hexDistance(0, 0, rotated.q, rotated.r);
-  const size = Math.max(2, placement.size);
-  switch (placement.name) {
-    case "ridge":
-      return ay * 3 + Math.max(0, ax - size) * 7;
-    case "canyon": {
-      const bend = ((ax % 7) - 3) * (rotated.q < 0 ? -1 : 1);
-      return Math.abs(rotated.r - bend) * 3 + Math.max(0, ax - size) * 8;
-    }
-    case "crescent":
-      return Math.abs(radial - Math.max(2, Math.floor(size / 2))) * 4 +
-        (rotated.q < -Math.floor(size / 3) ? size * 3 : 0);
-    case "basin":
-      return ax * 2 + ay * 3;
-    case "swamp-fan": {
-      const behind = rotated.q < 0 ? size * 6 : 0;
-      const ray = Math.min(Math.abs(rotated.r * 2 - rotated.q), Math.abs(rotated.r * 2 + rotated.q));
-      return behind + ray + Math.max(0, ax - size) * 7;
-    }
-    case "pocket":
-      return Math.abs(radial - Math.max(2, Math.floor(size / 3))) * 5;
-    case "portal-bypass":
-      return ax + ay * 2;
-  }
-}
-
-function placementsFor(
-  map: ScratchMap,
-  band: TerrainBand,
-  names: readonly MotifName[],
-  seedWord: number,
-): readonly MotifPlacement[] {
-  const base = mapRadius(map);
-  const normalizedMid = Math.floor((band.min + band.max) / 2);
-  const radius = Math.max(1, Math.floor((normalizedMid * base) / 31));
-  const size = Math.max(3, Math.floor(((band.max - band.min + 2) * base) / 31));
-  const placements: MotifPlacement[] = [];
-  const count = Math.max(4, names.length + band.id + 2);
-  for (let index = 0; index < count; index++) {
-    const direction = HEX_DIRS[(index * 3 + seedWord + band.id) % HEX_DIRS.length]!;
-    placements.push({
-      name: names[index % names.length]!,
-      q: map.origin.q + HEX_DQ[direction]! * radius,
-      r: map.origin.r + HEX_DR[direction]! * radius,
-      rotation: (seedWord + index + band.id) % 6,
-      size: size + ((seedWord >>> (index & 7)) & 1),
-    });
-  }
-  return placements;
-}
-
-function mix32(value: number): number {
-  let result = value >>> 0;
-  result ^= result >>> 16;
-  result = Math.imul(result, 0x7feb352d);
-  result ^= result >>> 15;
-  result = Math.imul(result, 0x846ca68b);
-  result ^= result >>> 16;
-  return result >>> 0;
-}
-
-function availableForTerrain(map: ScratchMap, cellIndex: number): boolean {
-  return map.cell[cellIndex] === CellKind.Empty && map.protectedCells[cellIndex] === 0;
-}
-
 function availableForCure(map: ScratchMap, cellIndex: number): boolean {
-  return map.cell[cellIndex] === CellKind.Empty && map.protectedCells[cellIndex] === 0;
-}
-
-function targetCount(total: number, low: number, high: number, rng: Rng): number {
-  const innerLow = low + (high - low >= 2 ? 1 : 0);
-  const innerHigh = high - (high - low >= 2 ? 1 : 0);
-  const percent = innerLow + rng.int(innerHigh - innerLow + 1);
-  return Math.round((total * percent) / 100);
-}
-
-function placeInnerRouteTerrain(rng: Rng, map: ScratchMap): void {
-  if (map.width < 5 || map.height < 5) return;
-  const ring = [
-    { q: 2, r: 0 },
-    { q: 1, r: 1 },
-    { q: 0, r: 2 },
-    { q: -1, r: 2 },
-    { q: -2, r: 2 },
-    { q: -2, r: 1 },
-    { q: -2, r: 0 },
-    { q: -1, r: -1 },
-    { q: 0, r: -2 },
-    { q: 1, r: -2 },
-    { q: 2, r: -2 },
-    { q: 2, r: -1 },
-  ] as const;
-  const firstGap = rng.int(ring.length);
-  const secondGap = (firstGap + 3 + rng.int(3)) % ring.length;
-  for (let index = 0; index < ring.length; index++) {
-    if (index === firstGap || index === secondGap) continue;
-    const delta = ring[index]!;
-    const x = map.start.q + delta.q;
-    const y = map.start.r + delta.r;
-    const cellIndex = idx(map.width, x, y);
-    if (availableForTerrain(map, cellIndex)) map.cell[cellIndex] = CellKind.Swamp;
-  }
-}
-
-function paintTerrain(
-  map: ScratchMap,
-  band: TerrainBand,
-  kind: CellKind,
-  target: number,
-  placements: readonly MotifPlacement[],
-  seedWord: number,
-): void {
-  let placed = 0;
-  for (let motifIndex = 0; motifIndex < Math.min(2, placements.length) && placed < target; motifIndex++) {
-    const motif = placements[motifIndex]!;
-    const closest: { cellIndex: number; distance: number }[] = [];
-    for (const cellIndex of band.indices) {
-      if (!availableForTerrain(map, cellIndex)) continue;
-      const candidate = {
-        cellIndex,
-        distance: motifDistance(motif, cellIndex % map.width, Math.floor(cellIndex / map.width)),
-      };
-      let position = closest.length;
-      while (
-        position > 0 &&
-        (
-          candidate.distance < closest[position - 1]!.distance ||
-          (
-            candidate.distance === closest[position - 1]!.distance &&
-            candidate.cellIndex < closest[position - 1]!.cellIndex
-          )
-        )
-      ) position--;
-      closest.splice(position, 0, candidate);
-      if (closest.length > 3) closest.pop();
-    }
-    for (const candidate of closest) {
-      if (placed >= target) break;
-      map.cell[candidate.cellIndex] = kind;
-      placed++;
-    }
-  }
-  const ranked = band.indices
-    .filter((cellIndex) => availableForTerrain(map, cellIndex))
-    .map((cellIndex) => {
-      const x = cellIndex % map.width;
-      const y = Math.floor(cellIndex / map.width);
-      let distance = Number.MAX_SAFE_INTEGER;
-      for (const placement of placements) {
-        distance = Math.min(distance, motifDistance(placement, x, y));
-      }
-      return {
-        cellIndex,
-        score: distance * 65_536 + (mix32(seedWord ^ cellIndex ^ (kind << 24)) & 0xffff),
-      };
-    })
-    .sort((a, b) => a.score - b.score || a.cellIndex - b.cellIndex);
-  for (const candidate of ranked) {
-    if (placed >= target) break;
-    if (!availableForTerrain(map, candidate.cellIndex)) continue;
-    map.cell[candidate.cellIndex] = kind;
-    placed++;
-  }
-}
-
-function placeSideEffects(
-  map: ScratchMap,
-  band: TerrainBand,
-  count: number,
-  sideEffectBase: number,
-  seedWord: number,
-): number {
-  const placements = placementsFor(map, band, ["pocket", "crescent"], seedWord);
-  const ranked = band.indices
-    .filter((cellIndex) => availableForTerrain(map, cellIndex))
-    .map((cellIndex) => {
-      const x = cellIndex % map.width;
-      const y = Math.floor(cellIndex / map.width);
-      let distance = Number.MAX_SAFE_INTEGER;
-      for (const placement of placements) distance = Math.min(distance, motifDistance(placement, x, y));
-      return { cellIndex, score: distance * 65_536 + (mix32(seedWord ^ cellIndex) & 0xffff) };
-    })
-    .sort((a, b) => a.score - b.score || a.cellIndex - b.cellIndex);
-  let placed = 0;
-  for (const candidate of ranked) {
-    if (placed >= count) break;
-    if (!availableForTerrain(map, candidate.cellIndex)) continue;
-    map.cell[candidate.cellIndex] = CellKind.SideEffect;
-    map.sideEffectId[candidate.cellIndex] = sideEffectBase + placed;
-    placed++;
-  }
-  return placed;
-}
-
-function bestPortalCell(
-  map: ScratchMap,
-  band: TerrainBand,
-  placement: MotifPlacement,
-  excluded: ReadonlySet<number>,
-): number | null {
-  let best: { readonly index: number; readonly score: number } | null = null;
-  for (const cellIndex of band.indices) {
-    if (excluded.has(cellIndex) || !availableForTerrain(map, cellIndex)) continue;
-    const x = cellIndex % map.width;
-    const y = Math.floor(cellIndex / map.width);
-    const score = motifDistance(placement, x, y);
-    if (best === null || score < best.score || (score === best.score && cellIndex < best.index)) {
-      best = { index: cellIndex, score };
-    }
-  }
-  return best?.index ?? null;
-}
-
-function placePortals(
-  map: ScratchMap,
-  band: TerrainBand,
-  pairs: number,
-  seedWord: number,
-): void {
-  const placements = placementsFor(map, band, ["portal-bypass"], seedWord);
-  const used = new Set<number>();
-  for (let pair = 0; pair < pairs; pair++) {
-    const entryPlacement = placements[pair % placements.length];
-    const exitPlacement = placements[(pair + Math.floor(placements.length / 2)) % placements.length];
-    if (entryPlacement === undefined || exitPlacement === undefined) break;
-    const entry = bestPortalCell(map, band, entryPlacement, used);
-    if (entry === null) break;
-    used.add(entry);
-    const destination = bestPortalCell(map, band, exitPlacement, used);
-    if (destination === null) break;
-    used.add(destination);
-    map.cell[entry] = CellKind.Portal;
-    map.portalTo[entry] = destination;
-    map.protectedCells[destination] = 1;
-  }
-}
-
-function decorateTerrain(
-  rng: Rng,
-  map: ScratchMap,
-  sideEffectBase: number,
-  includeInnerRouteTerrain: boolean,
-): number {
-  if (Math.min(map.width, map.height) < 9) return sideEffectBase;
-  if (includeInnerRouteTerrain) placeInnerRouteTerrain(rng, map);
-  if (Math.min(map.width, map.height) < 31) return sideEffectBase;
-  const bands = makeBands(map);
-  let nextSideEffect = sideEffectBase;
-  for (const band of bands) {
-    const seedWord = rng.u32();
-    const wallRanges = [[8, 12], [12, 18], [18, 25]] as const;
-    const abyssRanges = [[1, 3], [4, 7], [7, 11]] as const;
-    const swampRanges = [[6, 10], [10, 15], [12, 20]] as const;
-    const wallRange = wallRanges[band.id];
-    const abyssRange = abyssRanges[band.id];
-    const swampRange = swampRanges[band.id];
-    const abyssTarget = targetCount(band.indices.length, abyssRange[0], abyssRange[1], rng);
-    const wallTarget = targetCount(band.indices.length, wallRange[0], wallRange[1], rng);
-    const swampTarget = targetCount(band.indices.length, swampRange[0], swampRange[1], rng);
-    paintTerrain(
-      map,
-      band,
-      CellKind.Abyss,
-      abyssTarget,
-      placementsFor(map, band, ["canyon", "basin", "pocket"], seedWord ^ 0xa81),
-      seedWord ^ 0xa81,
-    );
-    paintTerrain(
-      map,
-      band,
-      CellKind.Wall,
-      wallTarget,
-      placementsFor(map, band, ["ridge", "crescent", "pocket"], seedWord ^ 0x7a11),
-      seedWord ^ 0x7a11,
-    );
-    paintTerrain(
-      map,
-      band,
-      CellKind.Swamp,
-      swampTarget,
-      placementsFor(map, band, ["swamp-fan", "basin", "crescent"], seedWord ^ 0x5a4f),
-      seedWord ^ 0x5a4f,
-    );
-    nextSideEffect += placeSideEffects(
-      map,
-      band,
-      Math.round((band.indices.length * 3) / 100),
-      nextSideEffect,
-      seedWord ^ 0x51de,
-    );
-    const portalPairs = band.id === 0 ? 1 : band.id === 1 ? 1 + rng.int(2) : 2 + rng.int(2);
-    placePortals(map, band, portalPairs, seedWord ^ 0xb1fa55);
-  }
-  return nextSideEffect;
+  return map.cell[cellIndex] === CellKind.Empty &&
+    map.protectedCells[cellIndex] === 0 &&
+    map.pass[cellIndex] === 0 &&
+    map.inside[cellIndex] === 1;
 }
 
 function requireSafeInteger(name: string, value: number): void {
@@ -1238,45 +1189,157 @@ function validateOptions(opts: Parameters<GenerateFn>[0]): void {
   validateCatalog(opts.catalog);
 }
 
-export const generate: GenerateFn = (opts) => {
+export interface AtlasMapDiagnostics {
+  readonly radius: number;
+  readonly skeleton: boolean;
+  readonly passes: readonly PassInfo[];
+  readonly basins: readonly Basin[];
+  readonly black: readonly BlackGroup[];
+}
+
+export interface GenerationDiagnostics {
+  readonly maps: readonly AtlasMapDiagnostics[];
+  readonly regions: readonly AtlasRegion[];
+}
+
+/** Per-map cells a reference enters (trail) and the cells it rests on between machines. */
+function referenceFootprint(
+  mm: MultiMap,
+  reference: Template,
+  trail: readonly Uint8Array[],
+  prefix: readonly Uint8Array[],
+): void {
+  let drug = initialState(mm);
+  for (let stepIndex = 0; stepIndex < reference.steps.length; stepIndex++) {
+    const machine = reference.steps[stepIndex]!;
+    const pos: HexCoord[] = [];
+    const offset: HexCoord[] = [];
+    for (let mapIndex = 0; mapIndex < mm.maps.length; mapIndex++) {
+      const map = mm.maps[mapIndex]!;
+      const walked = walkPath(map, drug.pos[mapIndex]!, machine, drug.heading, drug.offset[mapIndex]);
+      trail[mapIndex]![idx(map.width, drug.pos[mapIndex]!.q, drug.pos[mapIndex]!.r)] = 1;
+      for (const cell of walked.entered) trail[mapIndex]![idx(map.width, cell.q, cell.r)] = 1;
+      if (stepIndex + 1 < reference.steps.length) prefix[mapIndex]![idx(map.width, walked.pos.q, walked.pos.r)] = 1;
+      pos.push(walked.pos);
+      offset.push(walked.offset);
+    }
+    drug = { pos, offset, heading: turnHeading(drug.heading, machine.turn), failed: false };
+  }
+}
+
+/** Cells where a single catalog machine from the start comes to rest (never a Cure). */
+function oneStepEndpoints(terrain: MultiMap, catalog: readonly MachineCatalogEntry[]): Uint8Array[] {
+  const start = initialState(terrain);
+  const excluded = terrain.maps.map((map) => new Uint8Array(map.cell.length));
+  for (const entry of catalog) {
+    const outcome = simulateReference(terrain, start, { steps: [ownMachine(entry)] });
+    for (let mapIndex = 0; mapIndex < terrain.maps.length; mapIndex++) {
+      const map = terrain.maps[mapIndex]!;
+      const position = outcome.final[mapIndex]!;
+      excluded[mapIndex]![idx(map.width, position.q, position.r)] = 1;
+    }
+  }
+  return excluded;
+}
+
+export const MAX_TERRAIN_ATTEMPTS = 4;
+
+interface GenerationResult {
+  readonly level: GeneratedLevel;
+  readonly diagnostics: GenerationDiagnostics;
+}
+
+class ConstructionError extends Error {}
+
+export function generateWithDiagnostics(opts: GenOptions): GenerationResult {
   validateOptions(opts);
+  // A terrain that leaves no constructive reference for some disease is redrawn from a derived
+  // stream (bounded, deterministic); attempt 0 is the seed itself.
+  let failure: unknown = null;
+  for (let attempt = 0; attempt < MAX_TERRAIN_ATTEMPTS; attempt++) {
+    try {
+      return generateAttempt(opts, attempt);
+    } catch (error) {
+      if (!(error instanceof ConstructionError)) throw error;
+      failure = error;
+    }
+  }
+  const reason = failure instanceof Error ? failure.message : String(failure);
+  throw new Error(
+    `mapgen.generate: no constructive level for seed=${opts.seed >>> 0}, difficulty ` +
+      `[${opts.difficulty.min},${opts.difficulty.max}] after ${MAX_TERRAIN_ATTEMPTS} terrains: ${reason}`,
+    { cause: failure },
+  );
+}
+
+function generateAttempt(opts: GenOptions, attempt: number): GenerationResult {
   const seed = opts.seed >>> 0;
-  const rng = makeRng(seed);
+  const rng = makeRng(attempt === 0 ? seed : mix32(seed ^ Math.imul(attempt, 0x9e3779b1)));
+  const area = opts.width * opts.height;
   const maps = Array.from({ length: opts.nMaps }, () => makeScratch(opts.width, opts.height));
+  const initialMachines = opts.catalog.slice(0, Math.min(4, opts.catalog.length)).map(ownMachine);
+  const terrainSeeds = maps.map(() => rng.u32());
+  const terrainInfo = maps.map((map, mapIndex) => buildTerrain(map, terrainSeeds[mapIndex]!, initialMachines));
+  const diseasesOn = (mapIndex: number): number[] => {
+    const ids: number[] = [];
+    for (let disease = 0; disease < opts.diseaseCount; disease++) {
+      if (disease % maps.length === mapIndex) ids.push(disease);
+    }
+    return ids;
+  };
+  const noCure = oneStepEndpoints(freezeMaps(maps), opts.catalog);
+  const regions: AtlasRegion[] = [];
+  const hardByMap = maps.map((map, mapIndex) => {
+    const hard = placeHardRegions(map, mapIndex, terrainInfo[mapIndex]!, diseasesOn(mapIndex), terrainSeeds[mapIndex]!, noCure[mapIndex]!);
+    regions.push(...hard);
+    return hard;
+  });
+  const terrain = freezeMaps(maps);
+  const built = constructDiseases(
+    maps,
+    terrain,
+    opts.catalog,
+    opts.diseaseCount,
+    opts.difficulty.min,
+    opts.difficulty.max,
+    rng.u32(),
+  );
   const nextSideEffect: number[] = [];
   for (let mapIndex = 0; mapIndex < maps.length; mapIndex++) {
-    nextSideEffect[mapIndex] = decorateTerrain(
+    nextSideEffect[mapIndex] = placeCureRegions(
       rng,
       maps[mapIndex]!,
-      mapIndex * opts.width * opts.height,
-      opts.difficulty.min >= 2 || opts.catalog.length > 1,
-    );
-  }
-  const terrain = freezeMaps(maps);
-  let built: BuiltDisease[];
-  try {
-    built = constructDiseases(
-      maps,
-      terrain,
-      opts.catalog,
-      opts.diseaseCount,
-      opts.difficulty.min,
-      opts.difficulty.max,
-      rng.u32(),
-    );
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
-    throw new Error(
-      `mapgen.generate: no constructive level for seed=${seed}, difficulty ` +
-        `[${opts.difficulty.min},${opts.difficulty.max}]: ${reason}`,
-      { cause: error },
-    );
-  }
-  for (let mapIndex = 0; mapIndex < maps.length; mapIndex++) {
-    placeCureRegions(
-      rng,
-      maps[mapIndex]!,
+      mapIndex,
       built.filter((disease) => disease.map === mapIndex),
+      mapIndex * area,
+      regions,
+    );
+  }
+  const trail = maps.map(() => new Uint8Array(area));
+  const prefix = maps.map(() => new Uint8Array(area));
+  const placed = freezeMaps(maps);
+  for (const disease of built) referenceFootprint(placed, disease.reference, trail, prefix);
+  const black: BlackGroup[][] = [];
+  for (let mapIndex = 0; mapIndex < maps.length; mapIndex++) {
+    const map = maps[mapIndex]!;
+    const features = placeBlackAndFill(
+      map,
+      mapIndex,
+      terrainInfo[mapIndex]!,
+      hardByMap[mapIndex]!,
+      diseasesOn(mapIndex),
+      terrainSeeds[mapIndex]!,
+      noCure[mapIndex]!,
+      prefix[mapIndex]!,
+      trail[mapIndex]!,
+      initialMachines,
+    );
+    regions.push(...features.fills);
+    black.push(features.groups);
+    contaminateRegions(
+      map,
+      regions.filter((region) => region.map === mapIndex),
+      terrainSeeds[mapIndex]!,
       nextSideEffect[mapIndex]!,
     );
   }
@@ -1308,5 +1371,45 @@ export const generate: GenerateFn = (opts) => {
       reference: disease.reference,
     };
   });
-  return { seed, mm, start, diseases };
-};
+  return {
+    level: { seed, mm, start, diseases },
+    diagnostics: {
+      maps: terrainInfo.map((info, mapIndex) => ({
+        radius: info.radius,
+        skeleton: info.skeleton,
+        passes: info.passes,
+        basins: info.basins,
+        black: black[mapIndex]!,
+      })),
+      regions,
+    },
+  };
+}
+
+export const generate: GenerateFn = (opts) => generateWithDiagnostics(opts).level;
+
+/** Whether (q, r) lies on the playable Atlas hexagon (flat test boards are wholly playable). */
+export function atlasContains(map: Pick<EffectMap, "width" | "height" | "origin">, q: number, r: number): boolean {
+  if (q < 0 || r < 0 || q >= map.width || r >= map.height) return false;
+  const radius = atlasRadius(map.width, map.height);
+  return radius < MIN_SKELETON_RADIUS || hexDistance(map.origin.q, map.origin.r, q, r) <= radius;
+}
+
+// Loaded snapshots carry equal-but-new GenOptions objects; this small content-keyed cache keeps
+// Load, rewind and replay from regenerating the same pure, frozen level. ponytail: 4 entries is
+// enough for the active game plus Load/rewind/New; raise it if more option sets live at once.
+const GENERATED_LEVEL_CACHE_SIZE = 4;
+const generatedLevels = new Map<string, GeneratedLevel>();
+
+/** `generate` memoised by option contents (deterministic, so sharing the frozen result is safe). */
+export function generateCached(opts: GenOptions): GeneratedLevel {
+  const key = JSON.stringify(opts);
+  const cached = generatedLevels.get(key);
+  if (cached !== undefined) return cached;
+  const level = generate(opts);
+  generatedLevels.set(key, level);
+  if (generatedLevels.size > GENERATED_LEVEL_CACHE_SIZE) {
+    generatedLevels.delete(generatedLevels.keys().next().value!);
+  }
+  return level;
+}

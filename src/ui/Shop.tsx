@@ -13,7 +13,7 @@ import type {
   DiseaseId,
   InventoryProduct,
 } from "../sim/phase0_interfaces";
-import { nextUnitPrice } from "../sim/economy";
+import { nextUnitPrice, premiumGross } from "../sim/economy";
 import { SHIPPING_CONTRACT_QUOTA, SIDE_EFFECT_PENALTY } from "../sim/game";
 import { diseaseEmblem, diseaseName } from "./effectLabels";
 
@@ -53,7 +53,7 @@ export function profitableMarketProducts(
   const profitable: InventoryProduct[] = [];
   for (const product of marketProducts(inventory, disease)) {
     const gross = nextUnitPrice(basePrice, alreadySold + profitable.length);
-    if (quoteMarketProduct(product, gross).net <= 0) continue;
+    if (quoteMarketProduct(product, gross, disease).net <= 0) continue;
     profitable.push(product);
   }
   return profitable;
@@ -69,7 +69,7 @@ export function marketLineReadout(
   let gross = 0;
   let net = 0;
   for (const [index, product] of products.entries()) {
-    const quote = quoteMarketProduct(product, nextUnitPrice(basePrice, alreadySold + index));
+    const quote = quoteMarketProduct(product, nextUnitPrice(basePrice, alreadySold + index), disease);
     gross += quote.gross;
     net += quote.net;
   }
@@ -78,7 +78,9 @@ export function marketLineReadout(
 
 export interface MarketQuote {
   readonly productId: number;
+  /** Demand price, ×3/2 floored when the product hit a ★ (tier-2) cure. */
   readonly gross: number;
+  readonly premium: boolean;
   readonly productionCost: number;
   readonly sideEffectCount: number;
   readonly sideEffectPenaltyEach: number;
@@ -86,12 +88,15 @@ export interface MarketQuote {
   readonly net: number;
 }
 
-function quoteMarketProduct(product: InventoryProduct, gross: number): MarketQuote {
+function quoteMarketProduct(product: InventoryProduct, demand: number, disease: DiseaseId): MarketQuote {
   const sideEffectCount = product.outcome.sideEffects.length;
   const sideEffectPenalty = sideEffectCount * SIDE_EFFECT_PENALTY;
+  const premium = product.outcome.premium.includes(disease);
+  const gross = premium ? premiumGross(demand) : demand;
   return {
     productId: product.inventoryId,
     gross,
+    premium,
     productionCost: product.productionCost,
     sideEffectCount,
     sideEffectPenaltyEach: SIDE_EFFECT_PENALTY,
@@ -109,7 +114,7 @@ export function bestMarketQuote(
   const gross = nextUnitPrice(basePrice, alreadySold);
   let fallback: MarketQuote | null = null;
   for (const product of marketProducts(inventory, disease)) {
-    const quote = quoteMarketProduct(product, gross);
+    const quote = quoteMarketProduct(product, gross, disease);
     if (fallback === null) fallback = quote;
     if (quote.net > 0) return quote;
   }
@@ -185,6 +190,7 @@ export function Shop({ level, economy, inventory, onSell }: ShopProps) {
           {rows.map(({ disease, eligible }) => {
             const have = eligible.length;
             const clean = eligible.filter((product) => product.outcome.sideEffects.length === 0).length;
+            const premium = eligible.filter((product) => product.outcome.premium.includes(disease.id)).length;
             const tainted = have - clean;
             const sold = soldSoFar(economy, disease.id);
             const next = nextUnitPrice(disease.basePrice, sold);
@@ -223,10 +229,13 @@ export function Shop({ level, economy, inventory, onSell }: ShopProps) {
                   <dd>
                     <span className="market-stock is-clean"><strong className="market-value-clean" data-testid={`shop-clean-${disease.id}`}>{clean}</strong> Clean</span>
                     <span className="market-stock is-tainted"><strong className="market-value-tainted" data-testid={`shop-tainted-${disease.id}`}>{tainted}</strong> Tainted</span>
+                    {premium > 0 && (
+                      <span className="market-stock is-premium"><strong data-testid={`shop-premium-${disease.id}`}>{premium}</strong> ★ pay ×1.5</span>
+                    )}
                   </dd>
                   <dt>Next unit</dt>
                   <dd className="market-equation">
-                    <span><strong data-testid={`shop-next-${disease.id}`}>{formatMoney(next)}</strong> price</span>
+                    <span><strong data-testid={`shop-next-${disease.id}`}>{formatMoney(quote?.gross ?? next)}</strong> {quote?.premium === true ? "★ price" : "price"}</span>
                     <span>− <strong data-testid={`shop-production-cost-${disease.id}`}>{formatMoney(quote?.productionCost ?? 0)}</strong> cost</span>
                     {penalty !== null && (
                       <span className="market-value-tainted">− <strong data-testid={`shop-side-effect-penalty-${disease.id}`}>{penalty}</strong> side effects</span>

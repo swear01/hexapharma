@@ -55,6 +55,7 @@ function researchPlanningOnFog(mm: MultiMap, fog: readonly Uint8Array[]): MultiM
       const known = fog[mapIndex]!;
       const cell = Uint8Array.from(map.cell);
       const cureId = Int16Array.from(map.cureId);
+      const cureTier = Uint8Array.from(map.cureTier);
       const sideEffectId = Int32Array.from(map.sideEffectId);
       const portalTo = Int32Array.from(map.portalTo);
       for (let index = 0; index < cell.length; index++) {
@@ -62,10 +63,11 @@ function researchPlanningOnFog(mm: MultiMap, fog: readonly Uint8Array[]): MultiM
         if (cell[index] === CellKind.Wall) continue;
         cell[index] = CellKind.Empty;
         cureId[index] = -1;
+        cureTier[index] = 0;
         sideEffectId[index] = -1;
         portalTo[index] = -1;
       }
-      return { ...map, cell, cureId, sideEffectId, portalTo };
+      return { ...map, cell, cureId, cureTier, sideEffectId, portalTo };
     }),
   };
 }

@@ -9,11 +9,11 @@
 | `.github/workflows/pages.yml` | main 上 `check` 成功後，以相對 base build 並部署 GitHub Pages（custom domain `hexapharma.5334601.xyz`）。 |
 | `vitest.config.ts`、`test/vitest.setup.ts` | Node test runner 與最小 browser-global setup，讓 Pixi renderer 純函式在 CI Node 20 可載入。 |
 | `docs/` | canonical design、invariants、player guide、plan 與 playtest。 |
-| `src/json-guards.ts` | 共用 JSON object guard；Save v12 與 checkpoint slot envelope 共用。 |
+| `src/json-guards.ts` | 共用 JSON object guard；Save v13 與 checkpoint slot envelope 共用。 |
 | `src/sim/hex.ts` | pointy-top axial `{q,r}`、E／SE／SW／W／NW／NE、六鄰接、60° rotation與`r * width + q`索引 authority。 |
 | `src/sim/phase0_interfaces.ts` | 完整 `PathStamp` machine、terrain/portal、三場域 state、non-null Production、Game intents。 |
-| `src/sim/drug-graph/` | strict EffectMap／DrugState validation、heading-relative fixed path traversal與turn、Swamp半格（doubled coordinates）、single-layer terrain/portal、preview/execution authority。 |
-| `src/sim/mapgen/` | terrain-first seeded radial + motif Atlas、1–8疾病、paired portals、clean/contaminated Cure regions、diverse tiered reference ResearchPrograms、linear prices。 |
+| `src/sim/drug-graph/` | strict EffectMap（含 cureTier／elevation）／DrugState validation、heading-relative fixed path traversal與turn、Swamp半格（doubled coordinates）、single-layer terrain/portal、preview/execution authority、`outcomeOf`（cured／★ premium／side effects）。 |
+| `src/sim/mapgen/` | `terrain.ts`：六角 Atlas 的整數 elevation 骨架、noisy 最短路隘口與生成期 bounded BFS 驗證、清理；`features.ts`：hard／void-fill 效果區、★、黑格、副作用；`index.ts`：BFS-tree／sampled constructive references、easy 區、pricing、`generateWithDiagnostics`。1–8疾病、diverse tiered reference ResearchPrograms、linear prices。 |
 | `src/sim/solver/` | dev/test-only whole-Cure-region minimum steps／cost、soundness/quality/balance tool；production dependency graph禁止 import。 |
 | `src/sim/rng/`, `hash.ts`, `state.ts` | seeded RNG、program/state hash、replay determinism。 |
 | `src/sim/factory-geom.ts` | Production Plan／Production axial footprint、六個60° rotated cells與ports；不定義Research path。 |
@@ -23,14 +23,15 @@
 | `src/sim/game.ts` | Run-based Research trials（`runResearchTrial`／`lastTrial`）/fog、shipping contracts、free Production Plan（內部 pilot）、direct paid Production、products/economy/reset。 |
 | `src/sim/replay-work.ts` | Production 單次 batch 的 bounded work estimate；獨立 replay 的工作量估算。 |
 | `src/sim/economy/`, `patent/` | per-disease finite demand、quota-3 shipping contracts、machine patent gates與tiered單層Technology。 |
-| `src/sim/save/` | Save v12 full/compact/slots/rewind、plain cold snapshots、bounded strict parser、可執行狀態驗證與舊版本拒絕。 |
+| `src/sim/save/` | Save v13 full/compact/slots/rewind、plain cold snapshots、bounded strict parser、可執行狀態驗證與舊版本拒絕。 |
 | `src/blueprint/format.ts` | Blueprint v4 `research-program`／`factory-layout` schema、checksum/content/bounds/hex-geometry validators與materializers。 |
 | `src/blueprint/storage.ts` | v4 save-independent Library、`hexapharma.blueprint-library.v4` namespace、quota/dedupe/import/export/delete atomicity。 |
 | `src/render/hexProjection.ts` | Research／Factory共用pointy-top axial pixel projection；不擁有sim座標。 |
 | `src/render/labCamera.ts` | 大型 axial Atlas camera、pan/zoom/focus/q-r picking/culling。 |
-| `src/render/labTerrain.ts`, `labRegions.ts` | Wall-only穿霧、其他terrain/effect discovery gating、overlap Cure/SideEffect與portal pairing visuals。 |
+| `src/render/labTerrain.ts`, `labRegions.ts` | 全部 terrain/effect discovery gating（霧下無地表）、山／水／黑格 visuals、overlap Cure/SideEffect與portal pairing visuals。 |
+| `src/render/labContours.ts` | 由 `EffectMap.elevation` 內插的 sign-free 壓縮等高線場＋seeded decoys（renderer-only 浮點）；壓縮／decoy 強度常數。 |
 | `src/render/ink.ts` | renderer-only確定性墨線抖動（手繪感）；不得用於port、belt接點、hit-test或文字。 |
-| `src/render/labRenderer.ts` | vector-only minimal flat hex Atlas、下一個full-path candidate、executed trail、terrain、overlap features與fog layer；event-driven單幀重繪。 |
+| `src/render/labRenderer.ts` | vector-only minimal flat hex Atlas（只畫六角形內）、下一個full-path candidate、executed trail、terrain、relief contours（chunk cache）、overlap features與fog layer；event-driven單幀重繪。 |
 | `src/render/factoryTransportTopology.ts` | sim-derived accept/emit edges、cell shape classification、machine port connectivity。 |
 | `src/render/factoryRenderer.ts` | Production Plan／Production minimal flat hex schematic、connected transport與tick animation；event-driven單幀重繪。 |
 | `src/ui/ResearchWorkspace.tsx` | F1 Research 版面：羅盤、規劃step清單、試驗結果readout、依heading旋轉的machine legend hotbar與`Clear`／`Run · $N` command bar。 |

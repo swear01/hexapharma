@@ -12,7 +12,9 @@ import {
   type LabCamera,
   type LabGridLineKind,
 } from "./labCamera";
-import { hexBoardBounds, hexPolygon, hexToPixel, pixelToHex, type PixelPoint } from "./hexProjection";
+import { drugDrawPoint, hexBoardBounds, hexToPixel, pixelToHex, type PixelPoint } from "./hexProjection";
+import { CONTOUR_LEVELS, contourField } from "./labContours";
+import { atlasContains } from "../sim/mapgen";
 import { inkJitter } from "./ink";
 import { revealedRegionEdges, type RegionEdges } from "./labRegions";
 import { labTerrainVisual, type CellTerrainVisual, type PortalTerrainVisual } from "./labTerrain";
@@ -22,7 +24,6 @@ export const LAB_SCHEMATIC_STYLE = Object.freeze({
   ...SHARED_SCHEMATIC_STYLE,
   /** The held candidate is the player's own line: course purple, dashed. */
   candidate: SHARED_SCHEMATIC_STYLE.course,
-  abyssRing: 0x5f86ad,
   oliveInk: 0x6f7d34,
 });
 
@@ -43,13 +44,6 @@ export interface LabRenderView {
   readonly finish?: boolean;
 }
 
-/** Drawn point of a drug: its cell plus half of its doubled-unit swamp offset. */
-function drugPoint(drug: DrugState, mapIndex: number): Vec2 | undefined {
-  const pos = drug.pos[mapIndex];
-  const offset = drug.offset[mapIndex];
-  if (pos === undefined || offset === undefined) return pos;
-  return { q: pos.q + offset.q / 2, r: pos.r + offset.r / 2 };
-}
 
 export interface LabRenderer {
   readonly canvas: HTMLCanvasElement;
@@ -96,47 +90,29 @@ function drawRevealedGrid(map: EffectMap, camera: LabCamera, grid: Graphics): vo
   drawGridKind(grid, "major", map, camera, bounds);
 }
 
-// ───────────────────────────── fog contour texture ─────────────────────────────
+// ───────────────────────────── relief contours ─────────────────────────────
 
-const CONTOUR_STEP = 12;
-const CONTOUR_INTERVAL = 0.42;
+const CONTOUR_STEP = 8;
 const CONTOUR_CHUNK = 32;
 
-/** Smooth height over projected world pixels. Coordinates only: never reads terrain or fog. */
-function contourHeight(x: number, y: number): number {
-  return Math.sin(x * 0.0105 + 1.6 * Math.sin(y * 0.0062 + 0.4))
-    + Math.sin(y * 0.0118 + 1.4 * Math.sin(x * 0.0047 + 1.9))
-    + 0.55 * Math.sin((x - y) * 0.0151 + 2.3);
-}
-
 /**
- * Unprinted paper carries faint brown contours (marching squares over contourHeight). Each chunk
- * of CONTOUR_CHUNK² grid squares is built once in world pixels and moved with the camera. Revealed
- * cells print over them, so the texture shows only in fog and cannot encode hidden terrain.
+ * Contours of the generated relief (labContours), marching squares over CONTOUR_STEP world
+ * pixels, one ink. Each chunk of CONTOUR_CHUNK² squares is built once in world pixels and moved with
+ * the camera. Drawn over fog and revealed ground alike: the sign-free field cannot tell a
+ * mountain from water, and it never reads fog, cells or effects.
  */
-function drawFogContours(map: EffectMap, target: Graphics, gx0: number, gy0: number): void {
+function drawContours(map: EffectMap, target: Graphics, gx0: number, gy0: number): void {
   const cols = CONTOUR_CHUNK;
   const rows = CONTOUR_CHUNK;
   const stride = cols + 1;
-  const indexSegments: PixelPoint[] = [];
   const field = new Float64Array(stride * (rows + 1));
   for (let j = 0; j <= rows; j++) {
     for (let i = 0; i <= cols; i++) {
-      field[j * stride + i] = contourHeight((gx0 + i) * CONTOUR_STEP, (gy0 + j) * CONTOUR_STEP);
+      field[j * stride + i] = contourField(map, (gx0 + i) * CONTOUR_STEP, (gy0 + j) * CONTOUR_STEP, LAB_HEX_SIZE);
     }
   }
-  // Edge crossing in world pixels; the jitter is keyed by the shared grid edge so neighbours agree.
-  const crossing = (
-    gi: number,
-    gj: number,
-    vertical: boolean,
-    a: number,
-    b: number,
-    threshold: number,
-    level: number,
-  ): PixelPoint => {
-    const key = Math.imul(gi, 7_919) ^ Math.imul(gj, 104_729) ^ (vertical ? 1 : 0);
-    const t = Math.min(1, Math.max(0, (threshold - a) / (b - a) + inkJitter(key, level) * 0.07));
+  const crossing = (gi: number, gj: number, vertical: boolean, a: number, b: number, threshold: number): PixelPoint => {
+    const t = Math.min(1, Math.max(0, (threshold - a) / (b - a)));
     return {
       x: (vertical ? gi : gi + t) * CONTOUR_STEP,
       y: (vertical ? gj + t : gj) * CONTOUR_STEP,
@@ -147,30 +123,20 @@ function drawFogContours(map: EffectMap, target: Graphics, gx0: number, gy0: num
       const gi = gx0 + i;
       const gj = gy0 + j;
       const hex = pixelToHex((gi + 0.5) * CONTOUR_STEP, (gj + 0.5) * CONTOUR_STEP, LAB_HEX_SIZE);
-      if (!hexInBounds(map.width, map.height, hex.q, hex.r)) continue;
+      if (!atlasContains(map, hex.q, hex.r)) continue;
       const v0 = field[j * stride + i]!;
       const v1 = field[j * stride + i + 1]!;
       const v2 = field[(j + 1) * stride + i + 1]!;
       const v3 = field[(j + 1) * stride + i]!;
-      const hi = Math.max(v0, v1, v2, v3);
-      for (
-        let level = Math.ceil(Math.min(v0, v1, v2, v3) / CONTOUR_INTERVAL - 0.5);
-        (level + 0.5) * CONTOUR_INTERVAL <= hi;
-        level++
-      ) {
-        const threshold = (level + 0.5) * CONTOUR_INTERVAL;
+      for (const threshold of CONTOUR_LEVELS) {
         const code = (v0 > threshold ? 1 : 0) | (v1 > threshold ? 2 : 0)
           | (v2 > threshold ? 4 : 0) | (v3 > threshold ? 8 : 0);
         if (code === 0 || code === 15) continue;
-        const isIndex = ((level % 5) + 5) % 5 === 0;
-        const top = () => crossing(gi, gj, false, v0, v1, threshold, level);
-        const right = () => crossing(gi + 1, gj, true, v1, v2, threshold, level);
-        const bottom = () => crossing(gi, gj + 1, false, v3, v2, threshold, level);
-        const left = () => crossing(gi, gj, true, v0, v3, threshold, level);
-        const segment = (a: PixelPoint, b: PixelPoint) => {
-          if (isIndex) indexSegments.push(a, b);
-          else target.moveTo(a.x, a.y).lineTo(b.x, b.y);
-        };
+        const top = () => crossing(gi, gj, false, v0, v1, threshold);
+        const right = () => crossing(gi + 1, gj, true, v1, v2, threshold);
+        const bottom = () => crossing(gi, gj + 1, false, v3, v2, threshold);
+        const left = () => crossing(gi, gj, true, v0, v3, threshold);
+        const segment = (a: PixelPoint, b: PixelPoint) => target.moveTo(a.x, a.y).lineTo(b.x, b.y);
         switch (code) {
           case 1: case 14: segment(left(), top()); break;
           case 2: case 13: segment(top(), right()); break;
@@ -184,12 +150,7 @@ function drawFogContours(map: EffectMap, target: Graphics, gx0: number, gy0: num
       }
     }
   }
-  target.stroke({ color: LAB_SCHEMATIC_STYLE.contour, width: 1, alpha: 0.2 });
-  for (let segment = 0; segment < indexSegments.length; segment += 2) {
-    target.moveTo(indexSegments[segment]!.x, indexSegments[segment]!.y)
-      .lineTo(indexSegments[segment + 1]!.x, indexSegments[segment + 1]!.y);
-  }
-  target.stroke({ color: LAB_SCHEMATIC_STYLE.contour, width: 1.6, alpha: 0.26 });
+  target.stroke({ color: LAB_SCHEMATIC_STYLE.contour, width: 1.1, alpha: 0.55 });
 }
 
 // ───────────────────────────── printed terrain ─────────────────────────────
@@ -263,7 +224,7 @@ function drawPortalMotif(
   }
 }
 
-/** Black cliff: solid ink with short hand-drawn tags pointing off every open edge. */
+/** Failure ground: solid black ink with short hand-drawn tags pointing off every open edge. */
 function drawCliff(
   cliffs: Graphics,
   visual: CellTerrainVisual,
@@ -325,19 +286,25 @@ function drawTerrainMotif(
   cell: number,
   seed: number,
 ): void {
-  if (visual.kind === "empty" || visual.kind === "wall") return;
+  if (visual.kind === "empty" || visual.kind === "abyss") return;
   if (visual.kind === "portal") {
     drawPortalMotif(terrain, visual, center, polygon, cell);
     return;
   }
   terrain.poly([...polygon], true).fill({ color: visual.baseColor });
-  if (visual.kind === "abyss") {
-    terrain.poly([...hexPolygon(center.x, center.y, cell * 0.24)], true)
-      .stroke({ color: LAB_SCHEMATIC_STYLE.abyssRing, width: Math.max(1.2, cell * 0.035) });
-  } else if (visual.kind === "swamp") {
+  if (visual.kind === "wall") return;
+  if (visual.kind === "swamp") {
     drawMarshHatch(terrain, center, cell, visual.rimColor, seed);
   } else if (visual.kind === "sideEffect") {
     drawEffectDots(terrain, center, cell, false);
+  } else if (visual.premium === true) {
+    const star: number[] = [];
+    for (let point = 0; point < 10; point++) {
+      const angle = -Math.PI / 2 + point * Math.PI / 5;
+      const radius = cell * (point % 2 === 0 ? 0.26 : 0.11);
+      star.push(center.x + Math.cos(angle) * radius, center.y + Math.sin(angle) * radius);
+    }
+    terrain.poly(star, true).fill({ color: visual.rimColor });
   } else {
     terrain.rect(center.x - cell * .06, center.y - cell * .2, cell * .12, cell * .4)
       .rect(center.x - cell * .2, center.y - cell * .06, cell * .4, cell * .12)
@@ -347,7 +314,7 @@ function drawTerrainMotif(
 
 function regionEdgeStyle(visual: CellTerrainVisual | PortalTerrainVisual, cell: number) {
   if (visual.kind === "swamp") return null;
-  if (visual.kind === "abyss") return { color: visual.rimColor, width: Math.max(2.5, cell * 0.08) };
+  if (visual.kind === "wall") return { color: visual.rimColor, width: Math.max(1.2, cell * 0.03), alpha: 0.6 };
   if (visual.kind === "cure") return { color: visual.rimColor, width: Math.max(2, cell * 0.06) };
   return { color: visual.rimColor, width: Math.max(1.5, cell * 0.04), alpha: 0.75 };
 }
@@ -368,13 +335,14 @@ function drawVisibleMap(
       const center = labCellCenter(camera, coord);
       const polygon = labCellPolygon(camera, coord);
       const seed = cellSeed(q, r);
+      if (!atlasContains(map, q, r)) continue;
       if (isRevealed(map, q, r)) terrain.poly([...polygon], true).fill({ color: LAB_SCHEMATIC_STYLE.deck });
       else paper.poly([...polygon], true).fill({ color: LAB_SCHEMATIC_STYLE.fog });
 
       const visual = labTerrainVisual(map, q, r);
       if (visual.kind === "empty") continue;
       const edges = revealedRegionEdges(map, q, r);
-      if (visual.kind === "wall") {
+      if (visual.kind === "abyss") {
         drawCliff(cliffs, visual, center, polygon, edges, cell, seed);
         continue;
       }
@@ -499,11 +467,11 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
   const marks = new Graphics();
   const contours = new Container();
   const contourChunks = new Map<number, Graphics>();
-  let contourBoard = "";
+  let contourRelief: Int16Array | null = null;
   const mapLayers = [paper, terrain, grid, cliffs, features] as const;
   const labels = new Container();
   const labelPool: Text[] = [];
-  app.stage.addChild(paper, contours, terrain, grid, cliffs, features, course, marks, labels);
+  app.stage.addChild(paper, terrain, contours, grid, cliffs, features, course, marks, labels);
 
   let last: { readonly mm: MultiMap; readonly drug: DrugState; readonly view: LabRenderView } | null = null;
   let lastTrail: readonly (Vec2 | null)[] | null = null;
@@ -572,7 +540,7 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
       }
       marks.stroke({ color: LAB_SCHEMATIC_STYLE.course, width: lineWidth });
 
-      const position = drugPoint(drug, view.activeMap);
+      const position = drugDrawPoint(drug, view.activeMap);
       if (head !== null) {
         marks.circle(head.x, head.y, cell * 0.11).fill({ color: LAB_SCHEMATIC_STYLE.course });
       } else if (position !== undefined) {
@@ -581,7 +549,7 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
         else if (view.finish !== true) marks.circle(center.x, center.y, cell * 0.11).fill({ color: LAB_SCHEMATIC_STYLE.course });
       }
 
-      const previewPos = view.previewDrug === undefined ? undefined : drugPoint(view.previewDrug, view.activeMap);
+      const previewPos = view.previewDrug === undefined ? undefined : drugDrawPoint(view.previewDrug, view.activeMap);
       if (!animating && view.previewTrail !== undefined) drawDashedTrail(marks, view.previewTrail, nodes, camera, radius);
       if (!animating && previewPos !== undefined) {
         const center = labCellCenter(camera, previewPos);
@@ -641,9 +609,8 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
       last = { mm, drug, view };
       const map = mm.maps[view.activeMap];
       if (map !== undefined) {
-        const board = `${map.width}x${map.height}`;
-        if (board !== contourBoard) {
-          contourBoard = board;
+        if (map.elevation !== contourRelief) {
+          contourRelief = map.elevation;
           for (const chunk of contourChunks.values()) chunk.destroy();
           contourChunks.clear();
         }
@@ -663,7 +630,7 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
             let chunk = contourChunks.get(key);
             if (chunk === undefined) {
               chunk = new Graphics();
-              drawFogContours(map, chunk, cx * CONTOUR_CHUNK, cy * CONTOUR_CHUNK);
+              drawContours(map, chunk, cx * CONTOUR_CHUNK, cy * CONTOUR_CHUNK);
               contours.addChild(chunk);
               contourChunks.set(key, chunk);
             }

@@ -27,8 +27,10 @@ function openMap(width = 32, height = 20): EffectMap {
     start: { q: 10, r: 10 },
     cell: new Uint8Array(size),
     cureId: new Int16Array(size).fill(-1),
+    cureTier: new Uint8Array(size),
     sideEffectId: new Int32Array(size).fill(-1),
     portalTo: new Int32Array(size).fill(-1),
+    elevation: new Int16Array(size),
     fog: new Uint8Array(size).fill(1),
   };
 }
@@ -187,6 +189,7 @@ describe("compilePrototype", () => {
     const cureIndex = landing.r * map.width + landing.q;
     map.cell[cureIndex] = CellKind.Cure;
     map.cureId[cureIndex] = 4;
+    map.cureTier[cureIndex] = 1;
     const mm: MultiMap = { maps: [map] };
     const layout = compilePrototype(template, 18, 9, [
       { anchor: { q: 7, r: 3 }, footRot: 0 },
