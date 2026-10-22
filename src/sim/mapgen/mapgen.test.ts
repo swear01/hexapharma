@@ -254,6 +254,14 @@ describe("mapgen option validation", () => {
 });
 
 describe("mapgen centered deterministic atlas", () => {
+  it("generates every supported board size, using flat terrain below the skeleton radius", () => {
+    for (const size of [9, 17, 25, 31, 33]) {
+      for (const seed of [0, 14]) {
+        expect(() => generateFresh({ ...oneAtlasOptions(seed), width: size, height: size })).not.toThrow();
+      }
+    }
+  }, 60_000);
+
   it("memoises equal options by content so Load and replay reuse one frozen level", () => {
     const options = oneAtlasOptions(77);
     const first = generateCached(options);

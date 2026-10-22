@@ -543,7 +543,8 @@ export function contaminateRegions(
       return edge;
     });
     fringe.sort((left, right) => hash3(seed, left, 0, 0x65) - hash3(seed, right, 0, 0x65) || left - right);
-    const count = region.kind === "hard" ? Math.max(1, Math.floor(fringe.length / 3)) : Math.min(1, fringe.length);
+    const wanted = region.kind === "hard" ? Math.max(1, Math.floor(fringe.length / 3)) : 1;
+    const count = Math.min(wanted, fringe.length);
     for (let index = 0; index < count; index++) map.sideEffectId[fringe[index]!] = next++;
   }
   return next;

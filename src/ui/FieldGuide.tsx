@@ -40,7 +40,7 @@ const LEGEND: readonly { readonly group: string; readonly items: readonly (reado
     ["premium", "★ Cure", "Ending here sells for 1.5× the price."],
     ["sideEffect", "Side effect", "Ending here adds a side effect: −$25 per unit sold."],
     ["contour", "Contours", "Seen through fog: something rises or sinks there. Mountain and water look alike."],
-    ["wall", "Mountain", "Skips that move. Blocks your plan even under fog."],
+    ["wall", "Mountain", "Skips that move. Hidden under fog: your plan may cross it until a Run hits it."],
     ["marsh", "Water", "Each move inside goes only half a cell."],
     ["abyss", "Black ground", "A step that enters it fails the run."],
   ] },

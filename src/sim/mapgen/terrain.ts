@@ -11,7 +11,7 @@ export const ELEVATION_ONE = 1024;
 export const MOUNTAIN_LEVEL = 614;
 export const WATER_LEVEL = -461;
 /** Atlases below this radius are flat test boards without the v2 skeleton. */
-export const MIN_SKELETON_RADIUS = 8;
+export const MIN_SKELETON_RADIUS = 16;
 export const START_DISK_RADIUS = 2;
 export const MAX_PASS_ATTEMPTS = 8;
 export const MAX_PASS_STEPS = 10;
@@ -628,6 +628,8 @@ export function buildTerrain(atlas: AtlasScratch, seed: number, machines: readon
   const passes: PassInfo[] = [];
   const plans: PassPlan[] = [];
   const ringCount = 2 + rand(2);
+  // Outer pass end: 5 cells past the ring on the default Atlas, less on small boards so it stays inside the rim.
+  const ringReach = Math.max(2, Math.min(5, Math.floor((R * 1024 - ring) / 1024) - 2));
   const ringBase = rand(48);
   for (let index = 0; index < ringCount; index++) {
     const base = ringBase + Math.floor((index * 48) / ringCount) + rand(5) - 2;
@@ -641,7 +643,7 @@ export function buildTerrain(atlas: AtlasScratch, seed: number, machines: readon
           polar(0, 0, Math.max(ring - 5 * 1024, (START_DISK_RADIUS + 2) * 1024), angle),
           polar(0, 0, ring - 1024, angle + sign * k1),
           polar(0, 0, ring + 1024, angle - sign),
-          polar(0, 0, ring + 5 * 1024, angle + sign),
+          polar(0, 0, ring + ringReach * 1024, angle + sign),
         ];
       },
     });
