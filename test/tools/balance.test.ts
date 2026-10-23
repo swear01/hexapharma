@@ -36,7 +36,7 @@ describe("balance tool failure boundaries", () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
     try {
       expect(runBalance(1)).toBe(0);
-      expect(log).toHaveBeenCalledWith(expect.stringMatching(/seed=0 completed=true min-cash=766 /));
+      expect(log).toHaveBeenCalledWith(expect.stringMatching(/seed=0 completed=true min-cash=720 /));
       expect(log).toHaveBeenCalledWith(expect.stringMatching(/★ \(tier-2\) reachability/));
       expect(log).toHaveBeenCalledWith(expect.stringMatching(/four-disease legal progression/));
       for (const seed of [14, 15, 1, 42, 100]) {

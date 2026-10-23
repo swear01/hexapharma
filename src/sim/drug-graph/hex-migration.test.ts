@@ -28,6 +28,7 @@ function emptyMap(width: number, height: number, start: HexCoord): EffectMap {
     cell: new Uint8Array(length),
     cureId: new Int16Array(length).fill(-1),
     cureTier: new Uint8Array(length),
+    regionId: new Uint16Array(length),
     sideEffectId: new Int32Array(length).fill(-1),
     portalTo: new Int32Array(length).fill(-1),
     elevation: new Int16Array(length),

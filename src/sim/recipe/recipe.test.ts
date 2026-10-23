@@ -36,6 +36,7 @@ function emptyMap(size: number, start: Vec2): EffectMap {
     cell: new Uint8Array(area),
     cureId: new Int16Array(area).fill(-1),
     cureTier: new Uint8Array(area),
+    regionId: new Uint16Array(area),
     sideEffectId: new Int32Array(area).fill(-1),
     portalTo: new Int32Array(area).fill(-1),
     elevation: new Int16Array(area),
@@ -100,22 +101,23 @@ function serpentineLayout(size: number): FactoryLayout {
 }
 
 const samples: readonly Template[] = [
-  template(machine("push")),
-  template(machine("push2")),
-  template(machine("dilute")),
-  template(machine("skew"), machine("pull")),
-  template(machine("push"), machine("shear"), machine("settle")),
+  template(machine("hook")),
+  template(machine("wave")),
+  template(machine("loop")),
+  template(machine("zigzag"), machine("return")),
+  template(machine("hook"), machine("elbow"), machine("crane")),
 ];
 
 describe("compileTemplate and factoryOutcome", () => {
   it("preserves a side-effect overlay on a produced Cure", () => {
     const map = emptyMap(41, { q: 20, r: 20 });
-    const value = template(machine("push"));
+    const value = template(machine("hook"));
     const final = applyTemplate(multimaps(map), initialState(multimaps(map)), value).pos[0]!;
     const index = final.r * map.width + final.q;
     map.cell[index] = CellKind.Cure;
     map.cureId[index] = 7;
     map.cureTier[index] = 1;
+    map.regionId[index] = 1;
     map.sideEffectId[index] = 91;
     const mm = multimaps(map);
 
@@ -133,6 +135,7 @@ describe("compileTemplate and factoryOutcome", () => {
       final: [{ q: 20, r: 20 }],
       cured: [],
       premium: [],
+      regions: [],
       sideEffects: [],
     });
   });
@@ -145,7 +148,7 @@ describe("compileTemplate and factoryOutcome", () => {
   });
 
   it("rejects oversized templates before sizing geometry", () => {
-    const step = machine("push");
+    const step = machine("hook");
     expect(() => compileTemplate({ steps: new Array(MAX_TEMPLATE_STEPS + 1).fill(step) }))
       .toThrow(/steps|256/i);
   });
@@ -160,7 +163,7 @@ describe("compileTemplate and factoryOutcome", () => {
   });
 
   it("owns a caller's mutable path without freezing it", () => {
-    const catalog = structuredClone(DEFAULT_CATALOG.find((entry) => entry.typeId === "push")!);
+    const catalog = structuredClone(DEFAULT_CATALOG.find((entry) => entry.typeId === "hook")!);
     const step: Machine = { typeId: catalog.typeId, path: catalog.path, turn: catalog.turn };
     const layout = compileTemplate(template(step));
     (catalog.path as number[])[0] = 3;
@@ -228,7 +231,7 @@ describe("compileTemplate and factoryOutcome", () => {
   }
 
   it("lands on and reports a cure reached by an irregular path", () => {
-    const value = template(machine("push"), machine("shear"));
+    const value = template(machine("hook"), machine("elbow"));
     const open = multimaps(emptyMap(41, { q: 20, r: 20 }));
     const final = applyTemplate(open, initialState(open), value).pos[0]!;
     const map = emptyMap(41, { q: 20, r: 20 });
@@ -236,6 +239,7 @@ describe("compileTemplate and factoryOutcome", () => {
     map.cell[index] = CellKind.Cure;
     map.cureId[index] = 77;
     map.cureTier[index] = 1;
+    map.regionId[index] = 1;
     const mm = multimaps(map);
     expect(factoryOutcome(compileTemplate(value), mm, initialState(mm)).cured).toContain(77);
   });
@@ -244,18 +248,18 @@ describe("compileTemplate and factoryOutcome", () => {
     expect(() => compileTemplate(template({ typeId: "missing", path: [E], turn: 0 })))
       .toThrow(/unknown machine/i);
     expect(() => compileTemplate(template({
-      typeId: "push",
+      typeId: "hook",
       path: [3, 3, 4],
       turn: 1,
     }))).toThrow(/path does not match/i);
-    expect(() => compileTemplate(template({ ...machine("push"), turn: 0 })))
+    expect(() => compileTemplate(template({ ...machine("hook"), turn: 0 })))
       .toThrow(/path does not match/i);
   });
 });
 
 describe("factory rearrange invariance", () => {
   it("belt spacing and physical packing do not alter chemical paths", () => {
-    const value = template(machine("push"), machine("skew"), machine("pull"));
+    const value = template(machine("hook"), machine("zigzag"), machine("return"));
     const mm = multimaps(emptyMap(63, { q: 31, r: 31 }));
     const pure = evaluate(mm, initialState(mm), value);
     expect(factoryOutcome(spacedLine(value, 1), mm, initialState(mm))).toEqual(pure);

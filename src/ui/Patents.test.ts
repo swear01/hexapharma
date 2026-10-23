@@ -30,7 +30,8 @@ describe("Technology copy", () => {
       "Loop vat",
       "Deeper factory floor",
       "Field survey optics",
-      "Settler path",
+      "Straight drive",
+      "Crane arm",
     ]);
     for (const node of DEFAULT_PATENTS) {
       expect(patentTitle(node.id)).not.toBe(node.id);
@@ -53,7 +54,7 @@ describe("Technology copy", () => {
       factoryDw: 2,
       factoryDh: 3,
       revealAid: 4,
-      unlockedMachines: ["skew", "dilute"],
+      unlockedMachines: ["zigzag", "loop"],
     })).toEqual([
       "Factory +2 columns",
       "Factory +3 rows",
@@ -63,13 +64,13 @@ describe("Technology copy", () => {
   });
 
   it("names an incomplete shipping contract that gates a machine patent", () => {
-    expect(patentContractRequirement("skew-unlock", [
+    expect(patentContractRequirement("zigzag-unlock", [
       { disease: 0, sold: 2, quota: 3, completed: false },
     ])).toBe("Ship 1 more for Disease 1 contract (2/3)");
-    expect(patentContractRequirement("skew-unlock", [
+    expect(patentContractRequirement("zigzag-unlock", [
       { disease: 0, sold: 3, quota: 3, completed: true },
     ])).toBeNull();
-    expect(patentContractRequirement("dilute-unlock", []))
+    expect(patentContractRequirement("loop-unlock", []))
       .toBe("Disease 2 contract unavailable");
     expect(patentContractRequirement("reveal-aid", [])).toBeNull();
   });
@@ -87,9 +88,9 @@ describe("Technology availability", () => {
 
   it("groups nodes by what blocks them", () => {
     expect(patentGroup(node("bench-2"), [], null)).toBe("available");
-    expect(patentGroup(node("skew-unlock"), [], "Ship 3 more for Disease 1 contract (0/3)")).toBe("contract");
-    expect(patentGroup(node("dilute-unlock"), [], "Ship 3 more for Disease 2 contract (0/3)")).toBe("requires");
-    expect(patentGroup(node("dilute-unlock"), ["bench-2"], "Ship 3 more for Disease 2 contract (0/3)")).toBe("contract");
+    expect(patentGroup(node("zigzag-unlock"), [], "Ship 3 more for Disease 1 contract (0/3)")).toBe("contract");
+    expect(patentGroup(node("loop-unlock"), [], "Ship 3 more for Disease 2 contract (0/3)")).toBe("requires");
+    expect(patentGroup(node("loop-unlock"), ["bench-2"], "Ship 3 more for Disease 2 contract (0/3)")).toBe("contract");
     expect(patentGroup(node("bench-2"), ["bench-2"], null)).toBe("owned");
   });
 });

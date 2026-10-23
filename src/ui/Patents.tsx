@@ -40,11 +40,12 @@ function effectLabel(node: (typeof DEFAULT_PATENTS)[number]): string {
 const PATENT_TITLES: Readonly<Record<string, string>> = {
   "bench-2": "Wider factory floor",
   "reveal-aid": "Trail scanner",
-  "skew-unlock": "Zigzag still",
-  "dilute-unlock": "Loop vat",
+  "zigzag-unlock": "Zigzag still",
+  "loop-unlock": "Loop vat",
   "floor-depth": "Deeper factory floor",
   "field-survey": "Field survey optics",
-  "settle-unlock": "Settler path",
+  "straight-unlock": "Straight drive",
+  "crane-unlock": "Crane arm",
 };
 
 export function patentTitle(id: string): string {

@@ -49,9 +49,11 @@ export const nextUnitPrice = (basePrice: number, alreadySold: number): number =>
   return price;
 };
 
-/** Gross for a ★ (tier-2) cure: `floor(gross × 3 / 2)`. */
+/** Gross for a ★ (tier-2) cure: `gross + floor(gross / 2)` (no `gross × 3` overflow). */
 export function premiumGross(gross: number): number {
-  return Math.floor((gross * 3) / 2);
+  const premium = gross + Math.floor(gross / 2);
+  if (!Number.isSafeInteger(premium)) throw new Error("economy: ★ price exceeds safe-integer range");
+  return premium;
 }
 
 /** Cumulative units already sold for `disease` in this economy. */
@@ -88,7 +90,7 @@ function bumpSold(sold: readonly SoldCount[], disease: DiseaseId): SoldCount[] {
 
 /**
  * Sell one produced unit that cures `disease`.
- * revenue = nextUnitPrice(basePrice, soldSoFar(disease)), ×3/2 floored for a ★ cure;
+ * revenue = nextUnitPrice(basePrice, soldSoFar(disease)), + floor(half) for a ★ cure;
  * net     = revenue − productionCost − sideEffectPenalty;
  * econ    = { cash: cash + net, sold: sold with disease count + 1 }.
  */

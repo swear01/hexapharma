@@ -61,7 +61,7 @@ const options: GenOptions = {
   difficulty: { min: 4, max: 12 },
 };
 
-const push = DEFAULT_CATALOG.find((entry) => entry.typeId === "push")!;
+const push = DEFAULT_CATALOG.find((entry) => entry.typeId === "hook")!;
 const fastOptions: GenOptions = {
   ...options,
   nMaps: 1,
@@ -272,7 +272,7 @@ describe("open snapshot checkpoint storage", () => {
     const layout = compilePrototype(recipe, BASE_GAME_FACTORY_WIDTH, BASE_GAME_FACTORY_HEIGHT,
       recipe.steps.map((_, index) => ({ anchor: { q: 1 + index * 2, r: row }, footRot: 0 })));
     game = withProduction(game, recipe, layout);
-    game = applyGameIntent(game, { kind: "productionTicks", ticks: 49022 });
+    game = applyGameIntent(game, { kind: "productionTicks", ticks: 73522 });
     expect(game.inventory).toHaveLength(24500);
     expect(serializeGame(game).length).toBeGreaterThan(SLOT_CHECKPOINT_CHARACTER_LIMIT);
     const before = hashGame(game);

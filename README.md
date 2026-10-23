@@ -22,8 +22,8 @@ Market / Technology / Blueprints
 - Production Plan 免費且沒有時間，只是可選的設計空間。完成後可按 `Commission $N` 建到 Production；內部 state／intent 名稱暫仍使用 `pilot`。
 - 傳送帶依六邊的真實連線顯示端點、對向直線、60°／120°轉折與多向 junction，拖曳轉彎會逐格設定正確方向。
 - Blueprint v4 codec 能驗證、匯入、下載或刪除 `research-program` 文件，但目前 UI 不建立或套用 Research Blueprint，避免繞過付費試驗、揭霧與 outcome。可建立／套用的通用 `factory-layout` 能免費開到 Production Plan，或付費 Commission 到 Production；Library 使用 `hexapharma.blueprint-library.v4` 跨存檔保存。
-- 每種疾病都有出貨合約，quota 固定為 3；依序完成 Disease 1／2／3 的合約，才可分別取得 Skew／Dilute／Settle 的 machine patent。
-- [Save v12](docs/save.md) 是 plain JSON、完全開放且可由玩家編輯；僅保證同 content build 內正確，舊開發版存檔直接拒絕，不做 migration。
+- 每種疾病都有出貨合約，quota 固定為 3；依序完成 Disease 1／2／3 的合約，才可分別取得 Zigzag／Loop／Straight＋Crane 的 machine patent。
+- [Save v14](docs/save.md) 是 plain JSON、完全開放且可由玩家編輯；僅保證同 content build 內正確，舊開發版存檔直接拒絕，不做 migration。
 - 正常新局有 $1000，必須能從人工 Research 經付費建廠走到第一次出售。每種疾病的需求獨立並逐次按 `floor(19/20)` 衰減至 0；Market 優先出售乾淨、低成本且仍有利潤的實體產品。
 - Atlas 與 Factory 都是 pointy-top axial true hex：離散 cell 使用 `{q,r}`，六方向依序為 E／SE／SW／W／NW／NE，Factory footprint／ports 有六個 60° rotations。兩個場域仍保有獨立 payload 與 validator；dense arrays 一律以 `r * width + q` 索引。本版視覺採定向越野地圖語言：紙底墨印、ISOM 色語，路線紫只標玩家自己的線（研究實際路線、規劃虛線、選取、Plan overprint）；世界由 Pixi vector runtime 繪製，無 bitmap／manifest contract。
 

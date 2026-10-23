@@ -21,7 +21,7 @@ function fixture(): GameState {
   game = applyGameIntent(game, { kind: "buildProductionLayout", layout });
   game = applyGameIntent(game, { kind: "productionTicks", ticks: 400 });
   game = applyGameIntent(game, { kind: "sellProducts", disease: 0, productIds: game.inventory.slice(0, 3).map((product) => product.inventoryId) });
-  game = applyGameIntent(game, { kind: "unlockPatent", id: "skew-unlock" });
+  game = applyGameIntent(game, { kind: "unlockPatent", id: "zigzag-unlock" });
   return discover(game, 1);
 }
 

@@ -66,14 +66,14 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 7. （僅sim fixture，generator不再產生Portal）只以sensor揭露Portal一端時，只能看到未配對端點；不得顯示隱藏配對、方向、座標或preview jump。兩端都揭露後才顯示配對；經A後token到B，trail在jump處斷開，B不能反向觸發，也不能揭露A/B中間直線。
 8. 揭露Cure/SideEffect後，其feature與region邊界才出現。使用重疊fixture確認同一final cell可同時回報Cure與SideEffect，render不丟掉任一overlay。
 9. 對generated cure region確認constructed reference endpoint無SideEffect，且區內至少部分其他Cure cell同時污染；不能把整區都做成乾淨或把reference終點污染。★ 格乾淨。
-10. 生產一件終點在 ★ 的產品：Market Stock 顯示`★ pay ×1.5`，Next 顯示`★ price`，出售收入是 `floor(demand × 3 / 2)`。
+10. 生產一件終點在 ★ 的產品：Market Stock 顯示`★ pay ×1.5`，Next 顯示`★ price`，出售收入是 `demand + floor(demand / 2)`。
 
 ## 6. Mapgen diversity / solver balance
 
 1. 以相同完整GenOptions重建同seed兩次，逐欄位比較terrain、elevation、cureId、cureTier、sideEffectId、4種疾病、references、difficulty與basePrice，必須相等。`npx tsx tools/atlas-render.ts <seed> <dir>` 輸出完整揭露圖與霧下圖供目視比對。
 2. 掃多個seed，確認default 4 diseases的reference signatures／endpoints／regions不是固定重複。
 3. 對每個reference比較空白地圖endpoint與generated terrain上的actual endpoint；正常尺寸地圖必須看出terrain真正改變traversal，不得存在先保護的universal corridor。
-4. 確認default disease 0只使用initial catalog；後續tiers才可引入`skew`、`dilute`、`settle`。1–8疾病options合法，9種顯式拒絕。
+4. 確認default disease 0只使用initial catalog；後續tiers才可引入`zigzag`、`loop`、`straight`＋`crane`。1–8疾病options合法，9種顯式拒絕。
 5. 跑dev balance；solver minima以整個Cure region為goal，報告minimum steps／cost、reference quality、seed diversity與 ★ 在 12 台機器內是否可達。minimum depth ≤ 1是阻斷性失敗；reference gap只作後續數值調整FLAG。solver不得被production/runtime import，也不得在遊戲中顯示答案。
 
 ## 7. Production Plan
@@ -106,7 +106,7 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 
 ## 10. Market / finite demand
 
-1. 確認每個疾病base price恰為`12 + 4 × difficulty + 2 × referenceCost`，同seed重建相同。
+1. 確認每個 cure region 的價格恰為`60 + 2 × difficulty`、同seed重建相同，且每個疾病 hard 區最高價高於 easy 區最高價（`npm run balance` 的 region prices 段）。
 2. 對同疾病連續出售，Next依序為`floor(previous × 19 / 20)`直到0，沒有5%或$1永久floor；不同疾病Sold／Next互不影響。
 3. 準備同疾病的clean/tainted與不同production cost庫存；`Ship best`必須先side effects最少，再選cost最低，再用inventory ID穩定排序。
 4. 放入「排序較前但不賺錢」與「排序較後但仍賺錢」的產品；`Ship best`必須略過前者，`Ship profitable`只出售逐件計入demand後仍為正net的項目。略過項目不消耗demand，所有未選產品留在庫存，不得自動虧本。
@@ -114,7 +114,7 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 6. 無治療庫存時顯示`No curative stock.`；有庫存但都不賺錢時顯示`No profitable stock at next price.`，兩個Ship action都disabled。
 7. 單賣後可見status顯示`+1 Knowledge`且HUD Knowledge增加1；bulk顯示每件`+1 Knowledge`且總量相符。同一render內重複觸發已出售product時，第二個rejected intent不得寫入新的`Shipped`回饋。
 8. 新局contract chip先顯示Disease 1 `0 / 3`；只讓accepted sales推進。Disease 1售滿3件後active chip移到Disease 2，全部完成後顯示最後一份completed contract。
-9. Disease 1／2／3未滿quota時分別嘗試Skew／Dilute／Settle patent，必須被對應contract gate拒絕；滿3件後仍需一般cash、Knowledge與patent prerequisites。其他patent不得被shipping contract誤擋。
+9. Disease 1／2／3未滿quota時分別嘗試Zigzag／Loop／Straight（或Crane）patent，必須被對應contract gate拒絕；滿3件後仍需一般cash、Knowledge與patent prerequisites。其他patent不得被shipping contract誤擋。
 
 ## 11. Blueprint v4 / cross-save
 
@@ -127,13 +127,13 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 7. 按Delete先顯示entry名稱與cross-save永久刪除警告；Cancel保留card，Confirm才移除Library entry。
 8. 在新局載入含未解鎖machine的跨存檔Blueprint；錯誤要顯示玩家名稱與Technology指引，不得洩漏type ID或machine數字ID。
 
-## 12. Save v13 / recovery
+## 12. Save v14 / recovery
 
 1. Save後做Research trial、Production Plan edit、shipping contract progress、兩次paid Production edit與Production ticks，再Save建立同地圖的獨立快照 history。
 2. Load不同state時先顯示「覆蓋目前遊戲」確認；Cancel不變，Confirm後恢復Atlas/fog/lastTrial outcome、內部pilot layout、non-null Production layout/runtime/waste、inventory、economy/contracts與Technology。
 3. 核對兩次 paid build 的扣款都反映在 cash，快照保留最後 layout 與完整 runtime。直接修改合法 Cash／Knowledge 後仍可 Load，不要求收入 trace。
 4. Rewind先警告永久丟棄最新saved checkpoint並覆蓋current state；Cancel不變，Confirm才回前snapshot，reload後較舊history仍在；Blueprint Library不受影響。
-5. full／compact／slots都是version 13；獨立 checkpoint/history 外層version 2、內層head/history是Save v13，canonical key為`hexapharma.save.v13.checkpoint.${slot}`。Save v12 或更早版本、不同 content build 或 unknown schema顯式拒絕，不silent migrate、部分載入或覆寫舊blob／key。
+5. full／compact／slots都是version 14；獨立 checkpoint/history 外層version 2、內層head/history是Save v14，canonical key為`hexapharma.save.v14.checkpoint.${slot}`。Save v13 或更早版本、不同 content build 或 unknown schema顯式拒絕，不silent migrate、部分載入或覆寫舊blob／key。
 6. corrupt/partial/disagreeing blob 顯示錯誤；正常 Load 拒絕多餘欄位或非字串 head，但同版本、有界 envelope 中的有效快照仍可明確 Recover。錯誤版本、無法解析 JSON、超量輸入不 salvage。Recover 前不得自動刪除或覆寫 raw data；storage 讀取失敗顯示原始原因且不可覆寫復原。
 
 ## 13. Gate、residue與回報

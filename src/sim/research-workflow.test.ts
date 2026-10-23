@@ -56,6 +56,7 @@ function researchPlanningOnFog(mm: MultiMap, fog: readonly Uint8Array[]): MultiM
       const cell = Uint8Array.from(map.cell);
       const cureId = Int16Array.from(map.cureId);
       const cureTier = Uint8Array.from(map.cureTier);
+      const regionId = Uint16Array.from(map.regionId);
       const sideEffectId = Int32Array.from(map.sideEffectId);
       const portalTo = Int32Array.from(map.portalTo);
       for (let index = 0; index < cell.length; index++) {
@@ -64,10 +65,11 @@ function researchPlanningOnFog(mm: MultiMap, fog: readonly Uint8Array[]): MultiM
         cell[index] = CellKind.Empty;
         cureId[index] = -1;
         cureTier[index] = 0;
+        regionId[index] = 0;
         sideEffectId[index] = -1;
         portalTo[index] = -1;
       }
-      return { ...map, cell, cureId, cureTier, sideEffectId, portalTo };
+      return { ...map, cell, cureId, cureTier, regionId, sideEffectId, portalTo };
     }),
   };
 }
@@ -128,7 +130,7 @@ describe("Run-based Research trials", () => {
     const machine = DEFAULT_CATALOG[0]!;
     const partial: Machine = { ...machine, path: machine.path.slice(0, -1) };
     const turned: Machine = { ...machine, turn: machine.turn + 1 };
-    const locked = DEFAULT_CATALOG.find((entry) => entry.typeId === "settle")!;
+    const locked = DEFAULT_CATALOG.find((entry) => entry.typeId === "crane")!;
 
     expect(() => dispatch(poor, { kind: "runResearchTrial", program })).toThrow(/requires.*cash/i);
     expect(() => dispatch(poor, { kind: "runResearchTrial", program: { steps: [] } })).toThrow(/1\.\.256/);
@@ -195,8 +197,8 @@ describe("Run-based Research trials", () => {
     const plan = researchPlanningOnFog(mm, game.fog);
     const machines = DEFAULT_CATALOG.slice(0, 4);
     let differs = 0;
-    for (let code = 0; code < 4 ** 4; code++) {
-      const program = { steps: [0, 1, 2, 3].map((digit) => machines[Math.floor(code / 4 ** digit) % 4]!) };
+    for (let code = 0; code < 4 ** 5 && differs === 0; code++) {
+      const program = { steps: [0, 1, 2, 3, 4].map((digit) => machines[Math.floor(code / 4 ** digit) % 4]!) };
       const actual = dispatch(game, { kind: "runResearchTrial", program }).research.lastTrial!.outcome;
       expect(actual).toEqual(evaluate(mm, level.start, program));
       if (JSON.stringify(actual) !== JSON.stringify(evaluate(plan, level.start, program))) differs++;

@@ -69,9 +69,9 @@ describe("default Lab world options", () => {
   });
 
   it("translates technical intent details into player-facing errors", () => {
-    expect(playerFacingIntentError(new Error('game intent: machine "skew" is locked')))
+    expect(playerFacingIntentError(new Error('game intent: machine "zigzag" is locked')))
       .toBe("Zigzag still is locked. Unlock it in Technology.");
-    expect(playerFacingIntentError(new Error('game intent: machine "dilute" definition does not match catalog')))
+    expect(playerFacingIntentError(new Error('game intent: machine "loop" definition does not match catalog')))
       .toBe("Loop vat has incompatible layout data.");
     expect(playerFacingIntentError(new Error("game intent: machine 7 footprint overlaps another machine")))
       .toBe("Machine footprint overlaps another machine.");
@@ -131,6 +131,7 @@ describe("default Lab world options", () => {
       cell,
       cureId: new Int16Array(cells).fill(-1),
       cureTier: new Uint8Array(cells),
+      regionId: new Uint16Array(cells),
       sideEffectId: new Int32Array(cells).fill(-1),
       portalTo: new Int32Array(cells).fill(-1),
       elevation: new Int16Array(cells),
@@ -160,6 +161,7 @@ describe("default Lab world options", () => {
       cell,
       cureId: new Int16Array(cells).fill(-1),
       cureTier: new Uint8Array(cells),
+      regionId: new Uint16Array(cells),
       sideEffectId: new Int32Array(cells).fill(-1),
       portalTo,
       elevation: new Int16Array(cells),
@@ -206,6 +208,7 @@ describe("default Lab world options", () => {
       cell,
       cureId: new Int16Array(cells).fill(-1),
       cureTier: new Uint8Array(cells),
+      regionId: new Uint16Array(cells),
       sideEffectId: new Int32Array(cells).fill(-1),
       portalTo,
       elevation: new Int16Array(cells),
@@ -249,6 +252,7 @@ describe("default Lab world options", () => {
       cell,
       cureId,
       cureTier: Uint8Array.from(cell, (kind) => (kind === CellKind.Cure ? 1 : 0)),
+      regionId: Uint16Array.from(cell, (kind) => (kind === CellKind.Cure ? 1 : 0)),
       sideEffectId,
       portalTo,
       elevation: new Int16Array(cells),
@@ -278,8 +282,8 @@ describe("default Lab world options", () => {
   });
 
   it("quotes each complete stamp and the full shot before dispensing", () => {
-    const push = DEFAULT_CATALOG.find((entry) => entry.typeId === "push")!;
-    const shear = DEFAULT_CATALOG.find((entry) => entry.typeId === "shear")!;
+    const push = DEFAULT_CATALOG.find((entry) => entry.typeId === "hook")!;
+    const shear = DEFAULT_CATALOG.find((entry) => entry.typeId === "elbow")!;
 
     expect(researchProgramCost({ steps: [] })).toBe(0);
     expect(researchProgramCost({ steps: [push, shear, push] })).toBe(
@@ -294,6 +298,7 @@ describe("default Lab world options", () => {
       final: [{ q: 7, r: 4 }],
       cured: [0],
       premium: [],
+      regions: [1],
       sideEffects: [101, 102],
     })).toBe("Cure Disease 1 · 2 side effects");
     expect(researchOutcomeText({
@@ -301,6 +306,7 @@ describe("default Lab world options", () => {
       final: [{ q: 7, r: 4 }],
       cured: [],
       premium: [],
+      regions: [],
       sideEffects: [],
     })).toBe("No cure · No side effects");
   });
@@ -326,6 +332,7 @@ describe("default Lab world options", () => {
       cell,
       cureId: new Int16Array(cells).fill(-1),
       cureTier: new Uint8Array(cells),
+      regionId: new Uint16Array(cells),
       sideEffectId: new Int32Array(cells).fill(-1),
       portalTo: new Int32Array(cells).fill(-1),
       elevation: new Int16Array(cells),

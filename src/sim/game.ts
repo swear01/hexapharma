@@ -4,6 +4,7 @@ import type {
   FactoryTile,
   Dir,
   DiseaseId,
+  DiseaseSpec,
   DrugState,
   GameIntent as GameIntentContract,
   GameState,
@@ -109,6 +110,7 @@ function ownOutcome(outcome: Outcome): Outcome {
     final: ownCoords(outcome.final),
     cured: Object.freeze(outcome.cured.map(canonicalNumber)),
     premium: Object.freeze(outcome.premium.map(canonicalNumber)),
+    regions: Object.freeze(outcome.regions.map(canonicalNumber)),
     sideEffects: Object.freeze(outcome.sideEffects.map(canonicalNumber)),
   });
 }
@@ -376,10 +378,21 @@ export function activeShippingContract(game: GameState): ShippingContractProgres
 }
 
 export function requiredShippingContractForPatent(patentId: string): DiseaseId | null {
-  if (patentId === "skew-unlock") return 0;
-  if (patentId === "dilute-unlock") return 1;
-  if (patentId === "settle-unlock") return 2;
+  if (patentId === "zigzag-unlock") return 0;
+  if (patentId === "loop-unlock") return 1;
+  if (patentId === "straight-unlock" || patentId === "crane-unlock") return 2;
   return null;
+}
+
+/** Price of the `disease` cure region `outcome` ended on (before demand decay and the ★ premium). */
+export function cureRegionPrice(disease: DiseaseSpec, outcome: Outcome): number {
+  const index = outcome.cured.indexOf(disease.id);
+  const regionId = index < 0 ? undefined : outcome.regions[index];
+  const region = disease.regions.find((candidate) => candidate.id === regionId);
+  if (region === undefined) {
+    throw new Error(`game intent: product does not end on a priced disease ${disease.id} region`);
+  }
+  return region.price;
 }
 
 function requireAllowedMachine(game: Pick<GameState, "patents">, machine: Machine): MachineCatalogEntry {
@@ -803,7 +816,7 @@ function sellPhysicalProducts(
     economy = sellUnit(
       economy,
       diseaseId,
-      disease.basePrice,
+      cureRegionPrice(disease, product.outcome),
       product.productionCost,
       penalty,
       product.outcome.premium.includes(diseaseId),

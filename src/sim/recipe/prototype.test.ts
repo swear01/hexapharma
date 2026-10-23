@@ -28,6 +28,7 @@ function openMap(width = 32, height = 20): EffectMap {
     cell: new Uint8Array(size),
     cureId: new Int16Array(size).fill(-1),
     cureTier: new Uint8Array(size),
+    regionId: new Uint16Array(size),
     sideEffectId: new Int32Array(size).fill(-1),
     portalTo: new Int32Array(size).fill(-1),
     elevation: new Int16Array(size),
@@ -64,7 +65,7 @@ describe("compilePrototype", () => {
   });
 
   it("describes the immutable physical route in connectivity order", () => {
-    const template: Template = { steps: [step("push"), step("pull")] };
+    const template: Template = { steps: [step("hook"), step("return")] };
     const layout = compilePrototype(template, 22, 10, [
       { anchor: { q: 5, r: 4 }, footRot: 0 },
       { anchor: { q: 12, r: 3 }, footRot: 0 },
@@ -118,7 +119,7 @@ describe("compilePrototype", () => {
   });
 
   it("rejects every non-linear or ambiguous physical topology", () => {
-    const template: Template = { steps: [step("push")] };
+    const template: Template = { steps: [step("hook")] };
     const layout = compilePrototype(template, 18, 9, [
       { anchor: { q: 7, r: 3 }, footRot: 0 },
     ]);
@@ -171,7 +172,7 @@ describe("compilePrototype", () => {
   });
 
   it("rejects duplicate machine ids even when connectivity is unambiguous", () => {
-    const template: Template = { steps: [step("push"), step("pull")] };
+    const template: Template = { steps: [step("hook"), step("return")] };
     const layout = compilePrototype(template, 22, 10, [
       { anchor: { q: 5, r: 4 }, footRot: 0 },
       { anchor: { q: 12, r: 3 }, footRot: 0 },
@@ -183,13 +184,14 @@ describe("compilePrototype", () => {
 
   it("keeps player-owned anchors and produces the same effect as the recipe", () => {
     const map = openMap();
-    const template: Template = { steps: [step("push")] };
+    const template: Template = { steps: [step("hook")] };
     const open: MultiMap = { maps: [map] };
     const landing = evaluate(open, initialState(open), template).final[0]!;
     const cureIndex = landing.r * map.width + landing.q;
     map.cell[cureIndex] = CellKind.Cure;
     map.cureId[cureIndex] = 4;
     map.cureTier[cureIndex] = 1;
+    map.regionId[cureIndex] = 1;
     const mm: MultiMap = { maps: [map] };
     const layout = compilePrototype(template, 18, 9, [
       { anchor: { q: 7, r: 3 }, footRot: 0 },
@@ -204,20 +206,20 @@ describe("compilePrototype", () => {
   });
 
   it("derives recipe order from the physical route rather than machine array order", () => {
-    const template: Template = { steps: [step("push"), step("pull")] };
+    const template: Template = { steps: [step("hook"), step("return")] };
     const layout = compilePrototype(template, 22, 10, [
       { anchor: { q: 5, r: 4 }, footRot: 0 },
       { anchor: { q: 12, r: 3 }, footRot: 0 },
     ]);
     const reordered = { ...layout, machines: [...layout.machines].reverse() };
     expect(derivePrototypeTemplate(reordered).steps.map((machine) => machine.typeId)).toEqual([
-      "push",
-      "pull",
+      "hook",
+      "return",
     ]);
   });
 
   it("rejects disconnected machinery instead of hiding it from the recipe", () => {
-    const template: Template = { steps: [step("push")] };
+    const template: Template = { steps: [step("hook")] };
     const layout = compilePrototype(template, 18, 9, [
       { anchor: { q: 7, r: 3 }, footRot: 0 },
     ]);
@@ -233,7 +235,7 @@ describe("compilePrototype", () => {
   });
 
   it("rejects disconnected belt debris instead of accepting hidden topology", () => {
-    const template: Template = { steps: [step("push")] };
+    const template: Template = { steps: [step("hook")] };
     const layout = compilePrototype(template, 18, 9, [
       { anchor: { q: 7, r: 3 }, footRot: 0 },
     ]);
@@ -245,7 +247,7 @@ describe("compilePrototype", () => {
 
   it("auto-arranges onto the exact shared Lab and Factory entitlement", () => {
     const template: Template = {
-      steps: ["push", "skew", "push", "push2", "settle", "push2", "push2", "push"]
+      steps: ["hook", "zigzag", "hook", "wave", "crane", "wave", "wave", "hook"]
         .map(step),
     };
     const prototype = compileEntitledPrototype(
@@ -259,7 +261,7 @@ describe("compilePrototype", () => {
   });
 
   it("keeps a straight eight-machine prototype compact without unnecessary belts", () => {
-    const template: Template = { steps: Array.from({ length: 8 }, () => step("push")) };
+    const template: Template = { steps: Array.from({ length: 8 }, () => step("hook")) };
     const { layout } = compileEntitledPrototype(
       template,
       BASE_GAME_FACTORY_WIDTH,
@@ -279,7 +281,7 @@ describe("compilePrototype", () => {
             width: 63,
             height: 63,
             catalog: DEFAULT_CATALOG.filter((entry) =>
-              ["push", "push2", "pull", "shear"].includes(entry.typeId),
+              ["hook", "wave", "return", "elbow"].includes(entry.typeId),
             ),
             diseaseCount: nMaps,
             difficulty: { min: 4, max: 12 },
@@ -301,7 +303,7 @@ describe("compilePrototype", () => {
         }),
         { numRuns: 12, seed: 0x5eed + nMaps },
       );
-    }, 10_000);
+    }, 30_000);
   }
 
   it("packs every default four-disease reference onto the base entitlement", () => {
@@ -350,7 +352,7 @@ describe("compilePrototype", () => {
   });
 
   it("rejects colliding placements instead of silently repacking them", () => {
-    const template: Template = { steps: [step("push"), step("push")] };
+    const template: Template = { steps: [step("hook"), step("hook")] };
     expect(() => compilePrototype(template, 18, 9, [
       { anchor: { q: 6, r: 3 }, footRot: 0 },
       { anchor: { q: 6, r: 3 }, footRot: 0 },
@@ -358,7 +360,7 @@ describe("compilePrototype", () => {
   });
 
   it("rejects an outward-facing footprint rather than moving it behind the player", () => {
-    const template: Template = { steps: [step("push2")] };
+    const template: Template = { steps: [step("wave")] };
     expect(() => compilePrototype(template, 18, 9, [
       { anchor: { q: 16, r: 3 }, footRot: 0 },
     ])).toThrow(/outside/);

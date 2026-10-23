@@ -1,5 +1,5 @@
 import type {
-  DifficultyToBasePriceFn,
+  CureRegionSpec,
   DiseaseId,
   DiseaseSpec,
   EffectMap,
@@ -10,6 +10,7 @@ import type {
   MachineCatalogEntry,
   MapIndex,
   MultiMap,
+  RegionPriceFn,
   Rng,
   Template,
   HexCoord,
@@ -20,6 +21,7 @@ import {
   initialState,
   PATH_OUT_STRIDE,
   walkPath,
+  walkValidatedPath,
   turnHeading,
   validateMachineTurn,
   walkValidatedPathInto,
@@ -46,6 +48,7 @@ import {
   placeHardRegions,
   type AtlasRegion,
   type BlackGroup,
+  type RegionKind,
 } from "./features";
 
 export {
@@ -66,6 +69,7 @@ export {
   VOID_DISTANCE,
   type AtlasRegion,
   type BlackGroup,
+  type RegionKind,
 } from "./features";
 
 export const MAX_MAP_CELLS = 65_536;
@@ -80,29 +84,35 @@ const CURE_FRONTIER_SALT = 0xcb30e825;
 const WALL_HUGGING_PENALTY = 400_000;
 const ZONE_PENALTY = 600_000;
 
-export const difficultyToBasePrice: DifficultyToBasePriceFn = (difficulty, refCost) => {
-  if (!Number.isSafeInteger(difficulty)) {
-    throw new Error("mapgen.difficultyToBasePrice: difficulty must be a safe integer");
+/**
+ * Catalog prefix each disease's references may use: the initial (early) machines for the first
+ * disease, then one more unlock tier per disease (mid, mid, late); later diseases use them all.
+ */
+export const DISEASE_CATALOG_TIERS: readonly number[] = Object.freeze([4, 5, 6, 8]);
+
+export function diseaseCatalogCount(disease: number, catalogLength: number): number {
+  const tier = DISEASE_CATALOG_TIERS[Math.min(disease, DISEASE_CATALOG_TIERS.length - 1)]!;
+  return Math.min(catalogLength, tier);
+}
+
+// Region pricing by reach difficulty (docs/design.md §1.8):
+//   difficulty = min(CAP, reachCost + PASS_WEIGHT × narrow passes + ABYSS_WEIGHT × Abyss beside route)
+//   price      = BASE + PER_DIFFICULTY × difficulty
+export const REGION_PASS_WEIGHT = 6;
+export const REGION_ABYSS_WEIGHT = 2;
+export const REGION_DIFFICULTY_CAP = 120;
+/** Bounded reach search: routes costing more than this are not explored (region is then capped). */
+export const REGION_REACH_COST_BOUND = 160;
+export const REGION_PRICE_BASE = 60;
+export const REGION_PRICE_PER_DIFFICULTY = 2;
+
+export const regionPrice: RegionPriceFn = (difficulty) => {
+  if (!Number.isSafeInteger(difficulty) || difficulty < 0 || difficulty > REGION_DIFFICULTY_CAP) {
+    throw new Error(`mapgen.regionPrice: difficulty must be an integer in 0..${REGION_DIFFICULTY_CAP}`);
   }
-  if (difficulty < 0) {
-    throw new Error("mapgen.difficultyToBasePrice: difficulty must be non-negative");
-  }
-  if (difficulty > MAX_GENERATION_DIFFICULTY) {
-    throw new Error(
-      `mapgen.difficultyToBasePrice: difficulty must not exceed ${MAX_GENERATION_DIFFICULTY}`,
-    );
-  }
-  if (!Number.isSafeInteger(refCost)) {
-    throw new Error("mapgen.difficultyToBasePrice: refCost must be a safe integer");
-  }
-  if (refCost < 0) {
-    throw new Error("mapgen.difficultyToBasePrice: refCost must be non-negative");
-  }
-  const basePrice = 12n + 4n * BigInt(difficulty) + 2n * BigInt(refCost);
-  if (basePrice > MAX_SAFE_PRICE) {
-    throw new Error("mapgen.difficultyToBasePrice: base price exceeds the safe-integer range");
-  }
-  return Number(basePrice);
+  const price = BigInt(REGION_PRICE_BASE) + BigInt(REGION_PRICE_PER_DIFFICULTY) * BigInt(difficulty);
+  if (price > MAX_SAFE_PRICE) throw new Error("mapgen.regionPrice: price exceeds the safe-integer range");
+  return Number(price);
 };
 
 interface ScratchMap {
@@ -113,6 +123,7 @@ interface ScratchMap {
   readonly cell: Uint8Array;
   readonly cureId: Int16Array;
   readonly cureTier: Uint8Array;
+  readonly regionId: Uint16Array;
   readonly sideEffectId: Int32Array;
   readonly portalTo: Int32Array;
   readonly elevation: Int16Array;
@@ -181,6 +192,7 @@ function makeScratch(width: number, height: number): ScratchMap {
     cell: new Uint8Array(length),
     cureId: new Int16Array(length).fill(-1),
     cureTier: new Uint8Array(length),
+    regionId: new Uint16Array(length),
     sideEffectId: new Int32Array(length).fill(-1),
     portalTo: new Int32Array(length).fill(-1),
     elevation: new Int16Array(length),
@@ -201,6 +213,7 @@ function freezeMap(map: ScratchMap): EffectMap {
     cell: map.cell,
     cureId: map.cureId,
     cureTier: map.cureTier,
+    regionId: map.regionId,
     sideEffectId: map.sideEffectId,
     portalTo: map.portalTo,
     elevation: map.elevation,
@@ -955,7 +968,7 @@ function constructDiseases(
     const mapIndex = disease % maps.length;
     const map = maps[mapIndex];
     if (map === undefined) continue;
-    const availableCount = disease === 0 ? Math.min(4, catalog.length) : Math.min(catalog.length, 4 + disease);
+    const availableCount = diseaseCatalogCount(disease, catalog.length);
     const availableCatalog = catalog.slice(0, availableCount);
     const forbiddenCures = new Set<number>();
     if (minDifficulty >= 2 && Math.min(map.width, map.height) >= 9) {
@@ -1199,7 +1212,10 @@ export interface AtlasMapDiagnostics {
 
 export interface GenerationDiagnostics {
   readonly maps: readonly AtlasMapDiagnostics[];
+  /** Region `i` has id `i + 1` (EffectMap.regionId). */
   readonly regions: readonly AtlasRegion[];
+  /** One entry per region, in the same order. */
+  readonly pricing: readonly RegionPricing[];
 }
 
 /** Per-map cells a reference enters (trail) and the cells it rests on between machines. */
@@ -1216,7 +1232,7 @@ function referenceFootprint(
     const offset: HexCoord[] = [];
     for (let mapIndex = 0; mapIndex < mm.maps.length; mapIndex++) {
       const map = mm.maps[mapIndex]!;
-      const walked = walkPath(map, drug.pos[mapIndex]!, machine, drug.heading, drug.offset[mapIndex]);
+      const walked = walkPath(map, drug.pos[mapIndex]!, machine, drug.heading, drug.offset[mapIndex]!);
       trail[mapIndex]![idx(map.width, drug.pos[mapIndex]!.q, drug.pos[mapIndex]!.r)] = 1;
       for (const cell of walked.entered) trail[mapIndex]![idx(map.width, cell.q, cell.r)] = 1;
       if (stepIndex + 1 < reference.steps.length) prefix[mapIndex]![idx(map.width, walked.pos.q, walked.pos.r)] = 1;
@@ -1240,6 +1256,247 @@ function oneStepEndpoints(terrain: MultiMap, catalog: readonly MachineCatalogEnt
     }
   }
   return excluded;
+}
+
+/**
+ * Region `i` of `regions` has id `i + 1`; stamp ids on the cells of the regions placed since `from`
+ * (right after placing them, so every intermediate map stays valid).
+ */
+function assignRegionIds(maps: readonly ScratchMap[], regions: readonly AtlasRegion[], from: number): void {
+  if (regions.length > 0xffff) throw new Error("mapgen invariant violation: too many cure regions");
+  for (let index = from; index < regions.length; index++) {
+    const region = regions[index]!;
+    const map = maps[region.map]!;
+    for (const cell of region.cells) {
+      if (map.cell[cell] !== CellKind.Cure || map.cureId[cell] !== region.disease || map.regionId[cell] !== 0) {
+        throw new Error(`mapgen invariant violation: region ${index + 1} cell ${cell} is not its own Cure`);
+      }
+      map.regionId[cell] = index + 1;
+    }
+  }
+}
+
+function requireRegionIds(maps: readonly ScratchMap[]): void {
+  for (const map of maps) {
+    for (let cell = 0; cell < map.cell.length; cell++) {
+      if (map.cell[cell] === CellKind.Cure && map.regionId[cell] === 0) {
+        throw new Error(`mapgen invariant violation: Cure cell ${cell} belongs to no region`);
+      }
+    }
+  }
+}
+
+export interface RegionPricing {
+  readonly id: number;
+  readonly map: number;
+  readonly disease: number;
+  readonly kind: RegionKind;
+  /** Cheapest Σ machine cost landing on the region with the disease's catalog tier, or null. */
+  readonly reachCost: number | null;
+  /** Narrow pass cores the cheapest route enters. */
+  readonly passes: number;
+  /** Distinct Abyss cells beside the cheapest route. */
+  readonly abyss: number;
+  readonly difficulty: number;
+  readonly price: number;
+  readonly capped: boolean;
+}
+
+/**
+ * Cheapest-cost search (bucketed Dijkstra, generation-time only) over (cell, swamp offset, heading)
+ * from the start on one map, with costs bounded by REGION_REACH_COST_BOUND. `target` numbers each
+ * priced region's cells 1..`targets`; the search stops after the cost bucket that reaches the last
+ * of them, so every region's cheapest states are settled. Like the pass verifier it uses the real traversal;
+ * it is not the solver and its routes never reach the runtime.
+ */
+function cheapestRoutes(
+  map: EffectMap,
+  machines: readonly Machine[],
+  costs: readonly number[],
+  transitions: (Int32Array | undefined)[],
+  target: Int32Array,
+  targets: number,
+): { readonly dist: Int32Array; readonly parent: Int32Array; readonly via: Int8Array } {
+  const stateCount = map.width * map.height * 42;
+  const dist = new Int32Array(stateCount).fill(-1);
+  const parent = new Int32Array(stateCount).fill(-1);
+  const via = new Int8Array(stateCount).fill(-1);
+  const out = new Int32Array(PATH_OUT_STRIDE);
+  for (let machineIndex = 0; machineIndex < machines.length; machineIndex++) {
+    transitions[machineIndex] ??= new Int32Array(stateCount).fill(-2);
+  }
+  let remaining = targets;
+  const settled = new Uint8Array(targets + 1);
+  const buckets: number[][] = Array.from({ length: REGION_REACH_COST_BOUND + 1 }, () => []);
+  const root = idx(map.width, map.start.q, map.start.r) * 42;
+  dist[root] = 0;
+  buckets[0]!.push(root);
+  for (let cost = 0; cost <= REGION_REACH_COST_BOUND && remaining > 0; cost++) {
+    const bucket = buckets[cost]!;
+    for (let index = 0; index < bucket.length; index++) {
+      const state = bucket[index]!;
+      if (dist[state] !== cost) continue;
+      const cell = Math.floor(state / 42);
+      const region = target[cell]!;
+      if (region > 0 && settled[region] === 0) {
+        settled[region] = 1;
+        remaining--;
+      }
+      for (let machineIndex = 0; machineIndex < machines.length; machineIndex++) {
+        const table = transitions[machineIndex]!;
+        let reached = table[state]!;
+        if (reached === -2) {
+          const heading = state % 6;
+          const slot = Math.floor(state / 6) % 7;
+          const q = cell % map.width;
+          const machine = machines[machineIndex]!;
+          walkValidatedPathInto(
+            map,
+            q,
+            (cell - q) / map.width,
+            slot === 0 ? 0 : HEX_DQ[slot - 1]!,
+            slot === 0 ? 0 : HEX_DR[slot - 1]!,
+            heading,
+            machine,
+            out,
+            0,
+          );
+          reached = -1;
+          if (out[4] !== 1) {
+            let nslot = 0;
+            for (let dir = 0; dir < 6; dir++) {
+              if (HEX_DQ[dir] === out[2] && HEX_DR[dir] === out[3]) nslot = dir + 1;
+            }
+            reached = (idx(map.width, out[0]!, out[1]!) * 7 + nslot) * 6 + turnHeading(heading, machine.turn);
+          }
+          table[state] = reached;
+        }
+        const total = cost + costs[machineIndex]!;
+        if (reached < 0 || total > REGION_REACH_COST_BOUND) continue;
+        if (dist[reached] !== -1 && dist[reached]! <= total) continue;
+        dist[reached] = total;
+        parent[reached] = state;
+        via[reached] = machineIndex;
+        buckets[total]!.push(reached);
+      }
+    }
+  }
+  return { dist, parent, via };
+}
+
+/** Price every region by how hard its disease's catalog tier makes it to reach (docs/design.md §1.8). */
+function priceRegions(
+  mm: MultiMap,
+  start: ReturnType<typeof initialState>,
+  catalog: readonly MachineCatalogEntry[],
+  regions: readonly AtlasRegion[],
+  passes: readonly (readonly PassInfo[])[],
+): RegionPricing[] {
+  const machines = catalog.map(ownMachine);
+  const costs = catalog.map((entry) => entry.cost);
+  const transitions = mm.maps.map((): (Int32Array | undefined)[] => []);
+  const searches = new Map<string, ReturnType<typeof cheapestRoutes>>();
+  return regions.map((region, index) => {
+    const map = mm.maps[region.map]!;
+    const count = diseaseCatalogCount(region.disease, catalog.length);
+    const key = `${region.map}:${count}`;
+    let search = searches.get(key);
+    if (search === undefined) {
+      // One search per (map, catalog tier), targeting every region that tier prices.
+      const target = new Int32Array(map.cell.length);
+      let targets = 0;
+      for (const other of regions) {
+        if (other.map !== region.map || diseaseCatalogCount(other.disease, catalog.length) !== count) continue;
+        targets++;
+        for (const cell of other.cells) target[cell] = targets;
+      }
+      search = cheapestRoutes(map, machines.slice(0, count), costs.slice(0, count), transitions[region.map]!, target, targets);
+      searches.set(key, search);
+    }
+    let best = -1;
+    for (const cell of region.cells) {
+      for (let variant = 0; variant < 42; variant++) {
+        const state = cell * 42 + variant;
+        const cost = search.dist[state]!;
+        if (cost < 0) continue;
+        if (best < 0 || cost < search.dist[best]! || (cost === search.dist[best]! && state < best)) best = state;
+      }
+    }
+    let reachCost: number | null = null;
+    let passCount = 0;
+    let abyss = 0;
+    let difficulty = REGION_DIFFICULTY_CAP;
+    if (best >= 0) {
+      reachCost = search.dist[best]!;
+      const route: Machine[] = [];
+      for (let state = best; search.parent[state]! >= 0; state = search.parent[state]!) {
+        route.push(machines[search.via[state]!]!);
+      }
+      route.reverse();
+      const entered = new Uint8Array(map.cell.length);
+      let pos = start.pos[region.map]!;
+      let offset = start.offset[region.map]!;
+      let heading = start.heading;
+      entered[idx(map.width, pos.q, pos.r)] = 1;
+      for (const machine of route) {
+        const walked = walkValidatedPath(map, pos, machine, heading, offset);
+        for (const cell of walked.entered) entered[idx(map.width, cell.q, cell.r)] = 1;
+        pos = walked.pos;
+        offset = walked.offset;
+        heading = turnHeading(heading, machine.turn);
+      }
+      for (const pass of passes[region.map] ?? []) {
+        if (pass.narrow.some((cell) => entered[cell] === 1)) passCount++;
+      }
+      const beside = new Uint8Array(map.cell.length);
+      for (let cell = 0; cell < map.cell.length; cell++) {
+        if (entered[cell] === 0) continue;
+        const q = cell % map.width;
+        const r = (cell - q) / map.width;
+        for (let dir = 0; dir < 6; dir++) {
+          const nq = q + HEX_DQ[dir]!;
+          const nr = r + HEX_DR[dir]!;
+          if (nq < 0 || nr < 0 || nq >= map.width || nr >= map.height) continue;
+          const neighbor = idx(map.width, nq, nr);
+          if (map.cell[neighbor] === CellKind.Abyss && beside[neighbor] === 0) {
+            beside[neighbor] = 1;
+            abyss++;
+          }
+        }
+      }
+      difficulty = Math.min(
+        REGION_DIFFICULTY_CAP,
+        reachCost + REGION_PASS_WEIGHT * passCount + REGION_ABYSS_WEIGHT * abyss,
+      );
+    }
+    return {
+      id: index + 1,
+      map: region.map,
+      disease: region.disease,
+      kind: region.kind,
+      reachCost,
+      passes: passCount,
+      abyss,
+      difficulty,
+      price: regionPrice(difficulty),
+      capped: best < 0,
+    };
+  });
+}
+
+/** First disease whose priciest hard region does not out-price its priciest easy region, or null. */
+export function pricingOutOfOrder(pricing: readonly RegionPricing[]): number | null {
+  const easy = new Map<number, number>();
+  const hard = new Map<number, number>();
+  for (const region of pricing) {
+    const table = region.kind === "easy" ? easy : region.kind === "hard" ? hard : null;
+    if (table !== null) table.set(region.disease, Math.max(table.get(region.disease) ?? 0, region.price));
+  }
+  for (const [disease, easyMax] of [...easy].sort((left, right) => left[0] - right[0])) {
+    const hardMax = hard.get(disease);
+    if (hardMax !== undefined && hardMax <= easyMax) return disease;
+  }
+  return null;
 }
 
 export const MAX_TERRAIN_ATTEMPTS = 4;
@@ -1294,6 +1551,7 @@ function generateAttempt(opts: GenOptions, attempt: number): GenerationResult {
     regions.push(...hard);
     return hard;
   });
+  assignRegionIds(maps, regions, 0);
   const terrain = freezeMaps(maps);
   const built = constructDiseases(
     maps,
@@ -1305,6 +1563,7 @@ function generateAttempt(opts: GenOptions, attempt: number): GenerationResult {
     rng.u32(),
   );
   const nextSideEffect: number[] = [];
+  const easyFrom = regions.length;
   for (let mapIndex = 0; mapIndex < maps.length; mapIndex++) {
     nextSideEffect[mapIndex] = placeCureRegions(
       rng,
@@ -1315,6 +1574,7 @@ function generateAttempt(opts: GenOptions, attempt: number): GenerationResult {
       regions,
     );
   }
+  assignRegionIds(maps, regions, easyFrom);
   const trail = maps.map(() => new Uint8Array(area));
   const prefix = maps.map(() => new Uint8Array(area));
   const placed = freezeMaps(maps);
@@ -1334,17 +1594,27 @@ function generateAttempt(opts: GenOptions, attempt: number): GenerationResult {
       trail[mapIndex]!,
       initialMachines,
     );
+    const filledFrom = regions.length;
     regions.push(...features.fills);
+    assignRegionIds(maps, regions, filledFrom);
     black.push(features.groups);
-    contaminateRegions(
+    nextSideEffect[mapIndex] = contaminateRegions(
       map,
       regions.filter((region) => region.map === mapIndex),
       terrainSeeds[mapIndex]!,
       nextSideEffect[mapIndex]!,
     );
   }
+  requireRegionIds(maps);
   const mm = freezeMaps(maps);
   const start = initialState(mm);
+  const pricing = priceRegions(mm, start, opts.catalog, regions, terrainInfo.map((info) => info.passes));
+  // Placement must respect reach: a disease's hard (basin) region has to out-price its easy ones.
+  // Otherwise redraw like an unconstructible terrain; the last attempt keeps what it has.
+  const unordered = pricingOutOfOrder(pricing);
+  if (unordered !== null && attempt + 1 < MAX_TERRAIN_ATTEMPTS) {
+    throw new ConstructionError(`mapgen.generate: disease ${unordered} hard regions are not harder to reach than its easy region`);
+  }
   const diseases: DiseaseSpec[] = built.map((disease) => {
     const outcome = simulateReference(mm, start, disease.reference);
     const endpoint = outcome.final[disease.map];
@@ -1362,12 +1632,25 @@ function generateAttempt(opts: GenOptions, attempt: number): GenerationResult {
     ) {
       throw new Error(`mapgen invariant violation: disease ${disease.id} endpoint drifted`);
     }
+    const diseaseRegions: CureRegionSpec[] = [];
+    let basePrice = Number.MAX_SAFE_INTEGER;
+    for (const region of pricing) {
+      if (region.disease !== disease.id) continue;
+      diseaseRegions.push(Object.freeze({
+        id: region.id,
+        difficulty: region.difficulty,
+        price: region.price,
+        capped: region.capped,
+      }));
+      if (region.price < basePrice) basePrice = region.price;
+    }
     return {
       id: disease.id,
       map: disease.map,
       node: disease.node,
       difficulty: disease.difficulty,
-      basePrice: difficultyToBasePrice(disease.difficulty, disease.cost),
+      basePrice,
+      regions: Object.freeze(diseaseRegions),
       reference: disease.reference,
     };
   });
@@ -1382,6 +1665,7 @@ function generateAttempt(opts: GenOptions, attempt: number): GenerationResult {
         black: black[mapIndex]!,
       })),
       regions,
+      pricing,
     },
   };
 }
@@ -1405,7 +1689,12 @@ const generatedLevels = new Map<string, GeneratedLevel>();
 export function generateCached(opts: GenOptions): GeneratedLevel {
   const key = JSON.stringify(opts);
   const cached = generatedLevels.get(key);
-  if (cached !== undefined) return cached;
+  if (cached !== undefined) {
+    // Re-insert so eviction drops the least recently used level.
+    generatedLevels.delete(key);
+    generatedLevels.set(key, cached);
+    return cached;
+  }
   const level = generate(opts);
   generatedLevels.set(key, level);
   if (generatedLevels.size > GENERATED_LEVEL_CACHE_SIZE) {

@@ -165,10 +165,12 @@ async function syntheticRendererScreenshot(
     fog.fill(fogValue);
     const cureId = new Int16Array(length).fill(-1);
     const cureTier = new Uint8Array(length);
+    const regionId = new Uint16Array(length);
     const sideEffectId = new Int32Array(length).fill(-1);
     if (renderedKind === cureKind) {
       cureId[center] = 0;
       cureTier[center] = 1;
+      regionId[center] = 1;
     }
     if (renderedKind === sideEffectKind) sideEffectId[center] = 100;
     const portalTo = new Int32Array(length).fill(-1);
@@ -181,6 +183,7 @@ async function syntheticRendererScreenshot(
       cell,
       cureId,
       cureTier,
+      regionId,
       sideEffectId,
       portalTo,
       elevation: new Int16Array(length),

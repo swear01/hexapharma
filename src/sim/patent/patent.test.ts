@@ -186,13 +186,13 @@ describe("unlockPatent", () => {
     let state: PatentState = empty;
     let cash = 1000;
     let research = 100;
-    for (const id of ["reveal-aid", "bench-2", "skew-unlock"]) {
+    for (const id of ["reveal-aid", "bench-2", "zigzag-unlock"]) {
       const res = unlockPatent(DEFAULT_PATENTS, state, cash, research, id);
       state = res.patents;
       cash = res.cash;
       research = res.research;
     }
-    expect(state.unlocked).toEqual(["reveal-aid", "bench-2", "skew-unlock"]);
+    expect(state.unlocked).toEqual(["reveal-aid", "bench-2", "zigzag-unlock"]);
   });
 
   it("does not mutate the input state", () => {
@@ -235,11 +235,11 @@ describe("prereq chain (floor-depth requires bench-2)", () => {
 
 describe("determinism", () => {
   it("same inputs produce field-equal outputs", () => {
-    const a = unlockPatent(DEFAULT_PATENTS, empty, 500, 100, "skew-unlock");
-    const b = unlockPatent(DEFAULT_PATENTS, empty, 500, 100, "skew-unlock");
+    const a = unlockPatent(DEFAULT_PATENTS, empty, 500, 100, "zigzag-unlock");
+    const b = unlockPatent(DEFAULT_PATENTS, empty, 500, 100, "zigzag-unlock");
     expect(a).toEqual(b);
-    expect(canUnlock(DEFAULT_PATENTS, empty, 100, 100, "skew-unlock")).toBe(
-      canUnlock(DEFAULT_PATENTS, empty, 100, 100, "skew-unlock"),
+    expect(canUnlock(DEFAULT_PATENTS, empty, 100, 100, "zigzag-unlock")).toBe(
+      canUnlock(DEFAULT_PATENTS, empty, 100, 100, "zigzag-unlock"),
     );
   });
 });
@@ -256,13 +256,13 @@ describe("activeEffects", () => {
 
   it("aggregates all unlocked effects", () => {
     const state: PatentState = {
-      unlocked: ["bench-2", "reveal-aid", "skew-unlock", "dilute-unlock", "floor-depth", "field-survey"],
+      unlocked: ["bench-2", "reveal-aid", "zigzag-unlock", "loop-unlock", "floor-depth", "field-survey"],
     };
     const eff = activeEffects(DEFAULT_PATENTS, state);
     expect(eff.factoryDw).toBe(2);
     expect(eff.factoryDh).toBe(2);
     expect(eff.revealAid).toBe(7);
-    expect(eff.unlockedMachines).toEqual(["skew", "dilute"]);
+    expect(eff.unlockedMachines).toEqual(["zigzag", "loop"]);
   });
 
   it("unlockedMachines follow unlock order", () => {

@@ -1,13 +1,14 @@
 import type { MachineTypeId } from "../sim/phase0_interfaces";
 
 const MACHINE_NAMES: Readonly<Record<string, string>> = Object.freeze({
-  push: "Hook pump",
-  push2: "Wave reactor",
-  pull: "Return coil",
-  shear: "Elbow press",
-  skew: "Zigzag still",
-  dilute: "Loop vat",
-  settle: "Settling spiral",
+  hook: "Hook pump",
+  elbow: "Elbow press",
+  return: "Return coil",
+  wave: "Wave reactor",
+  zigzag: "Zigzag still",
+  loop: "Loop vat",
+  straight: "Straight drive",
+  crane: "Crane arm",
 });
 
 export function machineName(typeId: MachineTypeId): string {

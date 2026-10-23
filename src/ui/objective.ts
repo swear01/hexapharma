@@ -29,7 +29,8 @@ export interface ObjectiveInput {
 export function currentObjective(input: ObjectiveInput): Objective {
   for (const id of input.gatedPatents) {
     const disease = requiredShippingContractForPatent(id);
-    if (disease === null || input.unlockedPatents.includes(id)) continue;
+    // One owned machine patent per contract is enough to move on (Straight and Crane share one).
+    if (disease === null || input.unlockedPatents.some((owned) => requiredShippingContractForPatent(owned) === disease)) continue;
     if (input.contracts.find((contract) => contract.disease === disease)?.completed === true) {
       return { text: `Unlock ${patentTitle(id)}`, target: "technology", actionLabel: "Technology" };
     }

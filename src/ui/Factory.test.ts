@@ -43,7 +43,7 @@ describe("facility workspace initialization", () => {
 
   it("states machine speed and per-unit processing cost in its tooltip", () => {
     expect(machineTooltip(DEFAULT_CATALOG[0]!)).toBe(
-      "Hook pump · 2 ticks/unit · Processing $2/unit",
+      "Hook pump · 3 ticks/unit · Processing $3/unit",
     );
   });
 });
@@ -254,6 +254,7 @@ describe("facility sample visibility", () => {
       final: [{ q: 2, r: -1 }],
       cured: [7],
       premium: [],
+      regions: [1],
       sideEffects: [200, 201],
     })).toBe("Cure Disease 8 · 2 side effects");
 
@@ -262,6 +263,7 @@ describe("facility sample visibility", () => {
       final: [{ q: 4, r: 3 }],
       cured: [],
       premium: [],
+      regions: [],
       sideEffects: [202],
     })).toBe("No cure · 1 side effect");
   });
@@ -312,8 +314,8 @@ describe("factory framing and legend copy", () => {
   });
 
   it("explains a locked machine in player terms, naming its contract gate", () => {
-    expect(machineLockReason("skew")).toContain("Disease 1 contract");
-    expect(machineLockReason("skew")).toContain("Technology");
-    expect(machineLockReason("skew")).not.toContain("skew");
+    expect(machineLockReason("zigzag")).toContain("Disease 1 contract");
+    expect(machineLockReason("zigzag")).toContain("Technology");
+    expect(machineLockReason("zigzag")).not.toContain("zigzag");
   });
 });

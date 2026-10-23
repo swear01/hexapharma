@@ -70,6 +70,7 @@ export function researchPlanningMap(
       const cell = Uint8Array.from(map.cell);
       const cureId = Int16Array.from(map.cureId);
       const cureTier = Uint8Array.from(map.cureTier);
+      const regionId = Uint16Array.from(map.regionId);
       const sideEffectId = Int32Array.from(map.sideEffectId);
       const portalTo = Int32Array.from(map.portalTo);
       for (let index = 0; index < cell.length; index++) {
@@ -78,6 +79,7 @@ export function researchPlanningMap(
           cell[index] = CellKind.Empty;
           cureId[index] = -1;
           cureTier[index] = 0;
+          regionId[index] = 0;
           sideEffectId[index] = -1;
           portalTo[index] = -1;
         }
@@ -95,7 +97,7 @@ export function researchPlanningMap(
           portalTo[index] = -1;
         }
       }
-      return { ...map, cell, cureId, cureTier, sideEffectId, portalTo, fog: known };
+      return { ...map, cell, cureId, cureTier, regionId, sideEffectId, portalTo, fog: known };
     }),
   };
 }
@@ -465,7 +467,7 @@ export function Game() {
       const spec = level.diseases.find((candidate) => candidate.id === disease);
       if (spec === undefined) return 0;
       const sold = game.economy.sold.find((entry) => entry.disease === disease)?.count ?? 0;
-      return profitableMarketProducts(game.inventory, disease, spec.basePrice, sold).length;
+      return profitableMarketProducts(game.inventory, spec, sold).length;
     },
     stockFor: (disease) => game.inventory.filter((product) => product.outcome.cured.includes(disease)).length,
     productionHasMachines: game.production.layout.machines.length > 0,

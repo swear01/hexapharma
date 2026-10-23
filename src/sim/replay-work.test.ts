@@ -46,7 +46,7 @@ describe("game replay work", () => {
   it("charges a Research trial by its per-step map validation and every walked path delta", () => {
     const mapCells = options.nMaps * options.width * options.height;
     const machine = DEFAULT_CATALOG[0]!;
-    const long = DEFAULT_CATALOG.find((entry) => entry.typeId === "settle")!;
+    const long = DEFAULT_CATALOG.find((entry) => entry.typeId === "crane")!;
     expect(estimateGameReplayWork(options, [
       { kind: "runResearchTrial", program: { steps: [machine] } },
       { kind: "runResearchTrial", program: { steps: [machine, machine, long] } },

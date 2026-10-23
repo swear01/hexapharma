@@ -29,7 +29,7 @@ HexaPharma 是「程序化藥效 Atlas + 實體工廠」的確定性單人遊戲
 - Atlas 是 49×49 dense arrays 上半徑 24 的六角形，外緣一圈薄山。vocabulary：山（wall）、水（swamp）、黑格（abyss，失敗）、治療區（tier 1 或 ★ tier 2）與副作用區；sim 仍支援同層 A→B portal，但 generator 不生成。全部受探索遮罩保護，霧下只畫等高線。
 - mapgen 先以 seed 建出整數 elevation 骨架（厚內環＋彎曲隘口、外弧、單入口盆地、湖），每條隘口以生成期 bounded BFS 驗證可通過；再在真實 terrain traversal 上 constructive 地建立不同疾病與 reference；不保護跨 seed 通用的安全走廊。每疾病有 easy 區與含 ★ 的 hard 區，空白處補小區，★ 周圍、窄道出口與平地散布黑格，全圖保持連通。
 - constructed endpoint 是乾淨 cure；同一 cure region 的部分其他格可同時有 SideEffect overlay。Cure 與 SideEffect 可在同一 final cell 同時成立。
-- 預設四個 reference 依 initial catalog、`skew`、`dilute`、`settle` 分 tier，第一個目標不用尚未解鎖的機器。疾病的 reference、endpoint、region、difficulty 與 price 必須有 seed／疾病差異。
+- 預設四個 reference 依 initial catalog、`zigzag`、`loop`、`straight`＋`crane` 分 tier，第一個目標不用尚未解鎖的機器。疾病的 reference、endpoint、region、difficulty 與 price 必須有 seed／疾病差異。
 - 同 seed + 完整設定仍逐欄位重現相同 terrain、疾病、effects 與 references。solver 只供 tests/tools 驗證整個 cure region 的 minimum steps／cost、seed diversity 與品質，不進遊戲內自動解。
 
 ## Factory
@@ -42,16 +42,16 @@ HexaPharma 是「程序化藥效 Atlas + 實體工廠」的確定性單人遊戲
 ## Bootstrap 與 Market
 
 - 正常新局 cash 是 $1000；fresh player 不靠注入資源、hidden reference 或 compiler，必須能完成 Research → 建廠 → first sale。
-- 疾病 base price 是 `12 + 4 × difficulty + 2 × referenceCost`。各疾病 demand 獨立；每次出售後 next gross 變成 `floor(previous × 19 / 20)`，直到 0。終點在 ★ 的產品 gross ×3/2（floor）。
+- 依到達難度的分區價格：每個 cure region `price = 60 + 2 × difficulty`，`difficulty = min(120, 最便宜路線成本 + 6 × 窄段 + 2 × 路線旁 Abyss)`（D38）；產品依終點所在區計價，`basePrice` 只是最便宜區價。各疾病 demand 獨立；每次出售後 next gross 變成 `floor(previous × 19 / 20)`，直到 0。終點在 ★ 的產品 gross 是 `demand + floor(demand / 2)`。
 - Cure 與 SideEffect 可重疊；Market 先選 side effects 較少、再選 production cost 較低的庫存，只單賣或批量出售仍有正 net 的產品。
-- 每疾病 shipping contract quota 為 3；首個未完成合約顯示在 HUD。Disease 1／2／3 合約分別 gate Skew／Dilute／Settle patents，其他成本與前置仍須滿足。
-- Settle unlock 為 $670；固定五-seed regression 與較廣代表樣本從 $1000 跑完整合法路線並保留 $100 assay retry／小改建預算。
+- 每疾病 shipping contract quota 為 3；首個未完成合約顯示在 HUD。Disease 1／2／3 合約分別 gate Zigzag／Loop／Straight＋Crane patents，其他成本與前置仍須滿足。
+- 機器 patents：Zigzag $100、Loop $180、Straight $340、Crane $300；固定五-seed regression 與較廣代表樣本從 $1000 跑完整合法路線並保留 $100 assay retry／小改建預算。
 
 ## Blueprint 與 Save
 
 - Blueprint v4 codec 識別只存 ordered `{typeId}` 的 `research-program`，但 UI 對它只提供import／download／delete，不提供capture／apply；`factory-layout` 存 routing 與 `{id,typeId,anchor,footRot}`，可正常建立與套用。Library envelope／namespace 是 v4／`hexapharma.blueprint-library.v4`。
 - Factory Blueprint 不綁來源場域，可免費開到 Production Plan，或付費 Commission 到 Production。Library 與 save slots 分離並跨存檔。
-- Save v13 保存 non-null Production layout/runtime、結算後 cash、Research `lastTrial`、drug heading／offset、帶 `premium` 的 outcome、內部 pilot、economy 與 fog；舊開發版（含 v12）顯式拒絕。
+- Save v14 保存 non-null Production layout/runtime、結算後 cash、Research `lastTrial`、drug heading／offset、帶 `premium`／`regions` 的 outcome、內部 pilot、economy 與 fog；舊開發版（含 v13）顯式拒絕。
 - 正式 release candidate 前不維護跨 build 相容。
 
 ## 技術界線

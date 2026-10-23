@@ -2,7 +2,7 @@
  * Balance invariants (design §5 difficulty→price, §8 anti-degeneracy).
  *
  * These tests validate the economy/mapgen balance, not any single module's
- * contract: difficulties stay in band, the normalized price contribution rises with difficulty, and
+ * contract: difficulties stay in band, region prices rise with reach difficulty, and
  * spamming one drug is never the optimal play (diminishing returns make a
  * diversified portfolio out-earn single-disease spam).
  *
@@ -11,7 +11,7 @@
 import { describe, it, expect } from "vitest";
 import fc from "fast-check";
 import { DEFAULT_CATALOG, type GenOptions, type EconomyState } from "../../src/sim/phase0_interfaces";
-import { generate, difficultyToBasePrice } from "../../src/sim/mapgen/index";
+import { generate, regionPrice, REGION_DIFFICULTY_CAP } from "../../src/sim/mapgen/index";
 import { nextUnitPrice, sellUnit } from "../../src/sim/economy/index";
 
 const BAND = { min: 2, max: 8 } as const;
@@ -66,49 +66,23 @@ describe("balance: generated-content diversity", () => {
   });
 });
 
-describe("balance: price rises with difficulty (§5, INV-12)", () => {
-  it("difficultyToBasePrice is monotonic non-decreasing in difficulty (property)", () => {
+describe("balance: price rises with reach difficulty (§1.8, INV-12)", () => {
+  it("regionPrice is monotonic non-decreasing in difficulty (property)", () => {
     fc.assert(
       fc.property(
-        fc.integer({ min: 0, max: 30 }),
-        fc.integer({ min: 0, max: 30 }),
-        fc.integer({ min: 0, max: 200 }),
-        (a, b, refCost) => {
-          const lo = Math.min(a, b);
-          const hi = Math.max(a, b);
-          return difficultyToBasePrice(hi, refCost) >= difficultyToBasePrice(lo, refCost);
-        },
+        fc.integer({ min: 0, max: REGION_DIFFICULTY_CAP }),
+        fc.integer({ min: 0, max: REGION_DIFFICULTY_CAP }),
+        (a, b) => regionPrice(Math.max(a, b)) >= regionPrice(Math.min(a, b)),
       ),
     );
   });
 
-  it("keeps the generated difficulty contribution monotonic after reference cost", () => {
-    const byDiff = new Map<number, number[]>();
+  it("prices every generated region from its own difficulty", () => {
     for (const { level } of sweep(SEEDS)) {
       for (const d of level.diseases) {
-        const referenceCost = d.reference.steps.reduce((total, step) => {
-          const entry = DEFAULT_CATALOG.find((candidate) => candidate.typeId === step.typeId);
-          if (entry === undefined) throw new Error(`missing generated machine ${step.typeId}`);
-          return total + entry.cost;
-        }, 0);
-        expect(d.basePrice).toBe(difficultyToBasePrice(d.difficulty, referenceCost));
-        const arr = byDiff.get(d.difficulty) ?? [];
-        arr.push(d.basePrice - referenceCost * 2);
-        byDiff.set(d.difficulty, arr);
+        for (const region of d.regions) expect(region.price).toBe(regionPrice(region.difficulty));
+        expect(d.basePrice).toBe(Math.min(...d.regions.map((region) => region.price)));
       }
-    }
-    const median = (xs: number[]): number => {
-      const s = [...xs].sort((a, b) => a - b);
-      const m = Math.floor(s.length / 2);
-      return s.length % 2 === 1 ? s[m]! : (s[m - 1]! + s[m]!) / 2;
-    };
-    const diffs = [...byDiff.keys()].sort((a, b) => a - b);
-    expect(diffs.length).toBeGreaterThanOrEqual(2);
-    let prev = -Infinity;
-    for (const d of diffs) {
-      const med = median(byDiff.get(d)!);
-      expect(med).toBeGreaterThanOrEqual(prev);
-      prev = med;
     }
   });
 });

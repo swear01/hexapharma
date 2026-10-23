@@ -9,7 +9,7 @@
 | `.github/workflows/pages.yml` | main 上 `check` 成功後，以相對 base build 並部署 GitHub Pages（custom domain `hexapharma.5334601.xyz`）。 |
 | `vitest.config.ts`、`test/vitest.setup.ts` | Node test runner 與最小 browser-global setup，讓 Pixi renderer 純函式在 CI Node 20 可載入。 |
 | `docs/` | canonical design、invariants、player guide、plan 與 playtest。 |
-| `src/json-guards.ts` | 共用 JSON object guard；Save v13 與 checkpoint slot envelope 共用。 |
+| `src/json-guards.ts` | 共用 JSON object guard；Save v14 與 checkpoint slot envelope 共用。 |
 | `src/sim/hex.ts` | pointy-top axial `{q,r}`、E／SE／SW／W／NW／NE、六鄰接、60° rotation與`r * width + q`索引 authority。 |
 | `src/sim/phase0_interfaces.ts` | 完整 `PathStamp` machine、terrain/portal、三場域 state、non-null Production、Game intents。 |
 | `src/sim/drug-graph/` | strict EffectMap（含 cureTier／elevation）／DrugState validation、heading-relative fixed path traversal與turn、Swamp半格（doubled coordinates）、single-layer terrain/portal、preview/execution authority、`outcomeOf`（cured／★ premium／side effects）。 |
@@ -23,7 +23,7 @@
 | `src/sim/game.ts` | Run-based Research trials（`runResearchTrial`／`lastTrial`）/fog、shipping contracts、free Production Plan（內部 pilot）、direct paid Production、products/economy/reset。 |
 | `src/sim/replay-work.ts` | Production 單次 batch 的 bounded work estimate；獨立 replay 的工作量估算。 |
 | `src/sim/economy/`, `patent/` | per-disease finite demand、quota-3 shipping contracts、machine patent gates與tiered單層Technology。 |
-| `src/sim/save/` | Save v13 full/compact/slots/rewind、plain cold snapshots、bounded strict parser、可執行狀態驗證與舊版本拒絕。 |
+| `src/sim/save/` | Save v14 full/compact/slots/rewind、plain cold snapshots、bounded strict parser、可執行狀態驗證與舊版本拒絕。 |
 | `src/blueprint/format.ts` | Blueprint v4 `research-program`／`factory-layout` schema、checksum/content/bounds/hex-geometry validators與materializers。 |
 | `src/blueprint/storage.ts` | v4 save-independent Library、`hexapharma.blueprint-library.v4` namespace、quota/dedupe/import/export/delete atomicity。 |
 | `src/render/hexProjection.ts` | Research／Factory共用pointy-top axial pixel projection；不擁有sim座標。 |
@@ -44,7 +44,7 @@
 | `src/ui/machineLabels.ts`, `effectLabels.ts` | 玩家可讀的machine／一基底disease／outcome文字；不暴露internal IDs或座標。 |
 | `src/ui/Shop.tsx` | clean/cheap stable product ranking、positive-net single/bulk shipping與finite-demand顯示。 |
 | `src/ui/BlueprintLibrary.tsx` | capture Production Plan／Production、open Factory in Production Plan或paid Commission、strict import/export；既有Research cards只可download/delete，不可capture/apply。 |
-| `src/ui/checkpointStorage.ts` | 獨立 checkpoint/history outer v2、inner Save v12 compact checkpoint、`hexapharma.save.v12.checkpoint.${slot}` key、rewind/recovery。 |
+| `src/ui/checkpointStorage.ts` | 獨立 checkpoint/history outer v2、inner Save v14 compact checkpoint、`hexapharma.save.v14.checkpoint.${slot}` key、rewind/recovery。 |
 | `test/integration/` | Research trial、mapgen diversity、fresh-start affordability、shipping gates、optional Production Plan、paid Production、finite Market/Technology loop。 |
 | `test/e2e/` | world UI、radius-two hex visibility、planned-route Research／paid trials、assay、touch/direct construction、Market/contracts、Blueprint、Save/New Game、modal freeze與responsive acceptance。 |
 | `tools/` | headless sim與whole-region solver minima／mapgen quality/balance sweeps；不進遊戲內自動解。 |

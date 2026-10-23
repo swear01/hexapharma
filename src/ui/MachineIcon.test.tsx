@@ -30,7 +30,7 @@ describe("MachineIcon", () => {
   });
 
   it("renders only the complete fixed path without a partial-path layer", () => {
-    const markup = render("push2");
+    const markup = render("wave");
     expect(markup.match(/<polyline/g)).toHaveLength(1);
     expect(markup).not.toContain('opacity="0.25"');
     expect(markup).not.toContain("rotate(");
@@ -58,8 +58,8 @@ describe("MachineIcon", () => {
   });
 
   it("uses accessible names only when titled", () => {
-    expect(render("push")).toContain('aria-hidden="true"');
-    const labelled = render("push", "Hook pump path");
+    expect(render("hook")).toContain('aria-hidden="true"');
+    const labelled = render("hook", "Hook pump path");
     expect(labelled).toContain('role="img"');
     expect(labelled).toContain('aria-label="Hook pump path"');
     expect(labelled).toContain("<title>Hook pump path</title>");

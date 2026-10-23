@@ -96,7 +96,7 @@ F1 只有一張大型單層 Atlas：
 - capture Production Plan或Production都產生通用`factory-layout`，以`{q,r}`保存routing與`{id,typeId,anchor,footRot}`，`footRot`為0–5。
 - Factory card提供`Open in Production Plan`與`Commission $N`；後者走正式Production construction cost。
 - floor dimensions與目前entitlement不符時card仍可讀，但目的地disabled並顯示`Build unavailable`；render不得throw。
-- 跨存檔 Blueprint若使用未解鎖或不相容machine，拒絕訊息必須使用玩家看到的machine名稱，不得顯示`skew`、`dilute`等內部type ID或machine數字ID。
+- 跨存檔 Blueprint若使用未解鎖或不相容machine，拒絕訊息必須使用玩家看到的machine名稱，不得顯示`zigzag`、`loop`等內部type ID或machine數字ID。
 - paste/upload/download/delete使用strict version/checksum/content/bounds validator；錯誤可見且import atomic。
 - delete先以可取消確認列出將永久移除的cross-save Library entry。
 - 舊文件顯示unsupported；不能猜成現行payload。
@@ -104,7 +104,7 @@ F1 只有一張大型單層 Atlas：
 ## 10. Other drawers / responsive acceptance
 
 - Market／Technology cards可用buttons，因它們是離散管理決策。Technology只摘要已取得且非零的Factory columns／rows、Research scan與machine數量；root node不顯示`Requires: None`，卡片也不以locked chip和disabled Unlock重複狀態。Market公開需求板每疾病顯示Base、Sold、Next gross、Clean stock與Tainted stock；最佳可售庫存另列production cost、`$25 × effect count`與net，但不表示Atlas Cure已揭露或提供位置。
-- Technology machine cards對Skew／Dilute／Settle分別顯示Disease 1／2／3 contract requirement；quota固定3。UI應使用sim導出的gate mapping與contract progress，不能複製另一份規則。
+- Technology machine cards對Zigzag／Loop／Straight與Crane分別顯示Disease 1／2／3／3 contract requirement；quota固定3。UI應使用sim導出的gate mapping與contract progress，不能複製另一份規則。
 - `Ship best`依side-effect count、production cost、inventory ID掃描第一個positive-net產品；`Ship profitable`用同一順序略過non-positive候選，只出售逐件計入demand後仍positive-net的產品。沒有治療庫存或沒有可賺產品時，兩個action disabled並各自顯示原因；只有authority接受出售後才可顯示`Shipped`與每件`+1 Knowledge`，rejected intent不得假報成功。
 - 探索輔助只能放大actual executed segment的sensor radius；Unlock本身不能揭霧。
 - 擴廠若清Production runtime／waste，Unlock前必須有可取消確認；不改 Research 的 lastTrial 或本地規劃。

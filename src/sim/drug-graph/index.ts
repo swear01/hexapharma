@@ -24,6 +24,7 @@ export {
   PATH_OUT_STRIDE,
   walkPath,
   walkPathInto,
+  walkValidatedPath,
   walkValidatedPathInto,
   type PathWalkResult,
 } from "./path";
@@ -155,11 +156,12 @@ export const applyTemplate: ApplyTemplateFn = (mm, start, template) => {
 /** Read a drug's resting cells into an Outcome (INV-4); `evaluate` = this after `applyTemplate`. */
 export function outcomeOf(mm: MultiMap, state: DrugState): Outcome {
   if (state.failed) {
-    return { failed: true, final: state.pos, cured: [], premium: [], sideEffects: [] };
+    return { failed: true, final: state.pos, cured: [], premium: [], regions: [], sideEffects: [] };
   }
 
   const cured: DiseaseId[] = [];
   const premium: DiseaseId[] = [];
+  const regions: number[] = [];
   const sideEffects: SideEffectId[] = [];
   for (let mapIndex = 0; mapIndex < mm.maps.length; mapIndex++) {
     const map = mm.maps[mapIndex];
@@ -173,6 +175,7 @@ export function outcomeOf(mm: MultiMap, state: DrugState): Outcome {
       const diseaseId = map.cureId[cellIndex];
       if (diseaseId !== undefined && diseaseId >= 0) {
         cured.push(diseaseId);
+        regions.push(map.regionId[cellIndex]!);
         if (map.cureTier[cellIndex] === 2) premium.push(diseaseId);
       }
     }
@@ -180,7 +183,7 @@ export function outcomeOf(mm: MultiMap, state: DrugState): Outcome {
     if (sideEffectId !== undefined && sideEffectId >= 0) sideEffects.push(sideEffectId);
   }
 
-  return { failed: false, final: state.pos, cured, premium, sideEffects };
+  return { failed: false, final: state.pos, cured, premium, regions, sideEffects };
 }
 
 export const evaluate: EvaluateFn = (mm, start, template) => outcomeOf(mm, applyTemplate(mm, start, template));

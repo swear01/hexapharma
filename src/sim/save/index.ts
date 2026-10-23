@@ -60,16 +60,16 @@ import { DEFAULT_CATALOG, DEFAULT_SHAPES } from "../phase0_interfaces";
 // blob field-by-field and rebuilding a structurally-equal GameState — never
 // defaulting silently on missing/wrong fields.
 
-export const SAVE_VERSION = 13;
+export const SAVE_VERSION = 14;
 export const SAVE_CONTENT_BUILD = fnv1a32Hex(canonical({
-  rules: 4,
+  rules: 5,
   catalog: DEFAULT_CATALOG,
   shapes: DEFAULT_SHAPES,
   patents: DEFAULT_PATENTS,
 }));
 export const MAX_SLOT_STATES = 20;
-// A full save of the 24,500-product warehouse is ~5.36M characters once drugs carry heading + offset.
-export const MAX_SAVE_CHARACTERS = 6_000_000;
+// A full save of the 24,500-product warehouse is ~6.03M characters once outcomes carry cure regions.
+export const MAX_SAVE_CHARACTERS = 7_000_000;
 
 export interface PreparedSnapshot {
   readonly game: GameState;
@@ -318,10 +318,11 @@ function parseDrugState(v: unknown, path: string, expectedMaps?: number): DrugSt
 }
 
 function parseOutcome(v: unknown, path: string, expectedMaps: number): Outcome {
-  const o = reqExactObject(v, path, ["failed", "final", "cured", "premium", "sideEffects"]);
+  const o = reqExactObject(v, path, ["failed", "final", "cured", "premium", "regions", "sideEffects"]);
   const final = reqArray(o.final, `${path}.final`);
   const cured = reqArray(o.cured, `${path}.cured`);
   const premium = reqArray(o.premium, `${path}.premium`);
+  const regions = reqArray(o.regions, `${path}.regions`);
   const sideEffects = reqArray(o.sideEffects, `${path}.sideEffects`);
   if (
     final.length !== expectedMaps ||
@@ -331,11 +332,17 @@ function parseOutcome(v: unknown, path: string, expectedMaps: number): Outcome {
   ) {
     throw new SaveError(`${path}: outcome collection exceeds map count`);
   }
+  if (regions.length !== cured.length) throw new SaveError(`${path}.regions must pair with cured`);
   return {
     failed: reqBool(o.failed, `${path}.failed`),
     final: final.map((p, i) => parseHexCoord(p, `${path}.final[${i}]`)),
     cured: cured.map((id, i) => reqInt(id, `${path}.cured[${i}]`)),
     premium: premium.map((id, i) => reqInt(id, `${path}.premium[${i}]`)),
+    regions: regions.map((id, i) => {
+      const region = reqInt(id, `${path}.regions[${i}]`);
+      if (region < 1 || region > 0xffff) throw new SaveError(`${path}.regions[${i}]: expected a region id in 1..65535`);
+      return region;
+    }),
     sideEffects: sideEffects.map((id, i) =>
       reqInt(id, `${path}.sideEffects[${i}]`),
     ),
