@@ -45,15 +45,14 @@ function productionCheckpoint(completeFirstContract = false): string {
 }
 
 function revealedOf(text: string | null): number {
-  const match = /revealed\s+(\d+)\s*\/\s*\d+/.exec(text ?? "");
-  if (match === null) throw new Error(`could not parse revealed-count from "${text}"`);
-  return Number(match[1]);
+  if (text === null) throw new Error("Research Atlas has no revealed count");
+  return Number(text);
 }
 
 test("reveal aid spends both resources and expands the next Research trial sensor", async ({ page }) => {
   await page.goto("/?cash=9999&research=9999");
-  const revealed = page.getByTestId("revealed-count");
-  const before = revealedOf(await revealed.textContent());
+  const revealed = page.getByTestId("lab-map-frame");
+  const before = revealedOf(await revealed.getAttribute("data-revealed"));
   await page.getByTestId("view-technology").click();
   await expect(page.getByTestId("patent-unlock-reveal-aid")).toBeEnabled();
   await page.getByTestId("patent-unlock-reveal-aid").click();
@@ -62,10 +61,10 @@ test("reveal aid spends both resources and expands the next Research trial senso
   await expect(page.getByTestId("cash")).toHaveText("9919");
   await expect(page.getByTestId("research")).toHaveText("9998");
   await page.getByTestId("view-research").click();
-  expect(revealedOf(await revealed.textContent())).toBe(before);
+  expect(revealedOf(await revealed.getAttribute("data-revealed"))).toBe(before);
   await page.getByTestId(`research-machine-${DEFAULT_CATALOG[0]!.typeId}`).click();
   await page.getByTestId("research-command").click();
-  await expect.poll(async () => revealedOf(await revealed.textContent())).toBeGreaterThan(before);
+  await expect.poll(async () => revealedOf(await revealed.getAttribute("data-revealed"))).toBeGreaterThan(before);
 });
 
 test("machine patents add the same fixed path to Research and Production Plan palettes", async ({ page }) => {

@@ -62,7 +62,7 @@ Atlas 是半徑 R 的六角形（R = ⌊(min(width,height)−1)/2⌋；正常新
   前期便宜但彆扭（每台都轉向或扭動；Wave 是唯一不轉的前期機器，但貴且長）；中期較靈活（Zigzag 強 +2 修正，Loop 精準一格但印環、容易碰副作用）；後期方便但貴（Straight 乾淨穿過 1 格窄段與沼澤，Crane 長距離加上和 Zigzag 對稱的 −2）。`machine-catalog.test.ts` 以與地圖無關的淨位移、path 長、turn、每格成本與解鎖期檢查：平均成本逐期不降、後期每步與每台位移最好、同期沒有機器同時在「位移／成本」與「轉向角較小」兩項都嚴格勝過另一台、path 長度都 > 2。前四台是 initial catalog。
 - **Portal A→B**：從入口立即到同圖的配對出口，剩餘 path 從 B 繼續。B 不可反向當入口；trail 必須在跳躍處斷開。
 
-Atlas 起點位於 generator 宣告的世界中心附近；新局只揭露以起點為中心、hex distance radius 2 的 19-cell disk。camera 開局聚焦起點，地圖只顯示 viewport 覆蓋的一小部分。一般 pan／zoom 不改 authority；contextual focus在有規劃路線時明示Next並移到規劃終點，否則移到最近試驗的實際終點。每次試驗在單一intent中resolve，UI不呈現timed Dose phase或自動camera follow（唯一例外：剛resolve出Cure的試驗把camera fit到實際路線，可被輸入中斷）；resolved outcome可保留，但建築重新啟用不能因stale outcome強制聚焦。Cure sites HUD只顯示已揭露位置的數量並可輪播已知Cure，不能讓玩家誤以為是已成功治療數，也不能以總數、disabled state、輪播順序或camera洩漏未知Cure。
+Atlas 起點位於 generator 宣告的世界中心附近；新局只揭露以起點為中心、hex distance radius 2 的 19-cell disk。camera 開局聚焦起點，地圖只顯示 viewport 覆蓋的一小部分。一般 pan／zoom 不改 authority；Center（`F`）在有規劃路線時移到規劃終點，否則移到最近試驗的實際終點。每次試驗在單一intent中resolve，UI不呈現timed Dose phase或自動camera follow（唯一例外：剛resolve出Cure的試驗把camera fit到實際路線，可被輸入中斷）；resolved outcome可保留，但建築重新啟用不能因stale outcome強制聚焦。HUD不顯示揭露格數或Cure計數。
 
 每次 assay 的 mission readout 只提供目標相對起點的寬廣sector：local，或east／south-east／south-west／west／north-west／north-east。它不公開目標座標、距離、reference path、region大小或霧下內容；sector是方向線索，不是導航答案。
 
@@ -78,7 +78,7 @@ Research 不使用 FactoryLayout、source／belt／sink、線性 route descripto
 - **規劃**：玩家在 UI 本地編排整條路線（hotbar／數字鍵接到末端；Backspace、Ctrl+Z 或點最後一個控制點回退；Clear 清空）。預覽（虛線）以 pure traversal 在 fog-masked planning map 上走完整條路線：未知格當平地，只保留 Wall 輪廓；不洩漏霧下內容。規劃不花錢、不改 authority。
 - **試驗**：`runResearchTrial { program }` 接受 1..`MAX_TEMPLATE_STEPS` 台目前 catalog／patents 允許且 path／turn 與 catalog 一致的 machine；`cost = Σ catalog cost`（safe-integer 檢查），cash < cost 時原子拒絕。authority 一次扣款，從關卡起點在**真實**地圖上跑完整條 program，以 radius 1（加 Technology 的 revealAid）揭露實際 trail 與終點，存 `research.lastTrial = {program, cost, outcome}`，可由 replay 重畫實際路線。失敗於 Abyss 時路線在該格中止。
 - 試驗不產生配方、不建立 formula、不自動建造；同一路線可重跑（每次都付費）。UI 保留規劃，讓玩家依新揭露的地圖修改。
-- 實際路線（實線）由 `lastTrial.program` 在真實地圖重播；兩者都以 pure traversal 計算，renderer 不自行近似、auto-route、修路或呼叫 solver。Swamp 半格以半格點繪製。
+- 實際路線（實線）由 `lastTrial.program` 在真實地圖重播。Run 當下的預估保留為淡虛線，直到玩家改動規劃；第一個偏離點以紅圈標在地圖上並標出原因（Wall／Swamp／Abyss，取該處真實地形，該處必在本次揭露範圍內）。兩者都以 pure traversal 計算，renderer 不自行近似、auto-route、修路或呼叫 solver。Swamp 半格以半格點繪製。
 - 結果同時顯示 cure 與已揭露的 side effects；不能只報 Cure 而隱藏同一終點的已知污染。Objective 在當前疾病任一 Cure 格已揭露前為「Find Disease N · look <sector>」，之後為「Plan a line to Disease N」（指向 Plan）。
 
 ## 1.4 程序地圖

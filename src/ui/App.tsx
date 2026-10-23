@@ -8,7 +8,7 @@ import type {
   Outcome,
   Vec2,
 } from "../sim/phase0_interfaces";
-import type { LabRenderer } from "../render/labRenderer";
+import type { LabRenderer, ResearchDeviation } from "../render/labRenderer";
 import { drugDrawPoint, type PixelPoint } from "../render/hexProjection";
 import {
   LAB_CELL_PIXELS,
@@ -156,17 +156,6 @@ export function researchFocusTarget(
   return { label: "Dose", position: researchDrugPoint(drug, mapIndex) };
 }
 
-export function researchKnownCureCount(
-  mm: MultiMap,
-  fog: readonly Uint8Array[],
-): number {
-  return researchKnownCureLocations(mm, fog).length;
-}
-
-export function researchKnownCureLabel(count: number): string {
-  return `Cure sites ${count}`;
-}
-
 export interface KnownCureLocation {
   readonly mapIndex: number;
   readonly cureId: number;
@@ -232,6 +221,9 @@ interface AppProps {
   /** Planned route on the known map (dashed). */
   readonly previewTrails?: readonly (readonly (Vec2 | null)[])[];
   readonly previewDrug?: DrugState;
+  /** The preview is the estimate the last Run was planned on (faint). */
+  readonly estimate?: boolean;
+  readonly deviation?: ResearchDeviation | null;
   /** Planned step endpoints: the numbered controls. */
   readonly controls: readonly Vec2[];
   readonly lastOutcome: Outcome | null;
@@ -248,6 +240,8 @@ export function App({
   trails,
   previewTrails,
   previewDrug,
+  estimate = false,
+  deviation = null,
   controls,
   lastOutcome,
   onWorldActivate,
@@ -276,10 +270,12 @@ export function App({
       camera,
       trail: trails[activeMap] ?? [],
       previewTrail: planned === undefined ? undefined : previewTrails?.[activeMap],
-      previewDrug: planned,
+      previewDrug: estimate ? undefined : planned,
+      estimate,
+      deviation: deviation ?? undefined,
       controls,
     }),
-    [activeMap, camera, controls, planned, previewTrails, trails],
+    [activeMap, camera, controls, deviation, estimate, planned, previewTrails, trails],
   );
   const renderMapRef = useRef(renderMap);
   renderMapRef.current = renderMap;
@@ -293,9 +289,6 @@ export function App({
     for (const cell of layer) count += cell;
     return count;
   }, 0), [fog]);
-  const total = useMemo(() => fog.reduce((sum, layer) => sum + layer.length, 0), [fog]);
-  const knownCures = useMemo(() => researchKnownCureLocations(mm, fog), [fog, mm]);
-  const cureFocusIndexRef = useRef(0);
   const focusTarget = researchFocusTarget(
     drug,
     planned,
@@ -433,25 +426,6 @@ export function App({
       return next;
     });
   }, [activeMap, cancelCameraEase, focusTarget.position, mm.maps]);
-
-  const focusKnownCure = useCallback(() => {
-    if (knownCures.length === 0) return;
-    cancelCameraEase();
-    const index = cureFocusIndexRef.current % knownCures.length;
-    const target = knownCures[index]!;
-    const map = mm.maps[target.mapIndex];
-    if (map === undefined) return;
-    cureFocusIndexRef.current = (index + 1) % knownCures.length;
-    setCameras((current) => {
-      const next = [...current];
-      next[target.mapIndex] = clampLabCamera(
-        focusLabCamera(target.pos),
-        visibleViewportRef.current,
-        map,
-      );
-      return next;
-    });
-  }, [cancelCameraEase, knownCures, mm.maps]);
 
   const panRef = useRef<{
     readonly pointerId: number;
@@ -592,6 +566,7 @@ export function App({
           data-camera-x={camera.x}
           data-camera-y={camera.y}
           data-camera-zoom={camera.zoom}
+          data-revealed={revealed}
           data-placement-target={endpointHovered}
           tabIndex={-1}
           title={endpointHovered ? "Remove last step" : "Drag map"}
@@ -619,20 +594,7 @@ export function App({
               <circle cx="8" cy="8" r="5" />
               <path d="M8 0v4M8 12v4M0 8h4M12 8h4" />
             </svg>
-            <span className="lab-focus-label">{focusTarget.label}</span><kbd>F</kbd>
-          </button>
-          <output data-testid="lab-zoom">{Math.round(camera.zoom * 100)}%</output>
-          <span data-testid="revealed-count">revealed {revealed}/{total}</span>
-          <button
-            type="button"
-            className="research-cure-count"
-            data-testid="research-cures"
-            disabled={knownCures.length === 0}
-            onClick={focusKnownCure}
-            aria-label="Focus next discovered Cure site"
-            title="Focus next discovered Cure site"
-          >
-            {researchKnownCureLabel(knownCures.length)}
+            <span className="lab-focus-label">Center</span><kbd>F</kbd>
           </button>
         </div>
       </section>

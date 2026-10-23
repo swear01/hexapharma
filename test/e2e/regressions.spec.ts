@@ -65,10 +65,11 @@ test("loading a finished Research trial preserves fog and its outcome without a 
   await page.goto("/");
   await installSaveFixture(page, completedResearchSave());
   await page.reload();
-  const revealedBefore = await page.getByTestId("revealed-count").textContent();
+  const frame = page.getByTestId("lab-map-frame");
+  const revealedBefore = await frame.getAttribute("data-revealed");
   await confirmLoad(page);
-  await expect(page.getByTestId("revealed-count")).not.toHaveText(revealedBefore ?? "");
-  await expect(page.getByTestId("research-program-count")).toHaveText("0 steps");
+  await expect(frame).not.toHaveAttribute("data-revealed", revealedBefore ?? "");
+  await expect(page.getByTestId("research-program-strip").getByRole("listitem")).toHaveCount(0);
   await expect(page.getByTestId("research-atlas-outcome")).toContainText("Cure Disease 1");
   await expect(page.getByTestId("research-command")).toHaveText("Run · $0");
   await expect(page.getByTestId("research-command")).toBeDisabled();
@@ -80,19 +81,19 @@ test("loading a finished Research trial preserves fog and its outcome without a 
 
 test("Research planning is free; only Run spends once and reveals", async ({ page }) => {
   await page.goto("/");
-  const revealed = page.getByTestId("revealed-count");
+  const revealed = page.getByTestId("lab-map-frame");
   const cash = page.getByTestId("cash");
-  const fogBefore = await revealed.textContent();
+  const fogBefore = await revealed.getAttribute("data-revealed");
   const cashBefore = await cash.textContent();
   await expect(page.getByTestId("lab-canvas")).toBeVisible({ timeout: 15_000 });
   await page.getByTestId("research-machine-hook").click();
   await page.getByTestId("research-machine-hook").click();
-  await expect(page.getByTestId("research-program-count")).toHaveText("2 steps");
-  await expect(revealed).toHaveText(fogBefore ?? "");
+  await expect(page.getByTestId("research-program-strip").getByRole("listitem")).toHaveCount(2);
+  await expect(revealed).toHaveAttribute("data-revealed", fogBefore ?? "");
   await expect(cash).toHaveText(cashBefore ?? "");
   await page.getByTestId("research-command").click();
-  await expect(page.getByTestId("research-program-count")).toHaveText("2 steps");
-  await expect(revealed).not.toHaveText(fogBefore ?? "");
+  await expect(page.getByTestId("research-program-strip").getByRole("listitem")).toHaveCount(2);
+  await expect(revealed).not.toHaveAttribute("data-revealed", fogBefore ?? "");
   await expect(cash).toHaveText(String(Number(cashBefore) - 6));
 });
 
@@ -103,11 +104,11 @@ test("clicking the last control removes it and Clear empties the plan without re
   await page.getByTestId("research-command").click();
   await expect(page.getByTestId("cash")).toHaveText("188");
   await clickLastControl(page, 4);
-  await expect(page.getByTestId("research-program-count")).toHaveText("3 steps");
+  await expect(page.getByTestId("research-program-strip").getByRole("listitem")).toHaveCount(3);
   await page.getByTestId("research-clear").click();
   await expect(page.getByTestId("cash")).toHaveText("188");
   await expect(page.getByTestId("research-command")).toBeDisabled();
-  await expect(page.getByTestId("research-program-count")).toHaveText("0 steps");
+  await expect(page.getByTestId("research-program-strip").getByRole("listitem")).toHaveCount(0);
 });
 
 test("an obsolete save namespace is ignored and preserved without migration", async ({ page }) => {

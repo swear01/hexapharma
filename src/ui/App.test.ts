@@ -11,8 +11,6 @@ import {
   researchFitCamera,
   researchTrialResolvedCure,
   researchFocusTarget,
-  researchKnownCureLabel,
-  researchKnownCureCount,
   researchKnownCureLocations,
   researchPointerMoved,
   researchPointerAction,
@@ -64,21 +62,6 @@ describe("Lab fog authority", () => {
     expect([...fog]).toEqual([0, 0, 0, 0, 1, 0, 0, 0, 0]);
   });
 
-  it("counts distinct Cure IDs only through authoritative revealed cells", () => {
-    const cureMap = map(3);
-    cureMap.cureId[0] = 2;
-    cureMap.cureId[1] = 2;
-    cureMap.cureId[2] = 3;
-    const fog = new Uint8Array(9);
-    fog[0] = 1;
-
-    expect(researchKnownCureCount({ maps: [cureMap] }, [fog])).toBe(1);
-    fog[1] = 1;
-    expect(researchKnownCureCount({ maps: [cureMap] }, [fog])).toBe(1);
-    fog[2] = 1;
-    expect(researchKnownCureCount({ maps: [cureMap] }, [fog])).toBe(2);
-  });
-
   it("returns one focus target per known Cure without leaking hidden regions", () => {
     const cureMap = map(3);
     cureMap.cureId[0] = 7;
@@ -93,12 +76,6 @@ describe("Lab fog authority", () => {
       { mapIndex: 0, cureId: 7, pos: { q: 1, r: 0 } },
       { mapIndex: 0, cureId: 4, pos: { q: 1, r: 2 } },
     ]);
-  });
-
-  it("labels only the revealed Cure count without exposing the hidden total", () => {
-    expect(researchKnownCureLabel(0)).toBe("Cure sites 0");
-    expect(researchKnownCureLabel(3)).toBe("Cure sites 3");
-    expect(researchKnownCureLabel(3)).not.toContain("/");
   });
 });
 

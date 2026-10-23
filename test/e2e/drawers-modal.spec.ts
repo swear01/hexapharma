@@ -99,14 +99,14 @@ test("Research hotkeys work only while the world is visible", async ({ page }) =
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("cash")).toHaveText(cash!);
   await page.keyboard.press("Escape");
-  await expect(page.getByTestId("research-program-count")).toHaveText("0 steps");
+  await expect(page.getByTestId("research-program-strip").getByRole("listitem")).toHaveCount(0);
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.getByTestId("lab-map-frame").click({ position: { x: 600, y: 80 } });
   await page.keyboard.press("2");
-  await expect(page.getByTestId("research-program-count")).toHaveText("1 step");
+  await expect(page.getByTestId("research-program-strip").getByRole("listitem")).toHaveCount(1);
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("cash")).not.toHaveText(cash!);
-  await expect(page.getByTestId("research-program-count")).toHaveText("1 step");
+  await expect(page.getByTestId("research-program-strip").getByRole("listitem")).toHaveCount(1);
 });
 
 for (const action of ["new", "load", "rewind", "reset", "unlock", "delete"] as const) {
