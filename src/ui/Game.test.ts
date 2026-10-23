@@ -4,6 +4,7 @@ import {
   parseNewGameSeed,
   playerFacingIntentError,
   researchAssaySector,
+  researchDeviation,
   researchKeyboardAction,
   researchPlanningMap,
   researchPlanningPreview,
@@ -346,5 +347,47 @@ describe("default Lab world options", () => {
     }] };
 
     expect(researchTrailsForProgram(mm, start, program, 1)[0]).toEqual([{ q: 2, r: 2 }]);
+  });
+});
+
+describe("researchDeviation", () => {
+  const width = 7;
+  const cells = width * width;
+  const atlas = (kind: CellKind): MultiMap => {
+    const cell = new Uint8Array(cells);
+    cell[3 * width + 5] = kind;
+    if (kind === CellKind.Swamp) cell[3 * width + 4] = kind;
+    return { maps: [{
+      width,
+      height: width,
+      origin: { q: 3, r: 3 },
+      start: { q: 3, r: 3 },
+      cell,
+      cureId: new Int16Array(cells).fill(-1),
+      cureTier: new Uint8Array(cells),
+      regionId: new Uint16Array(cells),
+      sideEffectId: new Int32Array(cells).fill(-1),
+      portalTo: new Int32Array(cells).fill(-1),
+      elevation: new Int16Array(cells),
+      fog: new Uint8Array(cells),
+    }] };
+  };
+  const program = { steps: [{ typeId: "east", path: [0, 0, 0] as const, turn: 0 }] };
+  const deviation = (kind: CellKind, fog = new Uint8Array(cells)) => {
+    const mm = atlas(kind);
+    return researchDeviation(mm, researchPlanningMap(mm, [fog]), startAt(3, 3), program);
+  };
+
+  it("marks the hidden terrain where the Run first left its estimate", () => {
+    expect(deviation(CellKind.Wall)).toEqual({ pos: { q: 5, r: 3 }, reason: "Wall" });
+    expect(deviation(CellKind.Abyss)).toEqual({ pos: { q: 5, r: 3 }, reason: "Abyss" });
+    expect(deviation(CellKind.Swamp)).toEqual({ pos: { q: 4, r: 3 }, reason: "Swamp" });
+  });
+
+  it("reports nothing when known terrain already shaped the estimate", () => {
+    const fog = new Uint8Array(cells);
+    fog[3 * width + 5] = 1;
+    expect(deviation(CellKind.Wall, fog)).toBeNull();
+    expect(deviation(CellKind.Empty)).toBeNull();
   });
 });

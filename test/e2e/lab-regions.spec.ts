@@ -263,7 +263,7 @@ test("Atlas regions pan over the large grid without a reveal-all bypass", async 
   const frame = page.getByTestId("lab-map-frame");
   await expect(frame.locator("canvas")).toBeVisible({ timeout: 15_000 });
   await panFromStartToRegion(page, frame);
-  await expect(page.getByTestId("lab-zoom")).toContainText("100%");
+  await expect(frame).toHaveAttribute("data-camera-zoom", "1");
   await expect(page.getByTestId("reveal")).toHaveCount(0);
 });
 

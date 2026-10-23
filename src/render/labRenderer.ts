@@ -30,6 +30,12 @@ export const LAB_SCHEMATIC_STYLE = Object.freeze({
 /** Ink-draw time for a committed leg (exponential ease-out); instant under reduced motion. */
 export const LAB_LEG_DRAW_MS = 220;
 
+/** Where the last Run first left its estimate, and the terrain that moved it. */
+export interface ResearchDeviation {
+  readonly pos: Vec2;
+  readonly reason: "Wall" | "Swamp" | "Abyss";
+}
+
 export interface LabRenderView {
   readonly activeMap: number;
   readonly camera: LabCamera;
@@ -38,6 +44,9 @@ export interface LabRenderView {
   /** Planned route on the known map (dashed). */
   readonly previewTrail?: readonly (Vec2 | null)[];
   readonly previewDrug?: DrugState;
+  /** The preview is the estimate the last Run was planned on: drawn faint. */
+  readonly estimate?: boolean;
+  readonly deviation?: ResearchDeviation;
   /** Endpoint of each planned step, in order (numbered control circles). */
   readonly controls?: readonly Vec2[];
   /** The last control is a Cure: draw it as the orienteering finish. */
@@ -408,6 +417,7 @@ function drawDashedTrail(
   nodes: ReadonlySet<number>,
   camera: LabCamera,
   gap: number,
+  alpha: number,
 ): void {
   const cell = LAB_CELL_PIXELS * camera.zoom;
   const dash = Math.max(5, cell * 0.16);
@@ -429,7 +439,7 @@ function drawDashedTrail(
         .lineTo(a.x + (b.x - a.x) * e, a.y + (b.y - a.y) * e);
     }
   }
-  target.stroke({ color: LAB_SCHEMATIC_STYLE.candidate, width: Math.max(2, cell * 0.05), cap: "round" });
+  target.stroke({ color: LAB_SCHEMATIC_STYLE.candidate, width: Math.max(2, cell * 0.05), cap: "round", alpha });
 }
 
 function drawCross(target: Graphics, center: PixelPoint, size: number, width: number): void {
@@ -535,6 +545,7 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
         const value = String(index + 1);
         if (text.text !== value) text.text = value;
         if (text.style.fontSize !== fontSize) text.style.fontSize = fontSize;
+        if (text.style.fill !== LAB_SCHEMATIC_STYLE.course) text.style.fill = LAB_SCHEMATIC_STYLE.course;
         text.visible = true;
         text.position.set(center.x + radius * 0.8, center.y - radius * 0.95 - fontSize);
       }
@@ -550,7 +561,20 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
       }
 
       const previewPos = view.previewDrug === undefined ? undefined : drugDrawPoint(view.previewDrug, view.activeMap);
-      if (!animating && view.previewTrail !== undefined) drawDashedTrail(marks, view.previewTrail, nodes, camera, radius);
+      if (!animating && view.previewTrail !== undefined) {
+        drawDashedTrail(marks, view.previewTrail, nodes, camera, radius, view.estimate === true ? 0.4 : 1);
+      }
+      if (!animating && view.deviation !== undefined) {
+        const center = labCellCenter(camera, view.deviation.pos);
+        marks.circle(center.x, center.y, radius * 0.5)
+          .stroke({ color: LAB_SCHEMATIC_STYLE.failure, width: Math.max(2, cell * 0.05) });
+        const text = label(labelCount++);
+        if (text.text !== view.deviation.reason) text.text = view.deviation.reason;
+        if (text.style.fontSize !== fontSize) text.style.fontSize = fontSize;
+        if (text.style.fill !== LAB_SCHEMATIC_STYLE.failure) text.style.fill = LAB_SCHEMATIC_STYLE.failure;
+        text.visible = true;
+        text.position.set(center.x + radius * 0.8, center.y + radius * 0.2);
+      }
       if (!animating && previewPos !== undefined) {
         const center = labCellCenter(camera, previewPos);
         if (view.previewDrug?.failed === true) drawCross(marks, center, radius * 0.75, crossWidth);

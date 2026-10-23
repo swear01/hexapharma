@@ -1,14 +1,14 @@
 import { installSaveFixture } from "./checkpoint";
 import { openMenu } from "./menu";
 import { expect, test, type Page } from "@playwright/test";
-import { LAB_VIEWPORT, clampLabCamera, focusLabCamera } from "../../src/render/labCamera";
+import { LAB_VIEWPORT, focusLabCamera } from "../../src/render/labCamera";
 import { applyGameIntent, createGameState } from "../../src/sim/game";
 import { applyTemplate } from "../../src/sim/drug-graph";
 import type { HexCoord } from "../../src/sim/hex";
 import { generate } from "../../src/sim/mapgen";
 import { serializeGame } from "../../src/sim/save";
 import { DEFAULT_CATALOG } from "../../src/sim/phase0_interfaces";
-import { researchDrugPoint, researchKnownCureCount, researchKnownCureLocations } from "../../src/ui/App";
+import { researchDrugPoint } from "../../src/ui/App";
 import { defaultGenOptions, researchPlanningPreview, type ResearchRoute } from "../../src/ui/Game";
 
 test.setTimeout(60_000);
@@ -52,9 +52,8 @@ async function confirmLoad(page: Page): Promise<void> {
 }
 
 function known(text: string | null): number {
-  const match = /revealed (\d+)\/\d+/.exec(text ?? "");
-  if (match === null) throw new Error(`could not parse Research known count from ${String(text)}`);
-  return Number(match[1]);
+  if (text === null) throw new Error("Research Atlas has no revealed count");
+  return Number(text);
 }
 
 function plannedRoute(typeId: string, stepCount = 1): ResearchRoute {
@@ -116,10 +115,8 @@ test("Research is one large centered Atlas with no Route Floor or layer-transfer
   expect(start).toEqual(level.mm.maps[0]!.origin);
   await expect(frame).toHaveAttribute("data-camera-x", String(startCamera.x));
   await expect(frame).toHaveAttribute("data-camera-y", String(startCamera.y));
-  const generated = createGameState(defaultGenOptions(14), 200, 0);
-  await expect(page.getByTestId("research-cures")).toHaveText(
-    `Cure sites ${researchKnownCureCount(level.mm, generated.fog)}`,
-  );
+  await expect(page.getByTestId("research-cures")).toHaveCount(0);
+  await expect(page.getByTestId("lab-zoom")).toHaveCount(0);
 
   const frameBox = await frame.boundingBox();
   const stageBox = await page.getByTestId("game-stage").boundingBox();
@@ -161,14 +158,14 @@ test("planning is free; Run pays the whole route once and reveals only its actua
   await expect(page.getByTestId("research-command")).toHaveText("Run · $0");
 
   const cash = page.getByTestId("cash");
-  const revealed = page.getByTestId("revealed-count");
+  const revealed = page.getByTestId("lab-map-frame");
   const cashBefore = Number(await cash.textContent());
-  const revealedBefore = known(await revealed.textContent());
+  const revealedBefore = known(await revealed.getAttribute("data-revealed"));
   const emptyPlan = await canvas.screenshot({ animations: "disabled" });
   await push.click();
   await page.waitForTimeout(50);
   expect((await canvas.screenshot({ animations: "disabled" })).equals(emptyPlan)).toBe(false);
-  await expect(page.getByTestId("research-program-count")).toHaveText("1 step");
+  await expect(page.getByTestId("research-program-strip").getByRole("listitem")).toHaveCount(1);
   await expect(page.getByTestId("research-program-strip").getByRole("listitem")).toHaveCount(1);
   await expect(page.getByTestId("research-program-strip").getByRole("listitem").first())
     .toContainText("Hook pump");
@@ -178,20 +175,20 @@ test("planning is free; Run pays the whole route once and reveals only its actua
   await expect(page.getByTestId("research-program-strip").getByRole("listitem").first())
     .toContainText("$3");
   await expect(cash).toHaveText(String(cashBefore));
-  expect(known(await revealed.textContent())).toBe(revealedBefore);
+  expect(known(await revealed.getAttribute("data-revealed"))).toBe(revealedBefore);
   await expect(page.getByTestId("research-atlas-outcome")).toHaveCount(0);
 
   await push.click();
   await expect(page.getByTestId("research-command")).toHaveText("Run · $6");
   await page.getByTestId("research-command").click();
   await expect(cash).toHaveText(String(cashBefore - 6));
-  expect(known(await revealed.textContent())).toBeGreaterThan(revealedBefore);
+  expect(known(await revealed.getAttribute("data-revealed"))).toBeGreaterThan(revealedBefore);
   await expect(page.getByTestId("research-atlas-outcome")).toContainText(/side effects/i);
-  await expect(page.getByTestId("research-program-count")).toHaveText("2 steps");
+  await expect(page.getByTestId("research-program-strip").getByRole("listitem")).toHaveCount(2);
 
   await page.keyboard.press("Enter");
   await expect(cash).toHaveText(String(cashBefore - 12));
-  await expect(page.getByTestId("research-program-count")).toHaveText("2 steps");
+  await expect(page.getByTestId("research-program-strip").getByRole("listitem")).toHaveCount(2);
 });
 
 test("hovering and clicking the last control removes the last planned step", async ({ page }) => {
@@ -208,9 +205,9 @@ test("hovering and clicking the last control removes the last planned step", asy
   await expect(frame).toHaveCSS("cursor", "grab");
   await expect(frame).toHaveAttribute("title", "Drag map");
   await page.mouse.click(box.x + box.width * 0.2, box.y + box.height * 0.2);
-  await expect(page.getByTestId("research-program-count")).toHaveText("2 steps");
+  await expect(page.getByTestId("research-program-strip").getByRole("listitem")).toHaveCount(2);
   await page.mouse.click(target.x, target.y);
-  await expect(page.getByTestId("research-program-count")).toHaveText("1 step");
+  await expect(page.getByTestId("research-program-strip").getByRole("listitem")).toHaveCount(1);
   await expect(page.getByTestId("cash")).toHaveText("200");
 });
 
@@ -223,21 +220,26 @@ test("number keys append, Backspace and Ctrl+Z remove, Clear empties, and Enter 
     .evaluateAll((paths) => paths.map((path) => path.getAttribute("points")));
   expect(new Set(fullPaths).size).toBe(available.length);
   await page.keyboard.press("Digit2");
-  await expect(page.getByTestId("research-program-count")).toHaveText("1 step");
+  await expect(page.getByTestId("research-program-strip").getByRole("listitem")).toHaveCount(1);
+  await expect(page.getByTestId("research-cash-after")).toHaveText(`$${200 - available[1]!.cost} left`);
   const selectedName = page.getByTestId("research-program-strip").locator(".research-step-name").first();
   await expect(selectedName).toHaveAttribute("title", "Elbow press");
   await page.keyboard.press("Digit1");
   await page.keyboard.press("Digit1");
-  await expect(page.getByTestId("research-program-count")).toHaveText("3 steps");
+  await expect(page.getByTestId("research-program-strip").getByRole("listitem")).toHaveCount(3);
   await page.keyboard.press("Backspace");
-  await expect(page.getByTestId("research-program-count")).toHaveText("2 steps");
+  await expect(page.getByTestId("research-program-strip").getByRole("listitem")).toHaveCount(2);
   await page.keyboard.press("Control+z");
-  await expect(page.getByTestId("research-program-count")).toHaveText("1 step");
+  await expect(page.getByTestId("research-program-strip").getByRole("listitem")).toHaveCount(1);
   await expect(page.getByTestId("cash")).toHaveText("200");
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("cash")).toHaveText(String(200 - available[1]!.cost));
   await page.getByTestId("research-clear").click();
-  await expect(page.getByTestId("research-program-count")).toHaveText("0 steps");
+  await expect(page.getByTestId("research-program-strip").getByRole("listitem")).toHaveCount(0);
+  await expect(page.getByTestId("research-undo")).toBeDisabled();
+  await page.keyboard.press("Digit1");
+  await page.getByTestId("research-undo").click();
+  await expect(page.getByTestId("research-program-strip").getByRole("listitem")).toHaveCount(0);
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("cash")).toHaveText(String(200 - available[1]!.cost));
 });
@@ -261,7 +263,7 @@ test("native Enter activates a focused Research button instead of running the ro
   await push2.focus();
   await page.keyboard.press("Enter");
 
-  await expect(page.getByTestId("research-program-count")).toHaveText("1 step");
+  await expect(page.getByTestId("research-program-strip").getByRole("listitem")).toHaveCount(1);
   await expect(page.getByTestId("cash")).toHaveText("200");
 });
 
@@ -350,30 +352,6 @@ test("a resolved outcome keeps its feedback while focus stays on the planned end
   await expect(frame).toHaveAttribute("data-camera-y", String(endpointCamera.y));
 });
 
-test("Cure sites focuses only a Cure already present in authoritative fog", async ({ page }) => {
-  const options = defaultGenOptions(14);
-  const level = generate(options);
-  let game = createGameState(options, 1_000, 0);
-  const map = level.mm.maps[0]!;
-  game = applyGameIntent(game, { kind: "runResearchTrial", program: level.diseases[0]!.reference });
-  const knownCures = researchKnownCureLocations(level.mm, game.fog);
-  const target = knownCures[0];
-  if (target === undefined) throw new Error("reference route did not discover its Cure");
-  const expected = clampLabCamera(focusLabCamera(target.pos), LAB_VIEWPORT, map);
-
-  await page.goto("/");
-  await installSaveFixture(page, serializeGame(game));
-  await page.reload();
-  await confirmLoad(page);
-  const cures = page.getByTestId("research-cures");
-  await expect(cures).toHaveText(`Cure sites ${knownCures.length}`);
-  await expect(cures).toBeEnabled();
-  await cures.click();
-  const frame = page.getByTestId("lab-map-frame");
-  await expect(frame).toHaveAttribute("data-camera-x", String(expected.x));
-  await expect(frame).toHaveAttribute("data-camera-y", String(expected.y));
-});
-
 test("a curing trial reports the Cure without a formula card and the objective points to Plan", async ({ page }) => {
   const options = defaultGenOptions(14);
   const level = generate(options);
@@ -406,7 +384,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
     await page.goto("/");
     await expect(page.getByTestId("lab-map-frame").locator("canvas")).toBeVisible({ timeout: 15_000 });
     for (const machine of reference) await page.getByTestId(`research-machine-${machine.typeId}`).click();
-    await expect(page.getByTestId("research-program-count")).toHaveText(`${reference.length} steps`);
+    await expect(page.getByTestId("research-program-strip").getByRole("listitem")).toHaveCount(reference.length);
     await page.getByTestId("research-command").click();
     const readout = page.locator(".research-result");
     await expect(page.getByTestId("research-atlas-outcome")).toContainText("Cure Disease 1");
@@ -439,7 +417,7 @@ test("Research pan, zoom, and focus preserve the manually controlled camera", as
   await page.goto("/");
   const frame = page.getByTestId("lab-map-frame");
   await expect(frame.locator("canvas")).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByTestId("lab-zoom")).toContainText("100%");
+  await expect(frame).toHaveAttribute("data-camera-zoom", "1");
   const box = await frame.boundingBox();
   if (box === null) throw new Error("Research Atlas has no bounds");
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
@@ -448,9 +426,9 @@ test("Research pan, zoom, and focus preserve the manually controlled camera", as
   await page.mouse.up();
   await page.mouse.move(box.x + box.width / 2, box.y + 80);
   await page.mouse.wheel(0, -500);
-  await expect(page.getByTestId("lab-zoom")).not.toContainText("100%");
+  await expect(frame).not.toHaveAttribute("data-camera-zoom", "1");
   await page.keyboard.press("f");
-  await expect(page.getByTestId("lab-zoom")).toContainText("100%");
+  await expect(frame).toHaveAttribute("data-camera-zoom", "1");
 });
 
 test("compact Research keeps every command and path control reachable", async ({ page }) => {
@@ -461,7 +439,7 @@ test("compact Research keeps every command and path control reachable", async ({
   const stage = await page.getByTestId("game-stage").boundingBox();
   const nav = await page.getByTestId("nav-rail").boundingBox();
   if (stage === null || nav === null) throw new Error("compact Research chrome has no bounds");
-  for (const testId of ["research-command", "research-clear", "research-path-hotbar"]) {
+  for (const testId of ["research-command", "research-undo", "research-clear", "research-path-hotbar"]) {
     const control = await page.getByTestId(testId).boundingBox();
     if (control === null) throw new Error(`${testId} has no compact bounds`);
     expect(control.x).toBeGreaterThanOrEqual(stage.x);
@@ -470,7 +448,7 @@ test("compact Research keeps every command and path control reachable", async ({
     expect(control.y + control.height).toBeLessThanOrEqual(stage.y + stage.height + 1);
     expect(control.y).toBeGreaterThanOrEqual(nav.y + nav.height);
   }
-  for (const testId of ["research-command", "research-clear", "lab-focus", "research-cures"]) {
+  for (const testId of ["research-command", "research-undo", "research-clear", "lab-focus"]) {
     const target = await page.getByTestId(testId).boundingBox();
     if (target === null) throw new Error(`${testId} has no touch target`);
     expect(target.height, `${testId} must be at least 44px tall`).toBeGreaterThanOrEqual(44);
@@ -492,7 +470,7 @@ test("compact Research keeps resolved feedback separate from its path controls",
   if (outcomeBox === null || hotbarBox === null || navBox === null) {
     throw new Error("compact Research outcome chrome has no bounds");
   }
-  for (const testId of ["lab-focus", "lab-zoom", "research-cures"]) {
+  for (const testId of ["lab-focus"]) {
     const statusControl = await page.getByTestId(testId).boundingBox();
     if (statusControl === null) throw new Error(`${testId} has no compact outcome bounds`);
     expect(statusControl.y + statusControl.height, `${testId} must stay above the path hotbar`)

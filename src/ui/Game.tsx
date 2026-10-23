@@ -5,6 +5,7 @@ import type {
   GameState,
   GenOptions,
   DrugState,
+  EffectMap,
   Machine,
   MultiMap,
   Template,
@@ -38,6 +39,7 @@ import { Patents } from "./Patents";
 import { Shop } from "./Shop";
 import { blockingDialogOpen } from "./blockingDialog";
 import { hexToPixel } from "../render/hexProjection";
+import type { ResearchDeviation } from "../render/labRenderer";
 import { machineName } from "./machineLabels";
 import { ResearchWorkspace, researchMachineCost } from "./ResearchWorkspace";
 import { researchDrugPoint, researchKnownCureLocations } from "./App";
@@ -169,6 +171,46 @@ export function researchPlanningTrails(
   program: Template,
 ): readonly (readonly (Vec2 | null)[])[] {
   return researchPlanningPreview(mm, fog, start, program).trails;
+}
+
+/** First place a Run left the estimate planned on `known`, and the true terrain that moved it. */
+export function researchDeviation(
+  mm: MultiMap,
+  known: MultiMap,
+  start: DrugState,
+  program: Template,
+): ResearchDeviation | null {
+  const map = mm.maps[0]!;
+  const knownMap = known.maps[0]!;
+  const kind = (target: EffectMap, cell: Vec2) => target.cell[hexIndex(target.width, cell.q, cell.r)];
+  let actual = start;
+  let estimate = start;
+  for (const machine of program.steps) {
+    if (actual.failed || estimate.failed) return null;
+    const from = actual.pos[0]!;
+    const real = previewStep(mm, actual, machine);
+    const planned = previewStep(known, estimate, machine);
+    const realPoints = real.points[0]!;
+    const plannedPoints = planned.points[0]!;
+    const realCells = real.trails[0]!;
+    for (let index = 0; index < Math.max(realPoints.length, plannedPoints.length); index++) {
+      const a = realPoints[index];
+      const e = plannedPoints[index];
+      if (a !== undefined && e !== undefined && a.q === e.q && a.r === e.r) continue;
+      const before = index === 0 ? from : realCells[index - 1]!;
+      if (a === undefined && real.next.failed) return { pos: before, reason: "Abyss" };
+      if (kind(map, before) === CellKind.Swamp && kind(knownMap, before) !== CellKind.Swamp) {
+        return { pos: before, reason: "Swamp" };
+      }
+      const blocked = planned.trails[0]![index];
+      if (blocked !== undefined && kind(map, blocked) === CellKind.Wall) return { pos: blocked, reason: "Wall" };
+      return null;
+    }
+    if (real.next.failed && !planned.next.failed) return { pos: realCells.at(-1) ?? from, reason: "Abyss" };
+    actual = real.next;
+    estimate = planned.next;
+  }
+  return null;
 }
 
 export type ResearchKeyAction = "run" | "undo";
@@ -561,14 +603,27 @@ export function Game() {
   const undoResearchStep = useCallback(() => setResearchPlan((plan) => plan.slice(0, -1)), []);
   const clearResearchPlan = useCallback(() => setResearchPlan([]), []);
   const researchBlockReason = researchRunBlockReason(game.economy.cash, researchProgram);
+  /** The estimate the last Run was planned on; shown until the route is edited. */
+  const [runEstimate, setRunEstimate] = useState<{
+    readonly plan: readonly Machine[];
+    readonly trails: readonly (readonly (Vec2 | null)[])[];
+    readonly deviation: ResearchDeviation | null;
+  } | null>(null);
+  const shownEstimate = runEstimate !== null && runEstimate.plan === researchPlan ? runEstimate : null;
   const runResearch = useCallback(() => {
     const blockReason = researchRunBlockReason(gameRef.current.economy.cash, researchProgram);
     if (blockReason !== null) {
       setIntentError(`Action rejected: ${blockReason}`);
       return;
     }
-    dispatch({ kind: "runResearchTrial", program: researchProgram });
-  }, [dispatch, researchProgram]);
+    const known = researchPlanningMap(level.mm, gameRef.current.fog);
+    const estimate = {
+      plan: researchPlan,
+      trails: researchRoute(known, level.start, researchProgram).trails,
+      deviation: researchDeviation(level.mm, known, level.start, researchProgram),
+    };
+    if (dispatch({ kind: "runResearchTrial", program: researchProgram })) setRunEstimate(estimate);
+  }, [dispatch, level, researchPlan, researchProgram]);
   const buildPilotInProduction = useCallback((layout: FactoryLayout) => {
     if (gameRef.current.pilot.layout !== layout && !dispatch({ kind: "setPilotLayout", layout })) return;
     if (dispatch({ kind: "buildProductionLayout", layout })) openBuilding("production");
@@ -853,12 +908,15 @@ export function Game() {
               missionSector={researchMissionSector}
               plan={researchProgram}
               planCost={researchProgramCost(researchProgram)}
+              cash={game.economy.cash}
               catalog={catalog}
               blockReason={researchBlockReason}
               drug={actualRoute.drug}
               trails={actualRoute.trails}
-              previewTrails={planningPreview.trails}
+              previewTrails={shownEstimate?.trails ?? planningPreview.trails}
               previewDrug={planningPreview.drug}
+              estimate={shownEstimate !== null}
+              deviation={shownEstimate?.deviation ?? null}
               controls={planningPreview.controls}
               lastOutcome={lastTrial?.outcome ?? null}
               onAppend={appendResearchStep}

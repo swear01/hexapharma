@@ -43,6 +43,8 @@
 - 控制只有 Center、清除、Undo、Run；拿掉 revealed 計數與 Cure sites。
 - hotbar 圖示依目前朝向旋轉；羅盤顯示朝向與目標方位。
 
+§5 已在 Step 5（`feat/v2-research-ui`）實作；規格未明處的選擇見 D40。
+
 ### 6. Plan／Production
 - Plan 維持免費工廠草稿，產線的藥效路徑疊在同一張已知地圖上預估。
 - 起步工具只有 Source、Belt、Sink 與機器；Split／Merge 由科技樹解鎖。

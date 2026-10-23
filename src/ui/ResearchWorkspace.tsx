@@ -11,6 +11,7 @@ import type {
   Vec2,
 } from "../sim/phase0_interfaces";
 import { DEFAULT_CATALOG } from "../sim/phase0_interfaces";
+import type { ResearchDeviation } from "../render/labRenderer";
 import { App, researchOutcomeText } from "./App";
 import { MachineIcon } from "./MachineIcon";
 import { machineName } from "./machineLabels";
@@ -19,11 +20,6 @@ export function researchMachineCost(typeId: string): number {
   const entry = DEFAULT_CATALOG.find((candidate) => candidate.typeId === typeId);
   if (entry === undefined) throw new Error(`Research machine "${typeId}" has no cash cost`);
   return entry.cost;
-}
-
-
-export function researchStepCountLabel(count: number): string {
-  return `${count} ${count === 1 ? "step" : "steps"}`;
 }
 
 /** Compass sectors in screen degrees (y down), matching the Atlas hex directions. */
@@ -39,7 +35,7 @@ function wedgePath(index: number): string {
   return `M${point(from, 7)} L${point(from, 21)} A21 21 0 0 1 ${point(to, 21)} L${point(to, 7)} A7 7 0 0 0 ${point(from, 7)} Z`;
 }
 
-function TargetCompass({ sector }: { readonly sector: string }) {
+function TargetCompass({ sector, heading }: { readonly sector: string; readonly heading: number }) {
   const local = sector === "local";
   return (
     <svg className="research-compass-dial" viewBox="0 0 48 48" width="48" height="48" aria-hidden="true">
@@ -47,6 +43,7 @@ function TargetCompass({ sector }: { readonly sector: string }) {
         <path key={name} d={wedgePath(index)} className={name === sector ? "is-target" : undefined} />
       ))}
       <circle cx="24" cy="24" r={local ? 4 : 2} className={local ? "is-target" : undefined} />
+      <path className="research-compass-heading" d="M24 24h15m-4-4 4 4-4 4" transform={`rotate(${heading * 60} 24 24)`} />
     </svg>
   );
 }
@@ -76,6 +73,7 @@ export interface ResearchWorkspaceProps {
   /** The local planned route; never authoritative until Run. */
   readonly plan: Template;
   readonly planCost: number;
+  readonly cash: number;
   readonly catalog: readonly MachineCatalogEntry[];
   readonly blockReason: string | null;
   /** Actual drug after the last trial (or the start). */
@@ -85,6 +83,8 @@ export interface ResearchWorkspaceProps {
   /** Planned route on the known map. */
   readonly previewTrails: readonly (readonly (Vec2 | null)[])[];
   readonly previewDrug: DrugState;
+  readonly estimate: boolean;
+  readonly deviation: ResearchDeviation | null;
   readonly controls: readonly Vec2[];
   readonly lastOutcome: Outcome | null;
   readonly onAppend: (typeId: MachineTypeId) => void;
@@ -130,6 +130,8 @@ export function ResearchWorkspace(props: ResearchWorkspaceProps) {
         trails={props.trails}
         previewTrails={props.previewTrails}
         previewDrug={props.previewDrug}
+        estimate={props.estimate}
+        deviation={props.deviation}
         controls={props.controls}
         lastOutcome={props.lastOutcome}
         onWorldActivate={props.onUndo}
@@ -137,10 +139,11 @@ export function ResearchWorkspace(props: ResearchWorkspaceProps) {
       />
       <div className="research-overlay">
         <section className="research-compass" data-testid="research-mission" aria-label="Active assay">
-          <TargetCompass sector={props.missionSector} />
+          <TargetCompass sector={props.missionSector} heading={heading} />
           <div>
             <strong>Disease {props.missionDisease + 1}</strong>
             <span>Look <output data-testid="research-assay-sector">{props.missionSector}</output></span>
+            <span>Heading <output data-testid="research-heading">{COMPASS_SECTORS[heading]}</output></span>
           </div>
         </section>
         {plan.steps.length > 0 && (
@@ -179,9 +182,19 @@ export function ResearchWorkspace(props: ResearchWorkspaceProps) {
         {props.blockReason !== null && plan.steps.length > 0 && (
           <span className="research-block-reason" role="status">{props.blockReason}</span>
         )}
-        <span className="research-run-readout">
-          <strong data-testid="research-program-count">{researchStepCountLabel(plan.steps.length)}</strong>
-        </span>
+        {props.blockReason === null && (
+          <span className="research-run-readout" data-testid="research-cash-after">${props.cash - props.planCost} left</span>
+        )}
+        <button
+          type="button"
+          className="research-undo"
+          disabled={plan.steps.length === 0}
+          onClick={props.onUndo}
+          data-testid="research-undo"
+          title="Remove last step (Backspace)"
+        >
+          Undo
+        </button>
         <button
           type="button"
           className="research-clear"

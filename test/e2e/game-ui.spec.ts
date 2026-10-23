@@ -36,7 +36,7 @@ test("keyboard focus stays visible on Research machine buttons that append to th
   await page.goto("/");
   const tool = page.getByTestId("research-machine-wave");
   await tool.click();
-  await expect(page.getByTestId("research-program-count")).toHaveText("1 step");
+  await expect(page.getByTestId("research-program-strip").getByRole("listitem")).toHaveCount(1);
   await page.keyboard.press("Tab");
   await page.keyboard.press("Shift+Tab");
   expect(await tool.evaluate((element) => getComputedStyle(element).outlineStyle)).not.toBe("none");
@@ -80,7 +80,7 @@ test("the complete HUD stays reachable across narrow widths", async ({ page }) =
         .map((part) => part.textContent));
     expect(clippedResourceParts, `resource labels and values must remain readable at ${width}px`)
       .toEqual([]);
-    for (const testId of ["research-command", "lab-focus", "research-cures"]) {
+    for (const testId of ["research-command", "research-undo", "lab-focus"]) {
       const target = await page.getByTestId(testId).boundingBox();
       if (target === null) throw new Error(`${testId} has no bounds at ${width}px`);
       expect(target.height, `${testId} must remain touch-sized at ${width}px`)

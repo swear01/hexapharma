@@ -61,7 +61,7 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 2. 未揭露互動物不得有motif、sprite、colored region、label、hover、preview偏差或outcome洩漏；等高線在揭露前後形狀不變。
 3. 把規劃路線放過known與unknown區；只有霧下的山會讓preview停下，其他互動物揭露後才改變preview。
 4. 找到一條內環隘口：中段一格寬、兩端較寬；用 initial machines 能穿過。揭露後山是淡褐、水是藍線、黑格是黑。窄道出口外側常有一格黑格。
-5. 只規劃、切machine或載入Blueprint，revealed count不得改變。
+5. 只規劃、切machine或載入Blueprint，地圖揭露範圍不得改變。
 6. 每次commit的actual traversed segments與sensor radius才揭露。Wall/OOB取消delta、Swamp半格、Abyss sticky fail。
 7. （僅sim fixture，generator不再產生Portal）只以sensor揭露Portal一端時，只能看到未配對端點；不得顯示隱藏配對、方向、座標或preview jump。兩端都揭露後才顯示配對；經A後token到B，trail在jump處斷開，B不能反向觸發，也不能揭露A/B中間直線。
 8. 揭露Cure/SideEffect後，其feature與region邊界才出現。使用重疊fixture確認同一final cell可同時回報Cure與SideEffect，render不丟掉任一overlay。
@@ -79,7 +79,7 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 ## 7. Production Plan
 
 1. 新局直接按F2；應有可編輯空場地，不要求Research狀態。
-2. 放source/belt/machine/splitter/merger/sink，測rotate、drag、pipette、copy/cut/paste、undo/redo。Touch單指drag要能連續畫Belt，tap machine後畫面Rotate要旋轉該machine，Erase要刪整台，兩指drag仍可pan。compact畫面必須看得出hotbar可向右滾動、inspector尚可向下滾動；Research主要Run／Clear／Next／Cure sites的觸控高度至少44px，outcome完整可讀。非Erase tile drag跨過machine不得拆機；copy/paste要保留Source period與split/merge branch payload。
+2. 放source/belt/machine/splitter/merger/sink，測rotate、drag、pipette、copy/cut/paste、undo/redo。Touch單指drag要能連續畫Belt，tap machine後畫面Rotate要旋轉該machine，Erase要刪整台，兩指drag仍可pan。compact畫面必須看得出hotbar可向右滾動、inspector尚可向下滾動；Research主要Run／Undo／Clear／Center的觸控高度至少44px，outcome完整可讀。非Erase tile drag跨過machine不得拆機；copy/paste要保留Source period與split/merge branch payload。
 3. 確認edit不扣cash、沒有clock、inventory或waste；diagnostics可更新但不擋layout。使用會命中未揭露Cure／SideEffect／Portal的layout時，Sample不得顯示隱藏結果；Research揭露後才可顯示已知結果。
 4. 切換Research/Production來回，Plan layout保持owned且不alias其他場域。
 5. 建一個no-cure或deadlocked但geometry合法的layout，`Commission $N`仍可按；只由現金與layout legality決定成功。

@@ -19,6 +19,7 @@
 .research-compass-dial path { fill: none; stroke: var(--rule-strong); stroke-width: 1; }
 .research-compass-dial circle { fill: var(--ink-3); }
 .research-compass-dial .is-target { fill: var(--course); stroke: var(--course-ink); }
+.research-compass-dial .research-compass-heading { stroke: var(--ink); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
 .research-program-strip { position: absolute; top: 80px; left: 12px; width: 232px; max-height: calc(100% - 80px - 76px); display: flex; pointer-events: auto; }
 .research-program-strip ol, .research-path-hotbar { scrollbar-width: thin; scrollbar-color: var(--rule-strong) transparent; }
@@ -39,8 +40,6 @@
 
 .research-atlas-status { position: absolute; z-index: 3; bottom: 12px; left: 12px; display: flex; align-items: center; gap: 2px; padding: 0 4px; color: var(--ink-3); font-size: 12px; font-variant-numeric: tabular-nums; }
 .research-atlas-status button { display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; border-color: transparent; background: transparent; color: var(--ink-2); font-size: 13px; }
-.research-atlas-status output, .research-atlas-status > span { padding: 0 8px; }
-.research-atlas-status button.research-cure-count:not(:disabled) { color: var(--cure-ink); font-weight: 600; }
 .lab-focus-icon { fill: none; stroke: currentColor; stroke-width: 1.5; }
 
 /* Legend: the machine key printed in the map margin. */
@@ -53,7 +52,6 @@
 
 .research-commandbar { grid-row: 2; grid-column: 2; display: flex; align-items: center; justify-content: flex-end; gap: 14px; min-width: 0; padding: 8px 16px; border-top: 2px solid var(--ink); font-size: 14px; }
 .research-run-readout { color: var(--ink-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.research-run-readout strong { color: var(--ink); font-weight: 600; }
 .research-block-reason { max-width: 220px; color: var(--failure-ink); font-size: 13px; }
 .research-run { min-width: 132px; min-height: 48px; border-color: var(--course); background: var(--course); color: var(--paper-raised); font: 600 19px/1 var(--font-display); letter-spacing: .05em; text-transform: uppercase; font-variant-numeric: tabular-nums; }
 .research-run:hover:not(:disabled) { border-color: var(--course-ink); background: var(--course-ink); }
@@ -87,6 +85,5 @@
   .research-program-strip li:last-child .research-step-name { display: block; max-width: 104px; color: var(--ink); }
   .research-result { top: auto; bottom: 68px; left: 8px; right: 8px; }
   .research-readout { max-width: none; }
-    .research-atlas-status { bottom: 8px; left: 8px; right: 8px; justify-content: space-between; }
-  .research-atlas-status > span { display: none; }
+    .research-atlas-status { bottom: 8px; left: 8px; }
 }
