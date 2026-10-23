@@ -13,7 +13,7 @@
 
 ## Terrain、portal 與 fog
 
-- Active Research 只有單層 pointy-top axial `{q,r}` 座標；跨層位置或交換層操作不得出現在 Research program、palette、mapgen、Blueprint 或 Save v13 authority。
+- Active Research 只有單層 pointy-top axial `{q,r}` 座標；跨層位置或交換層操作不得出現在 Research program、palette、mapgen、Blueprint 或 Save v14 authority。
 - Wall／OOB、Abyss、Swamp 與 Portal 各有 pure、deterministic、共享於 preview／execution 的語意。
 - 每個 portal entry 恰有一個同層 destination；每個 destination 最多一個 entry。B 不可反向作 A；trail 在 jump 處斷開。
 - 霧下 renderer 只畫等高線（加上開局揭露的起點 disk）：未揭露格一律是普通 substrate，Wall 也不填色、不畫邊。等高線只讀 `EffectMap.elevation`（sign-free 壓縮起伏＋由 |elevation| 決定的 seeded decoys，單一墨色），不得讀 fog、cell 或效果欄位，因此山與水在霧下長得一樣。揭露後才印地表：山＝淡褐填色、Swamp＝水紋、Abyss＝黑。
@@ -24,7 +24,7 @@
 - Production Plan sample outcome 只可讀取同一份 fog-masked planning map；免費、零時鐘的 layout diagnostics 不得查詢隱藏 Atlas authority。Production 的實體產品仍依完整權威地圖結算；factory unit 以 fixed-capacity typed arrays 帶 heading／offset，結果必須等於 `applyTemplate`。
 - fresh fog在每張active map只揭露start-centered hex distance radius 2，即不受邊界裁切時恰為19 cells；不能沿reference預揭露。
 - Cure與SideEffect是獨立arrays／overlays；同一cell可同時有兩者，evaluate必須同時加入`cured`與`sideEffects`。
-- 每個EffectMap入口必須驗width/height area、exact `Uint8Array`／`Int16Array`／`Int32Array`種類與長度（含 `cureTier: Uint8Array` 與 `elevation: Int16Array`）、CellKind與fog值域、`-1`或non-negative effect IDs、Cure 格 tier 恰為 1 或 2 而其他格為 0，以及safe integer且在bounds內的origin/start；不得因overlay而要求Cure與SideEffect互斥。
+- 每個EffectMap入口必須驗width/height area、exact `Uint8Array`／`Int16Array`／`Int32Array`種類與長度（含 `cureTier: Uint8Array`、`regionId: Uint16Array` 與 `elevation: Int16Array`）、CellKind與fog值域、`-1`或non-negative effect IDs、Cure 格 tier 恰為 1 或 2 而其他格為 0、`regionId` 恰在 Cure 格非 0，以及safe integer且在bounds內的origin/start；不得因overlay而要求Cure與SideEffect互斥。
 - `Outcome.premium` ⊆ `cured`：只有終點 Cure 格 tier 為 2（★）的疾病。
 
 ## Map generation
@@ -41,7 +41,7 @@
 - 黑格不在隘口走廊、效果、起點 radius 3 內或 reference 經過的格；★ 核心周圍 3–4 格，平地單格 8–12 個、黑帶 2–3 條；放置後全圖仍連通且所有 reference 不失敗。
 - 正常尺寸generated reference的terrain traversal endpoint必須不同於忽略terrain的empty-map endpoint；cure regions彼此不重疊。
 - 正常尺寸的所有Cure cell都在start-centered radius-two hex disk之外，且 disk 內全是 Empty；region必須以六鄰接連通且不能退化成跨seed固定模板。
-- default disease 0 reference只能使用initial catalog；後續tiers才依序允許`skew`、`dilute`、`settle`。所有reference都必須可執行且治療對應疾病。
+- default disease 0 reference只能使用initial catalog；後續tiers才依序允許`zigzag`、`loop`、`straight`＋`crane`（`DISEASE_CATALOG_TIERS`）。所有reference都必須可執行且治療對應疾病。
 - 每個constructed reference endpoint必須是無SideEffect的 tier-1 Cure；每個非退化cure region至少含一個Cure+SideEffect cell，★ 永遠乾淨。
 - solver以整個Cure region為goal並只供tests/tools的minimum steps／cost與quality checks；不進runtime、UI或生成rejection loop。
 
@@ -89,14 +89,16 @@
 - GameState 同時 own `research`、內部 `pilot`、`production`，三者不得 alias layout 或以隱藏 token 耦合；玩家文案必須稱 Production Plan／Commission。
 - 正常UI new game 的starting cash恰為1000、research為0；fresh loop不得需要外部資金／Knowledge或hidden reference才能到first sale。
 - Menu → New Game 只可用unsigned 32-bit seed建立標準fresh GameState；不得刪除save checkpoints或Blueprint Library。確認modal開啟期間，背景hotkeys不得產生GameIntent、Factory edit或navigation authority change。
-- mapgen每疾病base price恰為`12 + 4 × difficulty + 2 × referenceCost`，使用safe integer arithmetic。
-- 出售的產品若 `outcome.premium` 含該疾病，gross 恰為 `floor(demand × 3 / 2)`（demand＝該件的 diminishing price）；只推進一次該疾病的 sold counter。
+- 每個 cure region 有唯一 id（1..），其所有格的 `regionId` 等於該 id；區價恰為 `regionPrice(difficulty) = 60 + 2 × difficulty`，difficulty 恰為 `min(120, reachCost + 6 × 窄段 + 2 × 路線旁 Abyss)`（到不了＝120、`capped`），全部 safe integer。`DiseaseSpec.basePrice` 是該疾病最便宜的區價。
+- 每個疾病的 hard 區最高價 > easy 區最高價（pinned 34 seeds 測試；generator 不成立時 redraw）。
+- 出售價使用產品 `outcome.regions` 中該疾病對應的區價；`Outcome.regions` 與 `cured` 等長且一一對應。
+- 出售的產品若 `outcome.premium` 含該疾病，gross 恰為 `demand + floor(demand / 2)`（demand＝該件的 diminishing price）；只推進一次該疾病的 sold counter。
 - 每疾病demand獨立：第0件gross=base；下一件反覆`floor(previous × 19 / 20)`直到0，無正值floor。
 - Market 每個 inventory product 只可賣一次；收入由實際 cure、side effects、production cost 與 sold counters 決定。
 - Market的`Shipped`與Knowledge成功回饋只能由accepted `sellProducts` intent產生；rejected或stale inventory intent必須顯示錯誤，不得同時假報成功。
 - Market候選stable order為side-effect count、production cost、inventory ID；single/bulk automatic shipping必須略過non-positive候選，只出售逐件計入demand後仍有positive net的產品。略過項目不消耗demand，不得自動虧本出售。
 - 每疾病 shipping contract quota 恰為3；progress只由該疾病 accepted sales 的sold count推導。active contract是首個未完成疾病；全部完成時是最後一個completed contract。
-- `skew-unlock`／`dilute-unlock`／`settle-unlock`除一般cash、Knowledge與patent prerequisites外，還分別要求Disease 0／1／2 contract completed；其他patent不得被合約誤擋。
+- `zigzag-unlock`／`loop-unlock`／`straight-unlock`與`crane-unlock`除一般cash、Knowledge與patent prerequisites外，還分別要求Disease 0／1／2／2 contract completed；其他patent不得被合約誤擋。
 - 同 initial GameState + 明確提供的 intents replay 必須逐欄位與 hash 相同。
 - 擴廠若清 runtime／waste，確認前全部 authority 原子不變；解鎖不得改 Research `lastTrial`。
 
@@ -109,16 +111,16 @@
 - strict decoder 必須拒絕 unknown／missing fields、wrong kind/version/content/checksum、unknown type、duplicate IDs/tiles、collision、越界與 quota violation。
 - Library envelope version 固定為 4，namespace 是 `hexapharma.blueprint-library.v4`；lifecycle 與 save slots 分離，Load／Rewind／換 slot 不改 Library。舊 v3 document／Library 不得 silent reinterpret，reader 拒絕時不得覆寫原 blob／legacy key。
 
-## Save v13 與 checkpoints
+## Save v14 與 checkpoints
 
 - full／compact／slots／rewind 都是開放、可攜、可編輯的 plain JSON 冷快照；合法 Cash／Knowledge／sold／fog 編輯不要求操作或收入證明，不加密、簽章或驗資源 checksum。
 - loader 不 replay；`origin`／`intentTrace`／`replayTicks`／`stateHash` 不是存檔欄位。`replayGame(initial, intents)` 的逐欄位／hash determinism 是獨立除錯契約。
 - 在途 unit／進度／cost、splitter cursors、runtime counters、inventory／nextInventoryId、waste、Research `lastTrial`、economy、patents、fog、rng 必須完整保存；每個 drug 保存 heading 與 offset。返回 layout 與 runtime 綁定同一 owned layout，nested typed/runtime data 不得 alias。
 - decoder 在 allocation／restore 前驗 dimensions、collection counts、inventory group expansion 和 typed-array 可表示範圍；另驗合法 layout、runtime 質量守恆與容量、catalog（含 turn）、heading 0–5、offset 只在 Swamp 內非零、`lastTrial` 重播一致、inventory 結果等可執行不變式。unknown／missing fields、unsafe integers、無效狀態、oversize 顯式失敗。
 - 版本與 `contentBuild` 不合即拒絕。content identifier 只包含 catalog／shapes／patents 與手動 rules revision；所有 sim／mapgen 邏輯變動都須提升 revision，它不是來源真實性證明。
-- 生產預算只限制單一 batch，不能累計到整局。history 最多 20 snapshots，full/slots 上限 6,000,000 characters、browser checkpoint 上限 1,250,000 characters；compact inventory 展開不得超過 24,500 products。
+- 生產預算只限制單一 batch，不能累計到整局。history 最多 20 snapshots，full/slots 上限 7,000,000 characters、browser checkpoint 上限 1,250,000 characters；compact inventory 展開不得超過 24,500 products。
 - 正常 Load 嚴格驗 envelope；明確 Recover 可從同版本、可解析且字元／history array 數量有界的部分損壞 envelope 取已知欄位的字串候選，獨立驗 snapshot 並保留最新有效同地圖 suffix。讀取不覆寫；storage access 失敗須顯示原始原因並停用 Recovery。
-- checkpoint 外層 version 2、內層 Save v13；key 為 `hexapharma.save.v13.checkpoint.${slot}`。v12 以前一律拒絕。舊 alpha key 不讀取、不 migration、不自動覆寫；沒有 legacy reader 分支。
+- checkpoint 外層 version 2、內層 Save v14；key 為 `hexapharma.save.v14.checkpoint.${slot}`。v13 以前一律拒絕。舊 alpha key 不讀取、不 migration、不自動覆寫；沒有 legacy reader 分支。
 - corrupt blob 不得被 default game 冒充；讀取不寫 storage，Recover 前保留 raw data，寫入失敗原 blob 不變。
 - Load不同saved state與Rewind丟棄最新checkpoint都先取得可取消確認；Cancel不得改GameState、slot history或Library。
 

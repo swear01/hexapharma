@@ -30,7 +30,7 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 
 Blueprint Library 與 save slot 分離；New Game、Load、Rewind、換 slot 都不會移除藍圖。New Game 只取代目前未保存狀態，既有 save checkpoints 仍可 Load 回來。
 
-目前 [Save v13](save.md) 是開放、可編輯的 plain JSON。獨立 checkpoint/history 外層仍是 v2，內層使用 Save v13；舊開發版（含 v12）不會自動升級。
+目前 [Save v14](save.md) 是開放、可編輯的 plain JSON。獨立 checkpoint/history 外層仍是 v2，內層使用 Save v14；舊開發版（含 v13）不會自動升級。
 
 正常新局從 $1000 cash、0 Knowledge開始，同一張 Atlas 預設有4種疾病。全新 origin 的 Blueprint Library 為空；之後換 seed 會保留既有藍圖。URL query注入的cash／research只供開發驗證，不是正常玩法。
 
@@ -55,13 +55,25 @@ Blueprint Library 與 save slot 分離；New Game、Load、Rewind、換 slot 都
 
 ### 規劃路線，再付費試驗
 
-1. **朝向**：藥有一個朝向，開局朝東（E）。每台機器的完整奇形 path 都相對目前朝向；走完後依機器固定轉向（Hook pump 右轉 60°、Wave reactor 不轉、Return coil 掉頭、Elbow press 左轉 60°、Zigzag still 右轉 120°、Loop vat 不轉、Settling spiral 左轉 120°；暫定值）。hotbar 圖示會轉到規劃路線終點的朝向。
+1. **朝向**：藥有一個朝向，開局朝東（E）。每台機器的完整奇形 path 都相對目前朝向；走完後依機器固定轉向。機器（F＝目前朝向、R／L＝右／左前、B＝後）：
+
+   | 期 | 機器 | path | 轉向 | 費用 | 解鎖 |
+   |---|---|---|---|---|---|
+   | 前 | Hook pump | F F R | 右 60° | $3 | 開局 |
+   | 前 | Elbow press | L L F | 左 60° | $3 | 開局 |
+   | 前 | Return coil | B B BL | 掉頭 | $2 | 開局 |
+   | 前 | Wave reactor | F L F R F R F | 不轉 | $7 | 開局 |
+   | 中 | Zigzag still | R F R F | 右 120° | $6 | Disease 1 合約後 |
+   | 中 | Loop vat | F R BR B BL L F（繞一圈只前進 1 格） | 不轉 | $5 | Disease 2 合約後 |
+   | 後 | Straight drive | F F F F | 不轉 | $12 | Disease 3 合約後 |
+   | 後 | Crane arm | F F F L L | 左 120° | $11 | Disease 3 合約後 |
+hotbar 圖示會轉到規劃路線終點的朝向。
 2. **規劃（免費）**：點 hotbar 或按數字鍵`1`–`9`把機器接到路線末端。紫色虛線是**只用已知地圖**算出的預估：霧下當成平地，只有山（Wall）照算——霧下看不到的山也會擋住預估路線。Backspace、`Ctrl+Z`／`⌘Z`，或點地圖上最後一個編號控制點（游標提示`Remove last step`）移除最後一步；`Clear`清空。規劃不花錢、不揭霧、不存檔。
 3. **Run · $N**（Enter）：一次付整條路線的機器費用總和，從起點在**真實**地圖跑完整條。霧下的 Wall、沼澤、Abyss、Portal 可能讓實際路線（紫色實線）偏離預估；只揭露實際走過的格與其周圍。Run 後規劃保留，可依新地圖修改再跑；同一路線重跑也要再付費。
 4. 結果同時列出Cure與已知Side effects；不能只看`Cure`而忽略同一endpoint的污染。掉進 Abyss 時路線在那一格中止並顯示 Failure。
 5. Research 不會產生配方。目前疾病的任一 Cure 格揭露後，Objective 改成`Plan a line to Disease N`，到 Plan 用同樣的機器順序自己排產線；Plan 的 Sample 只依已揭露地圖預估。
 
-正常Atlas預設4種疾病：第一種reference只需要初始machine；後續疾病逐步可能需要Technology解鎖Zigzag still、Loop vat與Settling spiral。地圖的hidden reference不會在遊戲中顯示，玩家要以sector與每次試驗揭露的結果自行修改路線。
+正常Atlas預設4種疾病：第一種reference只需要初始machine；後續疾病逐步可能需要Technology解鎖Zigzag still、Loop vat、Straight drive或Crane arm。地圖的hidden reference不會在遊戲中顯示，玩家要以sector與每次試驗揭露的結果自行修改路線。
 
 ## Factory共同操作
 
@@ -145,10 +157,10 @@ Production Plan與Production使用相同editor，但一眼可分：Plan 以紫�
 
 - Technology解鎖machine、場地或Research輔助。解鎖探索輔助本身不揭霧，只增加之後Research試驗實際路徑的感測半徑。
 - Technology頂部只列出已取得的非零benefits；每張卡用完整名稱列出效果、成本與實際前置Technology，沒有前置條件時不顯示空的requirement。
-- HUD contract chip顯示首個未完成疾病的`sold / 3`。Disease 1／2／3各出貨3件後，分別解除Skew／Dilute／Settle patent的合約gate；仍須支付該patent的cash／Knowledge並滿足既有Technology prerequisites。其他patent不需要合約。
-- 推進四種疾病所需的Technology cash依序是Skew $100、Bench expansion $120、Dilute $180、Settle $670。保留約$100可負擔一次合理研究重試或小幅改建；若目前庫存沒有正net出貨，先改善成本／品質或嘗試另一種疾病。只有整局確實沒有可行改善時才以New Game重開。
-- 每個疾病的Base由mapgen以`12 + 4×difficulty + 2×referenceCost`決定。第一次出售取得Base gross；之後同疾病Next逐次為`floor(前一次 × 19 / 20)`，最後到0。不同疾病各算自己的Sold與Next。
-- 每張需求卡以Clean stock／Tainted stock計數庫存件數，有 ★ 產品時另列`★ pay ×1.5`件數；最佳可售庫存會列Next gross（★ 產品顯示加成後的`★ price`）、production cost、每個effect `$25`的penalty算式與net。無治療庫存或沒有正net庫存時，Ship disabled並直接顯示原因。
+- HUD contract chip顯示首個未完成疾病的`sold / 3`。Disease 1／2／3各出貨3件後，分別解除Zigzag／Loop／Straight與Crane patent的合約gate；仍須支付該patent的cash／Knowledge並滿足既有Technology prerequisites。其他patent不需要合約。
+- 機器Technology：Zigzag $100（無前置）、Loop $180（需Wider factory floor $120）、Straight $340（需Zigzag與Wider factory floor）、Crane $300（需Loop與Trail scanner $80）。保留約$100可負擔一次合理研究重試或小幅改建；若目前庫存沒有正net出貨，先改善成本／品質或嘗試另一種疾病。只有整局確實沒有可行改善時才以New Game重開。
+- 同一疾病的每塊治療區各有價格：越難到（最便宜路線越貴、要穿過窄段、旁邊有黑格）越貴，深入盆地的大區比近處小區值錢。產品依終點所在的區計價；第一次出售取得該區價格，之後同疾病的價格逐次乘`19/20`（取整）直到0。不同疾病各算自己的Sold與Next。
+- 每張需求卡以Clean stock／Tainted stock計數庫存件數，有 ★ 產品時另列`★ pay ×1.5`件數（★ 售價＝價格＋價格的一半，取整）；最佳可售庫存會列Next gross（★ 產品顯示加成後的`★ price`）、production cost、每個effect `$25`的penalty算式與net。無治療庫存或沒有正net庫存時，Ship disabled並直接顯示原因。
 - Market的`Ship best`按side effects最少、production cost最低、inventory ID最早的順序，略過不賺錢的候選後出售第一件正net產品。`Ship profitable`掃描相同順序，只出售在當下demand仍為正net的項目；略過的庫存不消耗demand，也不會被自動丟棄。每件成功出售另取得1 Knowledge；畫面會顯示本次回饋。
 - 擴廠若會清除Production runtime／waste，確認視窗會先列出影響；Cancel不改任何authority。
 - blocking confirmation 開啟期間 Production timer 不增加 tick、inventory、cash 或 waste；Cancel 恢復原播放狀態，原本 Pause 不會自動 Play。確認 New／Load／Rewind／Reset／擴廠後舊 timer 停止。一般 drawer 與場域切換不暂停生產。

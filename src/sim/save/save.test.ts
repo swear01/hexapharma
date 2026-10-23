@@ -96,12 +96,12 @@ function wire(game = baseGame()): { version: number; game: Record<string, any> }
 }
 
 describe("serializeGame / deserializeGame", () => {
-  it("uses only the breaking v13 heading/half-step/trial/premium schema", () => {
-    expect(SAVE_VERSION).toBe(13);
+  it("uses only the breaking v14 heading/half-step/trial/premium/region schema", () => {
+    expect(SAVE_VERSION).toBe(14);
     const serialized = serializeGame(baseGame());
     const parsed = JSON.parse(serialized) as { version: number; game: Record<string, any> };
 
-    expect(parsed.version).toBe(13);
+    expect(parsed.version).toBe(14);
     expect(parsed.game).toHaveProperty("research");
     expect(parsed.game).toHaveProperty("pilot");
     expect(parsed.game).toHaveProperty("production");
@@ -263,16 +263,16 @@ describe("serializeGame / deserializeGame", () => {
 });
 
 describe("deserializeGame schema validation", () => {
-  it("rejects v12 envelopes before interpreting their payloads", () => {
-    expect(() => deserializeGame(JSON.stringify({ version: 12, game: null })))
-      .toThrow(/incompatible version 12.*expected 13/i);
-    expect(() => deserializeSnapshot(JSON.stringify({ version: 12, authority: null })))
-      .toThrow(/incompatible version 12.*expected 13/i);
-    expect(() => deserializeSlots(JSON.stringify({ version: 12, slots: null })))
-      .toThrow(/incompatible version 12.*expected 13/i);
+  it("rejects v13 envelopes before interpreting their payloads", () => {
+    expect(() => deserializeGame(JSON.stringify({ version: 13, game: null })))
+      .toThrow(/incompatible version 13.*expected 14/i);
+    expect(() => deserializeSnapshot(JSON.stringify({ version: 13, authority: null })))
+      .toThrow(/incompatible version 13.*expected 14/i);
+    expect(() => deserializeSlots(JSON.stringify({ version: 13, slots: null })))
+      .toThrow(/incompatible version 13.*expected 14/i);
   });
 
-  it.each([12, 11, 10, 9, 8, 7, 6, 2])(
+  it.each([13, 12, 11, 10, 9, 8, 7, 6, 2])(
     "explicitly rejects legacy v%s full saves, snapshots, and slots without migration",
     (legacyVersion) => {
       const game = baseGame();

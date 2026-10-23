@@ -13,6 +13,7 @@ function map(width = 5, height = 3): EffectMap {
     cell: new Uint8Array(length),
     cureId: new Int16Array(length).fill(-1),
     cureTier: new Uint8Array(length),
+    regionId: new Uint16Array(length),
     sideEffectId: new Int32Array(length).fill(-1),
     portalTo: new Int32Array(length).fill(-1),
     elevation: new Int16Array(length),
@@ -131,6 +132,7 @@ describe("effect map authority", () => {
     overlap.cell[0] = CellKind.Cure;
     overlap.cureId[0] = 3;
     overlap.cureTier[0] = 1;
+    overlap.regionId[0] = 1;
     overlap.sideEffectId[0] = 4;
     expect(() => validateEffectMap(overlap)).not.toThrow();
   });
@@ -139,6 +141,7 @@ describe("effect map authority", () => {
     const untiered = map();
     untiered.cell[0] = CellKind.Cure;
     untiered.cureId[0] = 3;
+    untiered.regionId[0] = 1;
     expect(() => validateEffectMap(untiered)).toThrow(/cureTier/);
     untiered.cureTier[0] = 3;
     expect(() => validateEffectMap(untiered)).toThrow(/cureTier/);
@@ -150,5 +153,22 @@ describe("effect map authority", () => {
     expect(() => validateEffectMap(strayTier)).toThrow(/cureTier/);
     expect(() => validateEffectMap({ ...map(), cureTier: new Uint8Array(1) })).toThrow(/cureTier.*length/);
     expect(() => validateEffectMap({ ...map(), elevation: new Int16Array(1) })).toThrow(/elevation.*length/);
+  });
+
+  it("requires a non-zero region id exactly on Cure cells", () => {
+    const unpriced = map();
+    unpriced.cell[0] = CellKind.Cure;
+    unpriced.cureId[0] = 3;
+    unpriced.cureTier[0] = 1;
+    expect(() => validateEffectMap(unpriced)).toThrow(/regionId/);
+    unpriced.regionId[0] = 2;
+    expect(() => validateEffectMap(unpriced)).not.toThrow();
+
+    const stray = map();
+    stray.regionId[1] = 1;
+    expect(() => validateEffectMap(stray)).toThrow(/regionId/);
+    expect(() => validateEffectMap({ ...map(), regionId: new Uint16Array(1) })).toThrow(/regionId.*length/);
+    expect(() => validateEffectMap({ ...map(), regionId: new Uint8Array(map().cell.length) as unknown as Uint16Array }))
+      .toThrow(/regionId.*Uint16Array/);
   });
 });

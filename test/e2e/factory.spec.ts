@@ -88,10 +88,11 @@ function machineGallerySave(): string {
   const level = generate(options);
   let game = createGameState(options, 1_000_000, 100_000);
   game = applyGameIntent(game, { kind: "unlockPatent", id: "bench-2" });
+  game = applyGameIntent(game, { kind: "unlockPatent", id: "reveal-aid" });
   for (const [disease, id] of [
-    [0, "skew-unlock"],
-    [1, "dilute-unlock"],
-    [2, "settle-unlock"],
+    [0, "zigzag-unlock"],
+    [1, "loop-unlock"],
+    [2, "crane-unlock"],
   ] as const) {
     const layout = compileEntitledPrototype(
       level.diseases[disease]!.reference,
@@ -108,6 +109,7 @@ function machineGallerySave(): string {
     game = applyGameIntent(game, { kind: "sellProducts", productIds, disease });
     game = applyGameIntent(game, { kind: "unlockPatent", id });
   }
+  game = applyGameIntent(game, { kind: "unlockPatent", id: "straight-unlock" });
   const anchors = [
     { q: 1, r: 1 },
     { q: 5, r: 1 },
@@ -116,6 +118,7 @@ function machineGallerySave(): string {
     { q: 1, r: 6 },
     { q: 7, r: 6 },
     { q: 13, r: 6 },
+    { q: 20, r: 6 },
   ];
   const machines: PlacedMachine[] = DEFAULT_CATALOG.map((entry, index) => ({
     id: index,
@@ -656,8 +659,8 @@ test("physical footprint rotation leaves the selected chemical path unchanged", 
   await page.goto("/");
   await page.getByTestId("view-pilot").click();
   const pilot = page.getByTestId("pilot-facility-workspace");
-  await pilot.getByTestId("brush-machine-push").click();
-  const iconPath = page.getByTestId("research-machine-push").locator("[data-icon-shape='path']");
+  await pilot.getByTestId("brush-machine-hook").click();
+  const iconPath = page.getByTestId("research-machine-hook").locator("[data-icon-shape='path']");
   const before = await iconPath.getAttribute("points");
   await page.keyboard.press("r");
   await expect(pilot.getByTestId("brush-direction")).toHaveText("Footprint 60°");

@@ -34,6 +34,7 @@ function cmdGen(seed: number): void {
           node: d.node,
           difficulty: d.difficulty,
           basePrice: d.basePrice,
+          regionPrices: d.regions.map((region) => region.price),
           refSteps: d.reference.steps.length,
         })),
       },

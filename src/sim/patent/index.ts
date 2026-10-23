@@ -20,11 +20,12 @@ import type {
 const PATENT_DEFINITIONS = [
   { id: "bench-2", cost: 120, researchCost: 2, requires: [], effect: { kind: "expandFactory", dw: 2, dh: 0 } },
   { id: "reveal-aid", cost: 80, researchCost: 1, requires: [], effect: { kind: "revealAid", amount: 3 } },
-  { id: "skew-unlock", cost: 100, researchCost: 1, requires: [], effect: { kind: "unlockMachine", typeId: "skew" } },
-  { id: "dilute-unlock", cost: 180, researchCost: 3, requires: ["bench-2"], effect: { kind: "unlockMachine", typeId: "dilute" } },
+  { id: "zigzag-unlock", cost: 100, researchCost: 1, requires: [], effect: { kind: "unlockMachine", typeId: "zigzag" } },
+  { id: "loop-unlock", cost: 180, researchCost: 3, requires: ["bench-2"], effect: { kind: "unlockMachine", typeId: "loop" } },
   { id: "floor-depth", cost: 300, researchCost: 5, requires: ["bench-2"], effect: { kind: "expandFactory", dw: 0, dh: 2 } },
   { id: "field-survey", cost: 500, researchCost: 8, requires: ["reveal-aid"], effect: { kind: "revealAid", amount: 4 } },
-  { id: "settle-unlock", cost: 670, researchCost: 12, requires: ["dilute-unlock"], effect: { kind: "unlockMachine", typeId: "settle" } },
+  { id: "straight-unlock", cost: 340, researchCost: 6, requires: ["zigzag-unlock", "bench-2"], effect: { kind: "unlockMachine", typeId: "straight" } },
+  { id: "crane-unlock", cost: 300, researchCost: 6, requires: ["loop-unlock", "reveal-aid"], effect: { kind: "unlockMachine", typeId: "crane" } },
 ] as const satisfies readonly PatentNode[];
 
 export const DEFAULT_PATENTS: readonly PatentNode[] = Object.freeze(PATENT_DEFINITIONS.map(

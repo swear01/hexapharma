@@ -70,27 +70,27 @@ test("reveal aid spends both resources and expands the next Research trial senso
 
 test("machine patents add the same fixed path to Research and Production Plan palettes", async ({ page }) => {
   await page.goto("/?cash=9999&research=9999");
-  await expect(page.getByTestId("research-machine-skew")).toHaveCount(0);
+  await expect(page.getByTestId("research-machine-zigzag")).toHaveCount(0);
   await page.getByTestId("view-technology").click();
-  await expect(page.getByTestId("patent-row-skew-unlock"))
+  await expect(page.getByTestId("patent-row-zigzag-unlock"))
     .toContainText("Ship 3 more for Disease 1 contract (0/3)");
-  await expect(page.getByTestId("patent-unlock-skew-unlock")).toBeDisabled();
+  await expect(page.getByTestId("patent-unlock-zigzag-unlock")).toBeDisabled();
 
   await page.evaluate((checkpoint) => {
-    localStorage.setItem("hexapharma.save.v13.checkpoint.0", checkpoint);
+    localStorage.setItem("hexapharma.save.v14.checkpoint.0", checkpoint);
   }, productionCheckpoint(true));
   await page.reload();
   await confirmLoad(page);
   await page.getByTestId("view-technology").click();
-  await expect(page.getByTestId("patent-row-skew-unlock"))
+  await expect(page.getByTestId("patent-row-zigzag-unlock"))
     .not.toContainText("Disease 1 contract");
-  await expect(page.getByTestId("patent-unlock-skew-unlock")).toBeEnabled();
-  await page.getByTestId("patent-unlock-skew-unlock").click();
-  await expect(page.getByTestId("patent-unlock-skew-unlock")).toHaveText("Owned");
+  await expect(page.getByTestId("patent-unlock-zigzag-unlock")).toBeEnabled();
+  await page.getByTestId("patent-unlock-zigzag-unlock").click();
+  await expect(page.getByTestId("patent-unlock-zigzag-unlock")).toHaveText("Owned");
   await page.getByTestId("view-research").click();
-  await expect(page.getByTestId("research-machine-skew")).toBeVisible();
+  await expect(page.getByTestId("research-machine-zigzag")).toBeVisible();
   await page.getByTestId("view-pilot").click();
-  await expect(page.getByTestId("brush-machine-skew")).toBeEnabled();
+  await expect(page.getByTestId("brush-machine-zigzag")).toBeEnabled();
 });
 
 test("factory prerequisites do not bypass contract gates or introduce map layers", async ({ page }) => {
@@ -98,11 +98,11 @@ test("factory prerequisites do not bypass contract gates or introduce map layers
   await expect(page.locator("[data-testid^='lab-layer-']")).toHaveCount(0);
   await expect(page.getByTestId("map-count")).toHaveCount(0);
   await page.getByTestId("view-technology").click();
-  await expect(page.getByTestId("patent-unlock-dilute-unlock")).toBeDisabled();
+  await expect(page.getByTestId("patent-unlock-loop-unlock")).toBeDisabled();
   await page.getByTestId("patent-unlock-bench-2").click();
-  await expect(page.getByTestId("patent-row-dilute-unlock"))
+  await expect(page.getByTestId("patent-row-loop-unlock"))
     .toContainText("Ship 3 more for Disease 2 contract (0/3)");
-  await expect(page.getByTestId("patent-unlock-dilute-unlock")).toBeDisabled();
+  await expect(page.getByTestId("patent-unlock-loop-unlock")).toBeDisabled();
   await expect(page.getByTestId("cash")).toHaveText(String(9999 - 120));
   await expect(page.getByTestId("research")).toHaveText(String(9999 - 2));
   await expect(page.getByTestId("patents-table")).not.toContainText(/unlock map|layer [b-d]/i);
@@ -114,7 +114,7 @@ test("factory expansion confirms before resetting built Production", async ({ pa
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
   await page.evaluate((checkpoint) => {
-    localStorage.setItem("hexapharma.save.v13.checkpoint.0", checkpoint);
+    localStorage.setItem("hexapharma.save.v14.checkpoint.0", checkpoint);
   }, productionCheckpoint());
   await page.reload();
   await confirmLoad(page);
@@ -145,7 +145,7 @@ test("Technology cards present one concise status and hide empty summaries", asy
   await expect(page.getByTestId("patent-unlock-reveal-aid")).toBeDisabled();
   await expect(page.getByTestId("patent-row-bench-2")).toContainText("Add 2 factory columns");
   await expect(page.getByTestId("patent-row-floor-depth")).toContainText("Add 2 factory rows");
-  await expect(page.getByTestId("patent-row-dilute-unlock")).toContainText("Requires: Wider factory floor");
+  await expect(page.getByTestId("patent-row-loop-unlock")).toContainText("Requires: Wider factory floor");
 });
 
 test("Technology names only the real shortfall and groups nodes by what blocks them", async ({ page }) => {
@@ -155,8 +155,8 @@ test("Technology names only the real shortfall and groups nodes by what blocks t
   await expect(page.getByTestId("patent-shortfall-bench-2")).toHaveText("Need 2 more Knowledge");
   await expect(page.getByTestId("patents-table")).not.toContainText("$0 cash");
   await expect(page.getByRole("region", { name: "Available now" }).getByTestId("patent-row-bench-2")).toBeVisible();
-  await expect(page.getByRole("region", { name: "Waiting on a contract" }).getByTestId("patent-row-skew-unlock")).toBeVisible();
-  await expect(page.getByRole("region", { name: "Requires another node" }).getByTestId("patent-row-dilute-unlock")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Waiting on a contract" }).getByTestId("patent-row-zigzag-unlock")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Requires another node" }).getByTestId("patent-row-loop-unlock")).toBeVisible();
   await expect(page.getByTestId("patent-unlock-bench-2")).toBeDisabled();
   await expect(page.getByTestId("patent-unlock-bench-2")).not.toHaveClass(/primary-action/);
 });

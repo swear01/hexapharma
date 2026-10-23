@@ -5,22 +5,24 @@
  *
  * Generates a level per seed at the active one-Atlas config and, per disease, collects:
  *   - constructed-reference complexity, solver minimum depth and gap,
- *   - basePrice, constructed-reference cost and step count,
+ *   - reference region price, constructed-reference cost and step count,
  *   - compiled-reference steady throughput rate (from analyzeThroughput),
- *   - a simple first-unit net profit/tick ≈ rate × (basePrice − actual recipe cost).
+ *   - a simple first-unit net profit/tick ≈ rate × (reference region price − actual recipe cost),
+ *   - every cure region's reach-difficulty price, and machine usage in the references.
  *
  * It then reports seed/content diversity, constructed-reference vs dev-solver
  * depth, bootstrap affordability/packability, and profit/tick outliers.
  *
  * Tool-only: console.log + Math.* are fine here (this never runs in the sim core).
  */
-import { generate } from "../src/sim/mapgen/index";
+import { diseaseCatalogCount, generateWithDiagnostics } from "../src/sim/mapgen/index";
 import { compileEntitledPrototype, compileTemplate } from "../src/sim/recipe/index";
 import { analyzeThroughput } from "../src/sim/factory-sim/index";
 import { solve } from "../src/sim/solver/index";
 import { quoteProductionBuild } from "../src/sim/construction/index";
-import { DEFAULT_STARTING_CASH } from "../src/sim/game";
-import { PATH_OUT_STRIDE, turnHeading, walkValidatedPathInto } from "../src/sim/drug-graph";
+import { DEFAULT_STARTING_CASH, cureRegionPrice } from "../src/sim/game";
+import { PATH_OUT_STRIDE, evaluate, turnHeading, walkValidatedPathInto } from "../src/sim/drug-graph";
+import { HEX_DQ, HEX_DR } from "../src/sim/hex";
 import {
   BASE_GAME_FACTORY_HEIGHT,
   BASE_GAME_FACTORY_WIDTH,
@@ -57,7 +59,11 @@ export interface Sample {
   readonly seed: number;
   readonly diseaseId: number;
   readonly difficulty: number;
+  /** Price of the region the constructed reference lands on. */
   readonly basePrice: number;
+  /** Every cure region of this disease: kind + price. */
+  readonly regions: readonly { readonly kind: string; readonly price: number; readonly capped: boolean }[];
+  readonly referenceTypes: readonly string[];
   readonly cost: number;
   readonly refSteps: number;
   readonly solverMinSteps: number;
@@ -101,8 +107,6 @@ export function premiumReachSteps(
   seen[root] = 1;
   let layer = [root];
   const out = new Int32Array(PATH_OUT_STRIDE);
-  const dq = [1, 0, -1, -1, 0, 1];
-  const dr = [0, 1, 1, 0, -1, -1];
   for (let depth = 1; depth <= maxDepth && layer.length > 0; depth++) {
     const next: number[] = [];
     for (const state of layer) {
@@ -114,8 +118,8 @@ export function premiumReachSteps(
           map,
           cell % map.width,
           Math.floor(cell / map.width),
-          slot === 0 ? 0 : dq[slot - 1]!,
-          slot === 0 ? 0 : dr[slot - 1]!,
+          slot === 0 ? 0 : HEX_DQ[slot - 1]!,
+          slot === 0 ? 0 : HEX_DR[slot - 1]!,
           heading,
           machine,
           out,
@@ -124,7 +128,7 @@ export function premiumReachSteps(
         if (out[4] === 1) continue;
         const landed = out[1]! * map.width + out[0]!;
         if (isGoal(landed)) return depth;
-        const nslot = out[2] === 0 && out[3] === 0 ? 0 : 1 + dq.findIndex((q, index) => q === out[2] && dr[index] === out[3]);
+        const nslot = out[2] === 0 && out[3] === 0 ? 0 : 1 + HEX_DQ.findIndex((q, index) => q === out[2] && HEX_DR[index] === out[3]);
         const nstate = landed * 42 + nslot * 6 + turnHeading(heading, machine.turn);
         if (seen[nstate] === 1) continue;
         seen[nstate] = 1;
@@ -165,7 +169,7 @@ export interface SweepResult {
 }
 
 export interface SweepOverrides {
-  readonly generate?: typeof generate;
+  readonly generate?: (options: GenOptions) => GeneratedLevel;
   readonly compileTemplate?: typeof compileTemplate;
   readonly analyzeThroughput?: typeof analyzeThroughput;
   readonly solve?: typeof solve;
@@ -238,7 +242,12 @@ export function referenceCost(
 
 export function sweep(count: number, overrides: SweepOverrides = {}): SweepResult {
   requireSweepCount(count);
-  const generateLevel = overrides.generate ?? generate;
+  let pricing: ReturnType<typeof generateWithDiagnostics>["diagnostics"]["pricing"] = [];
+  const generateLevel = overrides.generate ?? ((options: GenOptions) => {
+    const result = generateWithDiagnostics(options);
+    pricing = result.diagnostics.pricing;
+    return result.level;
+  });
   const compile = overrides.compileTemplate ?? compileTemplate;
   const throughput = overrides.analyzeThroughput ?? analyzeThroughput;
   const findMinimum = overrides.solve ?? solve;
@@ -254,6 +263,7 @@ export function sweep(count: number, overrides: SweepOverrides = {}): SweepResul
   let seedCount = 0;
   for (let seed = 1; seed <= count; seed++) {
     try {
+      pricing = [];
       const level = generateLevel(optsFor(seed, catalog));
       const seedSamples: Sample[] = [];
       let seedBootstrap: BootstrapSample | null = null;
@@ -269,9 +279,8 @@ export function sweep(count: number, overrides: SweepOverrides = {}): SweepResul
           throw new Error(`invalid throughput rate ${report.rateNum}/${report.rateDen}`);
         }
         const cost = referenceCost(disease.reference.steps, catalog);
-        const availableCount = disease.id === 0
-          ? Math.min(4, catalog.length)
-          : Math.min(catalog.length, 4 + disease.id);
+        const availableCount = diseaseCatalogCount(disease.id, catalog.length);
+        const referencePrice = cureRegionPrice(disease, evaluate(level.mm, level.start, disease.reference));
         const minimum = findMinimum(level.mm, level.start, {
           catalog: catalog.slice(0, availableCount),
           maxDepth: disease.reference.steps.length,
@@ -286,7 +295,13 @@ export function sweep(count: number, overrides: SweepOverrides = {}): SweepResul
           seed,
           diseaseId: disease.id,
           difficulty: disease.difficulty,
-          basePrice: disease.basePrice,
+          basePrice: referencePrice,
+          regions: disease.regions.map((region) => ({
+            kind: pricing.find((entry) => entry.id === region.id)?.kind ?? "unknown",
+            price: region.price,
+            capped: region.capped,
+          })),
+          referenceTypes: disease.reference.steps.map((step) => step.typeId),
           cost,
           refSteps: disease.reference.steps.length,
           solverMinSteps,
@@ -299,7 +314,7 @@ export function sweep(count: number, overrides: SweepOverrides = {}): SweepResul
           cureR: disease.node.r,
           rateNum: report.rateNum,
           rateDen: report.rateDen,
-          profitPerTick: rate * (disease.basePrice - cost),
+          profitPerTick: rate * (referencePrice - cost),
           premiumTierSteps: premiumReachSteps(level, disease.id, catalog.slice(0, availableCount)),
           premiumFullSteps: premiumReachSteps(level, disease.id, catalog),
         });
@@ -314,7 +329,7 @@ export function sweep(count: number, overrides: SweepOverrides = {}): SweepResul
             proposed,
           );
           const bootstrapCash = cost + constructionQuote;
-          const firstUnitCleanNet = disease.basePrice - cost;
+          const firstUnitCleanNet = referencePrice - cost;
           seedBootstrap = {
             seed,
             researchCost: cost,
@@ -431,7 +446,7 @@ function printPriceByDifficulty(samples: readonly Sample[]): void {
     byDiff.set(s.difficulty, arr);
   }
   const diffs = [...byDiff.keys()].sort((a, b) => a - b);
-  console.log("\nbasePrice grouped by constructed-reference complexity:");
+  console.log("\nreference region price grouped by constructed-reference complexity:");
   for (const d of diffs) {
     const prices = byDiff.get(d) ?? [];
     const med = median(prices);
@@ -440,6 +455,61 @@ function printPriceByDifficulty(samples: readonly Sample[]): void {
       `  d=${String(d).padStart(2)} | n=${String(prices.length).padStart(4)} ` +
         `min=${String(lo).padStart(6)} median=${String(med).padStart(7)} max=${String(hi).padStart(6)}`,
     );
+  }
+}
+
+/** Per disease: region price spread, capped searches, and whether a hard region outprices every easy one. */
+export function regionPriceReport(samples: readonly Sample[]): {
+  readonly lines: string[];
+  readonly orderingFailures: string[];
+} {
+  const lines: string[] = [];
+  const orderingFailures: string[] = [];
+  const diseases = [...new Set(samples.map((sample) => sample.diseaseId))].sort((a, b) => a - b);
+  for (const disease of diseases) {
+    const prices: number[] = [];
+    let capped = 0;
+    for (const sample of samples) {
+      if (sample.diseaseId !== disease) continue;
+      for (const region of sample.regions) {
+        prices.push(region.price);
+        if (region.capped) capped++;
+      }
+      const easy = sample.regions.filter((region) => region.kind === "easy").map((region) => region.price);
+      const hard = sample.regions.filter((region) => region.kind === "hard").map((region) => region.price);
+      if (easy.length > 0 && hard.length > 0 && minMax(hard).max <= minMax(easy).max) {
+        orderingFailures.push(
+          `seed=${sample.seed} disease=${disease} hard max ${minMax(hard).max} <= easy max ${minMax(easy).max}`,
+        );
+      }
+    }
+    const { min, max } = minMax(prices);
+    lines.push(
+      `  disease ${disease}: regions=${prices.length} min=${min} median=${fmt(median(prices), 1)} max=${max} capped=${capped}`,
+    );
+  }
+  return { lines, orderingFailures };
+}
+
+function printRegionPrices(samples: readonly Sample[]): void {
+  const report = regionPriceReport(samples);
+  console.log("\nregion prices by reach difficulty (per disease, every region):");
+  for (const line of report.lines) console.log(line);
+  console.log(`  hard-region max ≤ easy-region max: ${report.orderingFailures.length} disease sample(s)`);
+  for (const failure of report.orderingFailures) console.log(`    ${failure}`);
+}
+
+function printMachineUsage(samples: readonly Sample[], catalog: readonly MachineCatalogEntry[]): void {
+  console.log("\nmachine usage in constructed references:");
+  for (const entry of catalog) {
+    let steps = 0;
+    let references = 0;
+    for (const sample of samples) {
+      const uses = sample.referenceTypes.filter((typeId) => typeId === entry.typeId).length;
+      steps += uses;
+      if (uses > 0) references++;
+    }
+    console.log(`  ${entry.typeId.padEnd(9)} steps=${String(steps).padStart(5)} references=${String(references).padStart(4)}`);
   }
 }
 
@@ -506,7 +576,7 @@ function printProfitSpread(samples: readonly Sample[]): void {
   const profits = samples.map((s) => s.profitPerTick);
   const { min: lo, max: hi } = minMax(profits);
   const med = median(profits);
-  console.log("\nfirst-unit net profit/tick spread (rate × (basePrice − production cost)):");
+  console.log("\nfirst-unit net profit/tick spread (rate × (reference region price − production cost)):");
   console.log(`  min=${fmt(lo)}  median=${fmt(med)}  max=${fmt(hi)}  (n=${profits.length})`);
 
   // Degeneracy flag: a disease whose profit/tick dwarfs the median by a large
@@ -560,12 +630,16 @@ export function runBalance(count: number, overrides: SweepOverrides = {}): 0 | 1
   printDifficultyHistogram(samples);
   printPriceByDifficulty(samples);
   printProfitSpread(samples);
+  printRegionPrices(samples);
+  printMachineUsage(samples, overrides.catalog ?? DEFAULT_CATALOG);
   printDiversity(result);
   printPuzzleQuality(samples);
   printPremiumReach(samples);
   printBootstrap(result.bootstraps);
   console.log(`\nfour-disease legal progression ($${PROGRESSION_RETRY_BUDGET} retry/build allowance):`);
   const progression = PROGRESSION_SEEDS.map((seed) => progressionLedger(seed));
+  const lowest = minMax(progression.map((ledger) => ledger.minimumCash)).min;
+  console.log(`  lowest cash over ${progression.length} seeds: ${lowest}`);
   for (const ledger of progression) {
     console.log(
       `  seed=${ledger.seed} completed=${ledger.completed} min-cash=${ledger.minimumCash} ` +

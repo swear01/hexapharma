@@ -31,7 +31,6 @@ import {
   MAX_CONSTRUCTIVE_FALLBACK,
   MAX_GENERATION_DISEASES,
   MAX_GENERATION_CATALOG_ENTRIES,
-  MAX_GENERATION_DIFFICULTY,
   MAX_MAP_CELLS,
   MAX_PASS_STEPS,
   MAX_TERRAIN_ATTEMPTS,
@@ -42,11 +41,18 @@ import {
   WATER_LEVEL,
   atlasContains,
   atlasRadius,
-  difficultyToBasePrice,
+  diseaseCatalogCount,
+  REGION_ABYSS_WEIGHT,
+  REGION_DIFFICULTY_CAP,
+  REGION_PASS_WEIGHT,
+  REGION_PRICE_BASE,
+  REGION_PRICE_PER_DIFFICULTY,
   generate as generateFresh,
   generateCached,
   generateWithDiagnostics,
   passTraversable,
+  pricingOutOfOrder,
+  regionPrice,
 } from "./index";
 
 const canonicalOptions = (seed: number, nMaps = 1): GenOptions => ({
@@ -789,11 +795,11 @@ describe("mapgen seeded disease diversity", () => {
     }
   });
 
-  it("tiers later canonical diseases through the three patent machine entries", () => {
+  it("tiers later canonical diseases through each tier's frontier patent machine", () => {
     for (const seed of [1, 14, 77, 184]) {
       const level = generate(oneAtlasOptions(seed));
       for (let disease = 1; disease <= 3; disease++) {
-        const patent = DEFAULT_CATALOG[disease + 3]!;
+        const patent = DEFAULT_CATALOG[diseaseCatalogCount(disease, DEFAULT_CATALOG.length) - 1]!;
         expect(level.diseases[disease]!.reference.steps.some((step) => step.typeId === patent.typeId)).toBe(true);
       }
     }
@@ -915,16 +921,13 @@ describe("mapgen constructive programs", () => {
     }
   });
 
-  it("honors exact feasible difficulty tiers and derives price from reference cost", () => {
+  it("honors exact feasible difficulty tiers and quotes the cheapest region as the base price", () => {
     for (const difficulty of [4, 6, 9, 12]) {
       const level = generate(options(14, { difficulty: { min: difficulty, max: difficulty } }));
       const disease = level.diseases[0]!;
       expect(disease.difficulty).toBe(difficulty);
-      const cost = disease.reference.steps.reduce((sum, step) => {
-        const entry = DEFAULT_CATALOG.find((candidate) => candidate.typeId === step.typeId)!;
-        return sum + entry.cost;
-      }, 0);
-      expect(disease.basePrice).toBe(difficultyToBasePrice(difficulty, cost));
+      expect(disease.regions.length).toBeGreaterThan(0);
+      expect(disease.basePrice).toBe(Math.min(...disease.regions.map((region) => region.price)));
     }
   });
 
@@ -946,7 +949,7 @@ describe("mapgen constructive programs", () => {
 
   it("constructs with three distinct catalog shapes even when catalog length is divisible by three", () => {
     const catalog = DEFAULT_CATALOG.slice(0, 3);
-    const level = generate(options(14, {
+    const level = generate(options(1, {
       catalog,
       difficulty: { min: 6, max: 6 },
     }));
@@ -959,55 +962,74 @@ describe("mapgen constructive programs", () => {
 });
 
 describe("mapgen pricing", () => {
-  const exactPrice = (difficulty: number, refCost: number): bigint =>
-    12n + 4n * BigInt(difficulty) + 2n * BigInt(refCost);
+  const PINNED_SEEDS = [...Array.from({ length: 32 }, (_, seed) => seed), 42, 100];
 
-  it("uses a sane linear difficulty and production-cost price across the supported range", () => {
-    for (let difficulty = 0; difficulty <= MAX_GENERATION_DIFFICULTY; difficulty++) {
-      for (const refCost of [0, 1, 7, 200, 1_000_000_000]) {
-        expect(difficultyToBasePrice(difficulty, refCost)).toBe(Number(exactPrice(difficulty, refCost)));
+  it("prices a region linearly in its reach difficulty across the supported range", () => {
+    let previous = 0;
+    for (let difficulty = 0; difficulty <= REGION_DIFFICULTY_CAP; difficulty++) {
+      const price = regionPrice(difficulty);
+      expect(price).toBe(REGION_PRICE_BASE + REGION_PRICE_PER_DIFFICULTY * difficulty);
+      expect(price).toBeGreaterThanOrEqual(previous);
+      previous = price;
+    }
+    const source = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
+    expect(source).not.toMatch(/Math\.pow\s*\(/);
+  });
+
+  it("rejects malformed difficulties", () => {
+    for (const difficulty of [NaN, Infinity, 1.5, -1, REGION_DIFFICULTY_CAP + 1]) {
+      expect(() => regionPrice(difficulty)).toThrow(/integer in 0\.\./);
+    }
+  });
+
+  it("stamps one priced region id on every Cure cell and prices it from its reach", () => {
+    for (const seed of [1, 14]) {
+      const { level, diagnostics } = generateDetailed(oneAtlasOptions(seed));
+      const map = level.mm.maps[0]!;
+      expect(diagnostics.pricing).toHaveLength(diagnostics.regions.length);
+      for (let cell = 0; cell < map.cell.length; cell++) {
+        expect(map.regionId[cell] !== 0).toBe(map.cell[cell] === CellKind.Cure);
+      }
+      for (const [index, region] of diagnostics.regions.entries()) {
+        const pricing = diagnostics.pricing[index]!;
+        expect(pricing.id).toBe(index + 1);
+        for (const cell of region.cells) expect(map.regionId[cell]).toBe(index + 1);
+        expect(pricing.capped).toBe(pricing.reachCost === null);
+        const expected = pricing.reachCost === null
+          ? REGION_DIFFICULTY_CAP
+          : Math.min(
+            REGION_DIFFICULTY_CAP,
+            pricing.reachCost + REGION_PASS_WEIGHT * pricing.passes + REGION_ABYSS_WEIGHT * pricing.abyss,
+          );
+        expect(pricing.difficulty).toBe(expected);
+        expect(pricing.price).toBe(regionPrice(expected));
+        const spec = level.diseases.find((disease) => disease.id === region.disease)!;
+        expect(spec.regions.find((candidate) => candidate.id === pricing.id)).toEqual({
+          id: pricing.id,
+          difficulty: pricing.difficulty,
+          price: pricing.price,
+          capped: pricing.capped,
+        });
+      }
+      for (const disease of level.diseases) {
+        const outcome = evaluate(level.mm, level.start, disease.reference);
+        const region = outcome.regions[outcome.cured.indexOf(disease.id)];
+        expect(map.regionId[disease.node.r * map.width + disease.node.q]).toBe(region);
       }
     }
   });
 
-  it("keeps active-range unit prices proportional instead of exploding exponentially", () => {
-    for (let difficulty = 0; difficulty <= 30; difficulty++) {
-      const expected = Number(exactPrice(difficulty, 7));
-      expect(difficultyToBasePrice(difficulty, 7)).toBe(expected);
+  it("keeps every disease's deep hard region pricier than its easy region on the pinned seeds", () => {
+    for (const seed of PINNED_SEEDS) {
+      const { diagnostics } = generateDetailed(oneAtlasOptions(seed));
+      expect(pricingOutOfOrder(diagnostics.pricing), `seed ${seed}`).toBeNull();
+      for (let disease = 0; disease < 4; disease++) {
+        const prices = (kind: string) => diagnostics.pricing
+          .filter((region) => region.disease === disease && region.kind === kind)
+          .map((region) => region.price);
+        expect(Math.max(...prices("hard")), `seed ${seed} disease ${disease}`)
+          .toBeGreaterThan(Math.max(...prices("easy")));
+      }
     }
-    const source = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
-    expect(source).not.toMatch(/Math\.pow\s*\(/);
-    expect(source).not.toMatch(/\b1\.7\b/);
-  });
-
-  it("rejects malformed inputs and unsafe output", () => {
-    for (const difficulty of [NaN, Infinity, 1.5]) {
-      expect(() => difficultyToBasePrice(difficulty, 0)).toThrow(/safe integer/);
-    }
-    expect(() => difficultyToBasePrice(-1, 0)).toThrow(/non-negative/);
-    expect(() => difficultyToBasePrice(MAX_GENERATION_DIFFICULTY + 1, 0)).toThrow(/must not exceed/);
-    for (const refCost of [NaN, Infinity, 1.5]) {
-      expect(() => difficultyToBasePrice(1, refCost)).toThrow(/safe integer/);
-    }
-    expect(() => difficultyToBasePrice(1, -1)).toThrow(/non-negative/);
-    expect(difficultyToBasePrice(10, 30)).toBe(112);
-    const difficultyPrice = exactPrice(MAX_GENERATION_DIFFICULTY, 0);
-    const maxRefCost = Number((BigInt(Number.MAX_SAFE_INTEGER) - difficultyPrice) / 2n);
-    expect(difficultyToBasePrice(MAX_GENERATION_DIFFICULTY, maxRefCost)).toBe(
-      Number(exactPrice(MAX_GENERATION_DIFFICULTY, maxRefCost)),
-    );
-    expect(() => difficultyToBasePrice(MAX_GENERATION_DIFFICULTY, maxRefCost + 1)).toThrow(
-      /safe-integer range/,
-    );
-  });
-
-  it("is jointly monotone in difficulty and reference cost", () => {
-    let previous = 0;
-    for (let difficulty = 0; difficulty <= MAX_GENERATION_DIFFICULTY; difficulty++) {
-      const current = difficultyToBasePrice(difficulty, difficulty * 2);
-      expect(Number.isSafeInteger(current)).toBe(true);
-      expect(current).toBeGreaterThanOrEqual(previous);
-      previous = current;
-    }
-  });
+  }, 120_000);
 });

@@ -57,7 +57,7 @@ describe("factory machine visual language", () => {
   it("has one canonical footprint for every current path machine and no obsolete family", () => {
     const catalogIds = DEFAULT_CATALOG.map((entry) => entry.typeId).sort();
     expect(Object.keys(DEFAULT_SHAPES).sort()).toEqual(catalogIds);
-    expect(DEFAULT_SHAPES.settle?.cells).toHaveLength(7);
+    expect(DEFAULT_SHAPES.crane?.cells).toHaveLength(7);
     expect(DEFAULT_SHAPES.swap01).toBeUndefined();
   });
 

@@ -1,10 +1,11 @@
 import { quoteProductionBuild } from "../src/sim/construction";
-import { nextUnitPrice } from "../src/sim/economy";
+import { nextUnitPrice, premiumGross } from "../src/sim/economy";
 import {
   DEFAULT_STARTING_CASH,
   SIDE_EFFECT_PENALTY,
   applyGameIntent,
   createGameState,
+  cureRegionPrice,
   shippingContracts,
 } from "../src/sim/game";
 import { generate } from "../src/sim/mapgen";
@@ -15,6 +16,7 @@ import {
   DEFAULT_CATALOG,
   type GameState,
   type GenOptions,
+  type Template,
 } from "../src/sim/phase0_interfaces";
 import { compileEntitledPrototype } from "../src/sim/recipe";
 import { pathToFileURL } from "node:url";
@@ -69,11 +71,20 @@ function unlock(game: GameState, id: string): GameState {
   return applyGameIntent(game, { kind: "unlockPatent", id });
 }
 
-function unlocksBefore(disease: number): readonly string[] {
-  if (disease === 1) return ["skew-unlock"];
-  if (disease === 2) return ["bench-2", "dilute-unlock"];
-  if (disease === 3) return ["settle-unlock"];
-  return [];
+/** Patents (prerequisites first) still needed for the reference's machines. */
+export function unlocksFor(reference: Template, owned: readonly string[]): readonly string[] {
+  const needed: string[] = [];
+  const add = (id: string): void => {
+    if (owned.includes(id) || needed.includes(id)) return;
+    for (const required of DEFAULT_PATENTS.find((node) => node.id === id)!.requires) add(required);
+    needed.push(id);
+  };
+  for (const step of reference.steps) {
+    const node = DEFAULT_PATENTS.find((candidate) =>
+      candidate.effect.kind === "unlockMachine" && candidate.effect.typeId === step.typeId);
+    if (node !== undefined) add(node.id);
+  }
+  return needed;
 }
 
 function patentCost(id: string): number {
@@ -88,7 +99,7 @@ export function progressionLedger(seed: number, startingCash = DEFAULT_STARTING_
 
   for (const disease of level.diseases) {
     const cashBefore = game.economy.cash;
-    const patentIds = unlocksBefore(disease.id);
+    const patentIds = unlocksFor(disease.reference, game.patents.unlocked);
     const unlockCost = patentIds.reduce((total, id) => total + patentCost(id), 0);
     try {
       for (const id of patentIds) game = unlock(game, id);
@@ -100,6 +111,7 @@ export function progressionLedger(seed: number, startingCash = DEFAULT_STARTING_
         throw new Error(`reference did not cure disease ${disease.id}`);
       }
       const researchCost = game.research.lastTrial.cost;
+      const referencePrice = cureRegionPrice(disease, game.research.lastTrial.outcome);
       const effects = activeEffects(DEFAULT_PATENTS, game.patents);
       const layout = compileEntitledPrototype(
         disease.reference,
@@ -117,7 +129,8 @@ export function progressionLedger(seed: number, startingCash = DEFAULT_STARTING_
       for (const product of [...game.inventory]) {
         if (!product.outcome.cured.includes(disease.id)) continue;
         const alreadySold = game.economy.sold.find((entry) => entry.disease === disease.id)?.count ?? 0;
-        const revenue = nextUnitPrice(disease.basePrice, alreadySold);
+        const demand = nextUnitPrice(cureRegionPrice(disease, product.outcome), alreadySold);
+        const revenue = product.outcome.premium.includes(disease.id) ? premiumGross(demand) : demand;
         const cost = product.productionCost + product.outcome.sideEffects.length * SIDE_EFFECT_PENALTY;
         if (revenue <= cost) continue;
         const before = game.economy.cash;
@@ -132,7 +145,7 @@ export function progressionLedger(seed: number, startingCash = DEFAULT_STARTING_
       }
       const alreadySold = game.economy.sold.find((entry) => entry.disease === disease.id)?.count ?? 0;
       let demandRemaining = 0;
-      for (let count = alreadySold; nextUnitPrice(disease.basePrice, count) > researchCost; count++) {
+      for (let count = alreadySold; nextUnitPrice(referencePrice, count) > researchCost; count++) {
         demandRemaining++;
       }
       entries.push({

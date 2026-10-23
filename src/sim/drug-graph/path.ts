@@ -73,7 +73,8 @@ function walkPathCore(
     const scale = map.cell[r * map.width + q] === CellKind.Swamp ? 1 : 2;
     const nextPQ = pq + HEX_DQ[dir]! * scale;
     const nextPR = pr + HEX_DR[dir]! * scale;
-    const towards = cellOfDoubledPoint(nextPQ, nextPR, q, r);
+    // From a cell centre a full step lands exactly on the neighbour's centre.
+    const towards = scale === 2 && pq === 2 * q && pr === 2 * r ? dir : cellOfDoubledPoint(nextPQ, nextPR, q, r);
     const targetQ = towards < 0 ? q : q + HEX_DQ[towards]!;
     const targetR = towards < 0 ? r : r + HEX_DR[towards]!;
     if (!inBounds(map, targetQ, targetR)) continue;
@@ -171,11 +172,22 @@ export function walkPath(
   map: EffectMap,
   from: HexCoord,
   machine: Machine,
-  heading: HexDir = 0,
-  offset: HexCoord = { q: 0, r: 0 },
+  heading: HexDir,
+  offset: HexCoord,
 ): PathWalkResult {
   validateEffectMap(map);
   validateMachinePath(machine);
+  return walkValidatedPath(map, from, machine, heading, offset);
+}
+
+/** `walkPath` without the per-call EffectMap / Machine validation; the caller validates once. */
+export function walkValidatedPath(
+  map: EffectMap,
+  from: HexCoord,
+  machine: Machine,
+  heading: HexDir,
+  offset: HexCoord,
+): PathWalkResult {
   const entered: HexCoord[] = [];
   const points: HexCoord[] = [];
   const out = new Int32Array(PATH_OUT_STRIDE);

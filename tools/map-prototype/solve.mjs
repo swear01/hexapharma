@@ -4,9 +4,9 @@ import { cells, passes, DQ, DR } from "./map.mjs";
 const { cells: list } = cells(); const byKey = new Map(list.map((c) => [c.key, c]));
 // catalog paths in the game's E,SE,SW,W,NW,NE order -> convert to this file's ccw order (E,NE,NW,W,SW,SE)
 const G2L = [0, 5, 4, 3, 2, 1];
-const CAT = { push: [0, 0, 1], push2: [0, 5, 0, 1, 0, 1, 0], pull: [3, 3, 4], shear: [4, 4, 5, 1], skew: [1, 0, 2, 3, 1, 5], dilute: [0, 1, 2, 3, 4, 5, 0, 1], settle: [1, 1, 0, 0, 4, 4, 5, 3, 2] };
-const BASIC = ["push", "push2", "pull", "shear"];
-const TURN = { push: 1, push2: 0, pull: 3, shear: -1, skew: 2, dilute: 0, settle: -2 }; // tentative, in 60° steps (game cw)
+const CAT = { hook: [0, 0, 1], elbow: [5, 5, 0], return: [3, 3, 4], wave: [0, 5, 0, 1, 0, 1, 0], zigzag: [1, 0, 1, 0], loop: [0, 1, 2, 3, 4, 5, 0], straight: [0, 0, 0, 0], crane: [0, 0, 0, 5, 5] };
+const BASIC = ["hook", "elbow", "return", "wave"];
+const TURN = { hook: 1, elbow: -1, return: 3, wave: 0, zigzag: 2, loop: 0, straight: 0, crane: -2 }; // in 60° steps (game cw), mirrors DEFAULT_CATALOG
 // Swamp ("water") half steps on doubled coordinates, mirroring src/sim/drug-graph/path.ts: the point
 // P = 2·cell + offset; ties prefer the current cell, then the game's E,SE,SW,W,NW,NE order.
 const dist2 = (pq, pr, q, r) => { const dq = pq - 2 * q, dr = pr - 2 * r; return dq * dq + dq * dr + dr * dr; };
@@ -44,6 +44,6 @@ function solvePass(ps, relative, machines) {
   return { ok: false };
 }
 for (const ps of passes) {
-  const rows = [["heading ignored, 4 basic", false, BASIC], ["heading-relative, 4 basic", true, BASIC], ["heading-relative, all 7", true, Object.keys(CAT)]].map(([label, rel, ms]) => { const s = solvePass(ps, rel, ms); return `${label}: ${s.ok ? `OK ${s.steps} steps (${s.seq})` : "NO SOLUTION ≤10"}`; });
+  const rows = [["heading ignored, 4 basic", false, BASIC], ["heading-relative, 4 basic", true, BASIC], ["heading-relative, all 8", true, Object.keys(CAT)]].map(([label, rel, ms]) => { const s = solvePass(ps, rel, ms); return `${label}: ${s.ok ? `OK ${s.steps} steps (${s.seq})` : "NO SOLUTION ≤10"}`; });
   console.log(`${ps.name}: narrow ${ps.narrowCells.length} cells | ${rows.join(" | ")}`);
 }

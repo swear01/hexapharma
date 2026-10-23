@@ -12,6 +12,7 @@ function map(): EffectMap {
     cell: new Uint8Array(12),
     cureId: new Int16Array(12).fill(-1),
     cureTier: new Uint8Array(12),
+    regionId: new Uint16Array(12),
     sideEffectId: new Int32Array(12).fill(-1),
     portalTo: new Int32Array(12).fill(-1),
     elevation: new Int16Array(12),

@@ -54,6 +54,9 @@ export function validateEffectMap(map: EffectMap): void {
   if (!(map.cureTier instanceof Uint8Array) || map.cureTier.length !== area) {
     throw new Error("drug graph: cureTier length must equal width*height and use Uint8Array");
   }
+  if (!(map.regionId instanceof Uint16Array) || map.regionId.length !== area) {
+    throw new Error("drug graph: regionId length must equal width*height and use Uint16Array");
+  }
   if (!(map.elevation instanceof Int16Array) || map.elevation.length !== area) {
     throw new Error("drug graph: elevation length must equal width*height and use Int16Array");
   }
@@ -100,6 +103,9 @@ export function validateEffectMap(map: EffectMap): void {
     const tier = map.cureTier[index];
     if (kind === CellKind.Cure ? tier !== 1 && tier !== 2 : tier !== 0) {
       throw new Error(`drug graph: cureTier at cell ${index} must be 1 or 2 on Cure cells and 0 elsewhere`);
+    }
+    if ((kind === CellKind.Cure) !== (map.regionId[index] !== 0)) {
+      throw new Error(`drug graph: regionId at cell ${index} must be non-zero exactly on Cure cells`);
     }
     const sideEffectId = map.sideEffectId[index];
     if (sideEffectId === undefined || sideEffectId < -1) {

@@ -107,7 +107,7 @@ test("Research is one large centered Atlas with no Route Floor or layer-transfer
 }) => {
   await page.goto("/");
   await expect(page.getByTestId("research-mission")).toContainText("Disease 1");
-  await expect(page.getByTestId("research-assay-sector")).toHaveText("north-west");
+  await expect(page.getByTestId("research-assay-sector")).toHaveText("west");
   const frame = page.getByTestId("lab-map-frame");
   await expect(frame).toBeVisible();
   const level = generate(defaultGenOptions(14));
@@ -153,7 +153,7 @@ test("planning is free; Run pays the whole route once and reveals only its actua
   const frame = page.getByTestId("lab-map-frame");
   const canvas = frame.locator("canvas");
   await expect(canvas).toBeVisible({ timeout: 15_000 });
-  const push = page.getByTestId("research-machine-push");
+  const push = page.getByTestId("research-machine-hook");
   await expect(push.locator("[data-icon-shape='path']")).toHaveCount(1);
   await expect(page.getByTestId("research-calibration")).toHaveCount(0);
   await expect(page.getByTestId("research-abort")).toHaveCount(0);
@@ -176,21 +176,21 @@ test("planning is free; Run pays the whole route once and reveals only its actua
   await expect(stepName).toHaveAttribute("title", "Hook pump");
   expect(await stepName.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   await expect(page.getByTestId("research-program-strip").getByRole("listitem").first())
-    .toContainText("$2");
+    .toContainText("$3");
   await expect(cash).toHaveText(String(cashBefore));
   expect(known(await revealed.textContent())).toBe(revealedBefore);
   await expect(page.getByTestId("research-atlas-outcome")).toHaveCount(0);
 
   await push.click();
-  await expect(page.getByTestId("research-command")).toHaveText("Run · $4");
+  await expect(page.getByTestId("research-command")).toHaveText("Run · $6");
   await page.getByTestId("research-command").click();
-  await expect(cash).toHaveText(String(cashBefore - 4));
+  await expect(cash).toHaveText(String(cashBefore - 6));
   expect(known(await revealed.textContent())).toBeGreaterThan(revealedBefore);
   await expect(page.getByTestId("research-atlas-outcome")).toContainText(/side effects/i);
   await expect(page.getByTestId("research-program-count")).toHaveText("2 steps");
 
   await page.keyboard.press("Enter");
-  await expect(cash).toHaveText(String(cashBefore - 8));
+  await expect(cash).toHaveText(String(cashBefore - 12));
   await expect(page.getByTestId("research-program-count")).toHaveText("2 steps");
 });
 
@@ -198,8 +198,8 @@ test("hovering and clicking the last control removes the last planned step", asy
   await page.goto("/?cash=200");
   const frame = page.getByTestId("lab-map-frame");
   await expect(frame.locator("canvas")).toBeVisible({ timeout: 15_000 });
-  await planSteps(page, "push2", 2);
-  const target = await lastControlPoint(page, "push2", 2);
+  await planSteps(page, "wave", 2);
+  const target = await lastControlPoint(page, "wave", 2);
   await page.mouse.move(target.x, target.y);
   await expect(frame).toHaveCSS("cursor", "pointer");
   await expect(frame).toHaveAttribute("title", "Remove last step");
@@ -225,7 +225,7 @@ test("number keys append, Backspace and Ctrl+Z remove, Clear empties, and Enter 
   await page.keyboard.press("Digit2");
   await expect(page.getByTestId("research-program-count")).toHaveText("1 step");
   const selectedName = page.getByTestId("research-program-strip").locator(".research-step-name").first();
-  await expect(selectedName).toHaveAttribute("title", "Wave reactor");
+  await expect(selectedName).toHaveAttribute("title", "Elbow press");
   await page.keyboard.press("Digit1");
   await page.keyboard.press("Digit1");
   await expect(page.getByTestId("research-program-count")).toHaveText("3 steps");
@@ -244,10 +244,10 @@ test("number keys append, Backspace and Ctrl+Z remove, Clear empties, and Enter 
 
 test("hotbar glyphs rotate to the heading at the end of the planned route", async ({ page }) => {
   await page.goto("/");
-  const glyph = page.getByTestId("research-machine-push2").locator("[data-icon-shape='path']");
+  const glyph = page.getByTestId("research-machine-wave").locator("[data-icon-shape='path']");
   const ahead = await glyph.getAttribute("points");
-  await page.getByTestId("research-machine-push").click();
-  expect(plannedRoute("push").drug.heading).toBe(1);
+  await page.getByTestId("research-machine-hook").click();
+  expect(plannedRoute("hook").drug.heading).toBe(1);
   await expect(glyph).not.toHaveAttribute("points", ahead ?? "");
   await page.keyboard.press("Backspace");
   await expect(glyph).toHaveAttribute("points", ahead ?? "");
@@ -257,7 +257,7 @@ test("native Enter activates a focused Research button instead of running the ro
   await page.goto("/?cash=200");
   await expect(page.getByTestId("lab-map-frame").locator("canvas")).toBeVisible({ timeout: 15_000 });
 
-  const push2 = page.getByTestId("research-machine-push2");
+  const push2 = page.getByTestId("research-machine-wave");
   await push2.focus();
   await page.keyboard.press("Enter");
 
@@ -279,7 +279,7 @@ test("a non-curing Run preserves the player's camera", async ({ page }) => {
   await page.goto("/");
   const frame = page.getByTestId("lab-map-frame");
   await expect(frame.locator("canvas")).toBeVisible({ timeout: 15_000 });
-  await page.getByTestId("research-machine-push2").click();
+  await page.getByTestId("research-machine-wave").click();
   const box = await frame.boundingBox();
   if (box === null) throw new Error("Research Atlas has no bounds");
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
@@ -299,7 +299,7 @@ test("a Research camera stays where the player left it across facilities", async
   await page.goto("/");
   const frame = page.getByTestId("lab-map-frame");
   await expect(frame.locator("canvas")).toBeVisible({ timeout: 15_000 });
-  await page.getByTestId("research-machine-push2").click();
+  await page.getByTestId("research-machine-wave").click();
   await page.getByTestId("research-command").click();
 
   const box = await frame.boundingBox();
@@ -326,9 +326,9 @@ test("Next focus follows the end of the growing planned route", async ({ page })
   await expect(page.getByTestId("lab-focus")).toHaveAttribute("aria-label", "Focus dose");
 
   for (let stepCount = 1; stepCount <= 3; stepCount++) {
-    await page.getByTestId("research-machine-push2").click();
+    await page.getByTestId("research-machine-wave").click();
     await expect(page.getByTestId("lab-focus")).toHaveAttribute("aria-label", "Focus next endpoint");
-    const endpointCamera = focusLabCamera(plannedEndpoint("push2", stepCount));
+    const endpointCamera = focusLabCamera(plannedEndpoint("wave", stepCount));
     await page.getByTestId("lab-focus").click();
     await expect(frame).toHaveAttribute("data-camera-x", String(endpointCamera.x));
     await expect(frame).toHaveAttribute("data-camera-y", String(endpointCamera.y));
@@ -338,13 +338,13 @@ test("Next focus follows the end of the growing planned route", async ({ page })
 test("a resolved outcome keeps its feedback while focus stays on the planned endpoint", async ({ page }) => {
   await page.goto("/?cash=200");
   await expect(page.getByTestId("lab-map-frame").locator("canvas")).toBeVisible({ timeout: 15_000 });
-  await page.getByTestId("research-machine-push").click();
+  await page.getByTestId("research-machine-hook").click();
   await page.getByTestId("research-command").click();
   await expect(page.getByTestId("research-atlas-outcome")).toBeVisible();
   const focus = page.getByTestId("lab-focus");
   await expect(focus).toHaveAttribute("aria-label", "Focus next endpoint");
   await focus.click();
-  const endpointCamera = focusLabCamera(plannedEndpoint("push", 1));
+  const endpointCamera = focusLabCamera(plannedEndpoint("hook", 1));
   const frame = page.getByTestId("lab-map-frame");
   await expect(frame).toHaveAttribute("data-camera-x", String(endpointCamera.x));
   await expect(frame).toHaveAttribute("data-camera-y", String(endpointCamera.y));
@@ -481,7 +481,7 @@ test("compact Research keeps resolved feedback separate from its path controls",
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/?cash=200");
   await expect(page.getByTestId("lab-map-frame").locator("canvas")).toBeVisible({ timeout: 15_000 });
-  await page.getByTestId("research-machine-push").click();
+  await page.getByTestId("research-machine-hook").click();
   await page.getByTestId("research-command").click();
   const outcome = page.getByTestId("research-atlas-outcome");
   await expect(outcome).toBeVisible();

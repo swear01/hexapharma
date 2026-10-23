@@ -27,10 +27,10 @@
  *   INV-9  constructive solvability: a generated level admits its constructed reference
  *          solution (evaluate(reference) cures the disease, not failed).
  *   INV-10 generation determinism: same seed ⇒ field-equal MultiMap + identical
- *          difficulty + identical base price.
+ *          difficulty + identical region prices.
  *   INV-11 difficulty bounds: every disease's difficulty lies within [min, max].
- *   INV-12 pricing consistency: same (difficulty, refCost) ⇒ same base price;
- *          base price is monotonically non-decreasing in difficulty.
+ *   INV-12 pricing consistency: a region price depends only on its reach difficulty
+ *          and is monotonically non-decreasing in it.
  *   INV-13 solver soundness: a non-null Solution, when run through evaluate(), actually
  *          cures the requested targets and never fails.
  * core:
@@ -88,6 +88,8 @@ export interface EffectMap {
   readonly cureId: Int16Array;
   /** length width*height; cure tier at Cure cells (1, or 2 = ★ premium), else 0. */
   readonly cureTier: Uint8Array;
+  /** length width*height; priced cure region id (≥ 1, see DiseaseSpec.regions) at Cure cells, else 0. */
+  readonly regionId: Uint16Array;
   /** length width*height; globally unique SideEffectId overlay, else -1; may overlap Cure. */
   readonly sideEffectId: Int32Array;
   /** length width*height; same-map destination index at Portal cells, else -1. */
@@ -144,6 +146,8 @@ export interface Outcome {
   readonly cured: readonly DiseaseId[]; // diseases whose node a final position landed on
   /** Subset of `cured` reached on a tier-2 (★) Cure cell; sells at a premium. */
   readonly premium: readonly DiseaseId[];
+  /** Cure region id of each `cured` entry (same order); selects that cure's sale price. */
+  readonly regions: readonly number[];
   readonly sideEffects: readonly SideEffectId[]; // side-effect overlays landed on
 }
 
@@ -222,12 +226,26 @@ export type SolveFn = (mm: MultiMap, start: DrugState, opts: SolveOptions) => So
 
 // ─────────────────────────────── mapgen API ───────────────────────────────
 
+/** One priced cure region; its cells carry `id` in `EffectMap.regionId`. */
+export interface CureRegionSpec {
+  readonly id: number;
+  /** Integer reach difficulty (cheapest route cost, narrow passes, Abyss beside the route). */
+  readonly difficulty: number;
+  /** Sale price before demand decay (★ cells add the premium on top). */
+  readonly price: number;
+  /** The bounded reach search found no route; difficulty is the capped maximum. */
+  readonly capped: boolean;
+}
+
 export interface DiseaseSpec {
   readonly id: DiseaseId;
   readonly map: MapIndex;
   readonly node: HexCoord;
   readonly difficulty: number;
+  /** Reference price: the cheapest of `regions` (sales use the actual region's price). */
   readonly basePrice: number;
+  /** This disease's cure regions, ascending by id. */
+  readonly regions: readonly CureRegionSpec[];
   /** A constructed/known solution (existence proof — INV-9). */
   readonly reference: Template;
 }
@@ -252,8 +270,8 @@ export interface GeneratedLevel {
 /** Constructive generation + per-disease difficulty scoring + pricing. INV-9..12. */
 export type GenerateFn = (opts: GenOptions) => GeneratedLevel;
 
-/** Base price from constructive complexity + reference production cost. INV-12. */
-export type DifficultyToBasePriceFn = (difficulty: number, refCost: number) => number;
+/** Region price from its reach difficulty. INV-12. */
+export type RegionPriceFn = (difficulty: number) => number;
 
 // ─────────────────────────────── shared data ───────────────────────────────
 
@@ -271,39 +289,28 @@ function deepFreezeData<T>(value: T): T {
   return value;
 }
 
-const EAST: HexDir = 0;
-const SOUTH_EAST: HexDir = 1;
-const SOUTH_WEST: HexDir = 2;
-const WEST: HexDir = 3;
-const NORTH_WEST: HexDir = 4;
-const NORTH_EAST: HexDir = 5;
+// Relative path directions (added to the drug heading): F = heading, R = +1 (clockwise 60°),
+// BR = +2, B = +3, BL = +4, L = +5.
+const F: HexDir = 0;
+const R: HexDir = 1;
+const BR: HexDir = 2;
+const B: HexDir = 3;
+const BL: HexDir = 4;
+const L: HexDir = 5;
 
+/**
+ * Early (index 0..3, the initial catalog): cheap but awkward — each bends the heading or wiggles.
+ * Mid (zigzag, loop) and late (straight, crane) unlock through patents; see docs/design.md §1.2.
+ */
 export const DEFAULT_CATALOG: readonly MachineCatalogEntry[] = deepFreezeData([
-  { typeId: "push", path: [EAST, EAST, SOUTH_EAST], turn: 1, cost: 2, speed: 2 },
-  {
-    typeId: "push2",
-    path: [EAST, NORTH_EAST, EAST, SOUTH_EAST, EAST, SOUTH_EAST, EAST],
-    turn: 0,
-    cost: 6,
-    speed: 7,
-  },
-  { typeId: "pull", path: [WEST, WEST, NORTH_WEST], turn: 3, cost: 2, speed: 3 },
-  { typeId: "shear", path: [NORTH_WEST, NORTH_WEST, NORTH_EAST, SOUTH_EAST], turn: -1, cost: 4, speed: 5 },
-  { typeId: "skew", path: [SOUTH_EAST, EAST, SOUTH_WEST, WEST, SOUTH_EAST, NORTH_EAST], turn: 2, cost: 5, speed: 6 },
-  {
-    typeId: "dilute",
-    path: [EAST, SOUTH_EAST, SOUTH_WEST, WEST, NORTH_WEST, NORTH_EAST, EAST, SOUTH_EAST],
-    turn: 0,
-    cost: 6,
-    speed: 8,
-  },
-  {
-    typeId: "settle",
-    path: [SOUTH_EAST, SOUTH_EAST, EAST, EAST, NORTH_WEST, NORTH_WEST, NORTH_EAST, WEST, SOUTH_WEST],
-    turn: -2,
-    cost: 7,
-    speed: 9,
-  },
+  { typeId: "hook", path: [F, F, R], turn: 1, cost: 3, speed: 3 },
+  { typeId: "elbow", path: [L, L, F], turn: -1, cost: 3, speed: 3 },
+  { typeId: "return", path: [B, B, BL], turn: 3, cost: 2, speed: 3 },
+  { typeId: "wave", path: [F, L, F, R, F, R, F], turn: 0, cost: 7, speed: 7 },
+  { typeId: "zigzag", path: [R, F, R, F], turn: 2, cost: 6, speed: 4 },
+  { typeId: "loop", path: [F, R, BR, B, BL, L, F], turn: 0, cost: 5, speed: 7 },
+  { typeId: "straight", path: [F, F, F, F], turn: 0, cost: 12, speed: 4 },
+  { typeId: "crane", path: [F, F, F, L, L], turn: -2, cost: 11, speed: 5 },
 ]);
 
 // ═══════════════════════════════ Phase 2 — factory (spatial packing + throughput) ═══════════════════════════════
@@ -634,8 +641,15 @@ export const SHAPE_VAT: MachineShape = deepFreezeData({
   outPorts: [{ cell: { q: 2, r: 1 }, side: SH_E }],
 });
 
-/** Seven-cell U-settler; the open chamber makes its return path legible in packing. */
-export const SHAPE_SETTLER: MachineShape = deepFreezeData({
+/** Five-cell straight bed: a long, narrow drive. */
+export const SHAPE_LINE: MachineShape = deepFreezeData({
+  cells: [{ q: 0, r: 0 }, { q: 1, r: 0 }, { q: 2, r: 0 }, { q: 3, r: 0 }, { q: 4, r: 0 }],
+  inPorts: [{ cell: { q: 0, r: 0 }, side: SH_W }],
+  outPorts: [{ cell: { q: 4, r: 0 }, side: SH_E }],
+});
+
+/** Seven-cell U crane; the open bay makes its swung-back arm legible in packing. */
+export const SHAPE_CRANE: MachineShape = deepFreezeData({
   cells: [
     { q: 0, r: 0 }, { q: 0, r: 1 }, { q: 0, r: 2 },
     { q: 1, r: 2 },
@@ -647,13 +661,14 @@ export const SHAPE_SETTLER: MachineShape = deepFreezeData({
 
 /** Canonical footprint per machine type (each type has a fixed shape, Big-Pharma style). */
 export const DEFAULT_SHAPES: Readonly<Record<MachineTypeId, MachineShape>> = deepFreezeData({
-  push: SHAPE_PUMP,
-  push2: SHAPE_LONG_BED,
-  pull: SHAPE_RETURN,
-  shear: SHAPE_CENTRIFUGE,
-  skew: SHAPE_SKEW,
-  dilute: SHAPE_VAT,
-  settle: SHAPE_SETTLER,
+  hook: SHAPE_PUMP,
+  elbow: SHAPE_CENTRIFUGE,
+  return: SHAPE_RETURN,
+  wave: SHAPE_LONG_BED,
+  zigzag: SHAPE_SKEW,
+  loop: SHAPE_VAT,
+  straight: SHAPE_LINE,
+  crane: SHAPE_CRANE,
 });
 
 // ═══════════════════════════════ Phase 3 — economy / patent / save ═══════════════════════════════
@@ -695,7 +710,7 @@ export type SellUnitFn = (
   basePrice: number,
   productionCost: number,
   sideEffectPenalty: number,
-  /** The unit landed on a ★ (tier-2) Cure: gross ×3/2, floored. */
+  /** The unit landed on a ★ (tier-2) Cure: gross + floor(gross / 2). */
   premium?: boolean,
 ) => SaleResult;
 

@@ -85,27 +85,27 @@ test("Research planning is free; only Run spends once and reveals", async ({ pag
   const fogBefore = await revealed.textContent();
   const cashBefore = await cash.textContent();
   await expect(page.getByTestId("lab-canvas")).toBeVisible({ timeout: 15_000 });
-  await page.getByTestId("research-machine-push").click();
-  await page.getByTestId("research-machine-push").click();
+  await page.getByTestId("research-machine-hook").click();
+  await page.getByTestId("research-machine-hook").click();
   await expect(page.getByTestId("research-program-count")).toHaveText("2 steps");
   await expect(revealed).toHaveText(fogBefore ?? "");
   await expect(cash).toHaveText(cashBefore ?? "");
   await page.getByTestId("research-command").click();
   await expect(page.getByTestId("research-program-count")).toHaveText("2 steps");
   await expect(revealed).not.toHaveText(fogBefore ?? "");
-  await expect(cash).toHaveText(String(Number(cashBefore) - 4));
+  await expect(cash).toHaveText(String(Number(cashBefore) - 6));
 });
 
 test("clicking the last control removes it and Clear empties the plan without refunds", async ({ page }) => {
   await page.goto("/?cash=200");
   await expect(page.getByTestId("lab-canvas")).toBeVisible({ timeout: 15_000 });
-  for (let step = 0; step < 4; step++) await page.getByTestId("research-machine-push").click();
+  for (let step = 0; step < 4; step++) await page.getByTestId("research-machine-hook").click();
   await page.getByTestId("research-command").click();
-  await expect(page.getByTestId("cash")).toHaveText("192");
+  await expect(page.getByTestId("cash")).toHaveText("188");
   await clickLastControl(page, 4);
   await expect(page.getByTestId("research-program-count")).toHaveText("3 steps");
   await page.getByTestId("research-clear").click();
-  await expect(page.getByTestId("cash")).toHaveText("192");
+  await expect(page.getByTestId("cash")).toHaveText("188");
   await expect(page.getByTestId("research-command")).toBeDisabled();
   await expect(page.getByTestId("research-program-count")).toHaveText("0 steps");
 });

@@ -29,6 +29,7 @@ function emptyMap(width: number, height: number, start: HexCoord): EffectMap {
     cell: new Uint8Array(size),
     cureId: new Int16Array(size).fill(-1),
     cureTier: new Uint8Array(size),
+    regionId: new Uint16Array(size),
     sideEffectId: new Int32Array(size).fill(-1),
     portalTo: new Int32Array(size).fill(-1),
     elevation: new Int16Array(size),
@@ -50,7 +51,9 @@ function setCell(
   ids[index] = cureId;
   const tiers = Uint8Array.from(map.cureTier);
   tiers[index] = kind === CellKind.Cure ? 1 : 0;
-  return { ...map, cell, cureId: ids, cureTier: tiers };
+  const regions = Uint16Array.from(map.regionId);
+  regions[index] = kind === CellKind.Cure ? 1 : 0;
+  return { ...map, cell, cureId: ids, cureTier: tiers, regionId: regions };
 }
 
 const cure = (map: EffectMap, q: number, r: number, id: number): EffectMap =>

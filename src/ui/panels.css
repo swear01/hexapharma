@@ -29,6 +29,7 @@
 .market-sheet .market-value-clean { color: var(--cure-ink); }
 .market-sheet .market-value-tainted, .market-equation .market-value-tainted strong { color: var(--effect-ink); }
 .market-value-tainted { color: var(--effect-ink); }
+.market-sheet .market-value-premium { color: var(--cure-ink); }
 .market-equation { gap: 4px 10px !important; }
 .market-net strong { font-size: 23px; }
 .price-ladder { display: flex; flex-wrap: wrap; margin: 0; padding: 0; list-style: none; }

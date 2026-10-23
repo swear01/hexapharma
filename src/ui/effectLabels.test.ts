@@ -14,6 +14,7 @@ describe("player-facing effect labels", () => {
       final: [{ q: 91, r: 73 }],
       cured: [0],
       premium: [],
+      regions: [1],
       sideEffects: [4001, 9002],
     });
     expect(text).toBe("Cure Disease 1 · 2 side effects");

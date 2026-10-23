@@ -61,13 +61,13 @@ test("Market explains Ship best economics and reports Knowledge from a sale", as
 
   await expect(row.getByText("Next unit", { exact: true })).toBeVisible();
   await expect(row.getByText("Demand", { exact: true })).toBeVisible();
-  await expect(row.getByTestId("shop-next-0")).toHaveText("$76");
-  await expect(row.getByTestId("shop-production-cost-0")).toHaveText("$16");
+  await expect(row.getByTestId("shop-next-0")).toHaveText("$78");
+  await expect(row.getByTestId("shop-production-cost-0")).toHaveText("$22");
   // Clean stock carries no side-effect term; the penalty appears only when it applies.
   await expect(row.getByTestId("shop-side-effect-penalty-0")).toHaveCount(0);
-  await expect(row.getByTestId("shop-net-0")).toHaveText("$60");
+  await expect(row.getByTestId("shop-net-0")).toHaveText("$56");
   await expect(row.getByTestId("shop-ladder-0").locator("li")).toHaveCount(5);
-  await expect(row.getByTestId("shop-ladder-0").locator("li").first()).toHaveText("$76");
+  await expect(row.getByTestId("shop-ladder-0").locator("li").first()).toHaveText("$78");
   await expect(row.getByTestId("shop-clean-0")).toHaveClass("market-value-clean");
   await expect(row.getByTestId("shop-tainted-0")).toHaveClass("market-value-tainted");
   await expect(row.locator(".market-stock.is-tainted")).toContainText("Tainted");
@@ -83,9 +83,9 @@ test("Market gives a visible reason when no stock can ship profitably", async ({
   await loadMarket(page, 25);
   const row = page.getByTestId("shop-row-0");
 
-  await expect(row.getByTestId("shop-next-0")).toHaveText("$15");
-  await expect(row.getByTestId("shop-production-cost-0")).toHaveText("$16");
-  await expect(row.getByTestId("shop-net-0")).toHaveText("−$1");
+  await expect(row.getByTestId("shop-next-0")).toHaveText("$16");
+  await expect(row.getByTestId("shop-production-cost-0")).toHaveText("$22");
+  await expect(row.getByTestId("shop-net-0")).toHaveText("−$6");
   await expect(row.getByTestId("shop-disabled-reason-0")).toHaveText(
     "No profitable stock at next price.",
   );
@@ -102,6 +102,6 @@ test("Factory machine tooltip distinguishes speed from per-unit processing cost"
   await page.goto("/");
   await page.getByTestId("view-pilot").click();
 
-  await expect(page.getByTestId("pilot-facility-workspace").getByTestId("brush-machine-push"))
-    .toHaveAttribute("title", "Hook pump · 2 ticks/unit · Processing $2/unit");
+  await expect(page.getByTestId("pilot-facility-workspace").getByTestId("brush-machine-hook"))
+    .toHaveAttribute("title", "Hook pump · 3 ticks/unit · Processing $3/unit");
 });

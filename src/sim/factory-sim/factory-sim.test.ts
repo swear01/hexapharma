@@ -57,6 +57,7 @@ function emptyMap(n: number, start: Vec2, origin: Vec2 = { q: 0, r: 0 }): Effect
     cell: new Uint8Array(len),
     cureId: new Int16Array(len).fill(-1),
     cureTier: new Uint8Array(len),
+    regionId: new Uint16Array(len),
     sideEffectId: new Int32Array(len).fill(-1),
     portalTo: new Int32Array(len).fill(-1),
     elevation: new Int16Array(len),
@@ -290,8 +291,8 @@ describe("path correctness", () => {
   });
 
   it("each path applies exactly once (east then west returns to start)", () => {
-    const a = machineDef("push", EAST_STEP, 2);
-    const bdef = machineDef("pull", WEST_STEP, 2);
+    const a = machineDef("hook", EAST_STEP, 2);
+    const bdef = machineDef("return", WEST_STEP, 2);
     const b = blank(5, 1);
     set(b, 0, 0, { kind: "source", dir: E, period: 100 });
     set(b, 2, 0, { kind: "belt", dir: E });
@@ -1135,7 +1136,7 @@ describe("throughput edge cases", () => {
     const b = blank(3, 1);
     set(b, 0, 0, { kind: "source", dir: E, period: 1 });
     const machines = [
-      placeMachine(7, machineDef("push", EAST_STEP, 1), SHAPE_1x1, { q: 1, r: 0 }),
+      placeMachine(7, machineDef("hook", EAST_STEP, 1), SHAPE_1x1, { q: 1, r: 0 }),
     ];
 
     expect(analyzeThroughput(finish(b, machines), twoMaps())).toEqual({

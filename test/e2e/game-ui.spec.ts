@@ -34,7 +34,7 @@ test("a default run starts with a viable budget and four independent disease mar
 
 test("keyboard focus stays visible on Research machine buttons that append to the plan", async ({ page }) => {
   await page.goto("/");
-  const tool = page.getByTestId("research-machine-push2");
+  const tool = page.getByTestId("research-machine-wave");
   await tool.click();
   await expect(page.getByTestId("research-program-count")).toHaveText("1 step");
   await page.keyboard.press("Tab");
@@ -200,9 +200,9 @@ test("Pilot spatial editing supports palette, rotate, drag paint, erase, undo, r
   const machineX = machine.x;
   const machineY = machine.y;
   const movedX = moved.x;
-  await pilot.getByTestId("brush-machine-push").click();
+  await pilot.getByTestId("brush-machine-hook").click();
   await page.mouse.click(machineX, machineY);
-  await expect(pilot.getByTestId("factory-hover-kind")).toHaveText(machineName("push"));
+  await expect(pilot.getByTestId("factory-hover-kind")).toHaveText(machineName("hook"));
   await page.keyboard.press("r");
   await expect(pilot.getByTestId("brush-direction")).toHaveText("Footprint 0°");
   await page.mouse.move(machineX, machineY);
@@ -212,10 +212,10 @@ test("Pilot spatial editing supports palette, rotate, drag paint, erase, undo, r
   await page.mouse.move(machineX, machineY);
   await expect(pilot.getByTestId("factory-hover-kind")).toHaveText("empty");
   await page.mouse.move(movedX, machineY);
-  await expect(pilot.getByTestId("factory-hover-kind")).toHaveText(machineName("push"));
+  await expect(pilot.getByTestId("factory-hover-kind")).toHaveText(machineName("hook"));
   await page.keyboard.press("Control+z");
   await page.mouse.move(machineX, machineY);
-  await expect(pilot.getByTestId("factory-hover-kind")).toHaveText(machineName("push"));
+  await expect(pilot.getByTestId("factory-hover-kind")).toHaveText(machineName("hook"));
 
   await frame.hover();
   await page.mouse.wheel(0, -500);

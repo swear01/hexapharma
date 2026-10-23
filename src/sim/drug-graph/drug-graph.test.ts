@@ -46,6 +46,7 @@ function emptyMap(
     cell: new Uint8Array(length),
     cureId: new Int16Array(length).fill(-1),
     cureTier: new Uint8Array(length),
+    regionId: new Uint16Array(length),
     sideEffectId: new Int32Array(length).fill(-1),
     portalTo: new Int32Array(length).fill(-1),
     elevation: new Int16Array(length),
@@ -61,6 +62,7 @@ function withCell(
   options: {
     readonly cureId?: number;
     readonly cureTier?: number;
+    readonly regionId?: number;
     readonly sideEffectId?: number;
     readonly portalTo?: HexCoord;
   } = {},
@@ -68,17 +70,19 @@ function withCell(
   const cell = Uint8Array.from(map.cell);
   const cureId = Int16Array.from(map.cureId);
   const cureTier = Uint8Array.from(map.cureTier);
+  const regionId = Uint16Array.from(map.regionId);
   const sideEffectId = Int32Array.from(map.sideEffectId);
   const portalTo = Int32Array.from(map.portalTo);
   const index = indexOf(map, q, r);
   cell[index] = kind;
   if (options.cureId !== undefined) cureId[index] = options.cureId;
   cureTier[index] = kind === CellKind.Cure ? options.cureTier ?? 1 : 0;
+  regionId[index] = kind === CellKind.Cure ? options.regionId ?? 1 : 0;
   if (options.sideEffectId !== undefined) sideEffectId[index] = options.sideEffectId;
   if (options.portalTo !== undefined) {
     portalTo[index] = indexOf(map, options.portalTo.q, options.portalTo.r);
   }
-  return { ...map, cell, cureId, cureTier, sideEffectId, portalTo };
+  return { ...map, cell, cureId, cureTier, regionId, sideEffectId, portalTo };
 }
 
 const machine = (path: PathStamp, turn = 0): Machine => ({
@@ -126,16 +130,16 @@ describe("path contract validation", () => {
     );
   });
 
-  it("ships seven distinct, immutable, non-straight catalog stamps", () => {
+  it("ships eight distinct, immutable catalog stamps with a single straight drive", () => {
     const serialized = new Set<string>();
-    expect(DEFAULT_CATALOG).toHaveLength(7);
+    expect(DEFAULT_CATALOG).toHaveLength(8);
     expect(Object.isFrozen(DEFAULT_CATALOG)).toBe(true);
 
     for (const entry of DEFAULT_CATALOG) {
       expect(() => validatePathStamp(entry.path)).not.toThrow();
       expect(Object.isFrozen(entry)).toBe(true);
       expect(Object.isFrozen(entry.path)).toBe(true);
-      expect(new Set(entry.path).size).toBeGreaterThan(1);
+      if (entry.typeId !== "straight") expect(new Set(entry.path).size).toBeGreaterThan(1);
       serialized.add(JSON.stringify(entry.path));
     }
 
@@ -515,6 +519,7 @@ describe("evaluation and reveal", () => {
       final: [{ q: 2, r: 2 }],
       cured: [17],
       premium: [],
+      regions: [1],
       sideEffects: [29],
     });
   });
@@ -536,6 +541,7 @@ describe("evaluation and reveal", () => {
       ],
       cured: [17],
       premium: [],
+      regions: [1],
       sideEffects: [29],
     });
   });
@@ -544,11 +550,13 @@ describe("evaluation and reveal", () => {
     const map = withCell(emptyMap(5, 5, { q: 1, r: 2 }), 2, 2, CellKind.Cure, {
       cureId: 3,
       cureTier: 2,
+      regionId: 9,
     });
     const maps = multiMap(map);
     const outcome = evaluate(maps, initialState(maps), template(machine([east])));
     expect(outcome.cured).toEqual([3]);
     expect(outcome.premium).toEqual([3]);
+    expect(outcome.regions).toEqual([9]);
   });
 
   it("a failed drug reports no cures or side effects", () => {
@@ -561,6 +569,7 @@ describe("evaluation and reveal", () => {
       final: [{ q: 2, r: 2 }],
       cured: [],
       premium: [],
+      regions: [],
       sideEffects: [],
     });
   });

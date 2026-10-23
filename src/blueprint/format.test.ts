@@ -43,7 +43,7 @@ function machine(typeId: string) {
 }
 
 const program: Template = {
-  steps: [machine("push"), machine("pull")],
+  steps: [machine("hook"), machine("return")],
 };
 
 function emptyTiles(width: number, height: number): FactoryTile[] {
@@ -57,7 +57,7 @@ function factoryLayout(): FactoryLayout {
   tiles[8] = { kind: "source", dir: 0, period: 2 };
   tiles[11] = { kind: "belt", dir: 0 };
   tiles[12] = { kind: "sink" };
-  const entry = catalog("push");
+  const entry = catalog("hook");
   return {
     width,
     height,
@@ -73,7 +73,7 @@ function factoryLayout(): FactoryLayout {
       },
       anchor: { q: 1, r: 1 },
       footRot: 0,
-      shape: DEFAULT_SHAPES.push!,
+      shape: DEFAULT_SHAPES.hook!,
     }],
   };
 }
@@ -116,8 +116,8 @@ describe("blueprint format v4", () => {
         content: BLUEPRINT_CONTENT_FINGERPRINT,
         program: {
           steps: [
-            { typeId: "push" },
-            { typeId: "pull" },
+            { typeId: "hook" },
+            { typeId: "return" },
           ],
         },
       },
@@ -132,7 +132,7 @@ describe("blueprint format v4", () => {
 
     expect(portable.layout.machines).toEqual([{
       id: 7,
-      typeId: "push",
+      typeId: "hook",
       anchor: { q: 1, r: 1 },
       footRot: 0,
     }]);
@@ -161,12 +161,12 @@ describe("blueprint format v4", () => {
     const materialized = materializeResearchProgram(researchBlueprint());
 
     expect(materialized).toEqual(program);
-    expect(materialized.steps[0]!.path).not.toBe(catalog("push").path);
+    expect(materialized.steps[0]!.path).not.toBe(catalog("hook").path);
   });
 
   it("materializes a location-neutral FactoryLayout from local catalog and shape authority", () => {
     const layout = materializeFactoryLayout(factoryBlueprint());
-    const entry = catalog("push");
+    const entry = catalog("hook");
 
     expect(layout.tiles).toHaveLength(32);
     expect(layout.tiles[0]).toEqual({ kind: "empty" });
@@ -174,7 +174,7 @@ describe("blueprint format v4", () => {
     expect(layout.machines[0]).toEqual({
       id: 7,
       def: {
-        typeId: "push",
+        typeId: "hook",
         path: [...entry.path],
         turn: entry.turn,
         cost: entry.cost,
@@ -182,7 +182,7 @@ describe("blueprint format v4", () => {
       },
       anchor: { q: 1, r: 1 },
       footRot: 0,
-      shape: DEFAULT_SHAPES.push,
+      shape: DEFAULT_SHAPES.hook,
     });
   });
 
@@ -221,7 +221,7 @@ describe("blueprint format v4", () => {
     } as unknown as PortableBlueprint)],
     ["Research path duplication", () => encodeBlueprint({
       ...researchBlueprint(),
-      program: { steps: [{ typeId: "push", path: [0] }] },
+      program: { steps: [{ typeId: "hook", path: [0] }] },
     } as unknown as PortableBlueprint)],
     ["Factory cross-kind program", () => encodeBlueprint({
       ...factoryBlueprint(),
@@ -257,7 +257,7 @@ describe("blueprint format v4", () => {
 
     await expect(encodeBlueprint({
       ...researchBlueprint(),
-      program: { steps: [{ typeId: "push", stroke: 1 }] },
+      program: { steps: [{ typeId: "hook", stroke: 1 }] },
     } as unknown as PortableResearchBlueprint)).rejects.toThrow(/unknown field.*stroke/i);
     await expect(encodeBlueprint({
       ...factoryBlueprint(),
@@ -284,10 +284,10 @@ describe("blueprint format v4", () => {
 
   it("rejects unknown machine types and source authorities that disagree with the catalog", () => {
     expect(() => blueprintFromProgram("Forged", {
-      steps: [{ typeId: "push", path: [3], turn: 1 }],
+      steps: [{ typeId: "hook", path: [3], turn: 1 }],
     })).toThrow(/path|catalog/i);
     expect(() => blueprintFromProgram("Forged turn", {
-      steps: [{ ...machine("push"), turn: 0 }],
+      steps: [{ ...machine("hook"), turn: 0 }],
     })).toThrow(/catalog/i);
 
     const layout = factoryLayout();
@@ -301,7 +301,7 @@ describe("blueprint format v4", () => {
 
     expect(() => blueprintFromFactoryLayout("Forged", {
       ...layout,
-      machines: [{ ...layout.machines[0]!, shape: DEFAULT_SHAPES.pull! }],
+      machines: [{ ...layout.machines[0]!, shape: DEFAULT_SHAPES.return! }],
     })).toThrow(/catalog|shape/i);
   });
 
@@ -340,7 +340,7 @@ describe("blueprint format v4", () => {
     await expect(encodeBlueprint({
       ...researchBlueprint(),
       program: {
-        steps: Array.from({ length: MAX_TEMPLATE_STEPS + 1 }, () => ({ typeId: "push" })),
+        steps: Array.from({ length: MAX_TEMPLATE_STEPS + 1 }, () => ({ typeId: "hook" })),
       },
     })).rejects.toThrow(/steps|at most|bounded/i);
   });

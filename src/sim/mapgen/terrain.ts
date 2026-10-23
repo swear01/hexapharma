@@ -399,6 +399,7 @@ export function passTraversable(
     cell,
     cureId: new Int16Array(area).fill(-1),
     cureTier: new Uint8Array(area),
+    regionId: new Uint16Array(area),
     sideEffectId: new Int32Array(area).fill(-1),
     portalTo: new Int32Array(area).fill(-1),
     elevation: new Int16Array(area),

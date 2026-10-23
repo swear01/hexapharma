@@ -19,7 +19,7 @@ function withTile(base: FactoryLayout, index: number, tile: FactoryTile): Factor
 }
 
 function placed(id: number, q: number, r: number, footRot: 0 | 1 | 2 | 3 | 4 | 5 = 0): PlacedMachine {
-  const entry = DEFAULT_CATALOG.find((candidate) => candidate.typeId === "push")!;
+  const entry = DEFAULT_CATALOG.find((candidate) => candidate.typeId === "hook")!;
   return {
     id,
     def: {
@@ -31,7 +31,7 @@ function placed(id: number, q: number, r: number, footRot: 0 | 1 | 2 | 3 | 4 | 5
     },
     anchor: { q, r },
     footRot,
-    shape: DEFAULT_SHAPES.push!,
+    shape: DEFAULT_SHAPES.hook!,
   };
 }
 
@@ -83,7 +83,7 @@ describe("Production construction quote", () => {
     const installed = { ...empty, machines: [placed(1, 1, 1)] };
     const moved = { ...empty, machines: [placed(1, 3, 1)] };
     const rotated = { ...empty, machines: [placed(1, 1, 1, 1)] };
-    const price = DEFAULT_CATALOG.find((candidate) => candidate.typeId === "push")!.cost * 10;
+    const price = DEFAULT_CATALOG.find((candidate) => candidate.typeId === "hook")!.cost * 10;
 
     expect(quoteProductionBuild(empty, installed)).toBe(price);
     expect(quoteProductionBuild(installed, moved)).toBe(price);

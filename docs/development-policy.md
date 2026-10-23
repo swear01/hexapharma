@@ -4,7 +4,7 @@ HexaPharma 目前是 alpha。存檔採**完全開放、plain JSON、可攜且可
 
 ## 存檔相容性
 
-- 當前 Save v13 直接保存冷狀態；full／compact／slots／Rewind 的 correctness 只保證同一個 content build。
+- 當前 Save v14 直接保存冷狀態；full／compact／slots／Rewind 的 correctness 只保證同一個 content build。
 - alpha 可以直接破壞舊存檔相容性。舊格式明確拒絕，不維護 migration chain、legacy reader 或舊 generator，也不自動刪除／覆寫舊 namespace。
 - `contentBuild` 是 catalog／shapes／patents 加手動 `rules` revision 的確定性識別，**不是驗真或防改**。變動這些資料會改識別；sim／mapgen／economy 程式語意改動則必須在 `src/sim/save/index.ts` 明確提升 `rules`。目前沒有自動 whole-source fingerprint。
 - 修改存檔本身的合法資源不改 `contentBuild`。它描述相容的遊戲內容，不描述該玩家狀態。
