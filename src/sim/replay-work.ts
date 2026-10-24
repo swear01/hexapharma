@@ -215,11 +215,12 @@ export function estimateGameReplayWork(
       case "sellProducts":
         intentWork = MAX_GAME_INVENTORY_PRODUCTS + intent.productIds.length;
         break;
-      case "unlockPatent":
+      case "setPatent":
         intentWork = 262_144;
         if (intent.id === "bench-2" || intent.id === "floor-depth") {
-          const dw = intent.id === "bench-2" ? 2 : 0;
-          const dh = intent.id === "floor-depth" ? 2 : 0;
+          // Switching an expansion off shrinks the floor; the larger profile stays as an upper bound.
+          const dw = intent.enabled && intent.id === "bench-2" ? 2 : 0;
+          const dh = intent.enabled && intent.id === "floor-depth" ? 2 : 0;
           if (pilot !== null) {
             pilot = expandProfile(pilot, dw, dh);
             intentWork = cappedAdd(intentWork, pilot.cold);

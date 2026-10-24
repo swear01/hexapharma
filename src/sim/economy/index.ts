@@ -103,9 +103,6 @@ export const sellUnit = (
   premium = false,
 ): SaleResult => {
   if (!Number.isSafeInteger(econ.cash)) throw new Error("economy: cash must be a safe integer");
-  if (!Number.isSafeInteger(econ.research) || econ.research < 0) {
-    throw new Error("economy: research must be a non-negative safe integer");
-  }
   if (!Number.isSafeInteger(disease) || disease < 0) {
     throw new Error("economy: disease must be a non-negative safe integer");
   }
@@ -132,14 +129,12 @@ export const sellUnit = (
   const revenue = premium ? premiumGross(gross) : gross;
   const net = revenue - productionCost - sideEffectPenalty;
   const cash = econ.cash + net;
-  const research = econ.research + 1;
-  if (!Number.isSafeInteger(net) || !Number.isSafeInteger(cash) || !Number.isSafeInteger(research)) {
+  if (!Number.isSafeInteger(net) || !Number.isSafeInteger(cash)) {
     throw new Error("economy: sale result exceeds safe-integer range");
   }
   return {
     econ: {
       cash,
-      research,
       sold: bumpSold(econ.sold, disease),
     },
     revenue,

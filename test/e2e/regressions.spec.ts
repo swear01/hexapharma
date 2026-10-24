@@ -22,7 +22,7 @@ async function confirmLoad(page: import("@playwright/test").Page): Promise<void>
 function plannedEndpoint(stepCount: number): HexCoord {
   const options = defaultGenOptions(14);
   const level = generate(options);
-  const game = createGameState(options, 200, 0);
+  const game = createGameState(options, 200);
   const entry = DEFAULT_CATALOG[0];
   if (entry === undefined) throw new Error("default Research machine is unavailable");
   const trail = researchPlanningTrails(level.mm, game.fog, level.start, {
@@ -54,7 +54,7 @@ async function clickLastControl(page: Page, stepCount: number): Promise<void> {
 function completedResearchSave(): string {
   const options = defaultGenOptions(14);
   const program = generate(options).diseases[0]!.reference;
-  let game = createGameState(options, 10_000, 100);
+  let game = createGameState(options, 10_000);
   game = applyGameIntent(game, { kind: "runResearchTrial", program });
   return serializeGame(game);
 }

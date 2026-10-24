@@ -15,13 +15,13 @@ function discover(game: GameState, disease: number): GameState {
 }
 
 function fixture(): GameState {
-  let game = discover(createGameState(defaultGenOptions(14), 9999, 9999), 0);
+  let game = discover(createGameState(defaultGenOptions(14), 9999), 0);
   const program = generate(game.genOptions).diseases[0]!.reference;
   const layout = compileEntitledPrototype(program, BASE_GAME_FACTORY_WIDTH, BASE_GAME_FACTORY_HEIGHT).layout;
   game = applyGameIntent(game, { kind: "buildProductionLayout", layout });
   game = applyGameIntent(game, { kind: "productionTicks", ticks: 400 });
   game = applyGameIntent(game, { kind: "sellProducts", disease: 0, productIds: game.inventory.slice(0, 3).map((product) => product.inventoryId) });
-  game = applyGameIntent(game, { kind: "unlockPatent", id: "zigzag-unlock" });
+  game = applyGameIntent(game, { kind: "setPatent", id: "zigzag-unlock", enabled: true });
   return discover(game, 1);
 }
 
@@ -48,12 +48,12 @@ test("Research keeps no formula ledger or Formulas drawer", async ({ page }) => 
 });
 
 async function readProduction(page: Page): Promise<readonly (string | null)[]> {
-  return Promise.all(["factory-tick", "factory-produced", "factory-waste", "cash", "research", "stock"].map((id) => page.getByTestId(id).textContent()));
+  return Promise.all(["factory-tick", "factory-produced", "factory-waste", "cash", "stock"].map((id) => page.getByTestId(id).textContent()));
 }
 
 test("an open drawer suppresses factory input across resize without pausing Production", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await loadFixture(page, discover(createGameState(defaultGenOptions(14), 1000, 0), 0));
+  await loadFixture(page, discover(createGameState(defaultGenOptions(14), 1000), 0));
   await page.getByTestId("view-production").click();
   const box = (await page.getByTestId("production-facility-workspace").locator("canvas").boundingBox())!;
   await page.mouse.click(box.x + 12 + Math.sqrt(3) * 21 / 2, box.y + 12 + 21);
@@ -91,7 +91,7 @@ test("Escape closes Blueprints and Menu after their fields receive focus", async
 
 test("Research hotkeys work only while the world is visible", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await loadFixture(page, discover(createGameState(defaultGenOptions(14), 1000, 0), 0));
+  await loadFixture(page, discover(createGameState(defaultGenOptions(14), 1000), 0));
   await page.getByTestId("view-help").click();
   await page.getByRole("heading", { name: "Field guide" }).click();
   const cash = await page.getByTestId("cash").textContent();
@@ -125,7 +125,7 @@ for (const action of ["new", "load", "rewind", "reset", "unlock", "delete"] as c
       await page.getByTestId("factory-reset").click();
     } else if (action === "unlock") {
       await page.getByTestId("view-technology").click();
-      await page.getByTestId("patent-unlock-bench-2").click();
+      await page.getByTestId("patent-switch-bench-2").click();
     } else {
       await page.getByTestId("view-blueprints").click();
       await page.getByTestId("blueprint-name").fill("Pause fixture");
@@ -195,8 +195,8 @@ for (const action of ["reset", "unlock", "rewind"] as const) {
       await page.getByRole("button", { name: "Reset runtime", exact: true }).click();
     } else if (action === "unlock") {
       await page.getByTestId("view-technology").click();
-      await page.getByTestId("patent-unlock-bench-2").click();
-      await page.getByTestId("patent-confirm-unlock").click();
+      await page.getByTestId("patent-switch-bench-2").click();
+      await page.getByTestId("patent-confirm-switch").click();
     } else {
       await openMenu(page);
       await page.getByTestId("rewind").click();

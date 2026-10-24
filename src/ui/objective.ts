@@ -1,7 +1,5 @@
 import type { DiseaseId, ShippingContractProgress } from "../sim/phase0_interfaces";
-import { requiredShippingContractForPatent } from "../sim/game";
 import { diseaseName } from "./effectLabels";
-import { patentTitle } from "./Patents";
 
 export type ObjectiveTarget = "research" | "pilot" | "production" | "market" | "technology";
 
@@ -15,8 +13,6 @@ export interface ObjectiveInput {
   readonly contracts: readonly ShippingContractProgress[];
   /** Diseases with at least one Cure cell already revealed in fog. */
   readonly knownCureDiseases: readonly DiseaseId[];
-  readonly unlockedPatents: readonly string[];
-  readonly gatedPatents: readonly string[];
   readonly profitableUnits: (disease: DiseaseId) => number;
   /** Unsold units in stock that cure the disease (profitable or not). */
   readonly stockFor: (disease: DiseaseId) => number;
@@ -27,14 +23,6 @@ export interface ObjectiveInput {
 }
 
 export function currentObjective(input: ObjectiveInput): Objective {
-  for (const id of input.gatedPatents) {
-    const disease = requiredShippingContractForPatent(id);
-    // One owned machine patent per contract is enough to move on (Straight and Crane share one).
-    if (disease === null || input.unlockedPatents.some((owned) => requiredShippingContractForPatent(owned) === disease)) continue;
-    if (input.contracts.find((contract) => contract.disease === disease)?.completed === true) {
-      return { text: `Unlock ${patentTitle(id)}`, target: "technology", actionLabel: "Technology" };
-    }
-  }
   const contract = input.contracts.find((candidate) => !candidate.completed);
   if (contract === undefined) {
     return { text: "Every shipping contract is filled", target: "market", actionLabel: "Market" };

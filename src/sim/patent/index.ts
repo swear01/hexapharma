@@ -1,48 +1,31 @@
 /**
- * HexaPharma — patent (talent tree).
+ * HexaPharma — Technology switches.
  *
- * Pure, deterministic unlock logic over a frozen patent tree. Cash is integer.
- * `unlockPatent` spends exactly the node cost and appends the id in unlock order;
- * it THROWS on any disallowed unlock (no silent no-op).
+ * Pure, deterministic on/off state over a frozen node list. Every node is an
+ * independent free switch while the game is in testing (D42); `setPatent`
+ * THROWS on an unknown id or a no-op switch.
  */
 
-import type {
-  PatentNode,
-  PatentState,
-  CanUnlockFn,
-  UnlockPatentFn,
-  MachineTypeId,
-} from "../phase0_interfaces";
+import type { PatentNode, PatentState, MachineTypeId } from "../phase0_interfaces";
 
-/**
- * Default patent tree for the single-Atlas game.
- */
 const PATENT_DEFINITIONS = [
-  { id: "bench-2", cost: 120, researchCost: 2, requires: [], effect: { kind: "expandFactory", dw: 2, dh: 0 } },
-  { id: "reveal-aid", cost: 80, researchCost: 1, requires: [], effect: { kind: "revealAid", amount: 3 } },
-  { id: "split-merge", cost: 90, researchCost: 1, requires: [], effect: { kind: "unlockRouting" } },
-  { id: "zigzag-unlock", cost: 100, researchCost: 1, requires: [], effect: { kind: "unlockMachine", typeId: "zigzag" } },
-  { id: "loop-unlock", cost: 180, researchCost: 3, requires: ["bench-2"], effect: { kind: "unlockMachine", typeId: "loop" } },
-  { id: "floor-depth", cost: 300, researchCost: 5, requires: ["bench-2"], effect: { kind: "expandFactory", dw: 0, dh: 2 } },
-  { id: "field-survey", cost: 500, researchCost: 8, requires: ["reveal-aid"], effect: { kind: "revealAid", amount: 4 } },
-  { id: "straight-unlock", cost: 340, researchCost: 6, requires: ["zigzag-unlock", "bench-2"], effect: { kind: "unlockMachine", typeId: "straight" } },
-  { id: "crane-unlock", cost: 300, researchCost: 6, requires: ["loop-unlock", "reveal-aid"], effect: { kind: "unlockMachine", typeId: "crane" } },
+  { id: "bench-2", effect: { kind: "expandFactory", dw: 2, dh: 0 } },
+  { id: "floor-depth", effect: { kind: "expandFactory", dw: 0, dh: 2 } },
+  { id: "reveal-aid", effect: { kind: "revealAid", amount: 3 } },
+  { id: "field-survey", effect: { kind: "revealAid", amount: 4 } },
+  { id: "split-merge", effect: { kind: "unlockRouting" } },
+  { id: "zigzag-unlock", effect: { kind: "unlockMachine", typeId: "zigzag" } },
+  { id: "loop-unlock", effect: { kind: "unlockMachine", typeId: "loop" } },
+  { id: "straight-unlock", effect: { kind: "unlockMachine", typeId: "straight" } },
+  { id: "crane-unlock", effect: { kind: "unlockMachine", typeId: "crane" } },
 ] as const satisfies readonly PatentNode[];
 
 export const DEFAULT_PATENTS: readonly PatentNode[] = Object.freeze(PATENT_DEFINITIONS.map(
-  (node): PatentNode => Object.freeze({
-  ...node,
-  requires: Object.freeze([...node.requires]),
-  effect: Object.freeze({ ...node.effect }) as PatentNode["effect"],
-}),
+  (node): PatentNode => Object.freeze({ ...node, effect: Object.freeze({ ...node.effect }) as PatentNode["effect"] }),
 ));
 
-/** Find a node by id, or undefined. */
 function findNode(tree: readonly PatentNode[], id: string): PatentNode | undefined {
-  for (const node of tree) {
-    if (node.id === id) return node;
-  }
-  return undefined;
+  return tree.find((node) => node.id === id);
 }
 
 function requireNonNegativeSafeInteger(value: number, label: string): void {
@@ -85,7 +68,6 @@ function validateEffect(node: PatentNode): void {
 
 function validateTree(tree: readonly PatentNode[]): void {
   if (!Array.isArray(tree)) throw new Error("patent tree must be an array");
-
   const ids = new Set<string>();
   for (const node of tree) {
     if (node === null || typeof node !== "object") {
@@ -96,43 +78,7 @@ function validateTree(tree: readonly PatentNode[]): void {
     }
     if (ids.has(node.id)) throw new Error(`patent tree has duplicate id "${node.id}"`);
     ids.add(node.id);
-    requireNonNegativeSafeInteger(node.cost, `patent "${node.id}" cost`);
-    requireNonNegativeSafeInteger(node.researchCost, `patent "${node.id}" researchCost`);
-    if (!Array.isArray(node.requires)) {
-      throw new Error(`patent "${node.id}" prerequisites must be an array`);
-    }
-    const requirements = new Set<string>();
-    for (const required of node.requires) {
-      if (typeof required !== "string" || required.length === 0) {
-        throw new Error(`patent "${node.id}" prerequisite ids must be non-empty strings`);
-      }
-      if (requirements.has(required)) {
-        throw new Error(`patent "${node.id}" has duplicate prerequisite "${required}"`);
-      }
-      requirements.add(required);
-    }
     validateEffect(node);
-  }
-
-  for (const node of tree) {
-    for (const required of node.requires) {
-      if (!ids.has(required)) {
-        throw new Error(`patent "${node.id}" has unknown prerequisite "${required}"`);
-      }
-    }
-  }
-
-  const resolved = new Set<string>();
-  while (resolved.size < tree.length) {
-    let progressed = false;
-    for (const node of tree) {
-      if (resolved.has(node.id)) continue;
-      if (node.requires.every((required: string) => resolved.has(required))) {
-        resolved.add(node.id);
-        progressed = true;
-      }
-    }
-    if (!progressed) throw new Error("patent tree contains a prerequisite cycle");
   }
 }
 
@@ -145,84 +91,27 @@ function validateState(tree: readonly PatentNode[], state: PatentState): void {
     if (typeof id !== "string" || id.length === 0) {
       throw new Error("unlocked patent ids must be non-empty strings");
     }
-    const node = findNode(tree, id);
-    if (node === undefined) throw new Error(`unknown unlocked patent "${id}"`);
+    if (findNode(tree, id) === undefined) throw new Error(`unknown unlocked patent "${id}"`);
     if (unlocked.has(id)) throw new Error(`duplicate unlocked patent "${id}"`);
-    for (const required of node.requires) {
-      if (!unlocked.has(required)) {
-        throw new Error(`patent "${id}" appears before prerequisite "${required}"`);
-      }
-    }
     unlocked.add(id);
   }
 }
 
-function validateInputs(
+/** Turn one node on (appended) or off (removed). Throws on an unknown id or when it is already in that state. */
+export function setPatent(
   tree: readonly PatentNode[],
   state: PatentState,
-  cash: number,
-  research: number,
   id: string,
-): void {
+  enabled: boolean,
+): PatentState {
   validateTree(tree);
   validateState(tree, state);
-  if (!Number.isSafeInteger(cash)) throw new Error("cash must be a safe integer");
-  requireNonNegativeSafeInteger(research, "research");
-  if (typeof id !== "string" || id.length === 0) {
-    throw new Error("patent id must be a non-empty string");
+  if (findNode(tree, id) === undefined) throw new Error(`unknown patent "${id}"`);
+  if (state.unlocked.includes(id) === enabled) {
+    throw new Error(`patent "${id}" is already ${enabled ? "on" : "off"}`);
   }
+  return { unlocked: enabled ? [...state.unlocked, id] : state.unlocked.filter((owned) => owned !== id) };
 }
-
-/**
- * True iff the node exists, is not already unlocked, all prerequisites are in
- * `state.unlocked`, and `cash >= node.cost`.
- */
-export const canUnlock: CanUnlockFn = (tree, state, cash, research, id) => {
-  validateInputs(tree, state, cash, research, id);
-  const node = findNode(tree, id);
-  if (node === undefined) return false;
-  if (state.unlocked.includes(id)) return false;
-  for (const req of node.requires) {
-    if (!state.unlocked.includes(req)) return false;
-  }
-  return cash >= node.cost && research >= node.researchCost;
-};
-
-/** Reason a node cannot be unlocked, for a clear error message. */
-function blockReason(
-  tree: readonly PatentNode[],
-  state: PatentState,
-  cash: number,
-  research: number,
-  id: string,
-): string {
-  const node = findNode(tree, id);
-  if (node === undefined) return `unknown patent "${id}"`;
-  if (state.unlocked.includes(id)) return `patent "${id}" already unlocked`;
-  for (const req of node.requires) {
-    if (!state.unlocked.includes(req)) {
-      return `patent "${id}" requires "${req}", which is not unlocked`;
-    }
-  }
-  if (cash < node.cost) return `patent "${id}" costs ${node.cost} but only ${cash} cash available`;
-  return `patent "${id}" costs ${node.researchCost} research but only ${research} available`;
-}
-
-/**
- * Unlock a node. Returns the new PatentState (id appended, order = unlock order)
- * and the remaining cash. Throws if the unlock is not allowed.
- */
-export const unlockPatent: UnlockPatentFn = (tree, state, cash, research, id) => {
-  if (!canUnlock(tree, state, cash, research, id)) {
-    throw new Error(`cannot unlock ${blockReason(tree, state, cash, research, id)}`);
-  }
-  const node = findNode(tree, id) as PatentNode;
-  return {
-    patents: { unlocked: [...state.unlocked, id] },
-    cash: cash - node.cost,
-    research: research - node.researchCost,
-  };
-};
 
 /** Summary of the effects granted by the currently-unlocked patents. */
 export interface ActiveEffects {

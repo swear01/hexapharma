@@ -41,7 +41,6 @@ const OPTIONS = Object.freeze({
 export interface ProgressionEntry {
   readonly disease: number;
   readonly cashBefore: number;
-  readonly unlockCost: number;
   readonly researchCost: number;
   readonly buildCost: number;
   readonly gross: number;
@@ -57,7 +56,6 @@ export interface ProgressionLedger {
   readonly completed: boolean;
   readonly blockedAction: string | null;
   readonly finalCash: number;
-  readonly finalResearch: number;
   readonly minimumCash: number;
   readonly completedContracts: number;
   readonly everyDiseasePositiveNet: boolean;
@@ -68,39 +66,29 @@ function options(seed: number): GenOptions {
 }
 
 function unlock(game: GameState, id: string): GameState {
-  return applyGameIntent(game, { kind: "unlockPatent", id });
+  return applyGameIntent(game, { kind: "setPatent", id, enabled: true });
 }
 
-/** Patents (prerequisites first) still needed for the reference's machines. */
+/** Technology switches still off for the reference's machines. */
 export function unlocksFor(reference: Template, owned: readonly string[]): readonly string[] {
   const needed: string[] = [];
-  const add = (id: string): void => {
-    if (owned.includes(id) || needed.includes(id)) return;
-    for (const required of DEFAULT_PATENTS.find((node) => node.id === id)!.requires) add(required);
-    needed.push(id);
-  };
   for (const step of reference.steps) {
     const node = DEFAULT_PATENTS.find((candidate) =>
       candidate.effect.kind === "unlockMachine" && candidate.effect.typeId === step.typeId);
-    if (node !== undefined) add(node.id);
+    if (node !== undefined && !owned.includes(node.id) && !needed.includes(node.id)) needed.push(node.id);
   }
   return needed;
 }
 
-function patentCost(id: string): number {
-  return DEFAULT_PATENTS.find((node) => node.id === id)!.cost;
-}
-
 export function progressionLedger(seed: number, startingCash = DEFAULT_STARTING_CASH): ProgressionLedger {
   const level = generate(options(seed));
-  let game = createGameState(options(seed), startingCash, 0);
+  let game = createGameState(options(seed), startingCash);
   let minimumCash = game.economy.cash;
   const entries: ProgressionEntry[] = [];
 
   for (const disease of level.diseases) {
     const cashBefore = game.economy.cash;
     const patentIds = unlocksFor(disease.reference, game.patents.unlocked);
-    const unlockCost = patentIds.reduce((total, id) => total + patentCost(id), 0);
     try {
       for (const id of patentIds) game = unlock(game, id);
       minimumCash = Math.min(minimumCash, game.economy.cash);
@@ -151,7 +139,6 @@ export function progressionLedger(seed: number, startingCash = DEFAULT_STARTING_
       entries.push({
         disease: disease.id,
         cashBefore,
-        unlockCost,
         researchCost,
         buildCost,
         gross,
@@ -167,7 +154,6 @@ export function progressionLedger(seed: number, startingCash = DEFAULT_STARTING_
         completed: false,
         blockedAction: error instanceof Error ? error.message : String(error),
         finalCash: game.economy.cash,
-        finalResearch: game.economy.research,
         minimumCash,
         completedContracts: shippingContracts(game).filter((contract) => contract.completed).length,
         everyDiseasePositiveNet: entries.every((entry) => entry.net > 0),
@@ -184,7 +170,6 @@ export function progressionLedger(seed: number, startingCash = DEFAULT_STARTING_
       ? null
       : "four authoritative shipping contracts with positive net were not completed",
     finalCash: game.economy.cash,
-    finalResearch: game.economy.research,
     minimumCash,
     completedContracts,
     everyDiseasePositiveNet,

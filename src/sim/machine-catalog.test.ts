@@ -1,16 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_CATALOG, DEFAULT_SHAPES, type MachineCatalogEntry } from "./phase0_interfaces";
-import { DEFAULT_PATENTS } from "./patent";
 import { HEX_DQ, HEX_DR, hexDistance } from "./hex";
 
-/** 0 = early (no patent), 1 = mid (patent without a machine prerequisite), 2 = late (needs a machine patent). */
+/** Design tier: 0 = early, 1 = mid, 2 = late (design.md §1.2). */
+const DESIGN_TIER: Readonly<Record<string, number>> = {
+  hook: 0, elbow: 0, return: 0, wave: 0, zigzag: 1, loop: 1, straight: 2, crane: 2,
+};
+
 function unlockTier(typeId: string): number {
-  const node = DEFAULT_PATENTS.find((candidate) =>
-    candidate.effect.kind === "unlockMachine" && candidate.effect.typeId === typeId);
-  if (node === undefined) return 0;
-  const needsMachine = node.requires.some((id) =>
-    DEFAULT_PATENTS.find((candidate) => candidate.id === id)?.effect.kind === "unlockMachine");
-  return needsMachine ? 2 : 1;
+  const tier = DESIGN_TIER[typeId];
+  if (tier === undefined) throw new Error(`machine "${typeId}" has no design tier`);
+  return tier;
 }
 
 interface MachineStats {
@@ -107,22 +107,6 @@ describe("map-independent machine set", () => {
           const betterHeading = a.turnAngle < b.turnAngle;
           expect(betterReach && betterHeading, `${a.typeId} dominates ${b.typeId}`).toBe(false);
         }
-      }
-    }
-  });
-
-  it("chains the unlocks: mid needs at most one cheap node, late a mid machine plus a bench or survey node", () => {
-    for (const node of DEFAULT_PATENTS) {
-      if (node.effect.kind !== "unlockMachine") continue;
-      const required = node.requires.map((id) => DEFAULT_PATENTS.find((candidate) => candidate.id === id)!);
-      if (unlockTier(node.effect.typeId) === 1) {
-        expect(required.length, node.id).toBeLessThanOrEqual(1);
-        expect(required.every((other) => other.effect.kind !== "unlockMachine" && other.cost <= 150), node.id).toBe(true);
-      } else {
-        const machines = required.filter((other) => other.effect.kind === "unlockMachine");
-        expect(machines.map((other) => unlockTier((other.effect as { typeId: string }).typeId)), node.id).toEqual([1]);
-        expect(required.some((other) => other.effect.kind === "expandFactory" || other.effect.kind === "revealAid"), node.id)
-          .toBe(true);
       }
     }
   });

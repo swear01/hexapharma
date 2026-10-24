@@ -237,14 +237,13 @@ function parseCatalog(v: unknown, catalogPath: string): GenOptions["catalog"] {
 }
 
 function parseEconomy(v: unknown, diseaseCount: number): EconomyState {
-  const o = reqExactObject(v, "economy", ["cash", "research", "sold"]);
+  const o = reqExactObject(v, "economy", ["cash", "sold"]);
   const sold = reqArray(o.sold, "economy.sold");
   if (sold.length > diseaseCount) {
     throw new SaveError("economy.sold: count exceeds generated diseases");
   }
   return {
     cash: reqInt(o.cash, "economy.cash"),
-    research: reqInt(o.research, "economy.research"),
     sold: sold.map((s, i) => {
       const path = `economy.sold[${i}]`;
       const so = reqExactObject(s, path, ["disease", "count"]);

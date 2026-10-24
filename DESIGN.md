@@ -244,7 +244,7 @@ The palette is a printed map: three warm paper tones, three ink greys, two paper
 - **Display** (600, 30px, line-height 1, uppercase): drawer and inspector titles (`h1`). The inspector uses 24px.
 - **Headline** (600, 26px, 1.1, uppercase): modal titles.
 - **Title** (600, 19px, 1.1, uppercase): section headings (`h2`), patent names and market values. Legend and machine names use the same face at 15–17px.
-- **Numeral** (600, 22px, 1, tabular): HUD resources (Cash, Knowledge, Stock, Contract) and other headline numbers. Market net uses 23px.
+- **Numeral** (600, 22px, 1, tabular): HUD resources (Cash, Stock, Contract) and other headline numbers. Market net uses 23px.
 - **Nav** (600, 18px, 1, 0.03em, uppercase): Research, Plan and Production tabs, and the compass disease name. The Run button uses the same face at 19px.
 - **Action** (600, 16px, 1, 0.05em, uppercase): primary buttons. Factory and utility controls use 15px.
 - **Label** (600, 13px, 1.2, 0.06em, uppercase, `ink-3`): field labels, sheet `dt` labels, patent group headings and resource labels.

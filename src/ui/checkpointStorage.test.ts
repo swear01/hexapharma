@@ -88,7 +88,7 @@ function withProduction(
 describe("open snapshot checkpoint storage", () => {
   it("continues saving and rewinding beyond the old lifetime budgets with bounded history", () => {
     const storage = new MemoryStorage();
-    let game = createGameState(options, 1000, 0);
+    let game = createGameState(options, 1000);
     let history: readonly GameState[] = [];
     for (let index = 0; index < 41; index++) {
       game = applyGameIntent(game, { kind: "productionTicks", ticks: 5000 });
@@ -107,8 +107,8 @@ describe("open snapshot checkpoint storage", () => {
 
   it("preserves edited resource values without proving a trace-prefix lineage", () => {
     const storage = new MemoryStorage();
-    const first = createGameState(options, 1000, 0);
-    const edited = { ...first, economy: { ...first.economy, cash: 999999, research: 500 } };
+    const first = createGameState(options, 1000);
+    const edited = { ...first, economy: { ...first.economy, cash: 999999 } };
     const saved = saveSlot(storage, 0, [first], edited);
     expect(saved.replacedTimeline).toBe(false);
     expect(readSlot(storage, 0).head!.economy).toEqual(edited.economy);
@@ -124,8 +124,8 @@ describe("open snapshot checkpoint storage", () => {
     const storage = new MemoryStorage();
     storage.setItem("hexapharma.save.v10.checkpoint.0", "old alpha save");
     expect(readSlot(storage, 0).head).toBeNull();
-    const first = createGameState(options, 200, 0);
-    const second = createGameState({ ...options, seed: 15 }, 200, 0);
+    const first = createGameState(options, 200);
+    const second = createGameState({ ...options, seed: 15 }, 200);
     const saved = saveSlot(storage, 0, [first], second);
     expect(saved.replacedTimeline).toBe(true);
     expect(saved.pruned).toBe(1);
@@ -135,8 +135,8 @@ describe("open snapshot checkpoint storage", () => {
 
   it("rejects mixed-map stored history and offers the current map's valid suffix", () => {
     const storage = new MemoryStorage();
-    const first = createGameState(options, 200, 0);
-    const second = createGameState({ ...options, seed: 15 }, 200, 0);
+    const first = createGameState(options, 200);
+    const second = createGameState({ ...options, seed: 15 }, 200);
     storage.setItem(key, checkpoint(serializeSnapshot(second), [serializeSnapshot(first)]));
     const read = readSlot(storage, 0);
     expect(read.error).toMatch(/different maps/i);
@@ -145,7 +145,7 @@ describe("open snapshot checkpoint storage", () => {
 
   it("preserves Research, Plan, paid Production and in-flight state without replay", () => {
     const recipe = generate(options).diseases[0]!.reference;
-    let game = withProduction(createGameState(options, PRODUCTION_CASH, 0), recipe);
+    let game = withProduction(createGameState(options, PRODUCTION_CASH), recipe);
     game = applyGameIntent(game, { kind: "productionTicks", ticks: 80 });
     expect(game.production.runtime.unitCount).toBeGreaterThan(0);
     const storage = new MemoryStorage();
@@ -162,7 +162,7 @@ describe("open snapshot checkpoint storage", () => {
 
   it("bounds raw characters, version and snapshot count before attempting state recovery", () => {
     const storage = new MemoryStorage();
-    const good = serializeSnapshot(createGameState(options, 200, 0));
+    const good = serializeSnapshot(createGameState(options, 200));
     for (const raw of [
       JSON.stringify({ version: 2, head: good, history: [], extra: "x".repeat(SLOT_CHECKPOINT_CHARACTER_LIMIT) }),
       checkpoint(good, new Array(SLOT_HISTORY_LIMIT).fill(good)),
@@ -178,7 +178,7 @@ describe("open snapshot checkpoint storage", () => {
   });
 
   it("offers explicit recovery from bounded partial envelopes while Load remains strict", () => {
-    const game = createGameState(options, 200, 0);
+    const game = createGameState(options, 200);
     const good = serializeSnapshot(game);
     for (const envelope of [
       { version: 2, head: null, history: [good] },
@@ -207,7 +207,7 @@ describe("open snapshot checkpoint storage", () => {
 
   it("reports storage read failures with their cause and disables overwrite recovery", () => {
     const storage = new MemoryStorage();
-    const raw = checkpoint(serializeSnapshot(createGameState(options, 200, 0)));
+    const raw = checkpoint(serializeSnapshot(createGameState(options, 200)));
     storage.setItem(key, raw);
     storage.failOnGet = key;
     const read = readSlot(storage, 0);
@@ -221,7 +221,7 @@ describe("open snapshot checkpoint storage", () => {
   });
 
   it("does not join older snapshots across a non-string corruption gap", () => {
-    const first = createGameState(options, 200, 0);
+    const first = createGameState(options, 200);
     const latest = applyGameIntent(first, { kind: "productionTicks", ticks: 1 });
     const raw = JSON.stringify({
       version: 2,
@@ -239,7 +239,7 @@ describe("open snapshot checkpoint storage", () => {
   });
 
   it("recovers only a valid suffix after invalid snapshots without writing during read", () => {
-    const game = createGameState(options, 200, 0);
+    const game = createGameState(options, 200);
     const good = serializeSnapshot(game);
     for (const earlier of [[good], ["bad", good], [good, "bad"]]) {
       const storage = new MemoryStorage();
@@ -257,7 +257,7 @@ describe("open snapshot checkpoint storage", () => {
   });
 
   it("does not recover a snapshot from a different content build", () => {
-    const raw = JSON.parse(serializeSnapshot(createGameState(options, 200, 0)));
+    const raw = JSON.parse(serializeSnapshot(createGameState(options, 200)));
     raw.contentBuild = "stale-economy";
     const storage = new MemoryStorage();
     storage.setItem(key, checkpoint(JSON.stringify(raw)));
@@ -266,7 +266,7 @@ describe("open snapshot checkpoint storage", () => {
   });
 
   it("fits a full 24500-product warehouse without increasing the slot budget", () => {
-    let game = createGameState(fastOptions, PRODUCTION_CASH, 0);
+    let game = createGameState(fastOptions, PRODUCTION_CASH);
     const recipe = generate(fastOptions).diseases[0]!.reference;
     const row = Math.floor(BASE_GAME_FACTORY_HEIGHT / 2);
     const layout = compilePrototype(recipe, BASE_GAME_FACTORY_WIDTH, BASE_GAME_FACTORY_HEIGHT,
@@ -294,7 +294,7 @@ describe("open snapshot checkpoint storage", () => {
 
   it("keeps storage unchanged when Save, Rewind or Recover cannot write", () => {
     const storage = new MemoryStorage();
-    const first = createGameState(options, 200, 0);
+    const first = createGameState(options, 200);
     const next = applyGameIntent(first, { kind: "productionTicks", ticks: 1 });
     const saved = saveSlot(storage, 0, [first], next);
     const raw = storage.getItem(key);
@@ -306,7 +306,7 @@ describe("open snapshot checkpoint storage", () => {
   });
 
   it("rejects invalid state before writing and isolates saved mutable buffers", () => {
-    const game = withProduction(createGameState(options, PRODUCTION_CASH, 0), generate(options).diseases[0]!.reference);
+    const game = withProduction(createGameState(options, PRODUCTION_CASH), generate(options).diseases[0]!.reference);
     const storage = new MemoryStorage();
     expect(() => saveSlot(storage, 0, [], { ...game, economy: { ...game.economy, cash: NaN } }))
       .toThrow(/cash/i);

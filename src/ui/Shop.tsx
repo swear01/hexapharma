@@ -27,9 +27,7 @@ interface ShopProps {
 
 export function marketSaleFeedback(accepted: boolean, count: number): string {
   if (!accepted) return "";
-  return count === 1
-    ? "Shipped 1 · +1 Knowledge"
-    : `Shipped ${count} · +1 Knowledge each`;
+  return `Shipped ${count}`;
 }
 
 export function marketProducts(

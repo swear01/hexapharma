@@ -25,7 +25,7 @@
 
 ## 3. Shell / navigation
 
-- 單一頂部 Research／Plan／Production 導航；Cash、Knowledge、Stock、合約以無框短列顯示。Menu 收納 seed、New、slot、Save、Load、Rewind、Recover；不常駐系統工具列。New 仍有可見文字與可取消確認，save checkpoints 與跨局 Blueprint Library 保留。
+- 單一頂部 Research／Plan／Production 導航；Cash、Stock、合約以無框短列顯示。Menu 收納 seed、New、slot、Save、Load、Rewind、Recover；不常駐系統工具列。New 仍有可見文字與可取消確認，save checkpoints 與跨局 Blueprint Library 保留。
 - Market／Technology／Blueprints 是 M／T／B drawers；Guide 在次要工具列，X 或 Escape 關閉。沒有 Formulas。
 - 已造訪建築 mounted 保存 camera/tool/history；hidden page 不接 gameplay keys/pointers。切換建築或一般 drawer 不停止 Production。
 - blocking alertdialog 開啟時 timer callback 與 productionTicks dispatch 都凍結；Cancel 保留先前 Play／Pause，確認 New／Load／Rewind／Reset／擴廠後停止舊 timer。Blueprint Delete 不換 Production authority，關閉後恢復原播放狀態。
@@ -63,7 +63,7 @@ F1 只有一張大型單層 Atlas：
 - 獨立 F2 page；完整 FactoryLayout editor，空地合法。
 - 沒有 clock、build cost、inventory 或 waste；layout edit與undo/redo都免費。
 - inspector 可顯示 throughput、bottleneck與analysis error；sample outcome 必須由 Research fog 遮罩後的 planning map 計算，不能顯示未揭露 cure／side effect／portal 或權威終點，也沒有通關判斷。
-- Splitter／Merger 在取得 `Split / Merge` 前顯示鎖頭；點擊、hover 或按 `2`／`3` 只顯示解鎖提示，不切換 brush。
+- Splitter／Merger 在 `Split / Merge` 關閉時顯示鎖頭；點擊、hover 或按 `2`／`3` 只顯示「到 Technology 打開」提示，不切換 brush。
 - Plan 產線（第一個 Source → Sink，Splitter 走第一個接得上的 output）的路徑在 Research 地圖上以淡紫寬帶預估，fog 當平地；`lab-map-frame` 的 `data-plan-line` 是該路徑點數。
 - `Commission $N` 是可選快捷：以 Production 目前 layout為基準報價，成功後開啟 Production。
 - 關閉或從未使用 Production Plan，不影響玩家直接在 Production 建造。
@@ -105,11 +105,11 @@ F1 只有一張大型單層 Atlas：
 
 ## 10. Other drawers / responsive acceptance
 
-- Market／Technology cards可用buttons，因它們是離散管理決策。Technology只摘要已取得且非零的Factory columns／rows、Research scan與machine數量；root node不顯示`Requires: None`，卡片也不以locked chip和disabled Unlock重複狀態。Market公開需求板每疾病顯示Base、Sold、Next gross、Clean stock與Tainted stock；最佳可售庫存另列production cost、`$25 × effect count`與net，但不表示Atlas Cure已揭露或提供位置。
-- Technology machine cards對Zigzag／Loop／Straight與Crane分別顯示Disease 1／2／3／3 contract requirement；quota固定3。UI應使用sim導出的gate mapping與contract progress，不能複製另一份規則。
-- `Ship best`依side-effect count、production cost、inventory ID掃描第一個positive-net產品；`Ship profitable`用同一順序略過non-positive候選，只出售逐件計入demand後仍positive-net的產品。沒有治療庫存或沒有可賺產品時，兩個action disabled並各自顯示原因；只有authority接受出售後才可顯示`Shipped`與每件`+1 Knowledge`，rejected intent不得假報成功。
-- 探索輔助只能放大actual executed segment的sensor radius；Unlock本身不能揭霧。
-- 擴廠若清Production runtime／waste，Unlock前必須有可取消確認；不改 Research 的 lastTrial 或本地規劃。
+- Market／Technology cards可用buttons，因它們是離散管理決策。Technology只摘要開啟中且非零的Factory columns／rows、Research scan、Split／Merge與machine數量；節點排成樹狀圖：五條分支（擴廠、探索輔助、Split／Merge、Zigzag→Straight、Loop→Crane）由左到右，連線表示下一階；每個節點只有名稱、效果與一個 On／Off 開關（`role="switch"`），不顯示成本、前置或合約。測試期連線只是排版，不擋開關。Market公開需求板每疾病顯示Base、Sold、Next gross、Clean stock與Tainted stock；最佳可售庫存另列production cost、`$25 × effect count`與net，但不表示Atlas Cure已揭露或提供位置。
+- 關閉仍被 Plan 或 Production 使用的節點時，sim 拒絕並顯示「Still in use · remove it from Plan and Production first.」。
+- `Ship best`依side-effect count、production cost、inventory ID掃描第一個positive-net產品；`Ship profitable`用同一順序略過non-positive候選，只出售逐件計入demand後仍positive-net的產品。沒有治療庫存或沒有可賺產品時，兩個action disabled並各自顯示原因；只有authority接受出售後才可顯示`Shipped`，rejected intent不得假報成功。
+- 探索輔助只能放大actual executed segment的sensor radius；打開開關本身不能揭霧。
+- 擴廠開關若清Production runtime／waste，開或關前必須有可取消確認；不改 Research 的 lastTrial 或本地規劃。
 - Load若會覆蓋不同的current game、Rewind若會永久丟棄最新checkpoint，都必須先列出影響並可取消。
 - desktop 與 mobile 皆讓 world 佔主體；Details 預設關閉，桌面展開在 world 旁、窄屏在下方。工具與主要動作獨立排版，不蓋住 canvas；touch controls 至少 44px、focus 可見、錯誤 aria-live。窄屏 HUD 兩列，system controls 收 Menu，工具列保留可見 scroll 提示。
 - machine以silhouette、footprint、full-path glyph、ports辨識；terrain/portal不能用raw debug text冒充美術。
@@ -125,7 +125,7 @@ F1 只有一張大型單層 Atlas：
 
 The build readout quotes the pointed placement or move through the construction authority; it does not promise a generic replacement price.
 
-Market states how much the currently profitable stock can still net, and how many units that covers, with demand declining after every selected shipment. This is not a lifetime estimate for the line. Unprofitable stock suggests improving cost or quality, or another disease. Technology shows missing cash, Knowledge, and contract shipments. With no cash left, it points to Market and cheaper routes, with Menu → New Game as an optional fresh start after saving; it does not declare the run irrecoverable.
+Market states how much the currently profitable stock can still net, and how many units that covers, with demand declining after every selected shipment. This is not a lifetime estimate for the line. Unprofitable stock suggests improving cost or quality, or another disease. With no cash left, it points to Market and cheaper routes, with Menu → New Game as an optional fresh start after saving; it does not declare the run irrecoverable.
 
 Research retains its logical camera coordinates while matching the canvas backing resolution to the displayed size and device pixel ratio. Responsive enlargement must not introduce a low-resolution blur; resizing redraws once and does not start a permanent animation loop.
 

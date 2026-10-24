@@ -93,7 +93,7 @@ describe("Run-based Research trials", () => {
   it("runs the whole program from the start, charges Σ catalog cost once, and keeps the trial", () => {
     const { program } = reference();
     const level = generate(options);
-    const initial = createGameState(options, 500, 0);
+    const initial = createGameState(options, 500);
     const game = dispatch(initial, { kind: "runResearchTrial", program });
 
     expect(game.economy.cash).toBe(500 - trialCost(program));
@@ -112,7 +112,7 @@ describe("Run-based Research trials", () => {
 
   it("never creates formulas; a later trial simply replaces the last one", () => {
     const { program } = reference();
-    let game = dispatch(createGameState(options, 500, 0), { kind: "runResearchTrial", program });
+    let game = dispatch(createGameState(options, 500), { kind: "runResearchTrial", program });
     const machine = DEFAULT_CATALOG[0]!;
     game = dispatch(game, { kind: "runResearchTrial", program: { steps: [machine] } });
 
@@ -125,7 +125,7 @@ describe("Run-based Research trials", () => {
 
   it("rejects unaffordable, empty, forged, locked, and removed intents atomically", () => {
     const { program } = reference();
-    const poor = createGameState(options, trialCost(program) - 1, 0);
+    const poor = createGameState(options, trialCost(program) - 1);
     const before = fogSnapshot(poor);
     const machine = DEFAULT_CATALOG[0]!;
     const partial: Machine = { ...machine, path: machine.path.slice(0, -1) };
@@ -150,7 +150,7 @@ describe("Run-based Research trials", () => {
 
   it("starts in a centered radius-two hex disk and a trial reveals new ground", () => {
     const entry = DEFAULT_CATALOG[0]!;
-    let game = createGameState(options, 500, 0);
+    let game = createGameState(options, 500);
     const before = game.fog[0]!.reduce((sum, value) => sum + value, 0);
     expect(before).toBe(19);
 
@@ -163,7 +163,7 @@ describe("Run-based Research trials", () => {
   it("reveals radius one around exactly the actual trail of every step", () => {
     const { program } = reference();
     const level = generate(options);
-    const initial = createGameState(options, 500, 0);
+    const initial = createGameState(options, 500);
     const expected = initial.fog.map((layer) => Uint8Array.from(layer));
     let drug = level.start;
     for (const machine of program.steps) {
@@ -192,7 +192,7 @@ describe("Run-based Research trials", () => {
 
   it("runs on the true map, so hidden terrain can make the actual trail differ from a fog plan", () => {
     const level = generate(options);
-    const game = createGameState(options, 5_000, 0);
+    const game = createGameState(options, 5_000);
     const mm = level.mm;
     const plan = researchPlanningOnFog(mm, game.fog);
     const machines = DEFAULT_CATALOG.slice(0, 4);
@@ -213,7 +213,7 @@ describe("Run-based Research trials", () => {
       path: catalog.path,
       turn: catalog.turn,
     };
-    const game = dispatch(createGameState(options, 500, 0), {
+    const game = dispatch(createGameState(options, 500), {
       kind: "runResearchTrial",
       program: { steps: [mutable] },
     });
@@ -230,9 +230,9 @@ describe("Run-based Research trials", () => {
 
   it("applies exploration-aid patents only to an actually dispensed trail", () => {
     const machine = DEFAULT_CATALOG[0]!;
-    const initial = createGameState(options, 500, 10);
+    const initial = createGameState(options, 500);
     const before = fogSnapshot(initial);
-    const aided = dispatch(initial, { kind: "unlockPatent", id: "reveal-aid" });
+    const aided = dispatch(initial, { kind: "setPatent", id: "reveal-aid", enabled: true });
     expect(fogSnapshot(aided)).toEqual(before);
 
     const run = (game: ReturnType<typeof createGameState>) =>
@@ -246,7 +246,7 @@ describe("Run-based Research trials", () => {
 describe("optional Pilot and direct Production construction", () => {
   it("builds an independent no-cure Pilot layout exactly into Production for its cost", () => {
     const layout = emptyPilotLayout();
-    let game = createGameState(options, 500, 0);
+    let game = createGameState(options, 500);
 
     game = dispatch(game, { kind: "setPilotLayout", layout });
     game = dispatch(game, { kind: "buildProductionLayout", layout });
@@ -260,7 +260,7 @@ describe("optional Pilot and direct Production construction", () => {
 
   it("does not require or infer a Research route before building a Pilot design", () => {
     const { layout } = reference();
-    let game = createGameState(options, 10_000, 0);
+    let game = createGameState(options, 10_000);
     expect(game.research.lastTrial).toBeNull();
 
     game = dispatch(game, { kind: "setPilotLayout", layout });
@@ -270,7 +270,7 @@ describe("optional Pilot and direct Production construction", () => {
 
   it("allows paid direct Production construction without creating a Pilot layout", () => {
     const layout = emptyPilotLayout();
-    const initial = createGameState(options, 500, 0);
+    const initial = createGameState(options, 500);
     const built = dispatch(initial, { kind: "buildProductionLayout", layout });
 
     expect(initial.pilot.layout).toBeNull();

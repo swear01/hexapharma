@@ -146,8 +146,8 @@ describe("Market product choice", () => {
   it("reports a shipment only when the authoritative sale was accepted", () => {
     expect(marketSaleFeedback(false, 1)).toBe("");
     expect(marketSaleFeedback(false, 4)).toBe("");
-    expect(marketSaleFeedback(true, 1)).toBe("Shipped 1 · +1 Knowledge");
-    expect(marketSaleFeedback(true, 4)).toBe("Shipped 4 · +1 Knowledge each");
+    expect(marketSaleFeedback(true, 1)).toBe("Shipped 1");
+    expect(marketSaleFeedback(true, 4)).toBe("Shipped 4");
   });
 
 });

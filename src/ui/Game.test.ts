@@ -71,7 +71,7 @@ describe("default Lab world options", () => {
 
   it("translates technical intent details into player-facing errors", () => {
     expect(playerFacingIntentError(new Error('game intent: machine "zigzag" is locked')))
-      .toBe("Zigzag still is locked. Unlock it in Technology.");
+      .toBe("Zigzag still is off. Turn it on in Technology.");
     expect(playerFacingIntentError(new Error('game intent: machine "loop" definition does not match catalog')))
       .toBe("Loop vat has incompatible layout data.");
     expect(playerFacingIntentError(new Error("game intent: machine 7 footprint overlaps another machine")))
@@ -109,7 +109,7 @@ describe("default Lab world options", () => {
   it("previews the planned route on the known map only, so fog secrecy holds", () => {
     const options = defaultGenOptions(14);
     const level = generate(options);
-    const game = createGameState(options, 1_000, 0);
+    const game = createGameState(options, 1_000);
     const plan = level.diseases[0]!.reference;
     const planned = researchPlanningPreview(level.mm, game.fog, level.start, plan);
     const onKnownMap = researchRoute(researchPlanningMap(level.mm, game.fog), level.start, plan);

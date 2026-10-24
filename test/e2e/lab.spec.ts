@@ -59,7 +59,7 @@ function known(text: string | null): number {
 function plannedRoute(typeId: string, stepCount = 1): ResearchRoute {
   const options = defaultGenOptions(14);
   const level = generate(options);
-  const game = createGameState(options, 200, 0);
+  const game = createGameState(options, 200);
   const entry = DEFAULT_CATALOG.find((candidate) => candidate.typeId === typeId);
   if (entry === undefined) throw new Error(`unknown Research machine ${typeId}`);
   return researchPlanningPreview(level.mm, game.fog, level.start, {
@@ -355,7 +355,7 @@ test("a resolved outcome keeps its feedback while focus stays on the planned end
 test("a curing trial reports the Cure without a formula card and the objective points to Plan", async ({ page }) => {
   const options = defaultGenOptions(14);
   const level = generate(options);
-  let game = createGameState(options, 1_000, 0);
+  let game = createGameState(options, 1_000);
   game = applyGameIntent(game, { kind: "runResearchTrial", program: level.diseases[0]!.reference });
   expect(game.research.lastTrial?.outcome.cured).toContain(0);
 

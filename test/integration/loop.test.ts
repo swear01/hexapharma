@@ -5,7 +5,6 @@ import {
   DEFAULT_SHAPES,
   type GenOptions,
   type EconomyState,
-  type PatentState,
 } from "../../src/sim/phase0_interfaces";
 import { generate } from "../../src/sim/mapgen/index";
 import { solve } from "../../src/sim/solver/index";
@@ -18,7 +17,6 @@ import {
 import { replayFactory } from "../../src/sim/state";
 import { analyzeThroughput } from "../../src/sim/factory-sim/index";
 import { sellUnit } from "../../src/sim/economy/index";
-import { DEFAULT_PATENTS, canUnlock, unlockPatent } from "../../src/sim/patent/index";
 import { serializeGame, deserializeGame } from "../../src/sim/save/index";
 import { applyGameIntent, availableCatalog, createGameState } from "../../src/sim/game";
 
@@ -76,7 +74,7 @@ describe("integration: Atlas → program → factory plus economy, patent, and s
     const level = generate(opts(7));
     const dA = level.diseases[0]!;
     const dB = { id: dA.id + 1, basePrice: dA.basePrice };
-    let econ: EconomyState = { cash: 0, research: 0, sold: [] };
+    let econ: EconomyState = { cash: 0, sold: [] };
 
     // spam disease A: each successive unit nets no more than the previous
     const nets: number[] = [];
@@ -99,20 +97,6 @@ describe("integration: Atlas → program → factory plus economy, patent, and s
     expect(rB.econ.cash).toBe(econ.cash + rB.net);
   });
 
-  it("patents gate on cash + prerequisites; floor-depth requires bench-2", () => {
-    let patents: PatentState = { unlocked: [] };
-    // too poor for bench-2 (cost 120)
-    expect(canUnlock(DEFAULT_PATENTS, patents, 50, 9999, "bench-2")).toBe(false);
-    expect(canUnlock(DEFAULT_PATENTS, patents, 9999, 9999, "floor-depth")).toBe(false);
-
-    const u1 = unlockPatent(DEFAULT_PATENTS, patents, 200, 9999, "bench-2");
-    patents = u1.patents;
-    expect(patents.unlocked).toContain("bench-2");
-    expect(u1.cash).toBe(80); // 200 − 120
-
-    expect(canUnlock(DEFAULT_PATENTS, patents, 9999, u1.research, "floor-depth")).toBe(true);
-  });
-
   it("a full GameState round-trips through save", () => {
     const options = opts(7);
     const level = generate(options);
@@ -121,7 +105,7 @@ describe("integration: Atlas → program → factory plus economy, patent, and s
       maxDepth: 12,
       targets: [0],
     })!.template;
-    let g = createGameState(options, 10_000, 100);
+    let g = createGameState(options, 10_000);
     const layout = compileEntitledPrototype(
       template,
       BASE_GAME_FACTORY_WIDTH,
@@ -147,8 +131,8 @@ describe("integration: Atlas → program → factory plus economy, patent, and s
       productIds,
       disease,
     });
-    g = applyGameIntent(g, { kind: "unlockPatent", id: "bench-2" });
-    g = applyGameIntent(g, { kind: "unlockPatent", id: "zigzag-unlock" });
+    g = applyGameIntent(g, { kind: "setPatent", id: "bench-2", enabled: true });
+    g = applyGameIntent(g, { kind: "setPatent", id: "zigzag-unlock", enabled: true });
     expect(deserializeGame(serializeGame(g))).toEqual(g);
   });
 

@@ -17,7 +17,7 @@ const options: GenOptions = {
 };
 
 it("seed 14 continues through lifetime tick 100001 without requiring Reset", () => {
-  let game = createGameState(options, 1000, 0);
+  let game = createGameState(options, 1000);
   game = applyGameIntent(game, { kind: "productionTicks", ticks: MAX_REPLAY_TICKS });
   const before = pushSnapshot([], game);
   game = applyGameIntent(game, { kind: "productionTicks", ticks: 1 });
@@ -30,12 +30,12 @@ it("seed 14 continues through lifetime tick 100001 without requiring Reset", () 
   game = applyGameIntent(game, { kind: "resetProduction" });
   game = applyGameIntent(game, { kind: "productionTicks", ticks: 1 });
   expect(game.production.runtime.tick).toBe(1);
-  expect(game.economy).toEqual({ cash: 1000, research: 0, sold: [] });
+  expect(game.economy).toEqual({ cash: 1000, sold: [] });
 });
 
 it("continues Research after exhausting the lifetime intent-entry budget", () => {
   const machine = DEFAULT_CATALOG[0]!;
-  let game = createGameState(options, 1000, 0);
+  let game = createGameState(options, 1000);
   for (let cycle = 0; cycle <= 4096; cycle++) {
     game = applyGameIntent(game, { kind: "resetProduction" });
   }
@@ -50,7 +50,7 @@ it("continues Research after exhausting the lifetime intent-entry budget", () =>
 });
 
 it("continues paid Production before the tick cap when cumulative weighted work fills", () => {
-  let game = createGameState(options, 1000, 0);
+  let game = createGameState(options, 1000);
   const layout = {
     ...game.production.layout,
     tiles: game.production.layout.tiles.map(() => ({ kind: "belt" as const, dir: 0 as const })),
@@ -71,7 +71,7 @@ it("continues paid Production before the tick cap when cumulative weighted work 
 
 
 it("preserves Research, paid builds, sales, patents and in-flight state through repeated snapshots", () => {
-  let uninterrupted = createGameState(options, 10000, 0);
+  let uninterrupted = createGameState(options, 10000);
   let resumed = deserializeSnapshot(serializeSnapshot(uninterrupted));
   const apply = (intent: GameIntent): void => {
     uninterrupted = applyGameIntent(uninterrupted, intent);
@@ -91,13 +91,13 @@ it("preserves Research, paid builds, sales, patents and in-flight state through 
     apply({ kind: "sellProduct", productId: first.inventoryId, disease: first.outcome.cured[0]! });
     apply({ kind: "runResearchTrial", program: { steps: [recipe.steps[0]!] } });
   }
-  apply({ kind: "unlockPatent", id: "reveal-aid" });
-  apply({ kind: "unlockPatent", id: "bench-2" });
+  apply({ kind: "setPatent", id: "reveal-aid", enabled: true });
+  apply({ kind: "setPatent", id: "bench-2", enabled: true });
   apply({ kind: "productionTicks", ticks: 20 });
 }, 15_000);
 
 it("rejects safe-integer overflow atomically without changing the saved state", () => {
-  const game = createGameState(options, 1000, 0);
+  const game = createGameState(options, 1000);
   const wire = JSON.parse(serializeGame(game));
   wire.game.production.runtime.tick = Number.MAX_SAFE_INTEGER;
   const loaded = deserializeGame(JSON.stringify(wire));

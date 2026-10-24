@@ -139,7 +139,7 @@ describe("game replay work", () => {
     expect(estimateGameReplayWork(options, [
       { kind: "setPilotLayout", layout },
       { kind: "buildProductionLayout", layout },
-      { kind: "unlockPatent", id: "bench-2" },
+      { kind: "setPatent", id: "bench-2", enabled: true },
     ])).toBe(
       mapCells * 32 + 2 * currentCold + 262_144 + 2 * expandedCold
     );
@@ -174,12 +174,12 @@ describe("game replay work", () => {
     const trace: readonly GameIntent[] = [
       { kind: "setPilotLayout", layout },
       { kind: "buildProductionLayout", layout },
-      { kind: "unlockPatent", id: "floor-depth" },
+      { kind: "setPatent", id: "floor-depth", enabled: true },
       { kind: "runResearchTrial", program: { steps: [DEFAULT_CATALOG[0]!] } },
     ];
     const withExpansion = estimateGameReplayWork(options, trace);
     const withoutExpansion = estimateGameReplayWork(options, trace.filter(
-      (intent) => intent.kind !== "unlockPatent",
+      (intent) => intent.kind !== "setPatent",
     ));
     expect(withExpansion).toBeGreaterThan(withoutExpansion);
   });

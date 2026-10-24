@@ -35,13 +35,13 @@ function referenceLayout(seed = 14): FactoryLayout {
 }
 
 function pilotSave(): string {
-  let game = createGameState(defaultGenOptions(14), 10_000, 100);
+  let game = createGameState(defaultGenOptions(14), 10_000);
   game = applyGameIntent(game, { kind: "setPilotLayout", layout: referenceLayout() });
   return serializeGame(game);
 }
 
 function productionSave(): string {
-  let game = createGameState(defaultGenOptions(14), 10_000, 100);
+  let game = createGameState(defaultGenOptions(14), 10_000);
   game = applyGameIntent(game, { kind: "setPilotLayout", layout: referenceLayout() });
   game = applyGameIntent(game, { kind: "buildProductionLayout", layout: referenceLayout() });
   return serializeGame(game);
@@ -50,9 +50,9 @@ function productionSave(): string {
 function zeroCashProductionSave(): string {
   const options = defaultGenOptions(14);
   const layout = referenceLayout();
-  const priced = createGameState(options, 1_000_000, 100);
+  const priced = createGameState(options, 1_000_000);
   const cost = quoteProductionBuild(priced.production.layout, layout);
-  let game = createGameState(options, cost, 100);
+  let game = createGameState(options, cost);
   game = applyGameIntent(game, { kind: "buildProductionLayout", layout });
   if (game.economy.cash !== 0) throw new Error("zero-cash Production fixture did not spend its build budget");
   return serializeGame(game);
@@ -65,8 +65,8 @@ const clipboardPayloads = [
 ];
 
 function clipboardPayloadSave(): string {
-  let game = createGameState(defaultGenOptions(14), 10_000, 100);
-  game = applyGameIntent(game, { kind: "unlockPatent", id: "split-merge" });
+  let game = createGameState(defaultGenOptions(14), 10_000);
+  game = applyGameIntent(game, { kind: "setPatent", id: "split-merge", enabled: true });
   const tiles: FactoryTile[] = Array.from(
     { length: BASE_GAME_FACTORY_WIDTH * BASE_GAME_FACTORY_HEIGHT },
     () => ({ kind: "empty" as const }),
@@ -87,9 +87,9 @@ function clipboardPayloadSave(): string {
 function machineGallerySave(): string {
   const options = defaultGenOptions(14);
   const level = generate(options);
-  let game = createGameState(options, 1_000_000, 100_000);
-  game = applyGameIntent(game, { kind: "unlockPatent", id: "bench-2" });
-  game = applyGameIntent(game, { kind: "unlockPatent", id: "reveal-aid" });
+  let game = createGameState(options, 1_000_000);
+  game = applyGameIntent(game, { kind: "setPatent", id: "bench-2", enabled: true });
+  game = applyGameIntent(game, { kind: "setPatent", id: "reveal-aid", enabled: true });
   for (const [disease, id] of [
     [0, "zigzag-unlock"],
     [1, "loop-unlock"],
@@ -108,9 +108,9 @@ function machineGallerySave(): string {
       .map((product) => product.inventoryId);
     if (productIds.length !== 3) throw new Error(`machine gallery could not complete Disease ${disease + 1}`);
     game = applyGameIntent(game, { kind: "sellProducts", productIds, disease });
-    game = applyGameIntent(game, { kind: "unlockPatent", id });
+    game = applyGameIntent(game, { kind: "setPatent", id, enabled: true });
   }
-  game = applyGameIntent(game, { kind: "unlockPatent", id: "straight-unlock" });
+  game = applyGameIntent(game, { kind: "setPatent", id: "straight-unlock", enabled: true });
   const anchors = [
     { q: 1, r: 1 },
     { q: 5, r: 1 },
