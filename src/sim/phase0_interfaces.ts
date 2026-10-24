@@ -722,7 +722,8 @@ export type NextUnitPriceFn = (basePrice: number, alreadySold: number) => number
 export type PatentEffect =
   | { readonly kind: "unlockMachine"; readonly typeId: MachineTypeId }
   | { readonly kind: "expandFactory"; readonly dw: number; readonly dh: number }
-  | { readonly kind: "revealAid"; readonly amount: number };
+  | { readonly kind: "revealAid"; readonly amount: number }
+  | { readonly kind: "unlockRouting" };
 
 export interface PatentNode {
   readonly id: string;

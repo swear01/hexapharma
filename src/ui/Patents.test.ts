@@ -26,6 +26,7 @@ describe("Technology copy", () => {
     expect(DEFAULT_PATENTS.map((node) => patentTitle(node.id))).toEqual([
       "Wider factory floor",
       "Trail scanner",
+      "Split / Merge",
       "Zigzag still",
       "Loop vat",
       "Deeper factory floor",
@@ -49,16 +50,19 @@ describe("Technology copy", () => {
       factoryDh: 0,
       revealAid: 0,
       unlockedMachines: [],
+      routing: false,
     })).toEqual([]);
     expect(patentEffectSummary({
       factoryDw: 2,
       factoryDh: 3,
       revealAid: 4,
       unlockedMachines: ["zigzag", "loop"],
+      routing: true,
     })).toEqual([
       "Factory +2 columns",
       "Factory +3 rows",
       "Research scan radius +4 cells",
+      "Splitter and Merger unlocked",
       "2 machines unlocked",
     ]);
   });

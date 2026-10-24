@@ -34,7 +34,7 @@ import { activeEffects, DEFAULT_PATENTS } from "../sim/patent";
 import { requiredShippingContractForPatent } from "../sim/game";
 import { quoteProductionBuild } from "../sim/construction";
 import { BlueprintLibrary } from "./BlueprintLibrary";
-import { Factory } from "./Factory";
+import { Factory, factoryLineProgram } from "./Factory";
 import { Patents } from "./Patents";
 import { Shop } from "./Shop";
 import { blockingDialogOpen } from "./blockingDialog";
@@ -522,6 +522,10 @@ export function Game() {
     [game.fog, level.mm],
   );
   const catalog = useMemo(() => availableCatalog(game.patents), [game.patents]);
+  const planLineTrails = useMemo(() => {
+    const program = game.pilot.layout === null ? null : factoryLineProgram(game.pilot.layout);
+    return program === null ? undefined : researchRoute(knownResearchMap, level.start, program).trails;
+  }, [game.pilot.layout, knownResearchMap, level.start]);
   const [researchPlan, setResearchPlan] = useState<readonly Machine[]>([]);
   const patentEffects = useMemo(
     () => activeEffects(DEFAULT_PATENTS, game.patents),
@@ -910,6 +914,7 @@ export function Game() {
               planCost={researchProgramCost(researchProgram)}
               cash={game.economy.cash}
               catalog={catalog}
+              lineTrails={planLineTrails}
               blockReason={researchBlockReason}
               drug={actualRoute.drug}
               trails={actualRoute.trails}
@@ -939,6 +944,7 @@ export function Game() {
               entitledWidth={entitledWidth}
               entitledHeight={entitledHeight}
               catalog={catalog}
+              routing={patentEffects.routing}
               onLayoutChange={changePilot}
               commandLabel={`Commission $${quoteProductionBuild(game.production.layout, game.pilot.layout ?? game.production.layout)}`}
               commandDisabled={game.pilot.layout === null}
@@ -959,6 +965,7 @@ export function Game() {
               entitledWidth={entitledWidth}
               entitledHeight={entitledHeight}
               catalog={catalog}
+              routing={patentEffects.routing}
               onLayoutChange={changeProduction}
               onAdvance={advanceProduction}
               onReset={resetProduction}

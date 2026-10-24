@@ -191,8 +191,16 @@ describe("serializeGame / deserializeGame", () => {
     expect(deserializeGame(serializeGame(game))).toEqual(game);
   });
 
+  it("rejects Splitter and Merger tiles until Split / Merge is unlocked", () => {
+    const game = reachProduction();
+    expect(() => applyGameIntent(game, {
+      kind: "buildProductionLayout",
+      layout: splitterFactory(game.production.layout),
+    })).toThrow(/Splitter and Merger are locked/);
+  });
+
   it("round-trips behavior-affecting Production splitter cursors", () => {
-    let game = reachProduction();
+    let game = applyGameIntent(reachProduction(), { kind: "unlockPatent", id: "split-merge" });
     game = applyGameIntent(game, {
       kind: "buildProductionLayout",
       layout: splitterFactory(game.production.layout),
@@ -590,7 +598,7 @@ describe("deserializeGame executable-state validation", () => {
   });
 
   it("accepts edited in-range splitter cursors and rejects out-of-range cursors", () => {
-    let game = reachProduction();
+    let game = applyGameIntent(reachProduction(), { kind: "unlockPatent", id: "split-merge" });
     game = applyGameIntent(game, {
       kind: "buildProductionLayout",
       layout: splitterFactory(game.production.layout),

@@ -34,12 +34,15 @@ function effectLabel(node: (typeof DEFAULT_PATENTS)[number]): string {
         : `Add ${e.dh} factory ${e.dh === 1 ? "row" : "rows"}`;
     case "revealAid":
       return `Research scan radius +${e.amount} ${e.amount === 1 ? "cell" : "cells"}`;
+    case "unlockRouting":
+      return "Unlock Splitter and Merger";
   }
 }
 
 const PATENT_TITLES: Readonly<Record<string, string>> = {
   "bench-2": "Wider factory floor",
   "reveal-aid": "Trail scanner",
+  "split-merge": "Split / Merge",
   "zigzag-unlock": "Zigzag still",
   "loop-unlock": "Loop vat",
   "floor-depth": "Deeper factory floor",
@@ -113,6 +116,7 @@ export function patentEffectSummary(effects: ReturnType<typeof activeEffects>): 
   if (effects.revealAid > 0) {
     summary.push(`Research scan radius +${effects.revealAid} ${effects.revealAid === 1 ? "cell" : "cells"}`);
   }
+  if (effects.routing) summary.push("Splitter and Merger unlocked");
   if (effects.unlockedMachines.length > 0) {
     const count = effects.unlockedMachines.length;
     summary.push(`${count} ${count === 1 ? "machine" : "machines"} unlocked`);

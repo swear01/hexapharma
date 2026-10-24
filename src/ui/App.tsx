@@ -220,6 +220,7 @@ interface AppProps {
   readonly trails: readonly (readonly (Vec2 | null)[])[];
   /** Planned route on the known map (dashed). */
   readonly previewTrails?: readonly (readonly (Vec2 | null)[])[];
+  readonly lineTrails?: readonly (readonly (Vec2 | null)[])[];
   readonly previewDrug?: DrugState;
   /** The preview is the estimate the last Run was planned on (faint). */
   readonly estimate?: boolean;
@@ -239,6 +240,7 @@ export function App({
   drug,
   trails,
   previewTrails,
+  lineTrails,
   previewDrug,
   estimate = false,
   deviation = null,
@@ -270,12 +272,13 @@ export function App({
       camera,
       trail: trails[activeMap] ?? [],
       previewTrail: planned === undefined ? undefined : previewTrails?.[activeMap],
+      lineTrail: lineTrails?.[activeMap],
       previewDrug: estimate ? undefined : planned,
       estimate,
       deviation: deviation ?? undefined,
       controls,
     }),
-    [activeMap, camera, controls, deviation, estimate, planned, previewTrails, trails],
+    [activeMap, camera, controls, deviation, estimate, lineTrails, planned, previewTrails, trails],
   );
   const renderMapRef = useRef(renderMap);
   renderMapRef.current = renderMap;
@@ -567,6 +570,7 @@ export function App({
           data-camera-y={camera.y}
           data-camera-zoom={camera.zoom}
           data-revealed={revealed}
+          data-plan-line={lineTrails?.[activeMap]?.length ?? 0}
           data-placement-target={endpointHovered}
           tabIndex={-1}
           title={endpointHovered ? "Remove last step" : "Drag map"}

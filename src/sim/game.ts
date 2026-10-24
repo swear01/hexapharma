@@ -468,6 +468,7 @@ export function validateFactoryLayout(game: Pick<GameState, "patents">, layout: 
   ) {
     throw new Error("game intent: aggregate machine geometry exceeds factory bounds");
   }
+  const routing = activeEffects(DEFAULT_PATENTS, game.patents).routing;
   for (let index = 0; index < layout.tiles.length; index++) {
     const tile = layout.tiles[index];
     if (tile === undefined || typeof tile !== "object") {
@@ -487,6 +488,7 @@ export function validateFactoryLayout(game: Pick<GameState, "patents">, layout: 
         }
         break;
       case "splitter":
+        if (!routing) throw new Error("game intent: Splitter and Merger are locked · unlock Split / Merge in Technology");
         requireDir(tile.inDir, `factory tile ${index} input`);
         if (!Array.isArray(tile.outDirs) || tile.outDirs.length === 0 || tile.outDirs.length > 6) {
           throw new Error(`game intent: factory splitter ${index} requires an output direction`);
@@ -500,6 +502,7 @@ export function validateFactoryLayout(game: Pick<GameState, "patents">, layout: 
         }
         break;
       case "merger":
+        if (!routing) throw new Error("game intent: Splitter and Merger are locked · unlock Split / Merge in Technology");
         if (!Array.isArray(tile.inDirs) || tile.inDirs.length === 0 || tile.inDirs.length > 6) {
           throw new Error(`game intent: factory merger ${index} requires an input direction`);
         }
