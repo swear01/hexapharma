@@ -58,9 +58,10 @@ test("an open drawer suppresses factory input across resize without pausing Prod
   const box = (await page.getByTestId("production-facility-workspace").locator("canvas").boundingBox())!;
   await page.mouse.click(box.x + 12 + Math.sqrt(3) * 21 / 2, box.y + 12 + 21);
   await page.getByTestId("factory-play").click();
+  await openMenu(page);
   await page.getByTestId("view-help").click();
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole("heading", { name: "Field guide" }).click();
+  await page.getByRole("heading", { name: "Guide" }).click();
   const direction = await page.getByTestId("brush-direction").textContent();
   const tick = Number(await page.getByTestId("factory-tick").textContent());
   await page.keyboard.press("2");
@@ -92,8 +93,9 @@ test("Escape closes Blueprints and Menu after their fields receive focus", async
 test("Research hotkeys work only while the world is visible", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await loadFixture(page, discover(createGameState(defaultGenOptions(14), 1000), 0));
+  await openMenu(page);
   await page.getByTestId("view-help").click();
-  await page.getByRole("heading", { name: "Field guide" }).click();
+  await page.getByRole("heading", { name: "Guide" }).click();
   const cash = await page.getByTestId("cash").textContent();
   await page.keyboard.press("2");
   await page.keyboard.press("Enter");

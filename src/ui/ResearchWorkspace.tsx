@@ -23,7 +23,7 @@ export function researchMachineCost(typeId: string): number {
 }
 
 /** Compass sectors in screen degrees (y down), matching the Atlas hex directions. */
-const COMPASS_SECTORS = ["east", "south-east", "south-west", "west", "north-west", "north-east"] as const;
+export const COMPASS_SECTORS = ["east", "south-east", "south-west", "west", "north-west", "north-east"] as const;
 
 function wedgePath(index: number): string {
   const point = (degrees: number, radius: number) => {
@@ -35,10 +35,21 @@ function wedgePath(index: number): string {
   return `M${point(from, 7)} L${point(from, 21)} A21 21 0 0 1 ${point(to, 21)} L${point(to, 7)} A7 7 0 0 0 ${point(from, 7)} Z`;
 }
 
-function TargetCompass({ sector, heading }: { readonly sector: string; readonly heading: number }) {
+/** Target sector wedge and the planned route's heading arrow. */
+export function TargetCompass({ sector, heading }: { readonly sector: string; readonly heading: number }) {
   const local = sector === "local";
   return (
-    <svg className="research-compass-dial" viewBox="0 0 48 48" width="48" height="48" aria-hidden="true">
+    <svg
+      className="research-compass-dial"
+      viewBox="0 0 48 48"
+      width="48"
+      height="48"
+      role="img"
+      aria-label={`Target ${local ? "near the start" : sector}, heading ${COMPASS_SECTORS[heading]}`}
+      data-testid="research-mission"
+      data-sector={sector}
+      data-heading={COMPASS_SECTORS[heading]}
+    >
       {COMPASS_SECTORS.map((name, index) => (
         <path key={name} d={wedgePath(index)} className={name === sector ? "is-target" : undefined} />
       ))}
@@ -68,8 +79,6 @@ export interface ResearchWorkspaceProps {
   readonly active: boolean;
   readonly level: GeneratedLevel;
   readonly fog: readonly Uint8Array[];
-  readonly missionDisease: number;
-  readonly missionSector: string;
   /** The local planned route; never authoritative until Run. */
   readonly plan: Template;
   readonly planCost: number;
@@ -141,14 +150,6 @@ export function ResearchWorkspace(props: ResearchWorkspaceProps) {
         onWorldErase={props.onUndo}
       />
       <div className="research-overlay">
-        <section className="research-compass" data-testid="research-mission" aria-label="Active assay">
-          <TargetCompass sector={props.missionSector} heading={heading} />
-          <div>
-            <strong>Disease {props.missionDisease + 1}</strong>
-            <span>Look <output data-testid="research-assay-sector">{props.missionSector}</output></span>
-            <span>Heading <output data-testid="research-heading">{COMPASS_SECTORS[heading]}</output></span>
-          </div>
-        </section>
         {plan.steps.length > 0 && (
           <div className="research-program-strip" data-testid="research-program-strip" aria-label="Planned route">
             <ol ref={stepListRef}>

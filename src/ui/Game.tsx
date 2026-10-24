@@ -40,7 +40,7 @@ import { blockingDialogOpen } from "./blockingDialog";
 import { hexToPixel } from "../render/hexProjection";
 import type { ResearchDeviation } from "../render/labRenderer";
 import { machineName } from "./machineLabels";
-import { ResearchWorkspace, researchMachineCost } from "./ResearchWorkspace";
+import { ResearchWorkspace, TargetCompass, researchMachineCost } from "./ResearchWorkspace";
 import { researchDrugPoint, researchKnownCureLocations } from "./App";
 import { FieldGuide } from "./FieldGuide";
 import { currentObjective, type ObjectiveTarget } from "./objective";
@@ -343,8 +343,20 @@ export function parseNewGameSeed(value: string): number | null {
 
 type Building = "research" | "pilot" | "production";
 
+/** Top-bar drawer icons, drawn as legend ink: a shipping crate, a branch, a ruled sheet, a menu. */
+function HudGlyph({ kind }: { readonly kind: "market" | "technology" | "blueprints" | "menu" }) {
+  return (
+    <svg className="hud-glyph" viewBox="0 0 18 18" width="18" height="18" aria-hidden="true" focusable="false">
+      {kind === "market" && <path d="M2.5 6.5h13v9h-13zM1.5 3h15v3.5h-15zM7 9.5h4" />}
+      {kind === "technology" && <><path d="M4.8 9h2.7m0 0 4-4.5h1.7M7.5 9l4 4.5h1.7" /><circle cx="3" cy="9" r="1.8" /><circle cx="15" cy="4.5" r="1.8" /><circle cx="15" cy="13.5" r="1.8" /></>}
+      {kind === "blueprints" && <path d="M3 2.5h12v13H3zM3 7h12M3 11h12M7.5 2.5v13" />}
+      {kind === "menu" && <path d="M2.5 4.5h13M2.5 9h13M2.5 13.5h13" />}
+    </svg>
+  );
+}
+
 function objectiveIsHere(target: ObjectiveTarget, building: Building, drawer: string | null): boolean {
-  return target === "market" || target === "technology" ? drawer === target : drawer === null && building === target;
+  return target === "market" ? drawer === target : drawer === null && building === target;
 }
 type Drawer = "market" | "technology" | "blueprints" | "menu" | "help" | null;
 type PendingSaveAction =
@@ -510,11 +522,12 @@ export function Game() {
       return profitableMarketProducts(game.inventory, spec, sold).length;
     },
     stockFor: (disease) => game.inventory.filter((product) => product.outcome.cured.includes(disease)).length,
+    planHasMachines: (game.pilot.layout?.machines.length ?? 0) > 0,
     productionHasMachines: game.production.layout.machines.length > 0,
     producingOther: game.inventory.some((product) => product.outcome.cured.length > 0)
       && !game.inventory.some((product) => product.outcome.cured.includes(activeContract.disease)),
     sector: researchMissionSector,
-  }), [activeContract.disease, contracts, knownCureDiseases, game.economy.sold, game.inventory, game.patents.unlocked, game.production.layout.machines.length, level.diseases, researchMissionSector]);
+  }), [activeContract.disease, contracts, knownCureDiseases, game.economy.sold, game.inventory, game.pilot.layout, game.production.layout.machines.length, level.diseases, researchMissionSector]);
   const knownResearchMap = useMemo(
     () => researchPlanningMap(level.mm, game.fog),
     [game.fog, level.mm],
@@ -841,9 +854,16 @@ export function Game() {
   ]);
 
   const followObjective = (target: ObjectiveTarget) => {
-    if (target === "market" || target === "technology") setDrawer(target);
+    if (target === "market") setDrawer(target);
     else openBuilding(target);
   };
+  const toggleDrawer = (next: Exclude<Drawer, null>) => setDrawer((current) => current === next ? null : next);
+  const drawerButton = (id: "market" | "technology" | "blueprints", label: string, hotkey: string) => (
+    <button type="button" data-testid={`view-${id}`} aria-pressed={drawer === id} onClick={() => toggleDrawer(id)}
+      aria-label={`${label} (${hotkey})`} title={`${label} (${hotkey})`}>
+      <HudGlyph kind={id} /><span className="hud-link-label">{label}</span><kbd>{hotkey}</kbd>
+    </button>
+  );
 
   const buildingButton = (id: Building, label: string, hotkey: string) => (
     <button type="button" onClick={() => openBuilding(id)}
@@ -865,45 +885,43 @@ export function Game() {
         </nav>
         <div className="resource-strip" aria-label="Company resources">
           <span className="resource-chip" aria-label={`Cash ${game.economy.cash}`} title={`Cash ${game.economy.cash}`}>
-            <span className="resource-label" aria-hidden="true"><span className="resource-label-full">Cash</span><span className="resource-label-compact">Cash</span></span>
+            <span className="resource-label" aria-hidden="true">Cash</span>
             <strong><span className="resource-unit" aria-hidden="true">$</span><span data-testid="cash">{game.economy.cash}</span></strong>
           </span>
-          <button type="button" className="resource-chip stock-chip" onClick={() => setDrawer((current) => current === "market" ? null : "market")} aria-label={`Stock ${game.inventory.length}, open Market`} title="Stock · open Market (M)">
-            <span className="resource-label" aria-hidden="true"><span className="resource-label-full">Stock</span><span className="resource-label-compact">Stock</span></span>
+          <button type="button" className="resource-chip stock-chip" onClick={() => toggleDrawer("market")} aria-label={`Stock ${game.inventory.length}, open Market`} title="Stock · open Market (M)">
+            <span className="resource-label" aria-hidden="true">Stock</span>
             <strong data-testid="stock">{game.inventory.length}</strong>
           </button>
-          <span className="resource-chip contract-chip" data-testid="shipping-contract" aria-label={`Disease ${activeContract.disease + 1} shipping contract ${activeContract.sold} of ${activeContract.quota}`}>
-            <span className="resource-label"><span className="resource-label-full">D{activeContract.disease + 1} contract</span><span className="resource-label-compact">D{activeContract.disease + 1}</span></span>
-            <strong>{activeContract.sold} / {activeContract.quota}</strong>
-          </span>
         </div>
-        <button type="button" className="menu-trigger" data-testid="view-menu" aria-expanded={drawer === "menu"} onClick={() => setDrawer((current) => current === "menu" ? null : "menu")}>Menu</button>
+        <nav className="hud-links" aria-label="Management">
+          {drawerButton("market", "Market", "M")}
+          {drawerButton("technology", "Technology", "T")}
+          {drawerButton("blueprints", "Blueprints", "B")}
+        </nav>
+        <button type="button" className="menu-trigger" data-testid="view-menu" aria-expanded={drawer === "menu" || drawer === "help"} onClick={() => toggleDrawer("menu")} aria-label="Menu" title="Menu">
+          <HudGlyph kind="menu" /><span className="hud-link-label">Menu</span>
+        </button>
       </header>
-      <nav className="utility-nav" aria-label="Management">
-        <p className="objective" data-testid="objective" aria-live="polite">
-          <svg className="objective-mark" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M8 2.5 14 13H2Z" /></svg>
-          <span className="objective-text" data-testid="objective-text">{objective.text}</span>
+
+      <main className="game-stage" data-testid="game-stage">
+        <section className={`goal-card${building === "research" ? " has-compass" : ""}`} data-testid="objective" aria-label="Objective">
+          {building === "research" && <TargetCompass sector={researchMissionSector} heading={planningPreview.drug.heading} />}
+          <p className="goal-step" aria-live="polite">
+            <span className="objective-text" data-testid="objective-text">{objective.text}</span>
+            <span className="goal-contract" data-testid="shipping-contract" aria-label={`Disease ${activeContract.disease + 1} contract ${activeContract.sold} of ${activeContract.quota}`}>
+              <span aria-hidden="true">Contract</span> <strong aria-hidden="true">{activeContract.sold} / {activeContract.quota}</strong>
+            </span>
+          </p>
           {!objectiveIsHere(objective.target, building, drawer) && (
             <button type="button" className="objective-action" data-testid="objective-action" onClick={() => followObjective(objective.target)}>{objective.actionLabel}</button>
           )}
-        </p>
-        <div className="utility-links">
-          <button type="button" data-testid="view-market" aria-pressed={drawer === "market"} onClick={() => setDrawer((current) => current === "market" ? null : "market")}>Market <kbd>M</kbd></button>
-          <button type="button" data-testid="view-technology" aria-pressed={drawer === "technology"} onClick={() => setDrawer((current) => current === "technology" ? null : "technology")}>Technology <kbd>T</kbd></button>
-          <button type="button" data-testid="view-blueprints" aria-pressed={drawer === "blueprints"} onClick={() => setDrawer((current) => current === "blueprints" ? null : "blueprints")}>Blueprints <kbd>B</kbd></button>
-          <button type="button" data-testid="view-help" aria-label="Help" aria-pressed={drawer === "help"} onClick={() => setDrawer((current) => current === "help" ? null : "help")}>Guide</button>
-        </div>
-      </nav>
-
-      <main className="game-stage" data-testid="game-stage">
+        </section>
         <section className="view-layer" hidden={building !== "research"}>
           {visited.research && (
             <ResearchWorkspace
               active={building === "research" && worldInputActive}
               level={level}
               fog={game.fog}
-              missionDisease={researchMission.id}
-              missionSector={researchMissionSector}
               plan={researchProgram}
               planCost={researchProgramCost(researchProgram)}
               cash={game.economy.cash}
@@ -967,39 +985,38 @@ export function Game() {
           )}
         </section>
 
-        <aside className="game-drawer" data-testid="menu-drawer" hidden={drawer !== "menu"}>
+        <aside className="game-drawer menu-drawer" data-testid="menu-drawer" aria-label="Menu" hidden={drawer !== "menu"}>
           <button type="button" className="drawer-close" onClick={() => setDrawer(null)} aria-label="Close menu"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M3 3 13 13M13 3 3 13" /></svg></button>
           <section className="menu-panel">
-            <h1>HexaPharma</h1>
-            <span className="resource-chip" aria-label={`Seed ${game.genOptions.seed}`} title={`Seed ${game.genOptions.seed}`}>
-              <span className="resource-label" aria-hidden="true"><span className="resource-label-full">Seed</span><span className="resource-label-compact">#</span></span>
-              <strong data-testid="seed">{game.genOptions.seed}</strong>
-            </span>
-          <div className="system-strip" aria-label="Game controls">
-            <button ref={newGameTriggerRef} type="button" onClick={openNewGameConfirmation} className="hud-button new-game-button" data-testid="new-game" title="New game" aria-label="New game"><span aria-hidden="true">+</span><span>New</span></button>
-            <label className="save-slot-control" title="Save slot">
-              <span>Slot </span>
-              <select
-                data-testid="save-slot"
-                defaultValue={selectedSlotRef.current}
-                onChange={(event) => {
-                  const slot = Number(event.target.value);
-                  selectedSlotRef.current = slot;
-                  showSlotRead(resolvedSlot(slot));
-                }}
-              >
-                {Array.from({ length: SAVE_SLOTS }, (_, slot) => (
-                  <option key={slot} value={slot}>{slot + 1}</option>
-                ))}
-              </select>
-            </label>
-            <button type="button" onClick={save} className="hud-button" data-testid="save" title="Save (Ctrl+S)" aria-label="Save game">Save</button>
-            <button ref={loadButtonRef} type="button" onClick={load} className="hud-button" data-testid="load" title="Load" aria-label="Load game">Load</button>
-            <button ref={rewindButtonRef} type="button" onClick={doRewind} className="hud-button" data-testid="rewind" disabled={historyCount < 2} title="Rewind" aria-label="Rewind save history">Rewind</button>
-            {canRecover && (
-              <button type="button" onClick={recoverStorage} className="hud-button is-warning" data-testid="recover-storage" title="Recover slot" aria-label="Recover save slot">Recover</button>
-            )}
-          </div>
+            <p className="menu-seed" aria-label={`Seed ${game.genOptions.seed}`}>
+              <span aria-hidden="true">Seed</span> <strong data-testid="seed">{game.genOptions.seed}</strong>
+            </p>
+            <div className="system-strip" aria-label="Game controls">
+              <button ref={newGameTriggerRef} type="button" onClick={openNewGameConfirmation} className="new-game-button" data-testid="new-game" title="New game" aria-label="New game">New game</button>
+              <label className="save-slot-control" title="Save slot">
+                <span>Slot</span>
+                <select
+                  data-testid="save-slot"
+                  defaultValue={selectedSlotRef.current}
+                  onChange={(event) => {
+                    const slot = Number(event.target.value);
+                    selectedSlotRef.current = slot;
+                    showSlotRead(resolvedSlot(slot));
+                  }}
+                >
+                  {Array.from({ length: SAVE_SLOTS }, (_, slot) => (
+                    <option key={slot} value={slot}>{slot + 1}</option>
+                  ))}
+                </select>
+              </label>
+              <button type="button" onClick={save} data-testid="save" title="Save (Ctrl+S)" aria-label="Save game">Save</button>
+              <button ref={loadButtonRef} type="button" onClick={load} data-testid="load" title="Load" aria-label="Load game">Load</button>
+              <button ref={rewindButtonRef} type="button" onClick={doRewind} data-testid="rewind" disabled={historyCount < 2} title="Rewind" aria-label="Rewind save history">Rewind</button>
+              {canRecover && (
+                <button type="button" onClick={recoverStorage} className="is-warning" data-testid="recover-storage" title="Recover slot" aria-label="Recover save slot">Recover</button>
+              )}
+            </div>
+            <button type="button" className="menu-guide" data-testid="view-help" onClick={() => setDrawer("help")}>Guide</button>
           </section>
         </aside>
         {drawer !== null && drawer !== "menu" && (

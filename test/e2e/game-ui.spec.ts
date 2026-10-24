@@ -46,15 +46,15 @@ test("keyboard focus stays visible on Research machine buttons that append to th
 test("the complete HUD stays reachable across narrow widths", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 844 });
   await page.goto("/");
-  const contractColumns = await page.getByTestId("shipping-contract").evaluate((element) =>
-    getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/),
-  );
-  expect(contractColumns).toHaveLength(2);
 
   for (const width of [390, 430, 560, 651]) {
     await page.setViewportSize({ width, height: 844 });
     await page.goto("/?cash=999712");
-    await expect(page.getByTestId("shipping-contract")).toHaveCSS("display", "grid");
+    await expect(page.getByTestId("shipping-contract")).toBeVisible();
+    const goal = await page.getByTestId("objective").boundingBox();
+    expect(goal, `the pinned goal should fit at ${width}px`).not.toBeNull();
+    expect((goal?.x ?? width) + (goal?.width ?? 1)).toBeLessThanOrEqual(width);
+    expect((await page.getByTestId("top-hud").boundingBox())?.height ?? 0).toBeLessThanOrEqual(92);
 
     for (const element of await page.locator(".top-hud .resource-chip, .top-hud button").all()) {
       const box = await element.boundingBox();
@@ -217,9 +217,10 @@ test("Pilot spatial editing supports palette, rotate, drag paint, erase, undo, r
   await page.mouse.move(machineX, machineY);
   await expect(pilot.getByTestId("factory-hover-kind")).toHaveText(machineName("hook"));
 
+  const zoomBefore = await frame.getAttribute("data-camera-zoom");
   await frame.hover();
   await page.mouse.wheel(0, -500);
-  await expect(pilot.getByTestId("factory-zoom")).not.toHaveText("100%");
+  await expect(frame).not.toHaveAttribute("data-camera-zoom", zoomBefore!);
 });
 
 test("the world canvas remains primary and the inspector never covers it", async ({ page }) => {

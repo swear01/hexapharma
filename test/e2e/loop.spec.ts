@@ -50,7 +50,7 @@ test("full loop: paid Research trial → Production Plan → Production → ship
   await expect(page.getByTestId("research-atlas-outcome")).toContainText("Cure Disease 1");
   await expect(page.getByTestId("view-formulas")).toHaveCount(0);
   await expect(page.getByTestId("shipping-contract")).toContainText("0 / 3");
-  await expect(page.getByTestId("objective-text")).toHaveText("Plan a line to Disease 1");
+  await expect(page.getByTestId("objective-text")).toHaveText("Commission the Plan for Disease 1");
 
   await page.getByTestId("objective-action").click();
   await expect(page.getByTestId("pilot-facility-workspace")).toBeVisible();

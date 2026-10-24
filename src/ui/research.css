@@ -10,12 +10,7 @@
 
 /* Map-margin furniture: printed on paper, never glass. */
 .research-overlay { position: relative; z-index: 3; grid-row: 1; grid-column: 1 / -1; min-height: 0; pointer-events: none; }
-.research-compass, .research-program-strip, .research-result, .research-atlas-status { border: 1px solid var(--rule-strong); border-radius: 3px; background: var(--paper-raised); }
-.research-compass { position: absolute; top: 12px; left: 12px; display: flex; align-items: center; gap: 10px; padding: 6px 14px 6px 6px; }
-.research-compass > div { display: grid; gap: 2px; }
-.research-compass strong { font: 600 18px/1 var(--font-display); letter-spacing: .02em; text-transform: uppercase; }
-.research-compass span { color: var(--ink-2); font-size: 13px; }
-.research-compass output { color: var(--ink); font-weight: 600; }
+.research-program-strip, .research-result, .research-atlas-status { border: 1px solid var(--rule-strong); border-radius: 3px; background: var(--paper-raised); }
 .research-compass-dial path { fill: none; stroke: var(--rule-strong); stroke-width: 1; }
 .research-compass-dial circle { fill: var(--ink-3); }
 .research-compass-dial .is-target { fill: var(--course); stroke: var(--course-ink); }
@@ -73,10 +68,7 @@
   .research-commandbar { grid-row: 3; grid-column: 1; justify-content: space-between; gap: 8px; padding: 6px 8px; border-top: 1px solid var(--rule); }
   .research-run-readout { font-size: 13px; }
   .research-run { min-width: 104px; }
-  .research-compass { top: 8px; left: 8px; gap: 6px; padding: 4px 10px 4px 4px; }
-  .research-compass-dial { width: 36px; height: 36px; }
-  .research-compass strong { font-size: 16px; }
-  .research-program-strip { top: 8px; left: 140px; width: auto; max-width: calc(100% - 148px); max-height: 52px; }
+  .research-program-strip { top: 60px; left: 8px; width: auto; max-width: calc(100% - 16px); max-height: 52px; }
   .research-program-strip ol { display: flex; width: var(--strip-width, auto); padding: 0 4px; overflow-y: hidden; scroll-snap-type: x mandatory; scroll-padding-inline: 4px; }
   .research-program-strip li { display: flex; flex: none; gap: 4px; min-height: 44px; padding: 4px 6px; scroll-snap-align: start; }
   .research-program-strip li + li { border-top: 0; }
@@ -85,5 +77,5 @@
   .research-program-strip li:last-child .research-step-name { display: block; max-width: 104px; color: var(--ink); }
   .research-result { top: auto; bottom: 68px; left: 8px; right: 8px; }
   .research-readout { max-width: none; }
-    .research-atlas-status { bottom: 8px; left: 8px; }
+  .research-atlas-status { bottom: 8px; left: 8px; }
 }
