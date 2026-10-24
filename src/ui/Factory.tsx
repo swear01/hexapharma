@@ -290,7 +290,7 @@ export function factoryMachineFlowOrder(layout: FactoryLayout): ReadonlyMap<numb
   return order;
 }
 
-/** Machines the first unit from the first Source passes through on its way to a Sink (a Splitter sends it out its first output). */
+/** Machines the first unit from the first Source passes through on its way to a Sink (a Splitter sends it out its first connected output, as the sim does). */
 export function factoryLineProgram(layout: FactoryLayout): Template | null {
   const topology = buildFactoryTransportTopology(layout);
   const area = layout.width * layout.height;
@@ -320,7 +320,9 @@ export function factoryLineProgram(layout: FactoryLayout): Template | null {
         options = options.concat(exits[index]!);
       }
     }
-    const edge = (tile?.kind === "splitter" ? options.find((candidate) => candidate.dir === tile.outDirs[0]) : undefined) ?? options[0];
+    const edge = tile?.kind === "splitter"
+      ? tile.outDirs.map((dir) => options.find((candidate) => candidate.dir === dir)).find((candidate) => candidate !== undefined)
+      : options[0];
     at = edge === undefined ? -1 : hexIndex(layout.width, edge.to.q, edge.to.r);
   }
   return null;
