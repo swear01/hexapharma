@@ -23,9 +23,7 @@ import { MachineIcon } from "./MachineIcon";
 import { blockingDialogOpen } from "./blockingDialog";
 import { createPortal } from "react-dom";
 import { machineName } from "./machineLabels";
-import { diseaseName, outcomeEffectText } from "./effectLabels";
-import { DEFAULT_PATENTS } from "../sim/patent";
-import { requiredShippingContractForPatent } from "../sim/game";
+import { outcomeEffectText } from "./effectLabels";
 import type {
   Dir,
   HexCoord,
@@ -165,15 +163,10 @@ export function machineTooltip(entry: MachineCatalogEntry): string {
 
 /** Why a machine is not on the toolbelt yet, in player terms. */
 export function machineLockReason(typeId: MachineTypeId): string {
-  const patent = DEFAULT_PATENTS.find((node) =>
-    node.effect.kind === "unlockMachine" && node.effect.typeId === typeId);
-  const disease = patent === undefined ? null : requiredShippingContractForPatent(patent.id);
-  return disease === null
-    ? `${machineName(typeId)} locked · unlock in Technology`
-    : `${machineName(typeId)} locked · ship the ${diseaseName(disease)} contract, then unlock in Technology`;
+  return `${machineName(typeId)} off · turn it on in Technology`;
 }
 
-export const ROUTING_LOCK_REASON = "Splitter and Merger locked · unlock Split / Merge in Technology";
+export const ROUTING_LOCK_REASON = "Splitter and Merger off · turn on Split / Merge in Technology";
 
 function machineDef(typeId: MachineTypeId): FactoryMachineDef {
   const entry = entryOf(typeId);

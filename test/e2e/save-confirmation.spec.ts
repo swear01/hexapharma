@@ -21,9 +21,10 @@ test("Load confirms before replacing a different current game and remains cancel
   await page.goto("/?cash=9999&research=9999");
   await openMenu(page);
   await page.getByTestId("save").click();
-  await page.getByTestId("view-technology").click();
-  await page.getByTestId("patent-unlock-reveal-aid").click();
-  await expect(page.getByTestId("cash")).toHaveText("9919");
+  await page.getByTestId("view-research").click();
+  await page.getByTestId("research-machine-hook").click();
+  await page.getByTestId("research-command").click();
+  await expect(page.getByTestId("cash")).toHaveText("9996");
   await page.keyboard.press("Escape");
   const researchFrame = page.getByTestId("lab-map-frame");
   const cameraBeforeModal = {
@@ -62,7 +63,7 @@ test("Load confirms before replacing a different current game and remains cancel
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
   await expect(page.getByTestId("load")).toBeFocused();
-  await expect(page.getByTestId("cash")).toHaveText("9919");
+  await expect(page.getByTestId("cash")).toHaveText("9996");
   expect(await page.evaluate(() => localStorage.getItem("hexapharma.save.v14.checkpoint.0")))
     .toBe(checkpointBefore);
 
@@ -70,7 +71,7 @@ test("Load confirms before replacing a different current game and remains cancel
   await page.getByTestId("load").click();
   await dialog.getByRole("button", { name: "Cancel" }).click();
   await expect(dialog).toHaveCount(0);
-  await expect(page.getByTestId("cash")).toHaveText("9919");
+  await expect(page.getByTestId("cash")).toHaveText("9996");
   expect(await page.evaluate(() => localStorage.getItem("hexapharma.save.v14.checkpoint.0")))
     .toBe(checkpointBefore);
 
@@ -89,9 +90,10 @@ test("Rewind confirms before dropping the latest checkpoint and restoring the ol
   await page.goto("/?cash=9999&research=9999");
   await openMenu(page);
   await page.getByTestId("save").click();
-  await page.getByTestId("view-technology").click();
-  await page.getByTestId("patent-unlock-reveal-aid").click();
-  await expect(page.getByTestId("cash")).toHaveText("9919");
+  await page.getByTestId("view-research").click();
+  await page.getByTestId("research-machine-hook").click();
+  await page.getByTestId("research-command").click();
+  await expect(page.getByTestId("cash")).toHaveText("9996");
   await openMenu(page);
   await page.getByTestId("save").click();
   await expect(page.getByTestId("rewind")).toBeEnabled();
@@ -107,7 +109,7 @@ test("Rewind confirms before dropping the latest checkpoint and restoring the ol
   await dialog.getByRole("button", { name: "Cancel" }).click();
   await expect(dialog).toHaveCount(0);
   await expect(page.getByTestId("rewind")).toBeFocused();
-  await expect(page.getByTestId("cash")).toHaveText("9919");
+  await expect(page.getByTestId("cash")).toHaveText("9996");
   expect(await page.evaluate(() => localStorage.getItem("hexapharma.save.v14.checkpoint.0")))
     .toBe(checkpointBefore);
 

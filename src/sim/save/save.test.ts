@@ -196,11 +196,11 @@ describe("serializeGame / deserializeGame", () => {
     expect(() => applyGameIntent(game, {
       kind: "buildProductionLayout",
       layout: splitterFactory(game.production.layout),
-    })).toThrow(/Splitter and Merger are locked/);
+    })).toThrow(/Splitter and Merger are off/);
   });
 
   it("round-trips behavior-affecting Production splitter cursors", () => {
-    let game = applyGameIntent(reachProduction(), { kind: "unlockPatent", id: "split-merge" });
+    let game = applyGameIntent(reachProduction(), { kind: "setPatent", id: "split-merge", enabled: true });
     game = applyGameIntent(game, {
       kind: "buildProductionLayout",
       layout: splitterFactory(game.production.layout),
@@ -527,11 +527,11 @@ describe("deserializeGame executable-state validation", () => {
     expect(() => deserializeGame(JSON.stringify(catalog))).toThrow(/catalog|cost/i);
   });
 
-  it("rejects unknown, duplicate, and prerequisite-skipping patents", () => {
-    for (const unlocked of [["bogus"], ["bench-2", "bench-2"], ["floor-depth"]]) {
+  it("rejects unknown and duplicate patents", () => {
+    for (const unlocked of [["bogus"], ["bench-2", "bench-2"]]) {
       const parsed = wire();
       parsed.game.patents = { unlocked };
-      expect(() => deserializeGame(JSON.stringify(parsed))).toThrow(/patent|prerequisite/i);
+      expect(() => deserializeGame(JSON.stringify(parsed))).toThrow(/patent/i);
     }
   });
 
@@ -598,7 +598,7 @@ describe("deserializeGame executable-state validation", () => {
   });
 
   it("accepts edited in-range splitter cursors and rejects out-of-range cursors", () => {
-    let game = applyGameIntent(reachProduction(), { kind: "unlockPatent", id: "split-merge" });
+    let game = applyGameIntent(reachProduction(), { kind: "setPatent", id: "split-merge", enabled: true });
     game = applyGameIntent(game, {
       kind: "buildProductionLayout",
       layout: splitterFactory(game.production.layout),

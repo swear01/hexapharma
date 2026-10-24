@@ -91,8 +91,8 @@ it("preserves Research, paid builds, sales, patents and in-flight state through 
     apply({ kind: "sellProduct", productId: first.inventoryId, disease: first.outcome.cured[0]! });
     apply({ kind: "runResearchTrial", program: { steps: [recipe.steps[0]!] } });
   }
-  apply({ kind: "unlockPatent", id: "reveal-aid" });
-  apply({ kind: "unlockPatent", id: "bench-2" });
+  apply({ kind: "setPatent", id: "reveal-aid", enabled: true });
+  apply({ kind: "setPatent", id: "bench-2", enabled: true });
   apply({ kind: "productionTicks", ticks: 20 });
 }, 15_000);
 

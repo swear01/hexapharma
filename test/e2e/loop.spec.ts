@@ -132,7 +132,7 @@ test("an expanded-floor Blueprint stays readable on a smaller Production floor",
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/?cash=9999&research=9999");
   await page.getByTestId("view-technology").click();
-  await page.getByTestId("patent-unlock-bench-2").click();
+  await page.getByTestId("patent-switch-bench-2").click();
   await page.getByTestId("view-blueprints").click();
   await page.getByTestId("blueprint-name").fill("Expanded floor");
   await page.getByTestId("blueprint-save-production").click();

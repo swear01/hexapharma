@@ -31,7 +31,6 @@ import {
   type GameIntent,
 } from "../sim/game";
 import { activeEffects, DEFAULT_PATENTS } from "../sim/patent";
-import { requiredShippingContractForPatent } from "../sim/game";
 import { quoteProductionBuild } from "../sim/construction";
 import { BlueprintLibrary } from "./BlueprintLibrary";
 import { Factory, factoryLineProgram } from "./Factory";
@@ -56,7 +55,6 @@ import {
 } from "./checkpointStorage";
 
 const SAVE_SLOTS = 3;
-const GATED_PATENTS = DEFAULT_PATENTS.map((node) => node.id).filter((id) => requiredShippingContractForPatent(id) !== null);
 const LAB_WORLD_SIZE = 49;
 
 export function researchPlanningMap(
@@ -295,7 +293,7 @@ export function playerFacingIntentError(error: unknown): string {
     const entry = DEFAULT_CATALOG.find((candidate) => candidate.typeId === typeId);
     if (entry === undefined) return "This Blueprint uses an unknown machine.";
     if (machineFailure[2] === "is locked") {
-      return `${machineName(entry.typeId)} is locked. Unlock it in Technology.`;
+      return `${machineName(entry.typeId)} is off. Turn it on in Technology.`;
     }
     return machineFailure[2] === "path does not match catalog"
       ? `${machineName(entry.typeId)} has an incompatible Blueprint path.`
@@ -326,6 +324,9 @@ export function playerFacingIntentError(error: unknown): string {
     return "That market is unavailable.";
   }
   if (/^game intent: unknown patent /u.test(message)) return "That Technology is unavailable.";
+  if (/^game intent: Technology "[^"]+" is still in use/u.test(message)) {
+    return "Still in use · remove it from Plan and Production first.";
+  }
   const reason = /^game intent: (.+)$/u.exec(message)?.[1];
   return reason === undefined ? message : reason.charAt(0).toUpperCase() + reason.slice(1);
 }
@@ -503,8 +504,6 @@ export function Game() {
   const objective = useMemo(() => currentObjective({
     contracts,
     knownCureDiseases,
-    unlockedPatents: game.patents.unlocked,
-    gatedPatents: GATED_PATENTS,
     profitableUnits: (disease) => {
       const spec = level.diseases.find((candidate) => candidate.id === disease);
       if (spec === undefined) return 0;
@@ -585,7 +584,7 @@ export function Game() {
   const sellProducts = useCallback((productIds: readonly number[], disease: DiseaseId) => {
     return dispatch({ kind: "sellProducts", productIds, disease });
   }, [dispatch]);
-  const unlock = useCallback((id: string) => dispatch({ kind: "unlockPatent", id }), [dispatch]);
+  const switchPatent = useCallback((id: string, enabled: boolean) => dispatch({ kind: "setPatent", id, enabled }), [dispatch]);
 
   const researchProgram = useMemo<Template>(() => ({ steps: researchPlan }), [researchPlan]);
   const planningPreview = useMemo(
@@ -1015,11 +1014,9 @@ export function Game() {
               <Shop level={level} economy={game.economy} inventory={game.inventory} onSell={sellProducts} />
             ) : drawer === "technology" ? (
               <Patents
-                economy={game.economy}
                 patents={game.patents}
-                contracts={contracts}
                 expansionResetsProduction={game.production.runtime.tick > 0 || game.production.runtime.unitCount > 0 || game.production.waste > 0}
-                onUnlock={unlock}
+                onSwitch={switchPatent}
               />
             ) : drawer === "blueprints" ? (
               <BlueprintLibrary

@@ -5,7 +5,7 @@
 .management-header p { margin: 0; color: var(--ink-2); font-size: 13px; }
 .market-grid, .patent-grid { min-width: 0; overflow: auto; padding: 0 24px 24px; }
 .market-grid-contents, .patent-grid-contents { display: grid; grid-template-columns: minmax(0, 1fr); }
-.market-sheet dt, .market-contract, .market-quiet-price, .patent-group h2, .legend-group h3, .blueprint-capture .game-field > span {
+.market-sheet dt, .market-contract, .market-quiet-price, .legend-group h3, .blueprint-capture .game-field > span {
   color: var(--ink-3); font: 600 13px/1.2 var(--font-display); letter-spacing: .06em; text-transform: uppercase;
 }
 .panel-empty { margin: 12px 0 0; padding: 14px 16px; border: 1px dashed var(--rule-strong); color: var(--ink-2); font-size: 13px; }
@@ -49,18 +49,14 @@
 /* Technology */
 .effects-strip { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 8px; color: var(--cure-ink); font-size: 13px; font-weight: 600; }
 .recovery-guidance { margin-top: 8px !important; color: var(--failure-ink) !important; }
-.patent-group { padding-top: 18px; }
-.patent-group h2 { margin: 0; padding-bottom: 6px; border-bottom: 1.5px solid var(--ink); color: var(--ink); }
-.patent-card { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 4px 16px; min-width: 0; padding: 12px 0; border-bottom: 1px solid var(--rule); }
+.patent-tree { display: grid; gap: 14px; margin: 0; padding: 16px 0 0; list-style: none; }
+.patent-branch { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; }
+.patent-card { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 10px; min-width: 0; padding: 10px 12px; border: 1.5px solid var(--rule-strong); background: var(--paper-raised); }
+.patent-card.is-on { border-color: var(--ink); }
+.patent-card + .patent-card::before { content: ""; position: absolute; top: 50%; right: 100%; width: 28px; border-top: 1.5px solid var(--ink-2); }
 .patent-card-main { display: grid; gap: 3px; min-width: 0; }
 .patent-card h3 { margin: 0; font: 600 19px/1.1 var(--font-display); letter-spacing: .01em; text-transform: uppercase; }
 .patent-card small { color: var(--ink-2); font-size: 13px; }
-.patent-requirement { color: var(--ink-2); font-size: 12px; }
-.patent-card.is-available .patent-requirement[data-testid] { color: var(--ink); font-weight: 600; }
-.patent-cost { color: var(--ink); font: 600 16px/1 var(--font-display); letter-spacing: .02em; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.patent-card.is-owned { grid-template-columns: minmax(0, 1fr) auto; }
-.patent-card.is-owned h3 { color: var(--ink-2); }
-.patent-card.is-owned button { min-height: 32px; border-color: transparent; color: var(--cure-ink); font: 600 14px/1 var(--font-display); letter-spacing: .05em; text-transform: uppercase; }
 
 /* Blueprints, Guide, Menu */
 .blueprint-library, .menu-panel, .help-panel { padding: 24px; }
@@ -140,7 +136,8 @@
   .market-actions button { flex: 1; }
   .market-card.is-quiet { grid-template-columns: 28px minmax(0, 1fr) auto; }
   .market-card.is-quiet .market-contract { grid-column: 2 / -1; }
-  .patent-card { grid-template-columns: minmax(0, 1fr) auto; }
-  .patent-card-main { grid-column: 1 / -1; }
+  .patent-branch { gap: 16px; }
+  .patent-card + .patent-card::before { width: 16px; }
+  .patent-card { grid-template-columns: minmax(0, 1fr); }
   .legend-list > div, .legend-keys > div { grid-template-columns: minmax(0, 132px) minmax(0, 1fr); gap: 10px; }
 }

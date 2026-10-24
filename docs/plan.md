@@ -56,6 +56,8 @@
 - 機器與基底藥物都要解鎖（參考 Big Pharma）。**每種基底是一張地圖**（類似 Potion Craft 的水／油／酒），也是之後多圖疊加的入口。
 - 解鎖條件為現金＋Knowledge，部分節點另需里程碑，例如合約完成或發現某個盆地。
 
+Step 7 先做簡化版（使用者 2026-10-24 決定）：找不到合用的樹狀圖模板（`beautiful-skill-tree` 2022 後未維護、自帶 localStorage 狀態），Technology 改成自己畫的樹狀圖，每個節點是免費開關，沒有解鎖條件，見 D42。解鎖條件、每種基底一張地圖與 Straight drive 重調留待之後。
+
 ### 8. 介面清理
 - 拿掉重複標記（`PLAN · FREE`／`PRODUCTION`），只在 Play 旁留一個小的狀態圖示。
 - Guide 收進 Menu。
@@ -79,4 +81,4 @@
 - final art/audio polish、帳戶、雲端Blueprint repository。
 - release candidate前的跨build save migration。
 
-平衡可逐步調整；fresh-loop可達性、規劃後一次試驗的Research、朝向與轉向角、窄段可通過驗證、全圖連通、quota-3 contracts／tech gates、seed／disease解法差異、finite demand、overlap effects、完整PathStamp、霧下只露Wall與等高線、direct paid Production、optional Production Plan、true-hex geometry與strict gate不能後置。
+平衡可逐步調整；fresh-loop可達性、規劃後一次試驗的Research、朝向與轉向角、窄段可通過驗證、全圖連通、quota-3 contracts、seed／disease解法差異、finite demand、overlap effects、完整PathStamp、霧下只露Wall與等高線、direct paid Production、optional Production Plan、true-hex geometry與strict gate不能後置。

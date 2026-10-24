@@ -62,7 +62,7 @@ export function FieldGuide() {
       <p>Backspace or <kbd>Ctrl</kbd>+<kbd>Z</kbd> removes the last step; <strong>Clear</strong> empties the plan.</p>
       <h2>Build and ship</h2>
       <p><strong>Plan</strong> is free and has no clock. <strong>Production</strong> is paid and runs; <strong>Commission $N</strong> builds your Plan there. Lay Source → your route’s machines in order → Sink, with belts from each output port to the next input port.</p>
-      <p>Ship stock in Market for cash and Knowledge; each unit lowers that disease’s next price. Ship 3 of a disease to fill its contract. Contracts and Knowledge unlock Technology.</p>
+      <p>Ship stock in Market for cash and Knowledge; each unit lowers that disease’s next price. Ship 3 of a disease to fill its contract.</p>
       <h2>Legend</h2>
       {LEGEND.map(({ group, items }) => (
         <section key={group} className="legend-group" aria-label={group}>

@@ -21,7 +21,7 @@ function fixture(): GameState {
   game = applyGameIntent(game, { kind: "buildProductionLayout", layout });
   game = applyGameIntent(game, { kind: "productionTicks", ticks: 400 });
   game = applyGameIntent(game, { kind: "sellProducts", disease: 0, productIds: game.inventory.slice(0, 3).map((product) => product.inventoryId) });
-  game = applyGameIntent(game, { kind: "unlockPatent", id: "zigzag-unlock" });
+  game = applyGameIntent(game, { kind: "setPatent", id: "zigzag-unlock", enabled: true });
   return discover(game, 1);
 }
 
@@ -125,7 +125,7 @@ for (const action of ["new", "load", "rewind", "reset", "unlock", "delete"] as c
       await page.getByTestId("factory-reset").click();
     } else if (action === "unlock") {
       await page.getByTestId("view-technology").click();
-      await page.getByTestId("patent-unlock-bench-2").click();
+      await page.getByTestId("patent-switch-bench-2").click();
     } else {
       await page.getByTestId("view-blueprints").click();
       await page.getByTestId("blueprint-name").fill("Pause fixture");
@@ -195,8 +195,8 @@ for (const action of ["reset", "unlock", "rewind"] as const) {
       await page.getByRole("button", { name: "Reset runtime", exact: true }).click();
     } else if (action === "unlock") {
       await page.getByTestId("view-technology").click();
-      await page.getByTestId("patent-unlock-bench-2").click();
-      await page.getByTestId("patent-confirm-unlock").click();
+      await page.getByTestId("patent-switch-bench-2").click();
+      await page.getByTestId("patent-confirm-switch").click();
     } else {
       await openMenu(page);
       await page.getByTestId("rewind").click();

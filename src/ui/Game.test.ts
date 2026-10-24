@@ -71,7 +71,7 @@ describe("default Lab world options", () => {
 
   it("translates technical intent details into player-facing errors", () => {
     expect(playerFacingIntentError(new Error('game intent: machine "zigzag" is locked')))
-      .toBe("Zigzag still is locked. Unlock it in Technology.");
+      .toBe("Zigzag still is off. Turn it on in Technology.");
     expect(playerFacingIntentError(new Error('game intent: machine "loop" definition does not match catalog')))
       .toBe("Loop vat has incompatible layout data.");
     expect(playerFacingIntentError(new Error("game intent: machine 7 footprint overlaps another machine")))

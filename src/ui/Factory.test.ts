@@ -322,8 +322,8 @@ describe("factory framing and legend copy", () => {
     expect(factoryPaperTexture()).toMatch(/^url\("data:image\/svg\+xml,/u);
   });
 
-  it("explains a locked machine in player terms, naming its contract gate", () => {
-    expect(machineLockReason("zigzag")).toContain("Disease 1 contract");
+  it("explains an off machine in player terms, pointing at Technology", () => {
+    expect(machineLockReason("zigzag")).toContain("Zigzag still");
     expect(machineLockReason("zigzag")).toContain("Technology");
     expect(machineLockReason("zigzag")).not.toContain("zigzag");
   });

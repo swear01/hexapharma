@@ -20,7 +20,6 @@ import {
   availableCatalog,
   createGameState,
   hashGame,
-  requiredShippingContractForPatent,
   replayGame,
   shippingContracts,
 } from "./game";
@@ -239,36 +238,25 @@ describe("whole-game deterministic state", () => {
     });
   });
 
-  it("gates each machine patent behind the preceding disease contract", () => {
-    const contractOptions: GenOptions = { ...opts, diseaseCount: 3 };
-    const diseases = generate(contractOptions).diseases;
-    let game = createGameState(contractOptions, 10_000, 100);
+  it("switches Technology on and off for free, refusing to turn off what a layout still uses", () => {
+    let game = createGameState(opts, 10_000, 0);
+    game = applyGameIntent(game, { kind: "setPatent", id: "crane-unlock", enabled: true });
+    expect(availableCatalog(game.patents).map((entry) => entry.typeId)).toContain("crane");
+    expect(game.economy).toEqual(createGameState(opts, 10_000, 0).economy);
 
-    game = applyGameIntent(game, { kind: "unlockPatent", id: "bench-2" });
-    game = applyGameIntent(game, { kind: "unlockPatent", id: "reveal-aid" });
-    expect(() => applyGameIntent(game, { kind: "unlockPatent", id: "zigzag-unlock" }))
-      .toThrow(/contract.*disease 0/i);
-    game = shipContract(game, diseases[0]!.id, diseases[0]!.reference);
-    game = applyGameIntent(game, { kind: "unlockPatent", id: "zigzag-unlock" });
+    game = applyGameIntent(game, { kind: "setPatent", id: "bench-2", enabled: true });
+    expect(game.production.layout.width).toBe(BASE_GAME_FACTORY_WIDTH + 2);
+    const edge = game.production.layout.width - 1;
+    const tiles = [...game.production.layout.tiles];
+    tiles[edge] = { kind: "belt", dir: 0 };
+    const used = applyGameIntent(game, { kind: "buildProductionLayout", layout: { ...game.production.layout, tiles } });
+    expect(() => applyGameIntent(used, { kind: "setPatent", id: "bench-2", enabled: false })).toThrow(/still in use/);
+    game = applyGameIntent(game, { kind: "setPatent", id: "bench-2", enabled: false });
+    expect(game.production.layout.width).toBe(BASE_GAME_FACTORY_WIDTH);
 
-    expect(() => applyGameIntent(game, { kind: "unlockPatent", id: "loop-unlock" }))
-      .toThrow(/contract.*disease 1/i);
-    game = shipContract(game, diseases[1]!.id, diseases[1]!.reference);
-    game = applyGameIntent(game, { kind: "unlockPatent", id: "loop-unlock" });
-
-    expect(() => applyGameIntent(game, { kind: "unlockPatent", id: "crane-unlock" }))
-      .toThrow(/contract.*disease 2/i);
-    game = shipContract(game, diseases[2]!.id, diseases[2]!.reference);
-    game = applyGameIntent(game, { kind: "unlockPatent", id: "crane-unlock" });
-
-    expect(game.patents.unlocked).toContain("crane-unlock");
-  });
-
-  it("exposes machine patent shipping requirements without duplicating the gate rule", () => {
-    expect(requiredShippingContractForPatent("zigzag-unlock")).toBe(0);
-    expect(requiredShippingContractForPatent("loop-unlock")).toBe(1);
-    expect(requiredShippingContractForPatent("crane-unlock")).toBe(2);
-    expect(requiredShippingContractForPatent("bench-2")).toBeNull();
+    game = applyGameIntent(game, { kind: "setPilotLayout", layout: entitledLayout(recipe()) });
+    game = applyGameIntent(game, { kind: "setPatent", id: "crane-unlock", enabled: false });
+    expect(availableCatalog(game.patents).map((entry) => entry.typeId)).not.toContain("crane");
   });
 
   it("advances adjacent Production batches without retaining a lifetime trace", () => {
@@ -391,7 +379,7 @@ describe("whole-game deterministic state", () => {
     let game = buildTemplate(createGameState(opts, 10_000, 100), recipe(), true);
     const width = game.production.layout.width;
     const research = game.research;
-    game = applyGameIntent(game, { kind: "unlockPatent", id: "bench-2" });
+    game = applyGameIntent(game, { kind: "setPatent", id: "bench-2", enabled: true });
     expect(game.research).toEqual(research);
     expect("layout" in game.research).toBe(false);
     expect(game.pilot.layout?.width).toBe(width + 2);
@@ -409,7 +397,7 @@ describe("whole-game deterministic state", () => {
     const research = game.research;
     expect(research.lastTrial).not.toBeNull();
 
-    game = applyGameIntent(game, { kind: "unlockPatent", id: "bench-2" });
+    game = applyGameIntent(game, { kind: "setPatent", id: "bench-2", enabled: true });
 
     expect(game.research).toBe(research);
   });
@@ -608,12 +596,12 @@ describe("whole-game deterministic state", () => {
   it("applies machine unlock and both factory expansion patents without changing Atlas authority", () => {
     let game = buildTemplate(createGameState(opts, 10_000, 100));
     game = shipContract(game, 0, recipe());
-    game = applyGameIntent(game, { kind: "unlockPatent", id: "zigzag-unlock" });
+    game = applyGameIntent(game, { kind: "setPatent", id: "zigzag-unlock", enabled: true });
     expect(availableCatalog(game.patents).map((entry) => entry.typeId)).toContain("zigzag");
-    game = applyGameIntent(game, { kind: "unlockPatent", id: "bench-2" });
+    game = applyGameIntent(game, { kind: "setPatent", id: "bench-2", enabled: true });
     expect(game.production.layout?.width).toBe(BASE_GAME_FACTORY_WIDTH + 2);
     const research = game.research;
-    game = applyGameIntent(game, { kind: "unlockPatent", id: "floor-depth" });
+    game = applyGameIntent(game, { kind: "setPatent", id: "floor-depth", enabled: true });
     expect(game.production.layout?.height).toBe(BASE_GAME_FACTORY_HEIGHT + 2);
     expect(game.pilot.layout?.height).toBe(BASE_GAME_FACTORY_HEIGHT + 2);
     expect(game.genOptions.nMaps).toBe(1);
@@ -658,7 +646,7 @@ describe("whole-game deterministic state", () => {
 
   it("rejects unknown patent intents", () => {
     const game = createGameState(opts, 200, 0);
-    expect(() => applyGameIntent(game, { kind: "unlockPatent", id: "unknown" })).toThrow(/unknown/i);
+    expect(() => applyGameIntent(game, { kind: "setPatent", id: "unknown", enabled: true })).toThrow(/unknown/i);
   });
 
   it("canonicalizes intent objects to authoritative fields", () => {

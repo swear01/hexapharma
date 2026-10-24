@@ -35,7 +35,7 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 3. 找到第一個Cure後，確認結果同時報告已知Side effects，Objective改為`Plan a line to Disease N`；若命中污染Cure，可修改路線再Run尋找同區乾淨endpoint，但不能以hidden reference代替探索。
 4. 自行選擇直接Production或optional Production Plan，人工放source、完整machine sequence、belt與sink；不得呼叫layout compiler。若使用Plan，按`Commission $N`送入正式產線。確認Research支出後仍付得起有效Production build。
 5. Play直到產生實體cure，在Market以`Ship best`出售第一件仍有正net的產品；確認stock減1、cash增加、該疾病Sold／Next更新。
-6. 對同一疾病完成3次accepted shipping，確認contract chip依序為1/3、2/3、3/3，對應machine patent gate解除；繼續觀察下一種疾病是否形成新目標。
+6. 對同一疾病完成3次accepted shipping，確認contract chip依序為1/3、2/3、3/3；繼續觀察下一種疾病是否形成新目標。
 7. 另記錄是否曾動用預留的$100 retry／小改建預算；若目前庫存沒有正net出貨，確認Market提示改善成本／品質或嘗試另一種疾病，不把current stock不賺錢誤報成整局無法恢復。
 8. 保存：首次理解candidate操作所需時間、Research嘗試數、first cure時間、first sale時間、最低cash、重做layout次數、三個最大困惑點，以及「是否願意再解下一種疾病／原因」。這些是human fun evidence，不得用green gate取代。
 
@@ -114,7 +114,7 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 6. 無治療庫存時顯示`No curative stock.`；有庫存但都不賺錢時顯示`No profitable stock at next price.`，兩個Ship action都disabled。
 7. 單賣後可見status顯示`+1 Knowledge`且HUD Knowledge增加1；bulk顯示每件`+1 Knowledge`且總量相符。同一render內重複觸發已出售product時，第二個rejected intent不得寫入新的`Shipped`回饋。
 8. 新局contract chip先顯示Disease 1 `0 / 3`；只讓accepted sales推進。Disease 1售滿3件後active chip移到Disease 2，全部完成後顯示最後一份completed contract。
-9. Disease 1／2／3未滿quota時分別嘗試Zigzag／Loop／Straight（或Crane）patent，必須被對應contract gate拒絕；滿3件後仍需一般cash、Knowledge與patent prerequisites。其他patent不得被shipping contract誤擋。
+9. Technology每個開關都可免費開關；關掉Plan或Production正在用的機器、Splitter／Merger或擴廠時必須被拒絕並提示先移除。
 
 ## 11. Blueprint v4 / cross-save
 

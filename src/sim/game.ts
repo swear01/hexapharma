@@ -3,7 +3,6 @@ import type {
   FactoryRuntime,
   FactoryTile,
   Dir,
-  DiseaseId,
   DiseaseSpec,
   DrugState,
   GameIntent as GameIntentContract,
@@ -43,7 +42,7 @@ import {
 import { evaluate, outcomeOf, previewStep, validateDrugState as validateDrugGraphState } from "./drug-graph";
 import { sellUnit } from "./economy";
 import { MAX_GENERATION_CATALOG_ENTRIES, generateCached } from "./mapgen";
-import { DEFAULT_PATENTS, activeEffects, unlockPatent } from "./patent";
+import { DEFAULT_PATENTS, activeEffects, setPatent } from "./patent";
 import {
   clearFactoryProductEvents,
   initFactory,
@@ -332,8 +331,9 @@ function ownGameIntent(intent: GameIntent): GameIntent {
         productIds: Object.freeze(intent.productIds.map(canonicalNumber)),
         disease: canonicalNumber(intent.disease),
       });
-    case "unlockPatent":
-      return Object.freeze({ kind: "unlockPatent", id: intent.id });
+    case "setPatent":
+      if (typeof intent.enabled !== "boolean") throw new Error("game intent: Technology switch must be on or off");
+      return Object.freeze({ kind: "setPatent", id: intent.id, enabled: intent.enabled });
     default:
       throw new Error(`game intent: unknown or removed intent "${String((intent as { kind?: unknown }).kind)}"`);
   }
@@ -375,13 +375,6 @@ export function shippingContracts(game: GameState): readonly ShippingContractPro
 export function activeShippingContract(game: GameState): ShippingContractProgress {
   const contracts = shippingContracts(game);
   return contracts.find((contract) => !contract.completed) ?? contracts[contracts.length - 1]!;
-}
-
-export function requiredShippingContractForPatent(patentId: string): DiseaseId | null {
-  if (patentId === "zigzag-unlock") return 0;
-  if (patentId === "loop-unlock") return 1;
-  if (patentId === "straight-unlock" || patentId === "crane-unlock") return 2;
-  return null;
 }
 
 /** Price of the `disease` cure region `outcome` ended on (before demand decay and the ★ premium). */
@@ -488,7 +481,7 @@ export function validateFactoryLayout(game: Pick<GameState, "patents">, layout: 
         }
         break;
       case "splitter":
-        if (!routing) throw new Error("game intent: Splitter and Merger are locked · unlock Split / Merge in Technology");
+        if (!routing) throw new Error("game intent: Splitter and Merger are off · turn on Split / Merge in Technology");
         requireDir(tile.inDir, `factory tile ${index} input`);
         if (!Array.isArray(tile.outDirs) || tile.outDirs.length === 0 || tile.outDirs.length > 6) {
           throw new Error(`game intent: factory splitter ${index} requires an output direction`);
@@ -502,7 +495,7 @@ export function validateFactoryLayout(game: Pick<GameState, "patents">, layout: 
         }
         break;
       case "merger":
-        if (!routing) throw new Error("game intent: Splitter and Merger are locked · unlock Split / Merge in Technology");
+        if (!routing) throw new Error("game intent: Splitter and Merger are off · turn on Split / Merge in Technology");
         if (!Array.isArray(tile.inDirs) || tile.inDirs.length === 0 || tile.inDirs.length > 6) {
           throw new Error(`game intent: factory merger ${index} requires an input direction`);
         }
@@ -702,7 +695,8 @@ export function createGameState(genOptions: GenOptions, cash: number, research: 
   };
 }
 
-function expandFactory(layout: FactoryLayout, dw: number, dh: number): FactoryLayout {
+/** Grow or shrink the floor at its far edges; shrinking throws if a removed cell holds a tile. */
+function resizeFactory(layout: FactoryLayout, dw: number, dh: number): FactoryLayout {
   if (dw === 0 && dh === 0) return layout;
   const width = layout.width + dw;
   const height = layout.height + dh;
@@ -710,7 +704,9 @@ function expandFactory(layout: FactoryLayout, dw: number, dh: number): FactoryLa
   for (let r = 0; r < layout.height; r++) {
     for (let q = 0; q < layout.width; q++) {
       const tile = layout.tiles[hexIndex(layout.width, q, r)];
-      if (tile !== undefined) tiles[hexIndex(width, q, r)] = tile;
+      if (tile === undefined) continue;
+      if (q < width && r < height) tiles[hexIndex(width, q, r)] = tile;
+      else if (tile.kind !== "empty") throw new Error("game intent: factory shrink would remove a tile");
     }
   }
   return ownFactoryLayout({ width, height, tiles, machines: layout.machines });
@@ -888,16 +884,6 @@ function researchTrialTrails(mm: MultiMap, start: DrugState, program: Template):
   return { trails, final: drug };
 }
 
-function requireMachineContract(game: GameState, patentId: string): void {
-  const requiredDisease = requiredShippingContractForPatent(patentId);
-  if (requiredDisease === null) return;
-  const contract = shippingContracts(game).find(({ disease }) => disease === requiredDisease);
-  if (contract?.completed !== true) {
-    throw new Error(
-      `game intent: machine patent "${patentId}" requires shipping contract for disease ${requiredDisease}`,
-    );
-  }
-}
 
 function reduceGameIntent(game: GameState, intent: GameIntent): GameState {
   switch (intent.kind) {
@@ -1028,39 +1014,37 @@ function reduceGameIntent(game: GameState, intent: GameIntent): GameState {
     }
     case "sellProducts":
       return sellPhysicalProducts(game, intent.productIds, intent.disease);
-    case "unlockPatent": {
+    case "setPatent": {
       const node = DEFAULT_PATENTS.find((candidate) => candidate.id === intent.id);
       if (node === undefined) throw new Error(`game intent: unknown patent "${intent.id}"`);
-      requireMachineContract(game, intent.id);
-      const unlocked = unlockPatent(
-        DEFAULT_PATENTS,
-        game.patents,
-        game.economy.cash,
-        game.economy.research,
-        intent.id,
-      );
-      let next: GameState = {
-        ...game,
-        patents: unlocked.patents,
-        economy: { ...game.economy, cash: unlocked.cash, research: unlocked.research },
-      };
-      if (node.effect.kind === "expandFactory") {
-        const { dw, dh } = node.effect;
-        const expandPilot = (layout: FactoryLayout | null): FactoryLayout | null => layout === null
-          ? null
-          : ownFactoryLayout(expandFactory(layout, dw, dh));
-        const productionLayout = ownFactoryLayout(expandFactory(next.production.layout, dw, dh));
-        const level = levelFor(next.genOptions);
-        next = {
-          ...next,
-          pilot: Object.freeze({ ...next.pilot, layout: expandPilot(next.pilot.layout) }),
-          production: Object.freeze({
-            ...next.production,
-            layout: productionLayout,
-            runtime: initFactory(productionLayout, level.mm, level.start),
-            waste: 0,
-          }),
-        };
+      let next: GameState = { ...game, patents: setPatent(DEFAULT_PATENTS, game.patents, intent.id, intent.enabled) };
+      try {
+        if (node.effect.kind === "expandFactory") {
+          const sign = intent.enabled ? 1 : -1;
+          const dw = sign * node.effect.dw;
+          const dh = sign * node.effect.dh;
+          const productionLayout = resizeFactory(next.production.layout, dw, dh);
+          const level = levelFor(next.genOptions);
+          next = {
+            ...next,
+            pilot: Object.freeze({
+              ...next.pilot,
+              layout: next.pilot.layout === null ? null : resizeFactory(next.pilot.layout, dw, dh),
+            }),
+            production: Object.freeze({
+              ...next.production,
+              layout: productionLayout,
+              runtime: initFactory(productionLayout, level.mm, level.start),
+              waste: 0,
+            }),
+          };
+        }
+        if (!intent.enabled) {
+          if (next.pilot.layout !== null) requireEntitledFacilityLayout(next, next.pilot.layout, "Pilot Plant");
+          requireEntitledFacilityLayout(next, next.production.layout, "Production");
+        }
+      } catch {
+        throw new Error(`game intent: Technology "${intent.id}" is still in use in Plan or Production`);
       }
       return next;
     }
@@ -1369,11 +1353,6 @@ export function validateGameState(game: GameState): GameState {
     const node = DEFAULT_PATENTS.find((candidate) => candidate.id === id);
     if (node === undefined) throw new Error(`game state: unknown patent "${id}"`);
     if (unlocked.has(id)) throw new Error(`game state: duplicate patent "${id}"`);
-    for (const required of node.requires) {
-      if (!unlocked.has(required)) {
-        throw new Error(`game state: patent "${id}" appears before prerequisite "${required}"`);
-      }
-    }
     unlocked.add(id);
   }
   const trial = game.research.lastTrial;

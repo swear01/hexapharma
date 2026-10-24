@@ -727,32 +727,12 @@ export type PatentEffect =
 
 export interface PatentNode {
   readonly id: string;
-  readonly cost: number; // cash to unlock
-  readonly researchCost: number;
-  readonly requires: readonly string[]; // prerequisite node ids
   readonly effect: PatentEffect;
 }
 
 export interface PatentState {
-  readonly unlocked: readonly string[]; // node ids, in unlock order
+  readonly unlocked: readonly string[]; // switched-on node ids, in the order they were turned on
 }
-
-export type CanUnlockFn = (
-  tree: readonly PatentNode[],
-  state: PatentState,
-  cash: number,
-  research: number,
-  id: string,
-) => boolean;
-
-/** Unlock a node: returns new PatentState + cash spent (throws/no-ops if not allowed — define). */
-export type UnlockPatentFn = (
-  tree: readonly PatentNode[],
-  state: PatentState,
-  cash: number,
-  research: number,
-  id: string,
-) => { patents: PatentState; cash: number; research: number };
 
 // ── top-level game state + save ──
 
@@ -806,7 +786,7 @@ export type GameIntent =
   | { readonly kind: "resetProduction" }
   | { readonly kind: "sellProduct"; readonly productId: number; readonly disease: number }
   | { readonly kind: "sellProducts"; readonly productIds: readonly number[]; readonly disease: number }
-  | { readonly kind: "unlockPatent"; readonly id: string };
+  | { readonly kind: "setPatent"; readonly id: string; readonly enabled: boolean };
 
 export interface GameState {
   readonly genOptions: GenOptions; // regenerates the current MultiMap + diseases

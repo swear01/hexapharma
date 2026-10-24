@@ -30,7 +30,7 @@
 - **畫面文字要克制**：常駐 UI 不放設計理由、形容詞式副標與長教學；細節寫在 [player-guide.md](player-guide.md)。
 - **bootstrap 不是作弊 fixture**：正常起始 cash 是 $1000，fresh loop 必須不用注入 cash／Knowledge、hidden reference 或 compiler 就能到第一次出售。
 - **demand 必須耗盡**：依到達難度的分區價格：每個 cure region `price = 60 + 2 × difficulty`，`difficulty = min(120, 最便宜路線成本 + 6 × 窄段 + 2 × 路線旁 Abyss)`（D38）；各疾病 next gross 逐次 `floor(19/20)` 到 0。Market 先乾淨、再低成本，只自動出售正 net 庫存。
-- **contracts 回饋探索工具**：每疾病shipping quota=3；Disease 1／2／3分別gate Zigzag／Loop／Straight＋Crane patent，並且不取代一般cash／Knowledge／prerequisites。
+- **contracts**：每疾病shipping quota=3。Technology 測試期為免費開關（D42），合約 gate 暫時拿掉，正式解鎖時再決定要不要用合約回饋探索工具。
 - **compiler routing endpoints 必須預留**：dev-only prototype compiler 在鋪前段belt前，同時預留所有machine的input approach與output exit，避免前段BFS佔用後段必需的route start；不得把compiler接進runtime自動解或自動建廠。
 - **True hex 是 authority，不只是品牌**：Atlas與Factory都使用pointy-top axial `{q,r}`、E／SE／SW／W／NW／NE與`r * width + q` dense indexing。Factory有六個60° footprint／port rotations；兩個domain仍不得互載payload或共用validator。
 - **Shared machine glyph points stay on the polyline**：e2e 以 `[data-icon-shape='path']` 讀 `points`；`MachineIcon` 的 token variant 把 path 包進 `<g>` 時，`data-icon-shape` 仍必須在 `<polyline>` 上。

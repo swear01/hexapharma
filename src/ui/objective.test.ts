@@ -9,8 +9,6 @@ function contract(disease: number, sold: number): ShippingContractProgress {
 const base: ObjectiveInput = {
   contracts: [contract(0, 0), contract(1, 0)],
   knownCureDiseases: [],
-  unlockedPatents: [],
-  gatedPatents: ["zigzag-unlock", "loop-unlock"],
   profitableUnits: () => 0,
   stockFor: () => 0,
   productionHasMachines: false,
@@ -30,20 +28,19 @@ describe("currentObjective", () => {
       .toMatchObject({ target: "market", text: "Ship Disease 1 · 0 of 3" });
   });
 
-  it("sends a filled contract to its patent before the next disease, then moves on", () => {
+  it("moves to the next disease once a contract is filled", () => {
     const filled = { ...base, contracts: [contract(0, 3), contract(1, 0)] };
-    expect(currentObjective(filled)).toMatchObject({ target: "technology", text: "Unlock Zigzag still" });
-    expect(currentObjective({ ...filled, unlockedPatents: ["zigzag-unlock"] }).text).toBe("Find Disease 2 · look east");
+    expect(currentObjective(filled).text).toBe("Find Disease 2 · look east");
   });
 
   it("does not send the player to run a line that still makes the previous cure", () => {
-    const next = { ...base, contracts: [contract(0, 3), contract(1, 0)], unlockedPatents: ["zigzag-unlock"], knownCureDiseases: [0, 1], productionHasMachines: true };
+    const next = { ...base, contracts: [contract(0, 3), contract(1, 0)], knownCureDiseases: [0, 1], productionHasMachines: true };
     expect(currentObjective({ ...next, producingOther: true })).toMatchObject({ target: "pilot", text: "Plan a line to Disease 2 · Production makes another cure" });
     expect(currentObjective({ ...next, stockFor: (d) => (d === 1 ? 5 : 0) })).toMatchObject({ target: "production", text: "Disease 2 stock no longer earns · improve the line" });
   });
 
   it("reports when every contract is filled", () => {
-    const done = { ...base, contracts: [contract(0, 3), contract(1, 3)], unlockedPatents: ["zigzag-unlock", "loop-unlock"] };
+    const done = { ...base, contracts: [contract(0, 3), contract(1, 3)] };
     expect(currentObjective(done).target).toBe("market");
   });
 });

@@ -98,9 +98,9 @@
 - Market的`Shipped`與Knowledge成功回饋只能由accepted `sellProducts` intent產生；rejected或stale inventory intent必須顯示錯誤，不得同時假報成功。
 - Market候選stable order為side-effect count、production cost、inventory ID；single/bulk automatic shipping必須略過non-positive候選，只出售逐件計入demand後仍有positive net的產品。略過項目不消耗demand，不得自動虧本出售。
 - 每疾病 shipping contract quota 恰為3；progress只由該疾病 accepted sales 的sold count推導。active contract是首個未完成疾病；全部完成時是最後一個completed contract。
-- `zigzag-unlock`／`loop-unlock`／`straight-unlock`與`crane-unlock`除一般cash、Knowledge與patent prerequisites外，還分別要求Disease 0／1／2／2 contract completed；其他patent不得被合約誤擋。
+- 測試期（D42）Technology 是免費開關：開啟不扣 cash／Knowledge、沒有前置或合約 gate；關閉時 Plan 與 Production layout 必須在新 entitlement 下仍合法（不用該機器、Splitter／Merger，縮小的邊緣沒有 tile），否則原子拒絕。
 - 同 initial GameState + 明確提供的 intents replay 必須逐欄位與 hash 相同。
-- 擴廠若清 runtime／waste，確認前全部 authority 原子不變；解鎖不得改 Research `lastTrial`。
+- 擴廠若清 runtime／waste，確認前全部 authority 原子不變；開關不得改 Research `lastTrial`。
 
 ## Blueprint v4
 

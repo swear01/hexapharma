@@ -26,7 +26,7 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 | 選存檔 | Menu slot selector；每個 slot 有獨立 rewind history |
 | Load / Rewind / Recover | Menu 對應文字按鈕；覆蓋目前遊戲或丟棄checkpoint前會確認，錯誤不會靜默換成新局 |
 
-頂列下方的 Objective 會依遊戲狀態寫出下一步（找到某疾病的 Cure 格 → 在 Plan 規劃產線 → 開 Production → 出貨 → 到 Technology 解鎖），旁邊的按鈕直接帶你去該處；Stock 數字也可點開 Market。完整符號圖例在 Guide。
+頂列下方的 Objective 會依遊戲狀態寫出下一步（找到某疾病的 Cure 格 → 在 Plan 規劃產線 → 開 Production → 出貨 → 下一種疾病），旁邊的按鈕直接帶你去該處；Stock 數字也可點開 Market。完整符號圖例在 Guide。
 
 Blueprint Library 與 save slot 分離；New Game、Load、Rewind、換 slot 都不會移除藍圖。New Game 只取代目前未保存狀態，既有 save checkpoints 仍可 Load 回來。
 
@@ -72,7 +72,7 @@ hotbar 圖示會轉到規劃路線終點的朝向。
 4. 結果同時列出Cure與已知Side effects；不能只看`Cure`而忽略同一endpoint的污染。掉進 Abyss 時路線在那一格中止並顯示 Failure。
 5. Research 不會產生配方。目前疾病的任一 Cure 格揭露後，Objective 改成`Plan a line to Disease N`，到 Plan 用同樣的機器順序自己排產線；Plan 的 Sample 只依已揭露地圖預估。Plan 產線的路徑也以淡紫寬帶畫在 Research 地圖上（同樣只用已知地圖預估），方便對照規劃路線。
 
-正常Atlas預設4種疾病：第一種reference只需要初始machine；後續疾病逐步可能需要Technology解鎖Zigzag still、Loop vat、Straight drive或Crane arm。地圖的hidden reference不會在遊戲中顯示，玩家要以sector與每次試驗揭露的結果自行修改路線。
+正常Atlas預設4種疾病：第一種reference只需要初始machine；後續疾病可能需要在Technology打開Zigzag still、Loop vat、Straight drive或Crane arm。地圖的hidden reference不會在遊戲中顯示，玩家要以sector與每次試驗揭露的結果自行修改路線。
 
 ## Factory共同操作
 
@@ -154,10 +154,10 @@ Production Plan與Production使用相同editor，但一眼可分：Plan 以紫�
 
 ## Technology、Market與重置
 
-- Technology解鎖machine、場地或Research輔助。解鎖探索輔助本身不揭霧，只增加之後Research試驗實際路徑的感測半徑。
-- Technology頂部只列出已取得的非零benefits；每張卡用完整名稱列出效果、成本與實際前置Technology，沒有前置條件時不顯示空的requirement。
-- HUD contract chip顯示首個未完成疾病的`sold / 3`。Disease 1／2／3各出貨3件後，分別解除Zigzag／Loop／Straight與Crane patent的合約gate；仍須支付該patent的cash／Knowledge並滿足既有Technology prerequisites。其他patent不需要合約。
-- 機器Technology：Zigzag $100（無前置）、Loop $180（需Wider factory floor $120）、Straight $340（需Zigzag與Wider factory floor）、Crane $300（需Loop與Trail scanner $80）。保留約$100可負擔一次合理研究重試或小幅改建；若目前庫存沒有正net出貨，先改善成本／品質或嘗試另一種疾病。只有整局確實沒有可行改善時才以New Game重開。
+- Technology是一張樹狀圖，每個節點都是免費開關（測試期，連線只表示下一階、不擋開關）：machine、Split / Merge、場地與Research輔助都可隨時開或關，沒有成本、前置或合約條件。打開探索輔助本身不揭霧，只增加之後Research試驗實際路徑的感測半徑。
+- 關掉仍在Plan或Production使用的項目（該機器、Splitter／Merger、擴出來的格子上有東西）會被拒絕；先移除再關。擴廠開或關都會重置Production runtime與waste，會先確認。
+- HUD contract chip顯示首個未完成疾病的`sold / 3`。
+- 若目前庫存沒有正net出貨，先改善成本／品質或嘗試另一種疾病。只有整局確實沒有可行改善時才以New Game重開。
 - 同一疾病的每塊治療區各有價格：越難到（最便宜路線越貴、要穿過窄段、旁邊有黑格）越貴，深入盆地的大區比近處小區值錢。產品依終點所在的區計價；第一次出售取得該區價格，之後同疾病的價格逐次乘`19/20`（取整）直到0。不同疾病各算自己的Sold與Next。
 - 每張需求卡以Clean stock／Tainted stock計數庫存件數，有 ★ 產品時另列`★ pay ×1.5`件數（★ 售價＝價格＋價格的一半，取整）；最佳可售庫存會列Next gross（★ 產品顯示加成後的`★ price`）、production cost、每個effect `$25`的penalty算式與net。無治療庫存或沒有正net庫存時，Ship disabled並直接顯示原因。
 - Market的`Ship best`按side effects最少、production cost最低、inventory ID最早的順序，略過不賺錢的候選後出售第一件正net產品。`Ship profitable`掃描相同順序，只出售在當下demand仍為正net的項目；略過的庫存不消耗demand，也不會被自動丟棄。每件成功出售另取得1 Knowledge；畫面會顯示本次回饋。

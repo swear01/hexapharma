@@ -232,7 +232,7 @@ describe("Run-based Research trials", () => {
     const machine = DEFAULT_CATALOG[0]!;
     const initial = createGameState(options, 500, 10);
     const before = fogSnapshot(initial);
-    const aided = dispatch(initial, { kind: "unlockPatent", id: "reveal-aid" });
+    const aided = dispatch(initial, { kind: "setPatent", id: "reveal-aid", enabled: true });
     expect(fogSnapshot(aided)).toEqual(before);
 
     const run = (game: ReturnType<typeof createGameState>) =>
