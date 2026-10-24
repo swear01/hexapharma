@@ -26,7 +26,7 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 | 選存檔 | Menu slot selector；每個 slot 有獨立 rewind history |
 | Load / Rewind / Recover | Menu 對應文字按鈕；覆蓋目前遊戲或丟棄checkpoint前會確認，錯誤不會靜默換成新局 |
 
-頂列下方的 Objective 會依遊戲狀態寫出下一步（找到某疾病的 Cure 格 → 在 Plan 規劃產線 → 開 Production → 出貨 → 下一種疾病），旁邊的按鈕直接帶你去該處；Stock 數字也可點開 Market。完整符號圖例在 Guide。
+畫面左上的目標卡會依遊戲狀態寫出下一步（找到某疾病的 Cure 格 → 在 Plan 規劃產線並 Commission → 開 Production → 出貨 → 下一種疾病）與目前合約進度，旁邊的按鈕直接帶你去該處；Stock 數字也可點開 Market。完整符號圖例在 Menu → Guide。
 
 Blueprint Library 與 save slot 分離；New Game、Load、Rewind、換 slot 都不會移除藍圖。New Game 只取代目前未保存狀態，既有 save checkpoints 仍可 Load 回來。
 
@@ -76,7 +76,7 @@ hotbar 圖示會轉到規劃路線終點的朝向。
 
 ## Factory共同操作
 
-Production Plan與Production使用相同editor，但一眼可分：Plan 以紫色虛線 overprint 繪製並在左上標 `PLAN · FREE`；Production 以黑墨實印，左上標 `PRODUCTION` 與 Running／Paused／Blocked。Details 預設收起，按下才顯示診斷；底部提供工具、報價、旋轉與播放。工具列是圖例：機器以「footprint＋path」token 與全名顯示（與 Research 相同），未解鎖機器顯示鎖頭與解鎖條件。起步只有 Belt、Source、Sink、Erase 與機器；Splitter／Merger 要先在 Technology 解鎖 `Split / Merge`。Source 是空心三角、Sink 是雙圈；input port 是方形、output port 是圓形，空心代表尚未連接；belt 是藍色帶狀線，箭頭表方向。
+Production Plan與Production使用相同editor，但一眼可分：Plan 以紫色虛線 overprint 繪製，底部是 `Commission $N`；Production 以黑墨實印，底部有報價與 Play，Play 左側圖示表示執行中／暫停，卡住時顯示 Blocked。Details 預設收起，按下才顯示診斷；底部提供工具、報價、旋轉與播放。工具列是圖例：機器以「footprint＋path」token 與全名顯示（與 Research 相同），未解鎖機器顯示鎖頭與解鎖條件。起步只有 Belt、Source、Sink、Erase 與機器；Splitter／Merger 要先在 Technology 解鎖 `Split / Merge`。Source 是空心三角、Sink 是雙圈；input port 是方形、output port 是圓形，空心代表尚未連接；belt 是藍色帶狀線，箭頭表方向。
 
 ### Camera與工具
 

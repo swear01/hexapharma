@@ -211,7 +211,7 @@ Blueprint 與 save slot 完全分離，Library envelope version 是 4，使用 `
 - **字**：標題、數字、標籤用自帶 Barlow Condensed 600（`src/ui/fonts/`，OFL），內文系統字；所有數字 tabular。
 - **手繪感**：只來自 `src/render/ink.ts` 的確定性抖動，用於斷崖刻痕、陰影線與路線墨線；不得作用於 port、belt 接點、hit-test 幾何或文字，同一狀態必須逐幀一致。
 - **動態**：每個場域只有一個 authored moment（研究步驟的墨線描出 ≤250 ms），`prefers-reduced-motion` 時立即完成；Pixi auto-ticker 維持關閉。
-- **Shell**：頂列（場域分頁、Cash／Stock→Market／合約）與 Objective 列（依遊戲狀態指出下一步並提供直接動作）；Market／Technology／Blueprints／Guide 是右側 legend 式抽屜（沒有 Formulas）。
+- **Shell**：只有一條頂列（場域分頁；Cash、Stock→Market、Market／Technology／Blueprints、Menu）；Objective 是 stage 左上的釘選目標卡（下一步、合約 n / 3、直接動作；Research 時帶羅盤）；Market／Technology／Blueprints 是右側 legend 式抽屜，Guide 從 Menu 開啟（沒有 Formulas）；Plan／Production 沒有角標，Play 旁只有 run-state 圖示（D44）。
 
 ## 1.11 Save v14 — 開放、可編輯的 alpha 存檔
 

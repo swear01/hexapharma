@@ -47,3 +47,7 @@ All PNGs and capture traces are in `/tmp/hexapharma-ui-acceptance/`; filenames b
 Codex identified hidden Factory hotkeys behind mobile Formulas and map edges clamped outside the cover-cropped Research frame. Three browser regressions reproduced both bugs on the original PR head. The fixes track the mobile breakpoint for world input and use the frame’s visible logical viewport for camera pan, zoom, and focus. The regression also checks that Production continues behind mobile Formulas and desktop input returns after resizing.
 
 After ending the manual attempts, a separate developer audit confirmed that D1 is on the initial map and its cure cells agree with the displayed east sector for seeds 14 and 15. The audit did not inspect reference recipes or print hidden coordinates; it is not gameplay completion evidence.
+
+## v2 interface cleanup capture (D44)
+
+The single-bar shell, pinned goal card, Menu-hosted Guide, run-state glyph and restyled Blueprints were captured at 1440×900 and 390×844 for Research (fresh and with a Cure), Plan, Production, Market, Technology, Blueprints, Menu and Guide. Populated states load a fixture that runs the seed-14 Disease 1 reference and commissions a compiled line; it is not playtest evidence. Before and after PNGs are in `/tmp/hp-shots/ui/before/` and `/tmp/hp-shots/ui/after/` on the task machine.
