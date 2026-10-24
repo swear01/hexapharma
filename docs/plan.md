@@ -56,7 +56,9 @@
 - 機器與基底藥物都要解鎖（參考 Big Pharma）。**每種基底是一張地圖**（類似 Potion Craft 的水／油／酒），也是之後多圖疊加的入口。
 - 解鎖條件之後再定（Knowledge 已移除，見 D42）；可考慮現金與里程碑，例如合約完成或發現某個盆地。
 
-Step 7 先做簡化版（使用者 2026-10-24 決定）：找不到合用的樹狀圖模板（`beautiful-skill-tree` 2022 後未維護、自帶 localStorage 狀態），Technology 改成自己畫的樹狀圖，每個節點是免費開關，沒有解鎖條件，見 D42。解鎖條件、每種基底一張地圖與 Straight drive 重調留待之後。
+Step 7 先做簡化版（使用者 2026-10-24 決定）：找不到合用的樹狀圖模板（`beautiful-skill-tree` 2022 後未維護、自帶 localStorage 狀態），Technology 改成自己畫的樹狀圖，每個節點是免費開關，沒有解鎖條件，見 D42。解鎖條件與 Straight drive 重調留待之後。
+
+每種基底一張地圖已做第一版（`feat/v2-bases`，D43／D45）：Saline／Oil／Ethanol 三張同地形、不同藥效分布的圖，正常新局 6 種疾病；一劑藥只在一個 base（Research 與 Source 選 base），Oil／Ethanol 是 Technology 開關。多圖疊加仍未做。
 
 ### 8. 介面清理
 - 拿掉重複標記（`PLAN · FREE`／`PRODUCTION`），只在 Play 旁留一個小的狀態圖示。
