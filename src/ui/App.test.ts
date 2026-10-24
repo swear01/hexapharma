@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { EffectMap, MultiMap } from "../sim/phase0_interfaces";
 import { applyTemplate } from "../sim/drug-graph";
 import { generate } from "../sim/mapgen";
-import { defaultGenOptions, researchRoute } from "./Game";
+import { defaultGenOptions, researchBaseLevel, researchRoute } from "./Game";
 import { focusLabCamera } from "../render/labCamera";
 import {
   labPointerToViewport,
@@ -150,7 +150,7 @@ describe("Lab pointer projection", () => {
 
 describe("Research course controls", () => {
   it("numbers one control per executed step and ends at the run's final position", () => {
-    const level = generate(defaultGenOptions(14));
+    const level = researchBaseLevel(generate(defaultGenOptions(14)), 0);
     const program = level.diseases[0]!.reference;
     const route = researchRoute(level.mm, level.start, program);
     expect(route.controls).toHaveLength(program.steps.length);

@@ -58,7 +58,9 @@ function walkPathCore(
   points: HexCoord[] | null,
   out: Int32Array,
   outOffset: number,
-): void {
+  mask: Uint8Array | null,
+): number {
+  let touched = 0;
   let q = fromQ;
   let r = fromR;
   // Doubled-unit point P = 2 * cell + offset.
@@ -85,6 +87,7 @@ function walkPathCore(
 
     q = targetQ;
     r = targetR;
+    if (mask !== null && mask[cellIndex] === 1) touched = 1;
     if (towards >= 0 && kind !== CellKind.Swamp) {
       // Leaving onto a non-swamp cell realigns to its centre.
       pq = 2 * q;
@@ -120,6 +123,7 @@ function walkPathCore(
   out[outOffset + 2] = pq - 2 * q;
   out[outOffset + 3] = pr - 2 * r;
   out[outOffset + 4] = failed;
+  return touched;
 }
 
 function validateOutputRange(out: Int32Array, outOffset: number): void {
@@ -149,7 +153,27 @@ export function walkValidatedPathInto(
   outOffset: number,
 ): void {
   validateOutputRange(out, outOffset);
-  walkPathCore(map, fromQ, fromR, fromOffsetQ, fromOffsetR, heading, machine, null, null, out, outOffset);
+  walkPathCore(map, fromQ, fromR, fromOffsetQ, fromOffsetR, heading, machine, null, null, out, outOffset, null);
+}
+
+/**
+ * `walkValidatedPathInto` that also reports whether the walk entered any cell flagged in `mask`
+ * (1 = entered one). Portal exits are not checked.
+ */
+export function walkValidatedPathMaskedInto(
+  map: EffectMap,
+  fromQ: number,
+  fromR: number,
+  fromOffsetQ: number,
+  fromOffsetR: number,
+  heading: number,
+  machine: Machine,
+  out: Int32Array,
+  outOffset: number,
+  mask: Uint8Array,
+): number {
+  validateOutputRange(out, outOffset);
+  return walkPathCore(map, fromQ, fromR, fromOffsetQ, fromOffsetR, heading, machine, null, null, out, outOffset, mask);
 }
 
 export function walkPathInto(
@@ -191,7 +215,7 @@ export function walkValidatedPath(
   const entered: HexCoord[] = [];
   const points: HexCoord[] = [];
   const out = new Int32Array(PATH_OUT_STRIDE);
-  walkPathCore(map, from.q, from.r, offset.q, offset.r, heading, machine, entered, points, out, 0);
+  walkPathCore(map, from.q, from.r, offset.q, offset.r, heading, machine, entered, points, out, 0, null);
   return {
     pos: { q: out[0]!, r: out[1]! },
     offset: { q: out[2]!, r: out[3]! },

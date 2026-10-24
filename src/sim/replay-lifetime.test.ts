@@ -40,7 +40,7 @@ it("continues Research after exhausting the lifetime intent-entry budget", () =>
     game = applyGameIntent(game, { kind: "resetProduction" });
   }
   for (let cycle = 0; cycle < 8; cycle++) {
-    game = applyGameIntent(game, { kind: "runResearchTrial", program: { steps: [machine] } });
+    game = applyGameIntent(game, { kind: "runResearchTrial", program: { steps: [machine] }, base: 0 });
   }
   expect(game.production.runtime.tick).toBe(0);
   expect(game.research.lastTrial?.program.steps).toHaveLength(1);
@@ -80,7 +80,7 @@ it("preserves Research, paid builds, sales, patents and in-flight state through 
     expect(hashGame(resumed)).toBe(hashGame(uninterrupted));
   };
   const recipe = generate(options).diseases[0]!.reference;
-  apply({ kind: "runResearchTrial", program: recipe });
+  apply({ kind: "runResearchTrial", program: recipe, base: 0 });
   const layout = compileEntitledPrototype(recipe, 24, 12).layout;
   apply({ kind: "setPilotLayout", layout });
   apply({ kind: "buildProductionLayout", layout });
@@ -89,7 +89,7 @@ it("preserves Research, paid builds, sales, patents and in-flight state through 
     expect(resumed.production.runtime.unitCount).toBeGreaterThan(0);
     const first = resumed.inventory[0]!;
     apply({ kind: "sellProduct", productId: first.inventoryId, disease: first.outcome.cured[0]! });
-    apply({ kind: "runResearchTrial", program: { steps: [recipe.steps[0]!] } });
+    apply({ kind: "runResearchTrial", program: { steps: [recipe.steps[0]!] }, base: 0 });
   }
   apply({ kind: "setPatent", id: "reveal-aid", enabled: true });
   apply({ kind: "setPatent", id: "bench-2", enabled: true });

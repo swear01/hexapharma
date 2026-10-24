@@ -65,7 +65,7 @@ test("production preview renders the maximum Game-authorized map dimensions", as
 
   await page.goto("/");
   await page.evaluate((checkpoint) => {
-    localStorage.setItem("hexapharma.save.v14.checkpoint.0", checkpoint);
+    localStorage.setItem("hexapharma.save.v15.checkpoint.0", checkpoint);
   }, maximumGameMapCheckpoint);
   await page.reload();
   await confirmLoad(page);
@@ -85,7 +85,7 @@ test("production preview renders the maximum Game-authorized map dimensions", as
 test("the maximum Game map fills the clipped Atlas frame without distorting hexes", async ({ page }) => {
   await page.goto("/");
   await page.evaluate((checkpoint) => {
-    localStorage.setItem("hexapharma.save.v14.checkpoint.0", checkpoint);
+    localStorage.setItem("hexapharma.save.v15.checkpoint.0", checkpoint);
   }, maximumGameMapCheckpoint);
   await page.reload();
   await confirmLoad(page);

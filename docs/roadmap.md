@@ -53,7 +53,7 @@
 
 ## Next — v2
 
-Step 1 已完成（`feat/v2-sim-rules`）：Research 改為規劃後一次試驗、只開圖；朝向與轉向角；沼澤半格；Save v12。Step 2（`feat/v2-mapgen`）：六角 Atlas 地圖生成器重寫（骨架＋BFS 驗證的隘口＋void filling）、黑格、★ 二級療效與 Market 加價、由地勢畫出的霧下等高線；Save v13。Step 4（`feat/v2-machines-pricing`）：8 台前／中／後期機器、依到達難度的分區定價；Save v14。其餘：科技樹；每種基底一張地圖；介面清理。順序與驗收見 [plan.md](plan.md)。
+Step 1 已完成（`feat/v2-sim-rules`）：Research 改為規劃後一次試驗、只開圖；朝向與轉向角；沼澤半格；Save v12。Step 2（`feat/v2-mapgen`）：六角 Atlas 地圖生成器重寫（骨架＋BFS 驗證的隘口＋void filling）、黑格、★ 二級療效與 Market 加價、由地勢畫出的霧下等高線；Save v13。Step 4（`feat/v2-machines-pricing`）：8 台前／中／後期機器、依到達難度的分區定價；Save v14。Step 7 簡化版：Technology 免費開關樹（D42）。基礎藥第一版（`feat/v2-bases`）：Saline／Oil／Ethanol 三張同地形 base 圖、6 種疾病、一劑一 base；Save v15（D43）。其餘：解鎖條件；多圖疊加；介面清理。順序與驗收見 [plan.md](plan.md)。
 
 ## Later
 

@@ -43,7 +43,7 @@ import type {
   Machine,
   Template,
 } from "../sim/phase0_interfaces";
-import { DEFAULT_CATALOG, DEFAULT_SHAPES } from "../sim/phase0_interfaces";
+import { BASE_NAMES, DEFAULT_CATALOG, DEFAULT_SHAPES } from "../sim/phase0_interfaces";
 import { initFactory, analyzeThroughput } from "../sim/factory-sim";
 import { factoryOutcome } from "../sim/recipe";
 import { quoteProductionBuild } from "../sim/construction";
@@ -53,6 +53,7 @@ import { buildFactoryTransportTopology, type FactoryTransportEdge } from "../ren
 import { inkJitter } from "../render/ink";
 import { hexBoardBounds, hexPolygon, hexToPixel } from "../render/hexProjection";
 import type { FactoryRenderer } from "../render/factoryRenderer";
+import { BasePicker, LockGlyph } from "./BasePicker";
 import {
   appendUniqueCells,
   clampCamera,
@@ -283,8 +284,8 @@ export function factoryMachineFlowOrder(layout: FactoryLayout): ReadonlyMap<numb
   return order;
 }
 
-/** Machines the first unit from the first Source passes through on its way to a Sink (a Splitter sends it out its first connected output, as the sim does). */
-export function factoryLineProgram(layout: FactoryLayout): Template | null {
+/** Machines the first unit from the first Source passes through on its way to a Sink (a Splitter sends it out its first connected output, as the sim does), and that Source's base. */
+export function factoryLineProgram(layout: FactoryLayout): { readonly program: Template; readonly base: number } | null {
   const topology = buildFactoryTransportTopology(layout);
   const area = layout.width * layout.height;
   const owner = new Int32Array(area).fill(-1);
@@ -298,9 +299,11 @@ export function factoryLineProgram(layout: FactoryLayout): Template | null {
   const steps: Machine[] = [];
   const seen = new Uint8Array(area);
   let at = layout.tiles.findIndex((tile) => tile.kind === "source");
+  const source = layout.tiles[at];
+  const base = source?.kind === "source" ? source.base : 0;
   while (at >= 0 && seen[at] === 0) {
     const tile = layout.tiles[at];
-    if (tile?.kind === "sink") return steps.length > 0 ? { steps } : null;
+    if (tile?.kind === "sink") return steps.length > 0 ? { program: { steps }, base } : null;
     seen[at] = 1;
     let options = exits[at]!;
     const machine = byId.get(owner[at]!);
@@ -405,6 +408,7 @@ type Brush =
 interface ClipboardBrush {
   readonly brush: Brush;
   readonly dir: Dir;
+  readonly base: number;
   readonly footRot: Rotation;
   readonly tile: FactoryTile | null;
 }
@@ -469,15 +473,6 @@ function DirectionGlyph({ dir }: { readonly dir: Dir }) {
   );
 }
 
-function LockGlyph() {
-  return (
-    <svg className="tool-lock" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" focusable="false">
-      <path d="M3.5 5.5V4a2.5 2.5 0 015 0v1.5" fill="none" stroke="currentColor" strokeWidth="1.4" />
-      <rect x="2" y="5.5" width="8" height="5.5" rx="1" fill="currentColor" />
-    </svg>
-  );
-}
-
 function ChevronGlyph({ down = false }: { readonly down?: boolean }) {
   return (
     <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" focusable="false">
@@ -507,7 +502,7 @@ function RunStateGlyph({ state }: { readonly state: RunState }) {
 }
 
 /** A belt-grid tile for the current brush + direction (machines handled separately). */
-function makeTile(brush: Brush, dir: Dir): FactoryTile | null {
+function makeTile(brush: Brush, dir: Dir, base: number): FactoryTile | null {
   switch (brush.kind) {
     case "belt":
       return { kind: "belt", dir };
@@ -518,7 +513,7 @@ function makeTile(brush: Brush, dir: Dir): FactoryTile | null {
       // out forward; accept from behind + one perpendicular (CW). brushDir=E → out E, in [W,S].
       return { kind: "merger", inDirs: [opposite(dir), ((dir + 1) % 6) as Dir], outDir: dir };
     case "source":
-      return { kind: "source", dir, period: 1 };
+      return { kind: "source", dir, period: 1, base };
     case "sink":
       return { kind: "sink" };
     case "erase":
@@ -539,7 +534,7 @@ function cloneFactoryTile(tile: FactoryTile): FactoryTile {
     case "merger":
       return { kind: "merger", inDirs: [...tile.inDirs], outDir: tile.outDir };
     case "source":
-      return { kind: "source", dir: tile.dir, period: tile.period };
+      return { kind: "source", dir: tile.dir, period: tile.period, base: tile.base };
     case "sink":
       return { kind: "sink" };
   }
@@ -583,6 +578,7 @@ function brushAt(layout: FactoryLayout, cell: GridCell): ClipboardBrush | null {
     return {
       brush: { kind: "machine", typeId: machine.def.typeId },
       dir: E,
+      base: 0,
       footRot: machine.footRot,
       tile: null,
     };
@@ -598,6 +594,7 @@ function brushAt(layout: FactoryLayout, cell: GridCell): ClipboardBrush | null {
   return {
     brush: { kind: tile.kind },
     dir,
+    base: tile.kind === "source" ? tile.base : 0,
     footRot: 0,
     tile,
   };
@@ -611,6 +608,7 @@ function paint(
   brush: Brush,
   dir: Dir,
   footRot: Rotation,
+  base = 0,
 ): FactoryLayout {
   if (brush.kind === "machine") {
     const shape: MachineShape | undefined = DEFAULT_SHAPES[brush.typeId];
@@ -642,7 +640,7 @@ function paint(
     return { ...layout, tiles, machines };
   }
 
-  const tile = makeTile(brush, dir);
+  const tile = makeTile(brush, dir, base);
   if (tile === null) return layout;
   return placeFactoryTile(layout, q, r, tile);
 }
@@ -796,6 +794,8 @@ interface FactoryProps {
   readonly mode: FacilityMode;
   readonly level: GeneratedLevel;
   readonly planningMap: MultiMap;
+  /** Per base: why Sources may not use it, or null. */
+  readonly baseLocks: readonly (string | null)[];
   readonly layout: FactoryLayout | null;
   readonly runtime: FactoryRuntime | null;
   readonly waste: number;
@@ -817,6 +817,7 @@ export function Factory({
   mode,
   level,
   planningMap,
+  baseLocks,
   layout: authoritativeLayout,
   runtime,
   waste,
@@ -853,6 +854,7 @@ export function Factory({
   // Any new tool choice (click, hotkey, pipette) retires a stale locked-machine hint.
   useEffect(() => setLockedHint(null), [brush]);
   const [brushDir, setBrushDir] = useState<Dir>(E);
+  const [sourceBase, setSourceBase] = useState(0);
   const [footRot, setFootRot] = useState<Rotation>(0);
   const [clipboardLabel, setClipboardLabel] = useState("empty");
   const [hoverCell, setHoverCell] = useState<GridCell | null>(null);
@@ -887,7 +889,7 @@ export function Factory({
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
   const state = useMemo(
-    () => runtime ?? initFactory(layout, mm, start),
+    () => runtime ?? initFactory(layout, mm),
     [runtime, layout, mm, start],
   );
 
@@ -923,6 +925,11 @@ export function Factory({
     }
     return { id: machine.id, number: machineOrder.get(machine.id) ?? 0, x: (minX + maxX) / 2 - 16, y: (minY + maxY) / 2 - 14 };
   }), [layout, machineOrder]);
+  const sourceMarks = useMemo(() => baseLocks.length < 2 ? [] : layout.tiles.flatMap((tile, index) => {
+    if (tile.kind !== "source") return [];
+    const center = factoryCellCenter({ q: index % layout.width, r: Math.floor(index / layout.width) });
+    return [{ index, base: tile.base, x: center.x, y: center.y - 17 }];
+  }), [baseLocks.length, layout]);
   const sampleAnalysis = useMemo<{
     readonly outcome: Outcome | null;
     readonly error: string | null;
@@ -937,14 +944,14 @@ export function Factory({
       return { outcome: null, error: null };
     }
     try {
-      return { outcome: factoryOutcome(layout, outcomeMap, start), error: null };
+      return { outcome: factoryOutcome(layout, outcomeMap), error: null };
     } catch (error) {
       return {
         outcome: null,
         error: `Sample unavailable: ${error instanceof Error ? error.message : String(error)}`,
       };
     }
-  }, [authoritativeLayout, layout, mode, planningMap, start, throughput]);
+  }, [authoritativeLayout, layout, mode, planningMap, throughput]);
   const analysisError = [throughputAnalysis.error, sampleAnalysis.error]
     .filter((entry): entry is string => entry !== null)
     .join(" ");
@@ -1410,11 +1417,11 @@ export function Factory({
       : gesture.base;
     if (activeBrush.kind !== "belt") {
       for (const cell of gesture.cells) {
-        next = paint(next, cell.q, cell.r, activeBrush, brushDir, footRot);
+        next = paint(next, cell.q, cell.r, activeBrush, brushDir, footRot, sourceBase);
       }
     }
     commitLayout(next);
-  }, [brush, brushDir, commitLayout, footRot]);
+  }, [brush, brushDir, commitLayout, footRot, sourceBase]);
 
   const onCanvasWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -1438,6 +1445,7 @@ export function Factory({
     if (picked === null) return;
     setBrush(picked.brush);
     setBrushDir(picked.dir);
+    if (picked.brush.kind === "source") setSourceBase(picked.base);
     setFootRot(picked.footRot);
   }, [hoverCell, layout]);
 
@@ -1577,7 +1585,9 @@ export function Factory({
     ? undefined
     : layout.tiles[hexIndex(layout.width, hoverCell.q, hoverCell.r)];
   const hoverKind = hoveredMachine === undefined
-    ? hoveredTile?.kind ?? "outside"
+    ? hoveredTile?.kind === "source" && baseLocks.length > 1
+      ? `source · ${BASE_NAMES[hoveredTile.base]}`
+      : hoveredTile?.kind ?? "outside"
     : machineName(hoveredMachine.def.typeId);
   const activeGesture = gestureRef.current;
   const moveGesture = activeGesture?.mode === "move" ? activeGesture : null;
@@ -1604,7 +1614,7 @@ export function Factory({
     ? layout
     : hoverCell === null
     ? layout
-    : paint(layout, hoverCell.q, hoverCell.r, brush, brushDir, footRot));
+    : paint(layout, hoverCell.q, hoverCell.r, brush, brushDir, footRot, sourceBase));
   const moveUnchanged = moveMachine !== undefined && moveAnchor !== null &&
     moveMachine.anchor.q === moveAnchor.q && moveMachine.anchor.r === moveAnchor.r;
   const hoverPlacementValid = moveBase !== null
@@ -1720,6 +1730,9 @@ export function Factory({
             <div className="build-readout">
               <strong data-testid="brush-selected" className={brushIsMachine ? "" : "is-transport"}>{brushLabel}</strong>
               <span data-testid="brush-direction">{brushIsMachine ? `Footprint ${footRot * 60}°` : <><DirectionGlyph dir={brushDir} />Direction {DIR_LABEL[brushDir]}</>}</span>
+              {brush.kind === "source" && baseLocks.length > 1 && (
+                <BasePicker value={sourceBase} locks={baseLocks} onChange={setSourceBase} onHint={setLockedHint} testId="source-base" />
+              )}
               {lockedHint !== null
                 ? <span className="build-hint" role="status">{lockedHint}</span>
                 : quote !== null && <output className={`build-quote${hoverBuildCost === null ? "" : " has-cost"}`} data-testid="factory-quote">{quote}</output>}
@@ -1770,6 +1783,15 @@ export function Factory({
                   aria-hidden="true"
                   style={{ left: control.x, top: control.y, transform: `translate(-50%, -50%) scale(${controlScale})` }}
                 >{control.number}</span>
+              ))}
+              {sourceMarks.map((mark) => (
+                <span
+                  key={mark.index}
+                  className="source-base-mark"
+                  data-testid="source-base-mark"
+                  aria-hidden="true"
+                  style={{ left: mark.x, top: mark.y, transform: `translate(-50%, -50%) scale(${controlScale})` }}
+                >{BASE_NAMES[mark.base]}</span>
               ))}
               <svg className="factory-ghost-layer" width={overlayWidth} height={overlayHeight} aria-hidden="true" focusable="false">
                 {ghostCells.map((cell) => {

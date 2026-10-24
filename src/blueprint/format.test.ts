@@ -54,7 +54,7 @@ function factoryLayout(): FactoryLayout {
   const width = 8;
   const height = 4;
   const tiles = emptyTiles(width, height);
-  tiles[8] = { kind: "source", dir: 0, period: 2 };
+  tiles[8] = { kind: "source", dir: 0, period: 2, base: 0 };
   tiles[11] = { kind: "belt", dir: 0 };
   tiles[12] = { kind: "sink" };
   const entry = catalog("hook");
@@ -96,9 +96,9 @@ function unsignedDocument(blueprint: unknown, version: unknown = BLUEPRINT_VERSI
 }
 
 describe("blueprint format v4", () => {
-  it("freezes the breaking wire at v4 and the heading ruleset at v5", () => {
+  it("freezes the breaking wire at v4 and the base-carrying ruleset at v6", () => {
     expect(BLUEPRINT_VERSION).toBe(4);
-    expect(BLUEPRINT_RULESET).toBe(5);
+    expect(BLUEPRINT_RULESET).toBe(6);
   });
 
   it("encodes a strict human-readable ResearchProgram without paths or private world state", async () => {
@@ -112,7 +112,7 @@ describe("blueprint format v4", () => {
       blueprint: {
         kind: "research-program",
         name: "Atlas route",
-        ruleset: 5,
+        ruleset: 6,
         content: BLUEPRINT_CONTENT_FINGERPRINT,
         program: {
           steps: [
@@ -137,7 +137,7 @@ describe("blueprint format v4", () => {
       footRot: 0,
     }]);
     expect(portable.layout.tiles).toEqual([
-      { q: 0, r: 1, kind: "source", dir: 0, period: 2 },
+      { q: 0, r: 1, kind: "source", dir: 0, period: 2, base: 0 },
       { q: 3, r: 1, kind: "belt", dir: 0 },
       { q: 4, r: 1, kind: "sink" },
     ]);
@@ -170,7 +170,7 @@ describe("blueprint format v4", () => {
 
     expect(layout.tiles).toHaveLength(32);
     expect(layout.tiles[0]).toEqual({ kind: "empty" });
-    expect(layout.tiles[8]).toEqual({ kind: "source", dir: 0, period: 2 });
+    expect(layout.tiles[8]).toEqual({ kind: "source", dir: 0, period: 2, base: 0 });
     expect(layout.machines[0]).toEqual({
       id: 7,
       def: {

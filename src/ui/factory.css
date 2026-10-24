@@ -136,3 +136,14 @@
   .factory-render-alert { top: 60px; left: 8px; }
   .world-layout.has-inspector .machine-selection { display: none; }
 }
+
+/* Base name on a placed Source. */
+.source-base-mark {
+  position: absolute; z-index: 4; padding: 1px 3px; border: 1px solid var(--ink); border-radius: 2px;
+  background: var(--paper-raised); color: var(--ink); font: 600 10px/1 var(--font-display); letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; pointer-events: none;
+}
+.base-picker { display: inline-flex; align-items: center; gap: 2px; }
+.base-picker button { display: inline-flex; align-items: center; gap: 4px; }
+.base-picker button[aria-pressed="true"] { border-color: var(--ink); color: var(--ink); }
+.base-picker button.is-locked { color: var(--ink-3); }
+.base-picker .tool-lock { position: static; }

@@ -79,7 +79,7 @@ function emptyPilotLayout(): FactoryLayout {
     { length: BASE_GAME_FACTORY_WIDTH * BASE_GAME_FACTORY_HEIGHT },
     () => ({ kind: "empty" }),
   );
-  tiles[0] = { kind: "source", dir: 0, period: 1 };
+  tiles[0] = { kind: "source", dir: 0, period: 1, base: 0 };
   tiles[1] = { kind: "sink" };
   return {
     width: BASE_GAME_FACTORY_WIDTH,
@@ -94,10 +94,11 @@ describe("Run-based Research trials", () => {
     const { program } = reference();
     const level = generate(options);
     const initial = createGameState(options, 500);
-    const game = dispatch(initial, { kind: "runResearchTrial", program });
+    const game = dispatch(initial, { kind: "runResearchTrial", program, base: 0 });
 
     expect(game.economy.cash).toBe(500 - trialCost(program));
     expect(game.research.lastTrial).toEqual({
+      base: 0,
       program,
       cost: trialCost(program),
       outcome: evaluate(level.mm, level.start, program),
@@ -112,9 +113,9 @@ describe("Run-based Research trials", () => {
 
   it("never creates formulas; a later trial simply replaces the last one", () => {
     const { program } = reference();
-    let game = dispatch(createGameState(options, 500), { kind: "runResearchTrial", program });
+    let game = dispatch(createGameState(options, 500), { kind: "runResearchTrial", program, base: 0 });
     const machine = DEFAULT_CATALOG[0]!;
-    game = dispatch(game, { kind: "runResearchTrial", program: { steps: [machine] } });
+    game = dispatch(game, { kind: "runResearchTrial", program: { steps: [machine] }, base: 0 });
 
     expect(game.research.lastTrial?.program.steps).toEqual([
       { typeId: machine.typeId, path: machine.path, turn: machine.turn },
@@ -132,13 +133,13 @@ describe("Run-based Research trials", () => {
     const turned: Machine = { ...machine, turn: machine.turn + 1 };
     const locked = DEFAULT_CATALOG.find((entry) => entry.typeId === "crane")!;
 
-    expect(() => dispatch(poor, { kind: "runResearchTrial", program })).toThrow(/requires.*cash/i);
-    expect(() => dispatch(poor, { kind: "runResearchTrial", program: { steps: [] } })).toThrow(/1\.\.256/);
-    expect(() => dispatch(poor, { kind: "runResearchTrial", program: { steps: [partial] } }))
+    expect(() => dispatch(poor, { kind: "runResearchTrial", program, base: 0 })).toThrow(/requires.*cash/i);
+    expect(() => dispatch(poor, { kind: "runResearchTrial", program: { steps: [] }, base: 0 })).toThrow(/1\.\.256/);
+    expect(() => dispatch(poor, { kind: "runResearchTrial", program: { steps: [partial] }, base: 0 }))
       .toThrow(/path does not match/i);
-    expect(() => dispatch(poor, { kind: "runResearchTrial", program: { steps: [turned] } }))
+    expect(() => dispatch(poor, { kind: "runResearchTrial", program: { steps: [turned] }, base: 0 }))
       .toThrow(/path does not match/i);
-    expect(() => dispatch(poor, { kind: "runResearchTrial", program: { steps: [locked] } }))
+    expect(() => dispatch(poor, { kind: "runResearchTrial", program: { steps: [locked] }, base: 0 }))
       .toThrow(/locked/i);
     for (const kind of ["beginResearchShot", "advanceResearchShot", "abortResearchShot"]) {
       expect(() => dispatch(poor, { kind, machine })).toThrow(/unknown|removed/i);
@@ -154,7 +155,7 @@ describe("Run-based Research trials", () => {
     const before = game.fog[0]!.reduce((sum, value) => sum + value, 0);
     expect(before).toBe(19);
 
-    game = dispatch(game, { kind: "runResearchTrial", program: { steps: [entry] } });
+    game = dispatch(game, { kind: "runResearchTrial", program: { steps: [entry] }, base: 0 });
 
     expect(game.fog[0]!.reduce((sum, value) => sum + value, 0)).toBeGreaterThan(before);
     expect(game.research.lastTrial?.outcome.cured).toEqual([]);
@@ -185,7 +186,7 @@ describe("Run-based Research trials", () => {
       drug = preview.next;
     }
 
-    const game = dispatch(initial, { kind: "runResearchTrial", program });
+    const game = dispatch(initial, { kind: "runResearchTrial", program, base: 0 });
     expect(fogSnapshot(game)).toEqual(expected.map((layer) => [...layer]));
     expect(game.production.runtime.tick).toBe(0);
   });
@@ -199,7 +200,7 @@ describe("Run-based Research trials", () => {
     let differs = 0;
     for (let code = 0; code < 4 ** 5 && differs === 0; code++) {
       const program = { steps: [0, 1, 2, 3, 4].map((digit) => machines[Math.floor(code / 4 ** digit) % 4]!) };
-      const actual = dispatch(game, { kind: "runResearchTrial", program }).research.lastTrial!.outcome;
+      const actual = dispatch(game, { kind: "runResearchTrial", program, base: 0 }).research.lastTrial!.outcome;
       expect(actual).toEqual(evaluate(mm, level.start, program));
       if (JSON.stringify(actual) !== JSON.stringify(evaluate(plan, level.start, program))) differs++;
     }
@@ -216,6 +217,7 @@ describe("Run-based Research trials", () => {
     const game = dispatch(createGameState(options, 500), {
       kind: "runResearchTrial",
       program: { steps: [mutable] },
+      base: 0,
     });
     (catalog.path as number[])[0] = 3;
     expect(game.research.lastTrial?.program.steps[0]?.path[0]).toBe(0);
@@ -236,7 +238,7 @@ describe("Run-based Research trials", () => {
     expect(fogSnapshot(aided)).toEqual(before);
 
     const run = (game: ReturnType<typeof createGameState>) =>
-      dispatch(game, { kind: "runResearchTrial", program: { steps: [machine] } });
+      dispatch(game, { kind: "runResearchTrial", program: { steps: [machine] }, base: 0 });
     const revealed = (game: ReturnType<typeof createGameState>) => game.fog[0]!
       .reduce((sum, value) => sum + value, 0);
     expect(revealed(run(aided))).toBeGreaterThan(revealed(run(initial)));

@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 import { applyGameIntent, createGameState, DEFAULT_STARTING_CASH } from "../../src/sim/game";
 import { quoteProductionBuild } from "../../src/sim/construction";
 import { generate } from "../../src/sim/mapgen";
-import { compileEntitledPrototype } from "../../src/sim/recipe";
+import { compileEntitledPrototype, withSourceBase } from "../../src/sim/recipe";
 import { SAVE_VERSION, deserializeGame, deserializeSnapshot, serializeGame } from "../../src/sim/save";
 import { worldCells } from "../../src/sim/factory-geom";
 import { hexDistance, hexIndex, type HexCoord } from "../../src/sim/hex";
@@ -59,7 +59,7 @@ function zeroCashProductionSave(): string {
 }
 
 const clipboardPayloads = [
-  { cell: { q: 8, r: 6 }, destination: { q: 8, r: 8 }, tile: { kind: "source" as const, dir: 2 as const, period: 7 } },
+  { cell: { q: 8, r: 6 }, destination: { q: 8, r: 8 }, tile: { kind: "source" as const, dir: 2 as const, period: 7, base: 0 } },
   { cell: { q: 10, r: 6 }, destination: { q: 10, r: 8 }, tile: { kind: "splitter" as const, inDir: 3 as const, outDirs: [0, 1, 2] as const } },
   { cell: { q: 12, r: 6 }, destination: { q: 12, r: 8 }, tile: { kind: "merger" as const, inDirs: [0, 2, 3] as const, outDir: 1 as const } },
 ];
@@ -90,16 +90,18 @@ function machineGallerySave(): string {
   let game = createGameState(options, 1_000_000);
   game = applyGameIntent(game, { kind: "setPatent", id: "bench-2", enabled: true });
   game = applyGameIntent(game, { kind: "setPatent", id: "reveal-aid", enabled: true });
+  game = applyGameIntent(game, { kind: "setPatent", id: "oil-base", enabled: true });
+  game = applyGameIntent(game, { kind: "setPatent", id: "ethanol-base", enabled: true });
   for (const [disease, id] of [
     [0, "zigzag-unlock"],
     [1, "loop-unlock"],
     [2, "crane-unlock"],
   ] as const) {
-    const layout = compileEntitledPrototype(
+    const layout = withSourceBase(compileEntitledPrototype(
       level.diseases[disease]!.reference,
       game.production.layout.width,
       game.production.layout.height,
-    ).layout;
+    ).layout, level.diseases[disease]!.map);
     game = applyGameIntent(game, { kind: "buildProductionLayout", layout });
     game = applyGameIntent(game, { kind: "productionTicks", ticks: 400 });
     const productIds = game.inventory
@@ -585,7 +587,7 @@ test("focused Factory tool controls still allow R, number, and Q world hotkeys",
   const source = clipboardPayloads[0]!;
   const point = await factoryCellPoint(frame, layout, source.cell);
   await page.mouse.move(point.x, point.y);
-  await expect(workspace.getByTestId("factory-hover-kind")).toHaveText("source");
+  await expect(workspace.getByTestId("factory-hover-kind")).toHaveText("source · Saline");
   await workspace.getByTestId("brush-merger").click();
   await page.keyboard.press("q");
   await expect(workspace.getByTestId("brush-selected")).toHaveText("source");

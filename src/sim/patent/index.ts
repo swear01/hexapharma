@@ -6,7 +6,7 @@
  * THROWS on an unknown id or a no-op switch.
  */
 
-import type { PatentNode, PatentState, MachineTypeId } from "../phase0_interfaces";
+import type { MapIndex, PatentNode, PatentState, MachineTypeId } from "../phase0_interfaces";
 
 const PATENT_DEFINITIONS = [
   { id: "bench-2", effect: { kind: "expandFactory", dw: 2, dh: 0 } },
@@ -18,6 +18,8 @@ const PATENT_DEFINITIONS = [
   { id: "loop-unlock", effect: { kind: "unlockMachine", typeId: "loop" } },
   { id: "straight-unlock", effect: { kind: "unlockMachine", typeId: "straight" } },
   { id: "crane-unlock", effect: { kind: "unlockMachine", typeId: "crane" } },
+  { id: "oil-base", effect: { kind: "unlockBase", base: 1 } },
+  { id: "ethanol-base", effect: { kind: "unlockBase", base: 2 } },
 ] as const satisfies readonly PatentNode[];
 
 export const DEFAULT_PATENTS: readonly PatentNode[] = Object.freeze(PATENT_DEFINITIONS.map(
@@ -60,6 +62,9 @@ function validateEffect(node: PatentNode): void {
       requireNonNegativeSafeInteger(effect.amount, `patent "${node.id}" reveal amount`);
       return;
     case "unlockRouting":
+      return;
+    case "unlockBase":
+      requireNonNegativeSafeInteger(effect.base, `patent "${node.id}" base`);
       return;
     default:
       throw new Error(`patent "${node.id}" has an unknown effect kind`);
@@ -125,6 +130,8 @@ export interface ActiveEffects {
   readonly unlockedMachines: readonly MachineTypeId[];
   /** Splitter and Merger tiles may be built. */
   readonly routing: boolean;
+  /** Bases (map indices) switched on beyond Saline (base 0, always available), in unlock order. */
+  readonly unlockedBases: readonly MapIndex[];
 }
 
 /** Summarize the effects of the unlocked patents (cold path, UI helper). */
@@ -136,6 +143,7 @@ export function activeEffects(tree: readonly PatentNode[], state: PatentState): 
   let revealAid = 0;
   let routing = false;
   const unlockedMachines: MachineTypeId[] = [];
+  const unlockedBases: MapIndex[] = [];
 
   for (const id of state.unlocked) {
     const node = findNode(tree, id) as PatentNode;
@@ -154,8 +162,11 @@ export function activeEffects(tree: readonly PatentNode[], state: PatentState): 
       case "unlockRouting":
         routing = true;
         break;
+      case "unlockBase":
+        unlockedBases.push(e.base);
+        break;
     }
   }
 
-  return { factoryDw, factoryDh, revealAid, unlockedMachines, routing };
+  return { factoryDw, factoryDh, revealAid, unlockedMachines, routing, unlockedBases };
 }

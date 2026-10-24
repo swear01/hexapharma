@@ -45,7 +45,7 @@ describe("factory directed transport topology", () => {
     const layout = withTiles([
       [1, 2, { kind: "belt", dir: W }],
       [2, 2, { kind: "belt", dir: E }],
-      [3, 2, { kind: "source", dir: E, period: 1 }],
+      [3, 2, { kind: "source", dir: E, period: 1, base: 0 }],
     ]);
 
     expect(cell(layout, 2, 2)).toMatchObject({
@@ -57,8 +57,8 @@ describe("factory directed transport topology", () => {
 
   it("uses declared splitter and merger sides instead of visual adjacency", () => {
     const splitter = withTiles([
-      [1, 2, { kind: "source", dir: E, period: 1 }],
-      [2, 1, { kind: "source", dir: SE, period: 1 }],
+      [1, 2, { kind: "source", dir: E, period: 1, base: 0 }],
+      [2, 1, { kind: "source", dir: SE, period: 1, base: 0 }],
       [2, 2, { kind: "splitter", inDir: W, outDirs: [E, SE] }],
       [3, 2, { kind: "belt", dir: E }],
       [2, 3, { kind: "belt", dir: SE }],
@@ -70,8 +70,8 @@ describe("factory directed transport topology", () => {
     });
 
     const merger = withTiles([
-      [1, 2, { kind: "source", dir: E, period: 1 }],
-      [2, 1, { kind: "source", dir: SE, period: 1 }],
+      [1, 2, { kind: "source", dir: E, period: 1, base: 0 }],
+      [2, 1, { kind: "source", dir: SE, period: 1, base: 0 }],
       [2, 2, { kind: "merger", inDirs: [W, NW], outDir: E }],
       [3, 2, { kind: "sink" }],
     ]);
@@ -84,7 +84,7 @@ describe("factory directed transport topology", () => {
 
   it("connects source and sink through the same directed edge authority", () => {
     const layout = withTiles([
-      [1, 2, { kind: "source", dir: E, period: 1 }],
+      [1, 2, { kind: "source", dir: E, period: 1, base: 0 }],
       [2, 2, { kind: "sink" }],
     ]);
     const topology = buildFactoryTransportTopology(layout);
@@ -106,7 +106,7 @@ describe("factory directed transport topology", () => {
   ] as const)("connects direction %i to its axial neighbor", (rawDir, toQ, toR) => {
     const dir = rawDir as Dir;
     const layout = withTiles([
-      [2, 2, { kind: "source", dir, period: 1 }],
+      [2, 2, { kind: "source", dir, period: 1, base: 0 }],
       [toQ, toR, { kind: "sink" }],
     ]);
 

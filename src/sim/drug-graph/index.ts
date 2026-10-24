@@ -26,6 +26,7 @@ export {
   walkPathInto,
   walkValidatedPath,
   walkValidatedPathInto,
+  walkValidatedPathMaskedInto,
   type PathWalkResult,
 } from "./path";
 export {
@@ -132,6 +133,22 @@ export function previewStep(mm: MultiMap, state: DrugState, machine: Machine): P
 
   const heading = failed ? state.heading : turnHeading(state.heading, machine.turn);
   return { next: { pos: positions, offset: offsets, heading, failed }, trails, points };
+}
+
+const baseViews = new WeakMap<EffectMap, MultiMap>();
+
+/** The one-map view of base `base` (a drug lives on exactly one base); cached per map. */
+export function baseView(mm: MultiMap, base: number): MultiMap {
+  const map = mm.maps[base];
+  if (!Number.isSafeInteger(base) || map === undefined) {
+    throw new Error(`drug graph: base ${base} is not one of the ${mm.maps.length} maps`);
+  }
+  let view = baseViews.get(map);
+  if (view === undefined) {
+    view = Object.freeze({ maps: Object.freeze([map]) });
+    baseViews.set(map, view);
+  }
+  return view;
 }
 
 export const initialState: InitialStateFn = (mm) => {

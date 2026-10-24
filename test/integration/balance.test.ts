@@ -6,7 +6,7 @@
  * spamming one drug is never the optimal play (diminishing returns make a
  * diversified portfolio out-earn single-disease spam).
  *
- * Kept fast with a modest seed count on the active one-Atlas dimensions.
+ * Kept fast with a modest seed count on the shipped three-base dimensions.
  */
 import { describe, it, expect } from "vitest";
 import fc from "fast-check";
@@ -16,15 +16,15 @@ import { nextUnitPrice, sellUnit } from "../../src/sim/economy/index";
 
 const BAND = { min: 2, max: 8 } as const;
 
-/** Representative one-Atlas generation options with a narrower test difficulty band. */
+/** Representative shipped (three bases, six diseases) options with a narrower test difficulty band. */
 function opts(seed: number): GenOptions {
   return {
     seed,
-    nMaps: 1,
+    nMaps: 3,
     width: 49,
     height: 49,
     catalog: DEFAULT_CATALOG,
-    diseaseCount: 4,
+    diseaseCount: 6,
     difficulty: BAND,
   };
 }

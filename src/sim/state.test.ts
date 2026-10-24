@@ -11,7 +11,6 @@ import type {
   PlacedMachine,
 } from "./phase0_interfaces";
 import { CellKind, MAX_FACTORY_REPLAY_TICKS, SHAPE_1x1 } from "./phase0_interfaces";
-import { initialState } from "./drug-graph";
 import { hashFactory, replayFactory } from "./state";
 import { initFactory, snapshotFactory, stepFactory } from "./factory-sim";
 
@@ -56,7 +55,7 @@ function lineLayout(period: number, speed: number): FactoryLayout {
   // source(0)E -> belt(1)E -> machine@(2,0) -> belt(3)E -> sink(4).
   // The machine lives in machines[] (not a tile); its cell (2,0) is "empty" in tiles.
   const tiles: FactoryTile[] = [
-    { kind: "source", dir: E, period },
+    { kind: "source", dir: E, period, base: 0 },
     { kind: "belt", dir: E },
     { kind: "empty" },
     { kind: "belt", dir: E },
@@ -72,9 +71,8 @@ describe("hashFactory", () => {
   it("is stable for the initial state and depends on content", () => {
     const layout = lineLayout(2, 3);
     const mm = twoMaps();
-    const start = initialState(mm);
-    const s0 = initFactory(layout, mm, start);
-    expect(hashFactory(s0)).toBe(hashFactory(initFactory(layout, mm, start)));
+    const s0 = initFactory(layout, mm);
+    expect(hashFactory(s0)).toBe(hashFactory(initFactory(layout, mm)));
     const initialHash = hashFactory(s0);
     stepFactory(layout, mm, s0);
     expect(hashFactory(s0)).not.toBe(initialHash);
@@ -86,7 +84,7 @@ describe("hashFactory", () => {
       width: 3,
       height: 2,
       tiles: [
-        { kind: "source", dir: E, period: 1 },
+        { kind: "source", dir: E, period: 1, base: 0 },
         { kind: "splitter", inDir: W, outDirs: [E, S] },
         { kind: "sink" },
         { kind: "empty" },
@@ -95,7 +93,7 @@ describe("hashFactory", () => {
       ],
       machines: [],
     };
-    const snapshot = snapshotFactory(initFactory(layout, twoMaps(), initialState(twoMaps())));
+    const snapshot = snapshotFactory(initFactory(layout, twoMaps()));
     const alternate = { ...snapshot, splitterCursors: [1] };
     expect(hashFactory(alternate)).not.toBe(hashFactory(snapshot));
   });
@@ -111,9 +109,8 @@ describe("replayFactory (INV-15)", () => {
         (period, speed, ticks) => {
           const layout = lineLayout(period, speed);
           const mm = twoMaps();
-          const start = initialState(mm);
-          const a = replayFactory(layout, mm, start, ticks);
-          const b = replayFactory(layout, mm, start, ticks);
+          const a = replayFactory(layout, mm, ticks);
+          const b = replayFactory(layout, mm, ticks);
           expect(hashFactory(a)).toBe(hashFactory(b));
         },
       ),
@@ -124,10 +121,9 @@ describe("replayFactory (INV-15)", () => {
   it("replay(ticks) equals stepping ticks times by hand", () => {
     const layout = lineLayout(2, 3);
     const mm = twoMaps();
-    const start = initialState(mm);
-    const s = initFactory(layout, mm, start);
+    const s = initFactory(layout, mm);
     for (let i = 0; i < 37; i++) stepFactory(layout, mm, s);
-    const replayed = replayFactory(layout, mm, start, 37);
+    const replayed = replayFactory(layout, mm, 37);
     expect(hashFactory(replayed)).toBe(hashFactory(s));
     expect(replayed.tick).toBe(37);
   });
@@ -135,20 +131,18 @@ describe("replayFactory (INV-15)", () => {
   it("different tick counts generally differ", () => {
     const layout = lineLayout(1, 2);
     const mm = twoMaps();
-    const start = initialState(mm);
-    const a = replayFactory(layout, mm, start, 20);
-    const b = replayFactory(layout, mm, start, 25);
+    const a = replayFactory(layout, mm, 20);
+    const b = replayFactory(layout, mm, 25);
     expect(hashFactory(a)).not.toBe(hashFactory(b));
   });
 
   it("rejects fractional, negative, and non-finite replay lengths", () => {
     const layout = lineLayout(1, 2);
     const mm = twoMaps();
-    const start = initialState(mm);
     for (const ticks of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
-      expect(() => replayFactory(layout, mm, start, ticks)).toThrow(/ticks|integer/i);
+      expect(() => replayFactory(layout, mm, ticks)).toThrow(/ticks|integer/i);
     }
-    expect(() => replayFactory(layout, mm, start, MAX_FACTORY_REPLAY_TICKS + 1)).toThrow(
+    expect(() => replayFactory(layout, mm, MAX_FACTORY_REPLAY_TICKS + 1)).toThrow(
       new RegExp(`ticks|${MAX_FACTORY_REPLAY_TICKS}`),
     );
   });

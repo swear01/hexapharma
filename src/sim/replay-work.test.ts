@@ -28,7 +28,7 @@ function emptyLayout(width: number, height: number, source = false): FactoryLayo
     () => ({ kind: "empty" }),
   );
   if (source) {
-    tiles[0] = { kind: "source", dir: 0, period: 1 };
+    tiles[0] = { kind: "source", dir: 0, period: 1, base: 0 };
     tiles[1] = { kind: "sink" };
   }
   return { width, height, tiles, machines: [] };
@@ -48,8 +48,8 @@ describe("game replay work", () => {
     const machine = DEFAULT_CATALOG[0]!;
     const long = DEFAULT_CATALOG.find((entry) => entry.typeId === "crane")!;
     expect(estimateGameReplayWork(options, [
-      { kind: "runResearchTrial", program: { steps: [machine] } },
-      { kind: "runResearchTrial", program: { steps: [machine, machine, long] } },
+      { kind: "runResearchTrial", program: { steps: [machine] }, base: 0 },
+      { kind: "runResearchTrial", program: { steps: [machine, machine, long] }, base: 0 },
     ])).toBe(
       mapCells * 32 +
       mapCells * 5 + machine.path.length * options.nMaps +
@@ -70,7 +70,7 @@ describe("game replay work", () => {
     const machine = DEFAULT_CATALOG[0]!;
     const trace: GameIntent[] = [];
     for (let index = 0; index < 4096; index++) {
-      trace.push({ kind: "runResearchTrial", program: { steps: [machine] } });
+      trace.push({ kind: "runResearchTrial", program: { steps: [machine] }, base: 0 });
     }
     expect(estimateGameReplayWork(maximumMaps, trace)).toBeGreaterThan(25_000_000);
   });
@@ -82,7 +82,7 @@ describe("game replay work", () => {
       { length: width * height },
       () => ({ kind: "empty" }),
     );
-    tiles[0] = { kind: "source", dir: 0, period: 1 };
+    tiles[0] = { kind: "source", dir: 0, period: 1, base: 0 };
     tiles[1] = { kind: "belt", dir: 0 };
     tiles[2] = { kind: "belt", dir: 0 };
     tiles[3] = { kind: "sink" };
@@ -175,7 +175,7 @@ describe("game replay work", () => {
       { kind: "setPilotLayout", layout },
       { kind: "buildProductionLayout", layout },
       { kind: "setPatent", id: "floor-depth", enabled: true },
-      { kind: "runResearchTrial", program: { steps: [DEFAULT_CATALOG[0]!] } },
+      { kind: "runResearchTrial", program: { steps: [DEFAULT_CATALOG[0]!] }, base: 0 },
     ];
     const withExpansion = estimateGameReplayWork(options, trace);
     const withoutExpansion = estimateGameReplayWork(options, trace.filter(

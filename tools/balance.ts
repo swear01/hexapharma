@@ -3,7 +3,7 @@
  *
  *   npm run balance [count]   # sweep `count` seeds (default 100)
  *
- * Generates a level per seed at the active one-Atlas config and, per disease, collects:
+ * Generates a level per seed at the shipped three-base config and, per disease (on its own base), collects:
  *   - constructed-reference complexity, solver minimum depth and gap,
  *   - reference region price, constructed-reference cost and step count,
  *   - compiled-reference steady throughput rate (from analyzeThroughput),
@@ -21,7 +21,7 @@ import { analyzeThroughput } from "../src/sim/factory-sim/index";
 import { solve } from "../src/sim/solver/index";
 import { quoteProductionBuild } from "../src/sim/construction/index";
 import { DEFAULT_STARTING_CASH, cureRegionPrice } from "../src/sim/game";
-import { PATH_OUT_STRIDE, evaluate, turnHeading, walkValidatedPathInto } from "../src/sim/drug-graph";
+import { PATH_OUT_STRIDE, baseView, evaluate, initialState, turnHeading, walkValidatedPathInto } from "../src/sim/drug-graph";
 import { HEX_DQ, HEX_DR } from "../src/sim/hex";
 import {
   BASE_GAME_FACTORY_HEIGHT,
@@ -42,10 +42,10 @@ import {
 
 export const MAX_BALANCE_SEEDS = 100_000;
 export const BALANCE_CONFIG = Object.freeze({
-  nMaps: 1,
+  nMaps: 3,
   width: 49,
   height: 49,
-  diseaseCount: 4,
+  diseaseCount: 6,
   difficulty: Object.freeze({ min: 4, max: 12 }),
 });
 
@@ -268,6 +268,8 @@ export function sweep(count: number, overrides: SweepOverrides = {}): SweepResul
       const seedSamples: Sample[] = [];
       let seedBootstrap: BootstrapSample | null = null;
       for (const disease of level.diseases) {
+        const view = baseView(level.mm, disease.map);
+        const baseLevel = { ...level, mm: view, start: initialState(view) };
         const layout = compile(disease.reference);
         const report = throughput(layout, level.mm);
         if (
@@ -280,8 +282,8 @@ export function sweep(count: number, overrides: SweepOverrides = {}): SweepResul
         }
         const cost = referenceCost(disease.reference.steps, catalog);
         const availableCount = diseaseCatalogCount(disease.id, catalog.length);
-        const referencePrice = cureRegionPrice(disease, evaluate(level.mm, level.start, disease.reference));
-        const minimum = findMinimum(level.mm, level.start, {
+        const referencePrice = cureRegionPrice(disease, evaluate(baseLevel.mm, baseLevel.start, disease.reference));
+        const minimum = findMinimum(baseLevel.mm, baseLevel.start, {
           catalog: catalog.slice(0, availableCount),
           maxDepth: disease.reference.steps.length,
           targets: [disease.id],
@@ -315,8 +317,8 @@ export function sweep(count: number, overrides: SweepOverrides = {}): SweepResul
           rateNum: report.rateNum,
           rateDen: report.rateDen,
           profitPerTick: rate * (referencePrice - cost),
-          premiumTierSteps: premiumReachSteps(level, disease.id, catalog.slice(0, availableCount)),
-          premiumFullSteps: premiumReachSteps(level, disease.id, catalog),
+          premiumTierSteps: premiumReachSteps(baseLevel, disease.id, catalog.slice(0, availableCount)),
+          premiumFullSteps: premiumReachSteps(baseLevel, disease.id, catalog),
         });
         if (disease.id === 0) {
           const proposed = compileEntitled(
@@ -636,7 +638,7 @@ export function runBalance(count: number, overrides: SweepOverrides = {}): 0 | 1
   printPuzzleQuality(samples);
   printPremiumReach(samples);
   printBootstrap(result.bootstraps);
-  console.log(`\nfour-disease legal progression ($${PROGRESSION_RETRY_BUDGET} retry/build allowance):`);
+  console.log(`\nsix-disease legal progression ($${PROGRESSION_RETRY_BUDGET} retry/build allowance):`);
   const progression = PROGRESSION_SEEDS.map((seed) => progressionLedger(seed));
   const lowest = minMax(progression.map((ledger) => ledger.minimumCash)).min;
   console.log(`  lowest cash over ${progression.length} seeds: ${lowest}`);

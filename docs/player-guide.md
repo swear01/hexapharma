@@ -30,11 +30,18 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 
 Blueprint Library 與 save slot 分離；New Game、Load、Rewind、換 slot 都不會移除藍圖。New Game 只取代目前未保存狀態，既有 save checkpoints 仍可 Load 回來。
 
-目前 [Save v14](save.md) 是開放、可編輯的 plain JSON。獨立 checkpoint/history 外層仍是 v2，內層使用 Save v14；舊開發版（含 v13）不會自動升級。
+目前 [Save v15](save.md) 是開放、可編輯的 plain JSON。獨立 checkpoint/history 外層仍是 v2，內層使用 Save v15；舊開發版（含 v14）不會自動升級。
 
-正常新局從 $1000 cash開始，同一張 Atlas 預設有4種疾病。全新 origin 的 Blueprint Library 為空；之後換 seed 會保留既有藍圖。URL query注入的cash／research只供開發驗證，不是正常玩法。
+正常新局從 $1000 cash開始，有三種基礎藥（Saline、Oil、Ethanol），各一張 Atlas，共6種疾病。全新 origin 的 Blueprint Library 為空；之後換 seed 會保留既有藍圖。URL query注入的cash／research只供開發驗證，不是正常玩法。
 
 ## Research
+
+### 基礎藥
+
+- 三種基礎藥各有一張 Atlas：**地形完全一樣**（同樣的山、水、隘口），但治療區、副作用與黑格不同，每張圖的霧也分開。在一張圖學到的地形可以帶到另一張。
+- 每種疾病只在一種基礎藥上找得到：Saline 是 Disease 1 與 4、Oil 是 Disease 2 與 5、Ethanol 是 Disease 3 與 6。Market 卡片與 Objective 都會寫出 base（例如 `Disease 2 · Oil`、`Find Disease 2 on Oil · look west`）。
+- 地圖右下的 base 選擇器切換顯示哪一張圖；Run 在目前選的 base 上付費試驗。切換時規劃路線保留，最近一次試驗只在它所在的 base 上顯示。
+- Saline 開局可用；Oil 與 Ethanol 要先在 Technology 打開（免費）。鎖住的 base 顯示鎖頭與「Oil off · turn it on in Technology」。
 
 ### 看地圖
 
@@ -72,11 +79,11 @@ hotbar 圖示會轉到規劃路線終點的朝向。
 4. 結果同時列出Cure與已知Side effects；不能只看`Cure`而忽略同一endpoint的污染。掉進 Abyss 時路線在那一格中止並顯示 Failure。
 5. Research 不會產生配方。目前疾病的任一 Cure 格揭露後，Objective 改成`Plan a line to Disease N`，到 Plan 用同樣的機器順序自己排產線；Plan 的 Sample 只依已揭露地圖預估。Plan 產線的路徑也以淡紫寬帶畫在 Research 地圖上（同樣只用已知地圖預估），方便對照規劃路線。
 
-正常Atlas預設4種疾病：第一種reference只需要初始machine；後續疾病可能需要在Technology打開Zigzag still、Loop vat、Straight drive或Crane arm。地圖的hidden reference不會在遊戲中顯示，玩家要以sector與每次試驗揭露的結果自行修改路線。
+正常新局預設6種疾病：第一種reference只需要初始machine；後續疾病可能需要在Technology打開Zigzag still、Loop vat、Straight drive或Crane arm。地圖的hidden reference不會在遊戲中顯示，玩家要以sector與每次試驗揭露的結果自行修改路線。
 
 ## Factory共同操作
 
-Production Plan與Production使用相同editor，但一眼可分：Plan 以紫色虛線 overprint 繪製，底部是 `Commission $N`；Production 以黑墨實印，底部有報價與 Play，Play 左側圖示表示執行中／暫停，卡住時顯示 Blocked。Details 預設收起，按下才顯示診斷；底部提供工具、報價、旋轉與播放。工具列是圖例：機器以「footprint＋path」token 與全名顯示（與 Research 相同），未解鎖機器顯示鎖頭與解鎖條件。起步只有 Belt、Source、Sink、Erase 與機器；Splitter／Merger 要先在 Technology 解鎖 `Split / Merge`。Source 是空心三角、Sink 是雙圈；input port 是方形、output port 是圓形，空心代表尚未連接；belt 是藍色帶狀線，箭頭表方向。
+Production Plan與Production使用相同editor，但一眼可分：Plan 以紫色虛線 overprint 繪製，底部是 `Commission $N`；Production 以黑墨實印，底部有報價與 Play，Play 左側圖示表示執行中／暫停，卡住時顯示 Blocked。Details 預設收起，按下才顯示診斷；底部提供工具、報價、旋轉與播放。工具列是圖例：機器以「footprint＋path」token 與全名顯示（與 Research 相同），未解鎖機器顯示鎖頭與解鎖條件。起步只有 Belt、Source、Sink、Erase 與機器；Splitter／Merger 要先在 Technology 解鎖 `Split / Merge`。Source 是空心三角、上方印 base 名稱；選 Source 工具時，底部狀態列可選 base（鎖住的 base 會說明要到 Technology 打開）。Source 產出的藥只在該 base 的圖上走，產線要對應疾病所在的 base。Sink 是雙圈；input port 是方形、output port 是圓形，空心代表尚未連接；belt 是藍色帶狀線，箭頭表方向。
 
 ### Camera與工具
 
@@ -99,7 +106,7 @@ Production Plan與Production使用相同editor，但一眼可分：Plan 以紫�
 - machine的`R`每次只把footprint與ports順時針旋轉60°；六次回到原向，不改其chemical path。
 - 從既有machine上直接拖曳即可搬動整台machine；越界或碰撞時不會破壞原layout。Touch單指在格內使用目前工具，因此可連續畫Belt、直接拖動machine，或用Erase刪除；兩指drag負責camera。Touch點一下既有machine後再按`R · Rotate`可直接旋轉它。
 - 非Erase工具畫過machine footprint會略過該格，不會暗中拆機。hover既有machine時預覽其現有footprint，不顯示不存在的建造或刪除費。
-- Copy／Cut／Paste保留tile的完整方向與參數，包括Source period及Splitter／Merger branches；`Q`只把游標內容選成目前brush。
+- Copy／Cut／Paste保留tile的完整方向與參數，包括Source period與base及Splitter／Merger branches；`Q`只把游標內容選成目前brush（Source 也帶上它的 base）。
 - invalid ghost代表碰撞、越界或其他geometry錯誤；放開滑鼠不會偷偷修正。
 
 ### Transport方向
@@ -144,7 +151,7 @@ Production Plan與Production使用相同editor，但一眼可分：Plan 以紫�
 
 1. 按`B`開Library，輸入Name。
 2. `Save Production Plan`／`Save Production`保存通用FactoryLayout。目前沒有`Save Research program`或`Load in Research`；Research 必須自己規劃並付費 Run。
-3. 匯入現行Blueprint v4（ruleset 5）`research-program`時，Library只顯示內容並提供Download／Delete，不會把它套入Research。Library使用`hexapharma.blueprint-library.v4`。
+3. 匯入現行Blueprint v4（ruleset 6）`research-program`時，Library只顯示內容並提供Download／Delete，不會把它套入Research。Library使用`hexapharma.blueprint-library.v4`。
 4. Factory card可：
    - `Open in Production Plan`：免費覆蓋Plan layout。
    - `Commission $N`：以Production目前layout報價並付費建造。

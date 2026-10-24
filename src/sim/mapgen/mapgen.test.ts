@@ -22,7 +22,7 @@ import {
   hexDistance,
   rotateHexCoord,
 } from "../hex";
-import { evaluate } from "../drug-graph";
+import { baseView, evaluate, initialState } from "../drug-graph";
 import { compileEntitledPrototype } from "../recipe";
 import {
   HARD_REGION_SIZES,
@@ -72,6 +72,15 @@ const options = (seed: number, overrides: Partial<GenOptions> = {}): GenOptions 
 
 const oneAtlasOptions = (seed: number, diseaseCount = 4): GenOptions =>
   options(seed, { nMaps: 1, diseaseCount });
+
+/** The shipped new-game shape: three bases (Saline, Oil, Ethanol), six diseases. */
+const shippedOptions = (seed: number): GenOptions => options(seed, { nMaps: 3, diseaseCount: 6 });
+
+/** A drug lives on one base: evaluate on that base's map only. */
+function evaluateOnBase(mm: MultiMap, base: number, program: Parameters<typeof evaluate>[2]) {
+  const view = baseView(mm, base);
+  return evaluate(view, initialState(view), program);
+}
 
 // Generation is pure, so tests share one result per distinct option set.
 const generated = new Map<string, ReturnType<typeof generateWithDiagnostics>>();
@@ -167,10 +176,10 @@ function cureSilhouetteKind(cells: readonly HexCoord[]): "straight" | "bent" | "
 
 function assertReferences(level: GeneratedLevel): void {
   for (const disease of level.diseases) {
-    const outcome = evaluate(level.mm, level.start, disease.reference);
+    const outcome = evaluateOnBase(level.mm, disease.map, disease.reference);
     expect(outcome.failed).toBe(false);
     expect(outcome.cured).toContain(disease.id);
-    expect(outcome.final[disease.map]).toEqual(disease.node);
+    expect(outcome.final[0]).toEqual(disease.node);
     expect(disease.difficulty).toBeGreaterThanOrEqual(4);
     expect(disease.difficulty).toBeLessThanOrEqual(12);
     for (const step of disease.reference.steps) expect(step.path.length).toBeGreaterThan(0);
@@ -651,7 +660,7 @@ describe("v2 failure (black) cells", () => {
         expect(startDistance(map, index)).toBeGreaterThan(3);
       }
       for (const disease of level.diseases) {
-        const outcome = evaluate(level.mm, level.start, disease.reference);
+        const outcome = evaluateOnBase(level.mm, disease.map, disease.reference);
         expect(outcome.failed).toBe(false);
       }
     }
@@ -705,18 +714,21 @@ describe("mapgen seeded disease diversity", () => {
     assertReferences(level);
   });
 
-  it("constructs the shipped four-disease Atlas across a broad deterministic seed sample", () => {
-    for (let seed = 1; seed <= 128; seed++) {
-      const level = generate(oneAtlasOptions(seed));
-      expect(level.diseases).toHaveLength(4);
-      assertReferences(level);
-    }
-  }, 60_000);
+  for (const [from, to] of [[1, 64], [65, 128]] as const) {
+    it(`constructs the shipped three-base, six-disease level across seeds ${from}–${to}`, () => {
+      for (let seed = from; seed <= to; seed++) {
+        const level = generate(shippedOptions(seed));
+        expect(level.diseases).toHaveLength(6);
+        expect(level.diseases.map((disease) => disease.map)).toEqual([0, 1, 2, 0, 1, 2]);
+        assertReferences(level);
+      }
+    }, 60_000);
+  }
 
   it("keeps every normal Cure region outside the fresh start-centered radius-two hex", () => {
-    // Structural (construction excludes the disk); 200 seeds share the cached diversity samples.
-    for (let seed = 1; seed <= 200; seed++) {
-      const level = generate(oneAtlasOptions(seed));
+    // Structural (construction excludes the disk); shares the cached shipped samples.
+    for (let seed = 1; seed <= 128; seed++) {
+      const level = generate(shippedOptions(seed));
       for (const map of level.mm.maps) {
         for (let index = 0; index < map.cell.length; index++) {
           if (map.cell[index] !== CellKind.Cure) continue;
@@ -734,13 +746,13 @@ describe("mapgen seeded disease diversity", () => {
     const branches = new Set<string>();
     let straight = 0;
     let total = 0;
-    for (let seed = 0; seed < 200; seed++) {
-      const { level, diagnostics } = generateDetailed(oneAtlasOptions(seed));
+    for (let seed = 1; seed <= 128; seed++) {
+      const { level, diagnostics } = generateDetailed(shippedOptions(seed));
       for (const disease of level.diseases) {
         const map = level.mm.maps[disease.map]!;
         const node = disease.node.r * map.width + disease.node.q;
         const cells = diagnostics.regions
-          .find((region) => region.kind === "easy" && region.cells.includes(node))!.cells
+          .find((region) => region.map === disease.map && region.kind === "easy" && region.cells.includes(node))!.cells
           .map((index) => ({ q: index % map.width, r: Math.floor(index / map.width) }));
         const signature = cureSilhouette(cells, disease.node);
         const kind = cureSilhouetteKind(cells);
@@ -752,13 +764,27 @@ describe("mapgen seeded disease diversity", () => {
       }
     }
     const largest = Math.max(...silhouettes.values());
-    expect(total).toBe(800);
+    expect(total).toBe(768);
     expect(largest).toBeLessThanOrEqual(Math.floor(total * 0.25));
     expect(straight).toBeLessThanOrEqual(Math.floor(total * 0.2));
     expect(silhouettes.size).toBeGreaterThanOrEqual(10);
     expect(bent.size).toBeGreaterThanOrEqual(5);
     expect(branches.size).toBeGreaterThanOrEqual(4);
   }, 60_000);
+
+  it("shares one terrain across the bases while each base places its own effects", () => {
+    const terrain = (kind: number) => kind === CellKind.Wall || kind === CellKind.Swamp ? kind : -1;
+    for (const seed of [1, 14, 77]) {
+      const level = generate(shippedOptions(seed));
+      const saline = level.mm.maps[0]!;
+      for (const map of level.mm.maps.slice(1)) {
+        expect(map.elevation).toEqual(saline.elevation);
+        expect(Array.from(map.cell, terrain)).toEqual(Array.from(saline.cell, terrain));
+        expect(map.cureId).not.toEqual(saline.cureId);
+        expect(map.start).toEqual(saline.start);
+      }
+    }
+  });
 
   it("materially varies references and cure nodes between one-Atlas seeds", () => {
     const references = new Set<string>();
@@ -780,9 +806,9 @@ describe("mapgen seeded disease diversity", () => {
       const level = generate(oneAtlasOptions(seed));
       const neutral = withoutRouteTerrain(level);
       for (const disease of level.diseases) {
-        const withTerrain = evaluate(level.mm, level.start, disease.reference);
-        const withoutTerrain = evaluate(neutral, level.start, disease.reference);
-        expect(withTerrain.final[disease.map]).not.toEqual(withoutTerrain.final[disease.map]);
+        const withTerrain = evaluateOnBase(level.mm, disease.map, disease.reference);
+        const withoutTerrain = evaluateOnBase(neutral, disease.map, disease.reference);
+        expect(withTerrain.final[0]).not.toEqual(withoutTerrain.final[0]);
       }
     }
   });
@@ -830,9 +856,9 @@ describe("mapgen constructive programs", () => {
       for (const disease of level.diseases) {
         for (let length = 1; length < disease.reference.steps.length; length++) {
           const prefix = { steps: disease.reference.steps.slice(0, length) };
-          expect(evaluate(level.mm, level.start, prefix).cured).toEqual([]);
+          expect(evaluateOnBase(level.mm, disease.map, prefix).cured).toEqual([]);
         }
-        expect(evaluate(level.mm, level.start, disease.reference).cured).toContain(disease.id);
+        expect(evaluateOnBase(level.mm, disease.map, disease.reference).cured).toContain(disease.id);
       }
     }
   }, 10_000);
@@ -941,10 +967,10 @@ describe("mapgen constructive programs", () => {
     const disease = level.diseases[0]!;
     expect(disease.difficulty).toBe(1);
     expect(disease.reference.steps).toHaveLength(1);
-    const outcome = evaluate(level.mm, level.start, disease.reference);
+    const outcome = evaluateOnBase(level.mm, disease.map, disease.reference);
     expect(outcome.failed).toBe(false);
     expect(outcome.cured).toContain(disease.id);
-    expect(outcome.final[disease.map]).toEqual(disease.node);
+    expect(outcome.final[0]).toEqual(disease.node);
   });
 
   it("constructs with three distinct catalog shapes even when catalog length is divisible by three", () => {
@@ -1012,7 +1038,7 @@ describe("mapgen pricing", () => {
         });
       }
       for (const disease of level.diseases) {
-        const outcome = evaluate(level.mm, level.start, disease.reference);
+        const outcome = evaluateOnBase(level.mm, disease.map, disease.reference);
         const region = outcome.regions[outcome.cured.indexOf(disease.id)];
         expect(map.regionId[disease.node.r * map.width + disease.node.q]).toBe(region);
       }

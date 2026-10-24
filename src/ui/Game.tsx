@@ -3,6 +3,7 @@ import type {
   DiseaseId,
   FactoryLayout,
   GameState,
+  GeneratedLevel,
   GenOptions,
   DrugState,
   EffectMap,
@@ -19,12 +20,14 @@ import {
   MAX_TEMPLATE_STEPS,
 } from "../sim/phase0_interfaces";
 import { atlasContains, generate } from "../sim/mapgen";
-import { previewStep } from "../sim/drug-graph";
+import { baseView, initialState, previewStep } from "../sim/drug-graph";
 import { hexDistance, hexIndex } from "../sim/hex";
 import { serializeSnapshot } from "../sim/save";
 import {
   applyGameIntent,
   availableCatalog,
+  BASE_NAMES,
+  baseAvailable,
   createGameState,
   DEFAULT_STARTING_CASH,
   shippingContracts,
@@ -56,6 +59,12 @@ import {
 
 const SAVE_SLOTS = 3;
 const LAB_WORLD_SIZE = 49;
+
+/** The one-map level Research shows for `base`: a drug lives on one base. */
+export function researchBaseLevel(level: GeneratedLevel, base: number): GeneratedLevel {
+  const mm = baseView(level.mm, base);
+  return { ...level, mm, start: initialState(mm) };
+}
 
 export function researchPlanningMap(
   mm: MultiMap,
@@ -253,11 +262,11 @@ export function researchTrailsForProgram(
 export function defaultGenOptions(seed: number): GenOptions {
   return {
     seed,
-    nMaps: 1,
+    nMaps: 3,
     width: LAB_WORLD_SIZE,
     height: LAB_WORLD_SIZE,
     catalog: DEFAULT_CATALOG,
-    diseaseCount: 4,
+    diseaseCount: 6,
     difficulty: { min: 4, max: 12 },
   };
 }
@@ -356,7 +365,7 @@ function HudGlyph({ kind }: { readonly kind: "market" | "technology" | "blueprin
 }
 
 function objectiveIsHere(target: ObjectiveTarget, building: Building, drawer: string | null): boolean {
-  return target === "market" ? drawer === target : drawer === null && building === target;
+  return target === "market" || target === "technology" ? drawer === target : drawer === null && building === target;
 }
 type Drawer = "market" | "technology" | "blueprints" | "menu" | "help" | null;
 type PendingSaveAction =
@@ -512,6 +521,13 @@ export function Game() {
   const researchMission = level.diseases.find((disease) => disease.id === activeContract.disease)!;
   const researchMissionStart = level.start.pos[researchMission.map]!;
   const researchMissionSector = researchAssaySector(researchMissionStart, researchMission.node);
+  const [researchBase, setResearchBase] = useState(0);
+  const researchLevel = useMemo(() => researchBaseLevel(level, researchBase), [level, researchBase]);
+  const researchFog = useMemo(() => [game.fog[researchBase]!], [game.fog, researchBase]);
+  const baseLocks = useMemo(
+    () => level.mm.maps.map((_map, base) => baseAvailable(game, base) ? null : `${BASE_NAMES[base]} off · turn it on in Technology`),
+    [game.genOptions, game.patents, level.mm],
+  );
   const objective = useMemo(() => currentObjective({
     contracts,
     knownCureDiseases,
@@ -527,16 +543,20 @@ export function Game() {
     producingOther: game.inventory.some((product) => product.outcome.cured.length > 0)
       && !game.inventory.some((product) => product.outcome.cured.includes(activeContract.disease)),
     sector: researchMissionSector,
-  }), [activeContract.disease, contracts, knownCureDiseases, game.economy.sold, game.inventory, game.pilot.layout, game.production.layout.machines.length, level.diseases, researchMissionSector]);
+    base: level.mm.maps.length > 1 ? BASE_NAMES[researchMission.map]! : null,
+    baseLocked: baseLocks[researchMission.map] !== null,
+  }), [activeContract.disease, baseLocks, contracts, knownCureDiseases, game.economy.sold, game.inventory, game.pilot.layout, game.production.layout.machines.length, level.diseases, level.mm.maps.length, researchMission.map, researchMissionSector]);
   const knownResearchMap = useMemo(
     () => researchPlanningMap(level.mm, game.fog),
     [game.fog, level.mm],
   );
   const catalog = useMemo(() => availableCatalog(game.patents), [game.patents]);
   const planLineTrails = useMemo(() => {
-    const program = game.pilot.layout === null ? null : factoryLineProgram(game.pilot.layout);
-    return program === null ? undefined : researchRoute(knownResearchMap, level.start, program).trails;
-  }, [game.pilot.layout, knownResearchMap, level.start]);
+    const line = game.pilot.layout === null ? null : factoryLineProgram(game.pilot.layout);
+    if (line === null || line.base !== researchBase) return undefined;
+    const known = baseView(knownResearchMap, researchBase);
+    return researchRoute(known, initialState(known), line.program).trails;
+  }, [game.pilot.layout, knownResearchMap, researchBase]);
   const [researchPlan, setResearchPlan] = useState<readonly Machine[]>([]);
   const patentEffects = useMemo(
     () => activeEffects(DEFAULT_PATENTS, game.patents),
@@ -552,6 +572,7 @@ export function Game() {
     gameRef.current = next;
     setGame(next);
     setResearchPlan([]);
+    setResearchBase(next.research.lastTrial?.base ?? 0);
     setIntentError("");
   }, []);
   const openNewGameConfirmation = useCallback(() => {
@@ -600,13 +621,13 @@ export function Game() {
 
   const researchProgram = useMemo<Template>(() => ({ steps: researchPlan }), [researchPlan]);
   const planningPreview = useMemo(
-    () => researchPlanningPreview(level.mm, game.fog, level.start, researchProgram),
-    [game.fog, level, researchProgram],
+    () => researchPlanningPreview(researchLevel.mm, researchFog, researchLevel.start, researchProgram),
+    [researchFog, researchLevel, researchProgram],
   );
-  const lastTrial = game.research.lastTrial;
+  const lastTrial = game.research.lastTrial?.base === researchBase ? game.research.lastTrial : null;
   const actualRoute = useMemo(
-    () => researchRoute(level.mm, level.start, lastTrial?.program ?? { steps: [] }),
-    [lastTrial, level],
+    () => researchRoute(researchLevel.mm, researchLevel.start, lastTrial?.program ?? { steps: [] }),
+    [lastTrial, researchLevel],
   );
   const appendResearchStep = useCallback((typeId: string) => {
     const entry = catalog.find((candidate) => candidate.typeId === typeId);
@@ -621,24 +642,26 @@ export function Game() {
   /** The estimate the last Run was planned on; shown until the route is edited. */
   const [runEstimate, setRunEstimate] = useState<{
     readonly plan: readonly Machine[];
+    readonly base: number;
     readonly trails: readonly (readonly (Vec2 | null)[])[];
     readonly deviation: ResearchDeviation | null;
   } | null>(null);
-  const shownEstimate = runEstimate !== null && runEstimate.plan === researchPlan ? runEstimate : null;
+  const shownEstimate = runEstimate !== null && runEstimate.plan === researchPlan && runEstimate.base === researchBase ? runEstimate : null;
   const runResearch = useCallback(() => {
     const blockReason = researchRunBlockReason(gameRef.current.economy.cash, researchProgram);
     if (blockReason !== null) {
       setIntentError(`Action rejected: ${blockReason}`);
       return;
     }
-    const known = researchPlanningMap(level.mm, gameRef.current.fog);
+    const known = researchPlanningMap(researchLevel.mm, [gameRef.current.fog[researchBase]!]);
     const estimate = {
       plan: researchPlan,
-      trails: researchRoute(known, level.start, researchProgram).trails,
-      deviation: researchDeviation(level.mm, known, level.start, researchProgram),
+      base: researchBase,
+      trails: researchRoute(known, researchLevel.start, researchProgram).trails,
+      deviation: researchDeviation(researchLevel.mm, known, researchLevel.start, researchProgram),
     };
-    if (dispatch({ kind: "runResearchTrial", program: researchProgram })) setRunEstimate(estimate);
-  }, [dispatch, level, researchPlan, researchProgram]);
+    if (dispatch({ kind: "runResearchTrial", program: researchProgram, base: researchBase })) setRunEstimate(estimate);
+  }, [dispatch, researchBase, researchLevel, researchPlan, researchProgram]);
   const buildPilotInProduction = useCallback((layout: FactoryLayout) => {
     if (gameRef.current.pilot.layout !== layout && !dispatch({ kind: "setPilotLayout", layout })) return;
     if (dispatch({ kind: "buildProductionLayout", layout })) openBuilding("production");
@@ -854,7 +877,7 @@ export function Game() {
   ]);
 
   const followObjective = (target: ObjectiveTarget) => {
-    if (target === "market") setDrawer(target);
+    if (target === "market" || target === "technology") setDrawer(target);
     else openBuilding(target);
   };
   const toggleDrawer = (next: Exclude<Drawer, null>) => setDrawer((current) => current === next ? null : next);
@@ -920,8 +943,11 @@ export function Game() {
           {visited.research && (
             <ResearchWorkspace
               active={building === "research" && worldInputActive}
-              level={level}
-              fog={game.fog}
+              level={researchLevel}
+              fog={researchFog}
+              base={researchBase}
+              baseLocks={baseLocks}
+              onBase={setResearchBase}
               plan={researchProgram}
               planCost={researchProgramCost(researchProgram)}
               cash={game.economy.cash}
@@ -950,6 +976,7 @@ export function Game() {
               mode="pilot"
               level={level}
               planningMap={knownResearchMap}
+              baseLocks={baseLocks}
               layout={game.pilot.layout}
               runtime={null}
               waste={0}
@@ -971,6 +998,7 @@ export function Game() {
               mode="production"
               level={level}
               planningMap={knownResearchMap}
+              baseLocks={baseLocks}
               layout={game.production.layout}
               runtime={game.production.runtime}
               waste={game.production.waste}

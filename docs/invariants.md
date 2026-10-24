@@ -13,7 +13,8 @@
 
 ## Terrain、portal 與 fog
 
-- Active Research 只有單層 pointy-top axial `{q,r}` 座標；跨層位置或交換層操作不得出現在 Research program、palette、mapgen、Blueprint 或 Save v14 authority。
+- 每個 base 一張 pointy-top axial `{q,r}` Atlas（map index＝base）；一劑藥（Research 試驗、factory unit、產品）恰在一個 base 上，traversal、Abyss、Swamp 與 evaluate 只讀該 base 的圖。跨圖位置或換 base 操作不得出現在 Research program、palette、mapgen、Blueprint 或 Save v15 authority。
+- 鎖住的 base（`oil-base`／`ethanol-base` 未開）不得用於新的 Research 試驗或 Source；Plan／Production 有 Source 使用某 base 時，關閉該 base 原子拒絕。
 - Wall／OOB、Abyss、Swamp 與 Portal 各有 pure、deterministic、共享於 preview／execution 的語意。
 - 每個 portal entry 恰有一個同層 destination；每個 destination 最多一個 entry。B 不可反向作 A；trail 在 jump 處斷開。
 - 霧下 renderer 只畫等高線（加上開局揭露的起點 disk）：未揭露格一律是普通 substrate，Wall 也不填色、不畫邊。等高線只讀 `EffectMap.elevation`（sign-free 壓縮起伏＋由 |elevation| 決定的 seeded decoys，單一墨色），不得讀 fog、cell 或效果欄位，因此山與水在霧下長得一樣。揭露後才印地表：山＝淡褐填色、Swamp＝水紋、Abyss＝黑。
@@ -21,7 +22,7 @@
 - Abyss、Swamp、Portal entry／exit、Cure與SideEffect只有揭露後才能出現在 renderer、planning map、region 邊界、hover、ghost 或 outcome UI；未揭露時等價於普通 substrate。Portal pairing、方向與 planning jump 必須兩端都揭露後才可見。
 - planning、加入／移除規劃步驟、載入 Blueprint 或移動 camera 都不改 fog。
 - 只有付費試驗在真實地圖上實際走過的格（含終點）依 sensor radius 揭露；portal 不揭露兩端之間的直線。
-- Production Plan sample outcome 只可讀取同一份 fog-masked planning map；免費、零時鐘的 layout diagnostics 不得查詢隱藏 Atlas authority。Production 的實體產品仍依完整權威地圖結算；factory unit 以 fixed-capacity typed arrays 帶 heading／offset，結果必須等於 `applyTemplate`。
+- Production Plan sample outcome 只可讀取同一份 fog-masked planning map；免費、零時鐘的 layout diagnostics 不得查詢隱藏 Atlas authority。Production 的實體產品仍依完整權威地圖結算；factory unit 以 fixed-capacity typed arrays 帶 base／heading／offset（Source 的 base），結果必須等於在該 base 圖上的 `applyTemplate`。
 - fresh fog在每張active map只揭露start-centered hex distance radius 2，即不受邊界裁切時恰為19 cells；不能沿reference預揭露。
 - Cure與SideEffect是獨立arrays／overlays；同一cell可同時有兩者，evaluate必須同時加入`cured`與`sideEffects`。
 - 每個EffectMap入口必須驗width/height area、exact `Uint8Array`／`Int16Array`／`Int32Array`種類與長度（含 `cureTier: Uint8Array`、`regionId: Uint16Array` 與 `elevation: Int16Array`）、CellKind與fog值域、`-1`或non-negative effect IDs、Cure 格 tier 恰為 1 或 2 而其他格為 0、`regionId` 恰在 Cure 格非 0，以及safe integer且在bounds內的origin/start；不得因overlay而要求Cure與SideEffect互斥。
@@ -32,7 +33,8 @@
 - canonical seed + 完整 options 唯一決定 Atlas、terrain、portal、diseases、cure／side-effect overlays、price、difficulty 與 reference programs。
 - start 是 generator 宣告的中心 authority；開局 camera 聚焦 start，正常 viewport 只涵蓋世界的一部分。
 - mapgen 禁 `Math.random()`／wall-clock 與 transcendental Math（`sin/cos/exp/sqrt/pow/...`）；只用整數雜湊、多項式 fade／kernel、整數平方根與常數表。不依賴 Set／Map iteration side effect。
-- active game只接受單一Atlas與1–8疾病；default options恰為4疾病。
+- active game接受1–3個base（`nMaps`）與1–8疾病；default options恰為3個base、6疾病。疾病 d 在 base `d mod nMaps`。
+- 所有 base 的 cell kind（Wall／Swamp／Empty 地形）、elevation 與隘口相同；效果區、副作用與 Abyss 各 base 獨立。reference、效果區保護、黑格放置與區價只看疾病自己的 base。
 - Atlas 是半徑 R＝⌊(min(w,h)−1)/2⌋ 的六角形（R ≥ 8 時；更小的合法尺寸是無骨架的平板測試圖），六角形外與最外一圈全是 Wall；不產生 Portal。Wall 格 elevation ≥ mountain level、其餘 < mountain；Swamp ≤ water level、其餘可走格 > water level。
 - 所有非 Wall、非 Abyss 格都從起點連通；不得有封閉口袋或單格湖。
 - 內環 2–3 條、每個盆地恰 1 條隘口；每條隘口的窄道約占 40–60% 長度，且在完成的地圖上通過 bounded local BFS（initial catalog、真實 traversal、只走走廊＋兩端 2 格 pocket、≤10 步）。generator 可以為了驗證局部可通過性跑這種 bounded BFS 並據此重挖；solver 與任何解答仍不得進入 generator、runtime 或 UI。
@@ -47,8 +49,8 @@
 
 ## Research facility
 
-- Research 只持有 Atlas fog 與 `lastTrial {program, cost, outcome}`；不持有 source／belt／sink routing、FactoryLayout、shot 或 formula。
-- `runResearchTrial` 接受 1..256 台允許且與 catalog 一致的 machines；`cost = Σ catalog cost` 為 safe integer，cash 不足時整個 GameState 不變。成功時恰扣一次 cost、從關卡起點在真實地圖跑完整 program、揭露實際 trail，並以 own／freeze 的 program 與 `evaluate(start, program)` 取代 `lastTrial`。試驗永不建立 formula。
+- Research 只持有每 base 的 Atlas fog 與 `lastTrial {base, program, cost, outcome}`；不持有 source／belt／sink routing、FactoryLayout、shot 或 formula。
+- `runResearchTrial` 接受 1..256 台允許且與 catalog 一致的 machines；`cost = Σ catalog cost` 為 safe integer，cash 不足時整個 GameState 不變。成功時恰扣一次 cost、從關卡起點在 intent 指定 base 的真實地圖跑完整 program、只在該 base 的 fog 揭露實際 trail，並以 own／freeze 的 program 與 `evaluate(start, program)` 取代 `lastTrial`。試驗永不建立 formula。
 - `lastTrial.cost` 必須等於其 program 的 catalog 總價，`lastTrial.outcome` 必須等於重播結果；解鎖 patent 不改 `lastTrial`。
 - assay sector只能是local或east／south-east／south-west／west／north-west／north-east六個寬廣方向之一，不得顯示target座標、距離、reference program或未揭露region資訊。
 - Research intent 不能寫內部 pilot／Production layout、runtime、inventory 或 waste。
@@ -104,23 +106,23 @@
 
 ## Blueprint v4
 
-- document 固定 version 4、ruleset 固定 5，checksum 是 canonical blueprint payload 的 lowercase SHA-256。
+- document 固定 version 4、ruleset 固定 6（Source tile 帶 `base`），checksum 是 canonical blueprint payload 的 lowercase SHA-256。
 - Research kind 只能是 `research-program`，payload 只能有 ordered `{typeId}`；不得存 path cells、FactoryLayout、fog、seed、outcome 或 economy。
 - `research-program`只保留strict codec／Library import-export相容；UI不得capture或apply，card只可download／delete，不能繞過付費試驗寫 fog 或 outcome。materialize 時 path／turn 一律取自 catalog。
 - Factory kind 只能是 `factory-layout`，payload 是dimensions、使用`{q,r}`的sparse routing與`{id,typeId,anchor,footRot}`；`footRot`只允許0–5。不得存來源場域、fixed content、diagnostics、runtime、inventory、waste或economy。
 - strict decoder 必須拒絕 unknown／missing fields、wrong kind/version/content/checksum、unknown type、duplicate IDs/tiles、collision、越界與 quota violation。
 - Library envelope version 固定為 4，namespace 是 `hexapharma.blueprint-library.v4`；lifecycle 與 save slots 分離，Load／Rewind／換 slot 不改 Library。舊 v3 document／Library 不得 silent reinterpret，reader 拒絕時不得覆寫原 blob／legacy key。
 
-## Save v14 與 checkpoints
+## Save v15 與 checkpoints
 
 - full／compact／slots／rewind 都是開放、可攜、可編輯的 plain JSON 冷快照；合法 Cash／sold／fog 編輯不要求操作或收入證明，不加密、簽章或驗資源 checksum。
 - loader 不 replay；`origin`／`intentTrace`／`replayTicks`／`stateHash` 不是存檔欄位。`replayGame(initial, intents)` 的逐欄位／hash determinism 是獨立除錯契約。
-- 在途 unit／進度／cost、splitter cursors、runtime counters、inventory／nextInventoryId、waste、Research `lastTrial`、economy、patents、fog、rng 必須完整保存；每個 drug 保存 heading 與 offset。返回 layout 與 runtime 綁定同一 owned layout，nested typed/runtime data 不得 alias。
+- 在途 unit／進度／cost、splitter cursors、runtime counters、inventory／nextInventoryId、waste、Research `lastTrial`、economy、patents、fog、rng 必須完整保存；每個 drug 保存 heading 與 offset，且只有一個 base 的 `pos`／`offset`；unit、產品與 `lastTrial` 都保存 `base`。返回 layout 與 runtime 綁定同一 owned layout，nested typed/runtime data 不得 alias。
 - decoder 在 allocation／restore 前驗 dimensions、collection counts、inventory group expansion 和 typed-array 可表示範圍；另驗合法 layout、runtime 質量守恆與容量、catalog（含 turn）、heading 0–5、offset 只在 Swamp 內非零、`lastTrial` 重播一致、inventory 結果等可執行不變式。unknown／missing fields、unsafe integers、無效狀態、oversize 顯式失敗。
 - 版本與 `contentBuild` 不合即拒絕。content identifier 只包含 catalog／shapes／patents 與手動 rules revision；所有 sim／mapgen 邏輯變動都須提升 revision，它不是來源真實性證明。
 - 生產預算只限制單一 batch，不能累計到整局。history 最多 20 snapshots，full/slots 上限 7,000,000 characters、browser checkpoint 上限 1,250,000 characters；compact inventory 展開不得超過 24,500 products。
 - 正常 Load 嚴格驗 envelope；明確 Recover 可從同版本、可解析且字元／history array 數量有界的部分損壞 envelope 取已知欄位的字串候選，獨立驗 snapshot 並保留最新有效同地圖 suffix。讀取不覆寫；storage access 失敗須顯示原始原因並停用 Recovery。
-- checkpoint 外層 version 2、內層 Save v14；key 為 `hexapharma.save.v14.checkpoint.${slot}`。v13 以前一律拒絕。舊 alpha key 不讀取、不 migration、不自動覆寫；沒有 legacy reader 分支。
+- checkpoint 外層 version 2、內層 Save v15；key 為 `hexapharma.save.v15.checkpoint.${slot}`。v14 以前一律拒絕。舊 alpha key 不讀取、不 migration、不自動覆寫；沒有 legacy reader 分支。
 - corrupt blob 不得被 default game 冒充；讀取不寫 storage，Recover 前保留 raw data，寫入失敗原 blob 不變。
 - Load不同saved state與Rewind丟棄最新checkpoint都先取得可取消確認；Cancel不得改GameState、slot history或Library。
 

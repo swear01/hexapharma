@@ -133,7 +133,7 @@ describe("factory blocked units", () => {
 
   it("marks a unit on a belt that leads nowhere as blocked, but not one on a connected belt", () => {
     const tiles: FactoryLayout["tiles"][number][] = emptyTiles(4, 1);
-    tiles[0] = { kind: "source", dir: 0, period: 1 };
+    tiles[0] = { kind: "source", dir: 0, period: 1, base: 0 };
     tiles[1] = { kind: "belt", dir: 0 };
     tiles[2] = { kind: "belt", dir: 0 };
     const layout: FactoryLayout = { width: 4, height: 1, tiles, machines: [] };

@@ -80,7 +80,7 @@ function withProduction(
     BASE_GAME_FACTORY_HEIGHT,
   ).layout,
 ): GameState {
-  let next = applyGameIntent(game, { kind: "runResearchTrial", program: recipe });
+  let next = applyGameIntent(game, { kind: "runResearchTrial", program: recipe, base: 0 });
   next = applyGameIntent(next, { kind: "setPilotLayout", layout });
   return applyGameIntent(next, { kind: "buildProductionLayout", layout });
 }

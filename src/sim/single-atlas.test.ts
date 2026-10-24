@@ -28,6 +28,7 @@ describe("single Research Atlas authority", () => {
     const game = applyGameIntent(createGameState(singleAtlasOptions, 200), {
       kind: "runResearchTrial",
       program: { steps: [machine] },
+      base: 0,
     });
     expect(game.research.lastTrial?.program.steps[0]).toEqual({
       typeId: machine.typeId,
@@ -36,12 +37,13 @@ describe("single Research Atlas authority", () => {
     });
   });
 
-  it("rejects multi-map Game authority while leaving low-level mapgen reusable", () => {
+  it("accepts one map per base drug and rejects more maps than bases", () => {
+    expect(createGameState({ ...singleAtlasOptions, nMaps: 3, diseaseCount: 6 }, 200).fog).toHaveLength(3);
     expect(() => createGameState({
       ...singleAtlasOptions,
-      nMaps: 2,
-      diseaseCount: 2,
-    }, 200)).toThrow(/single Research Atlas/i);
+      nMaps: 4,
+      diseaseCount: 4,
+    }, 200)).toThrow(/1\.\.3 base maps/i);
   });
 
   it("supports several independent diseases on the one active Atlas", () => {

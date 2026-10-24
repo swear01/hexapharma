@@ -1,5 +1,6 @@
 import { worldCells } from "../sim/factory-geom";
 import {
+  BASE_NAMES,
   DEFAULT_CATALOG,
   DEFAULT_SHAPES,
   MAX_FACTORY_MACHINES,
@@ -19,7 +20,7 @@ import { fnv1a32Hex } from "../sim/hash";
 
 export const BLUEPRINT_FORMAT = "hexapharma-blueprint" as const;
 export const BLUEPRINT_VERSION = 4 as const;
-export const BLUEPRINT_RULESET = 5 as const;
+export const BLUEPRINT_RULESET = 6 as const;
 export const MAX_BLUEPRINT_BYTES = 1_048_576;
 export const MAX_BLUEPRINT_NAME_LENGTH = 80;
 
@@ -63,6 +64,7 @@ export type PortableFactoryTile =
       readonly kind: "source";
       readonly dir: Dir;
       readonly period: number;
+      readonly base: number;
     })
   | (PortableTilePosition & { readonly kind: "sink" });
 
@@ -237,13 +239,14 @@ function parseTile(value: unknown, width: number, height: number, index: number)
         outDir: requireDir(record.outDir, `${path}.outDir`),
       };
     case "source":
-      requireExactKeys(record, ["q", "r", "kind", "dir", "period"], path);
+      requireExactKeys(record, ["q", "r", "kind", "dir", "period", "base"], path);
       return {
         q,
         r,
         kind: "source",
         dir: requireDir(record.dir, `${path}.dir`),
         period: requireInteger(record.period, `${path}.period`, 1, 0x7fff_ffff),
+        base: requireInteger(record.base, `${path}.base`, 0, BASE_NAMES.length - 1),
       };
     case "sink":
       requireExactKeys(record, ["q", "r", "kind"], path);
@@ -385,7 +388,7 @@ function materializeLayoutCanonical(blueprint: PortableFactoryBlueprint): Factor
         tiles[index] = { kind: "merger", inDirs: [...tile.inDirs], outDir: tile.outDir };
         break;
       case "source":
-        tiles[index] = { kind: "source", dir: tile.dir, period: tile.period };
+        tiles[index] = { kind: "source", dir: tile.dir, period: tile.period, base: tile.base };
         break;
       case "sink":
         tiles[index] = { kind: "sink" };
@@ -535,7 +538,7 @@ function portableTile(tile: FactoryTile, q: number, r: number): PortableFactoryT
     case "merger":
       return { q, r, kind: "merger", inDirs: [...tile.inDirs], outDir: tile.outDir };
     case "source":
-      return { q, r, kind: "source", dir: tile.dir, period: tile.period };
+      return { q, r, kind: "source", dir: tile.dir, period: tile.period, base: tile.base };
     case "sink":
       return { q, r, kind: "sink" };
   }

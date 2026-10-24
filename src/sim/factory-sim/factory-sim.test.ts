@@ -26,7 +26,7 @@ import {
   SHAPE_2x1,
   SHAPE_L,
 } from "../phase0_interfaces";
-import { applyStep, initialState } from "../drug-graph";
+import { applyStep, baseView, initialState as drugInitialState } from "../drug-graph";
 import {
   __factorySimDebugCounts,
   __resetFactorySimDebugCounts,
@@ -82,6 +82,11 @@ function withTerrain(
   return { ...map, cell, portalTo };
 }
 
+/** A factory drug lives on its Source's base (base 0 in these fixtures). */
+function initialState(mm: MultiMap): DrugState {
+  return drugInitialState(baseView(mm, 0));
+}
+
 /** Two big empty maps so translates never hit a wall. */
 function twoMaps(): MultiMap {
   return {
@@ -131,7 +136,7 @@ function finish(b: LayoutBuilder, machines: PlacedMachine[]): FactoryLayout {
 }
 
 function run(layout: FactoryLayout, mm: MultiMap, start: DrugState, ticks: number): FactoryState[] {
-  const runtime = initFactory(layout, mm, start);
+  const runtime = initFactory(layout, mm);
   const states: FactoryState[] = [snapshotFactory(runtime)];
   for (let i = 0; i < ticks; i++) {
     stepFactory(layout, mm, runtime);
@@ -149,7 +154,7 @@ function products(states: readonly FactoryState[]) {
 describe("factory-sim straight line", () => {
   it("moves a unit across a southwest axial edge", () => {
     const b = blank(4, 4);
-    set(b, 2, 1, { kind: "source", dir: 2 as Dir, period: 1 });
+    set(b, 2, 1, { kind: "source", dir: 2 as Dir, period: 1, base: 0 });
     set(b, 1, 2, { kind: "sink" });
     const layout = finish(b, []);
     const mm = twoMaps();
@@ -159,16 +164,16 @@ describe("factory-sim straight line", () => {
 
   it("sizes hot runtime storage from carrier and machine slots, not empty floor area", () => {
     const b = blank(100, 100);
-    set(b, 0, 0, { kind: "source", dir: E, period: 1 });
+    set(b, 0, 0, { kind: "source", dir: E, period: 1, base: 0 });
     set(b, 1, 0, { kind: "belt", dir: E });
     set(b, 2, 0, { kind: "sink" });
     const mm: MultiMap = { maps: [emptyMap(40, { q: 20, r: 20 })] };
-    expect(initFactory(finish(b, []), mm, initialState(mm)).capacity).toBe(1);
+    expect(initFactory(finish(b, []), mm).capacity).toBe(1);
   });
 
   it("runs a one-layer factory without requiring a phase-exchange layer", () => {
     const b = blank(3, 1);
-    set(b, 0, 0, { kind: "source", dir: E, period: 1 });
+    set(b, 0, 0, { kind: "source", dir: E, period: 1, base: 0 });
     set(b, 1, 0, { kind: "belt", dir: E });
     set(b, 2, 0, { kind: "sink" });
     const mm: MultiMap = { maps: [emptyMap(40, { q: 20, r: 20 })] };
@@ -179,7 +184,7 @@ describe("factory-sim straight line", () => {
   it("source emits, belt carries, sink consumes", () => {
     // source(E)@(0,0) -> belts -> sink@(5,0).
     const b = blank(6, 1);
-    set(b, 0, 0, { kind: "source", dir: E, period: 1 });
+    set(b, 0, 0, { kind: "source", dir: E, period: 1, base: 0 });
     for (let x = 1; x <= 4; x++) set(b, x, 0, { kind: "belt", dir: E });
     set(b, 5, 0, { kind: "sink" });
     const layout = finish(b, []);
@@ -197,13 +202,12 @@ describe("factory-sim straight line", () => {
 
   it("a unit is emitted onto the source's output neighbour", () => {
     const b = blank(3, 1);
-    set(b, 0, 0, { kind: "source", dir: E, period: 100 });
+    set(b, 0, 0, { kind: "source", dir: E, period: 100, base: 0 });
     set(b, 1, 0, { kind: "belt", dir: E });
     set(b, 2, 0, { kind: "sink" });
     const layout = finish(b, []);
     const mm = twoMaps();
-    const start = initialState(mm);
-    const runtime = initFactory(layout, mm, start);
+    const runtime = initFactory(layout, mm);
     stepFactory(layout, mm, runtime);
     const s1 = snapshotFactory(runtime);
     expect(s1.units.length).toBe(1);
@@ -212,21 +216,19 @@ describe("factory-sim straight line", () => {
     expect(s1.nextUnitId).toBe(1);
   });
 
-  it("sources copy the supplied start state instead of regenerating map defaults", () => {
+  it("sources emit a fresh drug at their own base's start, heading east", () => {
     const b = blank(2, 1);
-    set(b, 0, 0, { kind: "source", dir: E, period: 1 });
+    set(b, 0, 0, { kind: "source", dir: E, period: 1, base: 1 });
     set(b, 1, 0, { kind: "sink" });
     const layout = finish(b, []);
     const mm = twoMaps();
-    const start: DrugState = {
-      pos: [{ q: 12, r: 13 }, { q: 14, r: 15 }],
-      offset: [{ q: 0, r: 0 }, { q: 0, r: 0 }],
-      heading: 4,
-      failed: true,
-    };
-    const runtime = initFactory(layout, mm, start);
+    const runtime = initFactory(layout, mm);
     stepFactory(layout, mm, runtime);
-    expect(snapshotFactory(runtime).producedEvents[0]?.drug).toEqual(start);
+    const product = snapshotFactory(runtime).producedEvents[0];
+    expect(product?.base).toBe(1);
+    expect(product?.drug).toEqual({ pos: [{ q: 8, r: 8 }], offset: [{ q: 0, r: 0 }], heading: 0, failed: false });
+    const missingBase = { ...layout, tiles: [{ kind: "source", dir: E, period: 1, base: 2 }, { kind: "sink" }] } as FactoryLayout;
+    expect(() => initFactory(missingBase, mm)).toThrow(/base/i);
   });
 });
 
@@ -239,7 +241,7 @@ describe("path correctness", () => {
     const bdef = machineDef("pushB", EAST_STEP, 3);
     // grid: source@0, A@1, belt@2, B@3, sink@4
     const b = blank(5, 1);
-    set(b, 0, 0, { kind: "source", dir: E, period: 100 });
+    set(b, 0, 0, { kind: "source", dir: E, period: 100, base: 0 });
     set(b, 2, 0, { kind: "belt", dir: E });
     set(b, 4, 0, { kind: "sink" });
     const machines = [
@@ -254,8 +256,8 @@ describe("path correctness", () => {
     expect(last.producedTotal).toBeGreaterThan(0);
 
     let expected = start;
-    expected = applyStep(mm, expected, a);
-    expected = applyStep(mm, expected, bdef);
+    expected = applyStep(baseView(mm, 0), expected, a);
+    expected = applyStep(baseView(mm, 0), expected, bdef);
 
     for (const product of products(states)) {
       expect(product.drug.pos).toEqual(expected.pos);
@@ -274,7 +276,7 @@ describe("path correctness", () => {
     }
     const mm = { maps: [map] };
     const b = blank(5, 1);
-    set(b, 0, 0, { kind: "source", dir: E, period: 100 });
+    set(b, 0, 0, { kind: "source", dir: E, period: 100, base: 0 });
     set(b, 2, 0, { kind: "belt", dir: E });
     set(b, 4, 0, { kind: "sink" });
     const layout = finish(b, [
@@ -282,7 +284,7 @@ describe("path correctness", () => {
       placeMachine(1, turnBack, SHAPE_1x1, { q: 3, r: 0 }),
     ]);
     const start = initialState(mm);
-    const expected = applyStep(mm, applyStep(mm, start, turnRight), turnBack);
+    const expected = applyStep(baseView(mm, 0), applyStep(baseView(mm, 0), start, turnRight), turnBack);
     expect(expected.heading).toBe(5);
     expect(expected.offset).not.toEqual([{ q: 0, r: 0 }]);
     const produced = products(run(layout, mm, start, 40));
@@ -294,7 +296,7 @@ describe("path correctness", () => {
     const a = machineDef("hook", EAST_STEP, 2);
     const bdef = machineDef("return", WEST_STEP, 2);
     const b = blank(5, 1);
-    set(b, 0, 0, { kind: "source", dir: E, period: 100 });
+    set(b, 0, 0, { kind: "source", dir: E, period: 100, base: 0 });
     set(b, 2, 0, { kind: "belt", dir: E });
     set(b, 4, 0, { kind: "sink" });
     const machines = [
@@ -338,7 +340,7 @@ describe("path correctness", () => {
     for (const scenario of scenarios) {
       const def = machineDef(scenario.name, scenario.path, 1);
       const builder = blank(3, 1);
-      set(builder, 0, 0, { kind: "source", dir: E, period: 100 });
+      set(builder, 0, 0, { kind: "source", dir: E, period: 100, base: 0 });
       set(builder, 2, 0, { kind: "sink" });
       const layout = finish(builder, [
         placeMachine(0, def, SHAPE_1x1, { q: 1, r: 0 }),
@@ -364,7 +366,7 @@ describe("mass conservation", () => {
   it("nextUnitId === produced + in-transit at every tick, no id dup", () => {
     const a = machineDef("slow", EAST_STEP, 4);
     const b = blank(6, 1);
-    set(b, 0, 0, { kind: "source", dir: E, period: 2 });
+    set(b, 0, 0, { kind: "source", dir: E, period: 2, base: 0 });
     set(b, 1, 0, { kind: "belt", dir: E });
     set(b, 4, 0, { kind: "belt", dir: E });
     set(b, 5, 0, { kind: "sink" });
@@ -388,7 +390,7 @@ describe("mass conservation", () => {
 /** Single speed-3 machine line: source -> belt -> [A speed3] -> belt -> sink. */
 function singleLineLayout(): { layout: FactoryLayout; mm: MultiMap } {
   const b = blank(6, 1);
-  set(b, 0, 0, { kind: "source", dir: E, period: 1 });
+  set(b, 0, 0, { kind: "source", dir: E, period: 1, base: 0 });
   set(b, 1, 0, { kind: "belt", dir: E });
   set(b, 4, 0, { kind: "belt", dir: E });
   set(b, 5, 0, { kind: "sink" });
@@ -414,7 +416,7 @@ function serpentineLayout(size: number): FactoryLayout {
     if (to.r > from.r) return S;
     return N;
   };
-  tiles[0] = { kind: "source", dir: direction(path[0]!, path[1]!), period: 1 };
+  tiles[0] = { kind: "source", dir: direction(path[0]!, path[1]!), period: 1, base: 0 };
   for (let index = 1; index < path.length - 1; index++) {
     const cell = path[index]!;
     tiles[cell.r * size + cell.q] = {
@@ -439,7 +441,7 @@ function serpentineLayout(size: number): FactoryLayout {
  */
 function parallelLayout(): { layout: FactoryLayout; mm: MultiMap } {
   const b = blank(6, 2);
-  set(b, 0, 0, { kind: "source", dir: E, period: 1 });
+  set(b, 0, 0, { kind: "source", dir: E, period: 1, base: 0 });
   // splitter sends to E (row0 machine A@(2,0)) and S (down to (1,1), then E to B@(2,1))
   set(b, 1, 0, { kind: "splitter", inDir: W, outDirs: [E, S] });
   set(b, 1, 1, { kind: "belt", dir: E }); // splitter S-output routes east into B
@@ -462,7 +464,6 @@ describe("REAL parallelism", () => {
   it("a splitter feeding two speed-3 machines into a merger yields ~2x a single line", () => {
     const { layout: single, mm } = singleLineLayout();
     const { layout: par } = parallelLayout();
-    const start = initialState(mm);
 
     // MEASURED via analyzeThroughput.
     const r1 = analyzeThroughput(single, mm);
@@ -477,8 +478,8 @@ describe("REAL parallelism", () => {
     expect(rate2).toBeCloseTo(2 / 3, 2);
 
     // Observed produced-count from an actual replay confirms the sim, not the model.
-    const obs1 = replayFactory(single, mm, start, 400).producedTotal;
-    const obs2 = replayFactory(par, mm, start, 400).producedTotal;
+    const obs1 = replayFactory(single, mm, 400).producedTotal;
+    const obs2 = replayFactory(par, mm, 400).producedTotal;
     expect(obs2).toBeGreaterThan(obs1 * 1.5);
 
     // bottleneck reported is a real machine in both.
@@ -496,7 +497,7 @@ describe("splitter and merger routing contracts", () => {
       const b = blank(2, 2);
       set(b, 0, 0, carrier);
       set(b, 1, 0, { kind: "sink" });
-      set(b, 0, 1, { kind: "source", dir: N, period: 1 });
+      set(b, 0, 1, { kind: "source", dir: N, period: 1, base: 0 });
       const states = run(finish(b, []), twoMaps(), initialState(twoMaps()), 4);
       expect(states.at(-1)?.producedTotal).toBe(0);
       expect(states.at(-1)?.nextUnitId).toBe(0);
@@ -512,11 +513,11 @@ describe("splitter and merger routing contracts", () => {
     const layout = finish(b, []);
     const mm = twoMaps();
     const start = initialState(mm);
-    const runtime = restoreFactory(layout, mm, start, {
+    const runtime = restoreFactory(layout, mm, {
       tick: 0,
       units: [
-        { id: 0, pos: { q: 0, r: 1 }, drug: start, proc: 0, machineId: null, productionCost: 10 },
-        { id: 1, pos: { q: 1, r: 2 }, drug: start, proc: 0, machineId: null, productionCost: 20 },
+        { id: 0, pos: { q: 0, r: 1 }, drug: start, proc: 0, machineId: null, productionCost: 10, base: 0 },
+        { id: 1, pos: { q: 1, r: 2 }, drug: start, proc: 0, machineId: null, productionCost: 20, base: 0 },
       ],
       nextUnitId: 2,
       producedTotal: 0,
@@ -541,14 +542,14 @@ describe("splitter and merger routing contracts", () => {
       set(b, 0, 1, { kind: "belt", dir: E });
       set(b, 1, 1, { kind: "merger", inDirs, outDir: E });
       set(b, 2, 1, { kind: "sink" });
-      set(b, 1, 2, { kind: "source", dir: N, period: 1 });
+      set(b, 1, 2, { kind: "source", dir: N, period: 1, base: 0 });
       const layout = finish(b, []);
       const mm = twoMaps();
       const start = initialState(mm);
-      const runtime = restoreFactory(layout, mm, start, {
+      const runtime = restoreFactory(layout, mm, {
         tick: 0,
         units: [
-          { id: 0, pos: { q: 0, r: 1 }, drug: start, proc: 0, machineId: null, productionCost: 10 },
+          { id: 0, pos: { q: 0, r: 1 }, drug: start, proc: 0, machineId: null, productionCost: 10, base: 0 },
         ],
         nextUnitId: 1,
         producedTotal: 0,
@@ -573,11 +574,11 @@ describe("splitter and merger routing contracts", () => {
 
   it("round-robins per splitter independent of unrelated global unit ids", () => {
     const b = blank(4, 2);
-    set(b, 0, 0, { kind: "source", dir: E, period: 1 });
+    set(b, 0, 0, { kind: "source", dir: E, period: 1, base: 0 });
     set(b, 1, 0, { kind: "splitter", inDir: W, outDirs: [E, S] });
     set(b, 3, 0, { kind: "sink" });
     set(b, 1, 1, { kind: "sink" });
-    set(b, 2, 1, { kind: "source", dir: E, period: 1 });
+    set(b, 2, 1, { kind: "source", dir: E, period: 1, base: 0 });
     set(b, 3, 1, { kind: "sink" });
     const machine = placeMachine(0, machineDef("costly", EAST_STEP, 1), SHAPE_1x1, { q: 2, r: 0 });
     const layout = finish(b, [machine]);
@@ -591,18 +592,17 @@ describe("splitter and merger routing contracts", () => {
 
   it("preserves splitter round-robin cursors across cold snapshot restore", () => {
     const b = blank(3, 2);
-    set(b, 0, 0, { kind: "source", dir: E, period: 1 });
+    set(b, 0, 0, { kind: "source", dir: E, period: 1, base: 0 });
     set(b, 1, 0, { kind: "splitter", inDir: W, outDirs: [E, S] });
     set(b, 2, 0, { kind: "sink" });
     set(b, 1, 1, { kind: "sink" });
     const layout = finish(b, []);
     const mm = twoMaps();
-    const start = initialState(mm);
-    const original = initFactory(layout, mm, start);
+    const original = initFactory(layout, mm);
     for (let tick = 0; tick < 4; tick++) stepFactory(layout, mm, original);
     const snapshot = snapshotFactory(original);
     expect(snapshot.splitterCursors).toHaveLength(1);
-    const restored = restoreFactory(layout, mm, start, snapshot);
+    const restored = restoreFactory(layout, mm, snapshot);
     for (let tick = 0; tick < 8; tick++) {
       stepFactory(layout, mm, original);
       stepFactory(layout, mm, restored);
@@ -617,7 +617,7 @@ describe("multi-cell + footRot routing", () => {
   it("a 2x1 machine routes a unit in->out", () => {
     // source(0,0) -> [2x1 machine @ (1,0),(2,0)] -> sink(3,0)
     const b = blank(4, 1);
-    set(b, 0, 0, { kind: "source", dir: E, period: 100 });
+    set(b, 0, 0, { kind: "source", dir: E, period: 100, base: 0 });
     set(b, 3, 0, { kind: "sink" });
     const machines = [placeMachine(0, machineDef("p", EAST_STEP, 1), SHAPE_2x1, { q: 1, r: 0 })];
     const layout = finish(b, machines);
@@ -631,7 +631,7 @@ describe("multi-cell + footRot routing", () => {
     // SHAPE_L cells (0,0),(1,0),(1,1); in W of (0,0); out S of (1,1).
     // place anchor at (1,1): cells (1,1),(2,1),(2,2); in W -> from (0,1); out S -> (2,3).
     const b = blank(4, 4);
-    set(b, 0, 1, { kind: "source", dir: E, period: 100 });
+    set(b, 0, 1, { kind: "source", dir: E, period: 100, base: 0 });
     set(b, 2, 3, { kind: "sink" });
     const machines = [placeMachine(0, machineDef("p", EAST_STEP, 1), SHAPE_L, { q: 1, r: 1 })];
     const layout = finish(b, machines);
@@ -648,7 +648,7 @@ describe("multi-cell + footRot routing", () => {
     // anchor (1,1): cells (1,1),(1,2). in at (1,1) from N => source above at (1,0) facing S.
     // out at (1,2) facing S => neighbor (1,3) sink.
     const b = blank(3, 4);
-    set(b, 1, 0, { kind: "source", dir: S, period: 100 });
+    set(b, 1, 0, { kind: "source", dir: S, period: 100, base: 0 });
     set(b, 1, 3, { kind: "sink" });
     const machines = [placeMachine(0, machineDef("p", EAST_STEP, 1), SHAPE_2x1, { q: 1, r: 1 }, 1)];
     const layout = finish(b, machines);
@@ -659,8 +659,7 @@ describe("multi-cell + footRot routing", () => {
     expect(last.producedTotal).toBeGreaterThan(0);
     // Physical foot rotation does not rotate the fixed chemical path.
     for (const product of products(states)) {
-      expect(product.drug.pos[0]).toEqual({ q: 6, r: 5 });
-      expect(product.drug.pos[1]).toEqual({ q: 9, r: 8 });
+      expect(product.drug.pos).toEqual([{ q: 6, r: 5 }]);
     }
   });
 });
@@ -670,11 +669,10 @@ describe("multi-cell + footRot routing", () => {
 describe("deadlock detection", () => {
   it("recomputes an edited deadlock flag without freezing in-flight production", () => {
     const { layout, mm } = singleLineLayout();
-    const start = initialState(mm);
-    const runtime = initFactory(layout, mm, start);
+    const runtime = initFactory(layout, mm);
     stepFactory(layout, mm, runtime);
     expect(runtime.unitCount).toBeGreaterThan(0);
-    const edited = restoreFactory(layout, mm, start, { ...snapshotFactory(runtime), deadlocked: true });
+    const edited = restoreFactory(layout, mm, { ...snapshotFactory(runtime), deadlocked: true });
     stepFactory(layout, mm, runtime);
     stepFactory(layout, mm, edited);
     expect(snapshotFactory(edited)).toEqual(snapshotFactory(runtime));
@@ -682,18 +680,17 @@ describe("deadlock detection", () => {
 
   it("resumes scheduled sources after an intervening stalled tick and snapshot restore", () => {
     const b = blank(3, 2);
-    set(b, 0, 0, { kind: "source", dir: E, period: 1 });
-    set(b, 0, 1, { kind: "source", dir: E, period: 5 });
+    set(b, 0, 0, { kind: "source", dir: E, period: 1, base: 0 });
+    set(b, 0, 1, { kind: "source", dir: E, period: 5, base: 0 });
     set(b, 1, 1, { kind: "sink" });
     const layout = finish(b, []);
     const mm = twoMaps();
-    const start = initialState(mm);
-    const runtime = initFactory(layout, mm, start);
+    const runtime = initFactory(layout, mm);
     stepFactory(layout, mm, runtime);
     expect(runtime.producedTotal).toBe(1);
     stepFactory(layout, mm, runtime);
     expect(runtime.deadlocked).toBe(true);
-    const restored = restoreFactory(layout, mm, start, snapshotFactory(runtime));
+    const restored = restoreFactory(layout, mm, snapshotFactory(runtime));
     expect(snapshotFactory(restored)).toEqual(snapshotFactory(runtime));
     for (let tick = 2; tick <= 5; tick++) {
       stepFactory(layout, mm, runtime);
@@ -707,13 +704,12 @@ describe("deadlock detection", () => {
   it("two belts pointing into each other jam and flag deadlock", () => {
     // source@(0,0)E feeds belt(1,0)E; belt(2,0)W feeds back; (1,0) and (2,0) target each other.
     const b = blank(4, 1);
-    set(b, 0, 0, { kind: "source", dir: E, period: 1 });
+    set(b, 0, 0, { kind: "source", dir: E, period: 1, base: 0 });
     set(b, 1, 0, { kind: "belt", dir: E });
     set(b, 2, 0, { kind: "belt", dir: W });
     const layout = finish(b, []);
     const mm = twoMaps();
-    const start = initialState(mm);
-    const s = initFactory(layout, mm, start);
+    const s = initFactory(layout, mm);
     let deadlockedAt = -1;
     for (let i = 0; i < 200; i++) {
       stepFactory(layout, mm, s);
@@ -723,7 +719,7 @@ describe("deadlock detection", () => {
       }
     }
     expect(deadlockedAt).toBeGreaterThanOrEqual(0);
-    const restored = restoreFactory(layout, mm, start, snapshotFactory(s));
+    const restored = restoreFactory(layout, mm, snapshotFactory(s));
     expect(snapshotFactory(restored)).toEqual(snapshotFactory(s));
     stepFactory(layout, mm, s);
     stepFactory(layout, mm, restored);
@@ -733,12 +729,11 @@ describe("deadlock detection", () => {
 
   it("blocked source with no sink eventually deadlocks", () => {
     const b = blank(2, 1);
-    set(b, 0, 0, { kind: "source", dir: E, period: 1 });
+    set(b, 0, 0, { kind: "source", dir: E, period: 1, base: 0 });
     set(b, 1, 0, { kind: "belt", dir: E }); // E neighbor out of bounds
     const layout = finish(b, []);
     const mm = twoMaps();
-    const start = initialState(mm);
-    const s = initFactory(layout, mm, start);
+    const s = initFactory(layout, mm);
     let deadlocked = false;
     for (let i = 0; i < 50; i++) {
       stepFactory(layout, mm, s);
@@ -756,11 +751,10 @@ describe("deadlock detection", () => {
 describe("deterministic mutable runtime (INV-15)", () => {
   it("cold snapshot restores to an identical runtime state", () => {
     const { layout, mm } = parallelLayout();
-    const start = initialState(mm);
-    const runtime = initFactory(layout, mm, start);
+    const runtime = initFactory(layout, mm);
     for (let i = 0; i < 15; i++) stepFactory(layout, mm, runtime);
     const snapshot = snapshotFactory(runtime);
-    const restored = restoreFactory(layout, mm, start, snapshot);
+    const restored = restoreFactory(layout, mm, snapshot);
     expect(restored).toEqual(runtime);
     expect(snapshotFactory(restored)).toEqual(snapshot);
     stepFactory(layout, mm, runtime);
@@ -770,7 +764,7 @@ describe("deterministic mutable runtime (INV-15)", () => {
 
   it("binds initialized and restored runtimes to their exact map authority", () => {
     const { layout, mm } = singleLineLayout();
-    const runtime = initFactory(layout, mm, initialState(mm));
+    const runtime = initFactory(layout, mm);
     expect(() => stepFactory(layout, mm, runtime)).not.toThrow();
     expect(() => stepFactory(layout, twoMaps(), runtime)).toThrow(/map.*(?:authority|mismatch)/i);
 
@@ -779,7 +773,6 @@ describe("deterministic mutable runtime (INV-15)", () => {
     const restored = restoreFactory(
       layout,
       regenerated,
-      initialState(regenerated),
       snapshotFactory(runtime),
     );
     expect(() => stepFactory(layout, regenerated, restored)).not.toThrow();
@@ -791,7 +784,7 @@ describe("deterministic mutable runtime (INV-15)", () => {
       fc.property(fc.integer({ min: 1, max: 6 }), fc.integer({ min: 1, max: 8 }), (period, speed) => {
         const a = machineDef("m", EAST_STEP, speed);
         const b = blank(6, 1);
-        set(b, 0, 0, { kind: "source", dir: E, period });
+        set(b, 0, 0, { kind: "source", dir: E, period, base: 0 });
         set(b, 1, 0, { kind: "belt", dir: E });
         set(b, 4, 0, { kind: "belt", dir: E });
         set(b, 5, 0, { kind: "sink" });
@@ -815,13 +808,13 @@ describe("deterministic mutable runtime (INV-15)", () => {
 describe("factory hot-loop caches", () => {
   it("reuses a fixed event buffer without losing multi-tick production", () => {
     const b = blank(2, 1);
-    set(b, 0, 0, { kind: "source", dir: E, period: 1 });
+    set(b, 0, 0, { kind: "source", dir: E, period: 1, base: 0 });
     set(b, 1, 0, { kind: "sink" });
     const layout = finish(b, []);
     const mm = twoMaps();
-    const runtime = initFactory(layout, mm, initialState(mm));
+    const runtime = initFactory(layout, mm);
     const eventIds = runtime.producedEvents.ids;
-    const copied = new Int32Array(4 + runtime.mapCount * 4);
+    const copied = new Int32Array(9);
     let consumed = 0;
     for (let tick = 0; tick < 200; tick++) {
       stepFactory(layout, mm, runtime);
@@ -837,7 +830,7 @@ describe("factory hot-loop caches", () => {
     expect(consumed).toBe(200);
     expect(runtime.producedTotal).toBe(200);
     expect(runtime.nextUnitId).toBe(runtime.unitCount + runtime.producedTotal);
-    const restored = restoreFactory(layout, mm, initialState(mm), snapshotFactory(runtime));
+    const restored = restoreFactory(layout, mm, snapshotFactory(runtime));
     expect(restored.producedEvents.count).toBe(0);
     stepFactory(layout, mm, restored);
     expect(restored.producedEvents.ids[0]).toBe(200);
@@ -887,9 +880,8 @@ describe("factory hot-loop caches", () => {
 
   it("reports zero hot-path allocations after warm-up", () => {
     const { layout, mm } = parallelLayout();
-    const start = initialState(mm);
     __resetFactorySimDebugCounts();
-    const state = initFactory(layout, mm, start);
+    const state = initFactory(layout, mm);
 
     for (let tick = 0; tick < 80; tick++) stepFactory(layout, mm, state);
 
@@ -898,9 +890,8 @@ describe("factory hot-loop caches", () => {
 
   it("compiles immutable layout geometry and allocates fixed scratch only once", () => {
     const { layout, mm } = parallelLayout();
-    const start = initialState(mm);
     __resetFactorySimDebugCounts();
-    const state = initFactory(layout, mm, start);
+    const state = initFactory(layout, mm);
 
     for (let tick = 0; tick < 80; tick++) stepFactory(layout, mm, state);
 
@@ -917,7 +908,6 @@ describe("factory hot-loop caches", () => {
 // ───────────────────────────── debug invariant assertions ─────────────────────────────
 
 describe("cold factory layout authority", () => {
-  const start = initialState(twoMaps());
 
   it("rejects unknown tiles and empty splitter/merger fan lists", () => {
     const invalidTiles = [
@@ -927,7 +917,7 @@ describe("cold factory layout authority", () => {
     ] as unknown as FactoryTile[];
     for (const tile of invalidTiles) {
       const layout: FactoryLayout = { width: 1, height: 1, tiles: [tile], machines: [] };
-      expect(() => initFactory(layout, twoMaps(), start)).toThrow(/tile|splitter|merger/i);
+      expect(() => initFactory(layout, twoMaps())).toThrow(/tile|splitter|merger/i);
     }
   });
 
@@ -936,27 +926,27 @@ describe("cold factory layout authority", () => {
       width: 2,
       height: 1,
       tiles: [
-        { kind: "source", dir: E, period: 0x80000000 },
+        { kind: "source", dir: E, period: 0x80000000, base: 0 },
         { kind: "sink" },
       ],
       machines: [],
     };
-    expect(() => initFactory(layout, twoMaps(), start)).toThrow(/source/i);
+    expect(() => initFactory(layout, twoMaps())).toThrow(/source/i);
   });
 
   it("freezes an accepted immutable layout so its compiled cache cannot go stale", () => {
-    const source = { kind: "source" as const, dir: E, period: 1 };
+    const source = { kind: "source" as const, dir: E, period: 1, base: 0 };
     const layout: FactoryLayout = {
       width: 2,
       height: 1,
       tiles: [source, { kind: "sink" }],
       machines: [],
     };
-    initFactory(layout, twoMaps(), start);
+    initFactory(layout, twoMaps());
     expect(() => {
       source.period = 2;
     }).toThrow();
-    expect(layout.tiles[0]).toEqual({ kind: "source", dir: E, period: 1 });
+    expect(layout.tiles[0]).toEqual({ kind: "source", dir: E, period: 1, base: 0 });
   });
 
   it("rejects empty, out-of-range, and non-safe-integer machine paths", () => {
@@ -967,19 +957,18 @@ describe("cold factory layout authority", () => {
     ];
     for (const path of invalid) {
       const b = blank(3, 1);
-      set(b, 0, 0, { kind: "source", dir: E, period: 1 });
+      set(b, 0, 0, { kind: "source", dir: E, period: 1, base: 0 });
       set(b, 2, 0, { kind: "sink" });
       const def = machineDef("invalid-path", path, 1);
       const layout = finish(b, [placeMachine(0, def, SHAPE_1x1, { q: 1, r: 0 })]);
-      expect(() => initFactory(layout, twoMaps(), start)).toThrow(/path|direction|safe integer/i);
+      expect(() => initFactory(layout, twoMaps())).toThrow(/path|direction|safe integer/i);
     }
   });
 
   it("validates portal authority once during initialization", () => {
     const map = emptyMap(5, { q: 2, r: 2 });
     map.cell[3 * map.width + 2] = CellKind.Portal;
-    const start: DrugState = { pos: [map.start], offset: [{ q: 0, r: 0 }], heading: 0, failed: false };
-    expect(() => initFactory(finish(blank(1, 1), []), { maps: [map] }, start)).toThrow(
+    expect(() => initFactory(finish(blank(1, 1), []), { maps: [map] })).toThrow(
       /portal destination/i,
     );
   });
@@ -991,7 +980,7 @@ describe("cold factory layout authority", () => {
       tiles: new Array(MAX_FACTORY_CELLS * 2),
       machines: [],
     } as unknown as FactoryLayout;
-    expect(() => initFactory(layout, twoMaps(), start)).toThrow(/tile count|bound|dimension/i);
+    expect(() => initFactory(layout, twoMaps())).toThrow(/tile count|bound|dimension/i);
   });
 
   it("rejects excessive aggregate machine ports before allocating port indices", () => {
@@ -1009,7 +998,7 @@ describe("cold factory layout authority", () => {
       machines: Array.from({ length: machineCount }, (_, id) =>
         placeMachine(id, machineDef("many-ports", EAST_STEP, 1), shape, { q: id, r: 0 })),
     };
-    expect(() => initFactory(layout, twoMaps(), start)).toThrow(/port count|geometry.*bound/i);
+    expect(() => initFactory(layout, twoMaps())).toThrow(/port count|geometry.*bound/i);
   });
 });
 
@@ -1022,6 +1011,7 @@ describe("cold restore factory invariants", () => {
       proc: 0,
       machineId: null,
       productionCost: 0,
+      base: 0,
     };
   }
 
@@ -1037,7 +1027,7 @@ describe("cold restore factory invariants", () => {
       producedEvents: [],
       deadlocked: false,
     };
-    expect(() => restoreFactory(layout, mm, start, bad)).toThrow(/duplicate or unsorted unit id 0/);
+    expect(() => restoreFactory(layout, mm, bad)).toThrow(/duplicate or unsorted unit id 0/);
   });
 
   it("rejects broken mass conservation", () => {
@@ -1052,7 +1042,7 @@ describe("cold restore factory invariants", () => {
       producedEvents: [],
       deadlocked: false,
     };
-    expect(() => restoreFactory(layout, mm, start, bad)).toThrow(/mass conservation/);
+    expect(() => restoreFactory(layout, mm, bad)).toThrow(/mass conservation/);
   });
 
   it("rejects negative processing progress and production cost", () => {
@@ -1076,8 +1066,8 @@ describe("cold restore factory invariants", () => {
       producedEvents: [],
       deadlocked: false,
     };
-    expect(() => restoreFactory(layout, mm, start, negativeProc)).toThrow(/invalid unit/);
-    expect(() => restoreFactory(layout, mm, start, negativeCost)).toThrow(/invalid unit/);
+    expect(() => restoreFactory(layout, mm, negativeProc)).toThrow(/invalid unit/);
+    expect(() => restoreFactory(layout, mm, negativeCost)).toThrow(/invalid unit/);
   });
 
   it("rejects fractional snapshot fields before TypedArray coercion", () => {
@@ -1092,7 +1082,7 @@ describe("cold restore factory invariants", () => {
       producedEvents: [],
       deadlocked: false,
     } as FactoryState;
-    expect(() => restoreFactory(layout, mm, start, bad)).toThrow(/invalid unit drug state/);
+    expect(() => restoreFactory(layout, mm, bad)).toThrow(/invalid unit drug state/);
   });
 
   it("rejects two units held by one capacity-one machine", () => {
@@ -1110,7 +1100,7 @@ describe("cold restore factory invariants", () => {
       producedEvents: [],
       deadlocked: false,
     };
-    expect(() => restoreFactory(layout, mm, start, bad)).toThrow(/machine 0 capacity exceeded/);
+    expect(() => restoreFactory(layout, mm, bad)).toThrow(/machine 0 capacity exceeded/);
   });
 
   it("rejects a machine-held unit whose position is not one of that machine's input ports", () => {
@@ -1125,7 +1115,7 @@ describe("cold restore factory invariants", () => {
       producedEvents: [],
       deadlocked: false,
     };
-    expect(() => restoreFactory(layout, mm, start, bad)).toThrow(/input port|held position/i);
+    expect(() => restoreFactory(layout, mm, bad)).toThrow(/input port|held position/i);
   });
 });
 
@@ -1134,7 +1124,7 @@ describe("cold restore factory invariants", () => {
 describe("throughput edge cases", () => {
   it("reports a true deadlock as zero throughput without a fake machine bottleneck", () => {
     const b = blank(3, 1);
-    set(b, 0, 0, { kind: "source", dir: E, period: 1 });
+    set(b, 0, 0, { kind: "source", dir: E, period: 1, base: 0 });
     const machines = [
       placeMachine(7, machineDef("hook", EAST_STEP, 1), SHAPE_1x1, { q: 1, r: 0 }),
     ];
@@ -1162,7 +1152,7 @@ describe("throughput edge cases", () => {
 
   it("measures all 200 ticks in the steady-state tail", () => {
     const b = blank(2, 1);
-    set(b, 0, 0, { kind: "source", dir: E, period: 1 });
+    set(b, 0, 0, { kind: "source", dir: E, period: 1, base: 0 });
     set(b, 1, 0, { kind: "sink" });
     const report = analyzeThroughput(finish(b, []), twoMaps());
     expect(report).toMatchObject({ rateNum: 1, rateDen: 1 });
@@ -1170,7 +1160,7 @@ describe("throughput edge cases", () => {
 
   it("sizes the steady-state window for a source with period 1000", () => {
     const b = blank(2, 1);
-    set(b, 0, 0, { kind: "source", dir: E, period: 1_000 });
+    set(b, 0, 0, { kind: "source", dir: E, period: 1_000, base: 0 });
     set(b, 1, 0, { kind: "sink" });
     const report = analyzeThroughput(finish(b, []), twoMaps());
     expect(report).toMatchObject({ rateNum: 1, rateDen: 1_000, bottleneck: null });
@@ -1178,7 +1168,7 @@ describe("throughput edge cases", () => {
 
   it("rejects an analysis whose steady-state window exceeds the replay budget", () => {
     const b = blank(3, 1);
-    set(b, 0, 0, { kind: "source", dir: E, period: 1 });
+    set(b, 0, 0, { kind: "source", dir: E, period: 1, base: 0 });
     set(b, 2, 0, { kind: "sink" });
     const machines = [
       placeMachine(
@@ -1194,7 +1184,7 @@ describe("throughput edge cases", () => {
   it("source-limited line => bottleneck null", () => {
     // slow source (period 7), fast machine speed1 => bottleneck null (source limits).
     const b = blank(4, 1);
-    set(b, 0, 0, { kind: "source", dir: E, period: 7 });
+    set(b, 0, 0, { kind: "source", dir: E, period: 7, base: 0 });
     set(b, 3, 0, { kind: "sink" });
     const machines = [placeMachine(0, machineDef("m", EAST_STEP, 1), SHAPE_2x1, { q: 1, r: 0 })];
     const layout = finish(b, machines);
