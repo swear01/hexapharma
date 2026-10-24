@@ -65,6 +65,8 @@ Step 7 先做簡化版（使用者 2026-10-24 決定）：找不到合用的樹�
 - Objective 依新循環改寫。
 - 每項資訊都要能影響決策，否則移除。最後用 impeccable 重新審一輪。
 
+§8 已在 `feat/v2-ui-cleanup` 實作（參考 shapez.io 的 HUD）；取捨見 D44。
+
 ### 9. 收尾
 - 更新 design、overview、invariants、decisions、player-guide、ui-interaction、roadmap。
 - 跑完整 gate，部署到 `https://hexapharma.5334601.xyz/`，進行真人 fresh-loop 試玩並記錄。

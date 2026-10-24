@@ -52,6 +52,7 @@ button, select, input, textarea {
   font: inherit;
   caret-color: var(--course);
 }
+button { font: 600 15px/1 var(--font-display); letter-spacing: .05em; text-transform: uppercase; }
 button { cursor: pointer; -webkit-tap-highlight-color: transparent; transition: background-color .12s ease-out, border-color .12s ease-out, color .12s ease-out; }
 button:hover:not(:disabled) { border-color: var(--ink-2); }
 button:disabled { color: var(--ink-3); background: transparent; border-color: var(--rule); cursor: not-allowed; }
@@ -71,11 +72,12 @@ kbd, .hotkey { color: var(--ink-3); font: 600 11px/1 var(--font-display); letter
 [hidden] { display: none !important; }
 
 .game-shell {
-  position: relative; display: grid; grid-template-rows: 56px 44px minmax(0, 1fr);
+  position: relative; display: grid; grid-template-rows: 56px minmax(0, 1fr);
   width: 100dvw; height: 100dvh; overflow: hidden; isolation: isolate;
 }
+/* One bar: facilities on the left; resources, drawers and Menu on the right. */
 .top-hud {
-  z-index: 30; display: flex; align-items: stretch; gap: 24px; padding: 0 20px;
+  z-index: 30; display: flex; align-items: stretch; gap: 24px; padding: 0 12px 0 20px;
   border-bottom: 2px solid var(--ink); background: var(--paper);
 }
 .wordmark { align-self: center; font: 600 24px/1 var(--font-display); letter-spacing: .02em; text-transform: uppercase; color: var(--ink); white-space: nowrap; }
@@ -86,30 +88,35 @@ kbd, .hotkey { color: var(--ink-3); font: 600 11px/1 var(--font-display); letter
   font: 600 18px/1 var(--font-display); letter-spacing: .03em; text-transform: uppercase; color: var(--ink-2);
 }
 .nav-button:hover:not(:disabled) { color: var(--ink); border-color: var(--rule-strong); }
-.nav-button.is-active { color: var(--course-ink); background: transparent; border-color: var(--course); }
+.nav-button.is-active, .nav-button.is-active:hover:not(:disabled) { color: var(--course-ink); background: transparent; border-color: var(--course); }
 .resource-strip { display: flex; flex: 1; justify-content: flex-end; align-items: center; gap: 22px; min-width: 0; }
 .resource-chip { display: inline-flex; align-items: baseline; gap: 6px; white-space: nowrap; font-size: 12px; }
 .resource-label { color: var(--ink-3); font: 600 13px/1 var(--font-display); letter-spacing: .05em; text-transform: uppercase; }
-.resource-label-compact { display: none; }
 .resource-chip strong { font: 600 22px/1 var(--font-display); color: var(--ink); }
 .resource-unit { margin-right: 1px; color: var(--ink-3); }
 .stock-chip { min-height: 0; padding: 6px 8px; margin: 0 -8px; border: 0; background: transparent; }
 .stock-chip:hover:not(:disabled) { background: var(--course-tint); }
-.contract-chip { display: grid; grid-template-columns: auto auto; column-gap: 6px; align-items: baseline; }
-.contract-chip strong { color: var(--cure-ink); }
-.menu-trigger { align-self: center; min-height: 40px; border: 1px solid var(--ink); background: transparent; font: 600 16px/1 var(--font-display); letter-spacing: .04em; text-transform: uppercase; }
+.hud-links { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; padding-left: 12px; border-left: 1px solid var(--rule); margin: 10px 0; }
+.hud-links button, .menu-trigger { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 10px; border-color: transparent; background: transparent; color: var(--ink-2); }
+.hud-links button:hover:not(:disabled), .hud-links button[aria-pressed="true"], .menu-trigger[aria-expanded="true"] { color: var(--course-ink); background: var(--course-tint); border-color: transparent; }
+.hud-links kbd { margin-left: 1px; }
+.hud-glyph { flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+.menu-trigger { align-self: center; border-color: var(--ink); color: var(--ink); }
 
-.utility-nav { z-index: 29; display: flex; align-items: center; gap: 16px; padding: 0 20px; border-bottom: 1px solid var(--rule-strong); background: var(--paper); }
-.objective { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; margin: 0; line-height: 1.2; }
-.objective-mark { flex: 0 0 auto; fill: none; stroke: var(--course); stroke-width: 2; stroke-linejoin: round; }
-.objective-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 17px/1 var(--font-display); letter-spacing: .02em; text-transform: uppercase; color: var(--ink); }
-.objective-action { min-height: 32px; padding: 4px 12px; border: 0; background: var(--ink); color: var(--paper-raised); font: 600 14px/1 var(--font-display); letter-spacing: .05em; text-transform: uppercase; }
-.objective-action:hover:not(:disabled) { background: var(--ink-2); }
-.utility-links { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; }
-.utility-links button { min-height: 40px; padding: 0 10px; border: 0; background: transparent; color: var(--ink-2); font: 600 15px/1 var(--font-display); letter-spacing: .04em; text-transform: uppercase; }
-.utility-links button:hover:not(:disabled), .utility-links button[aria-pressed="true"], .utility-links button[aria-expanded="true"] { color: var(--course-ink); background: var(--course-tint); }
-.utility-links kbd { margin-left: 5px; }
-.utility-count { color: var(--ink); }
+/* Pinned goal: the next step of the loop and the contract it serves, printed in the map margin. */
+.goal-card {
+  position: absolute; z-index: 20; top: 12px; left: 12px; display: flex; align-items: center; gap: 12px;
+  max-width: calc(100% - 24px); min-height: 48px; padding: 6px 6px 6px 14px;
+  border: 1px solid var(--rule-strong); border-radius: 3px; background: var(--paper-raised); pointer-events: none;
+}
+.goal-card.has-compass { padding-left: 6px; }
+.goal-card .research-compass-dial { flex: none; }
+.goal-step { display: grid; gap: 4px; min-width: 0; margin: 0; line-height: 1; }
+.objective-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 18px/1 var(--font-display); letter-spacing: .02em; text-transform: uppercase; color: var(--ink); }
+.goal-contract { color: var(--ink-3); font: 600 13px/1 var(--font-display); letter-spacing: .06em; text-transform: uppercase; }
+.goal-contract strong { color: var(--cure-ink); font-size: 15px; letter-spacing: .02em; }
+.objective-action { flex: none; pointer-events: auto; min-height: 36px; padding: 0 14px; border-color: var(--ink); background: var(--ink); color: var(--paper-raised); }
+.objective-action:hover:not(:disabled) { background: var(--ink-2); border-color: var(--ink-2); }
 
 .game-stage { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
 .game-view, .view-layer { position: absolute; inset: 0; min-width: 0; min-height: 0; overflow: hidden; }
@@ -125,6 +132,7 @@ kbd, .hotkey { color: var(--ink-3); font: 600 11px/1 var(--font-display); letter
 .is-success-text { color: var(--cure-ink); }
 
 .game-drawer { position: absolute; z-index: 70; inset: 0 0 0 auto; width: min(560px, 100%); border-left: 2px solid var(--ink); background: var(--paper-raised); overflow: auto; box-shadow: -12px 0 32px rgb(30 31 28 / 10%); }
+.game-drawer.menu-drawer { bottom: auto; width: min(360px, 100%); max-height: 100%; border-bottom: 2px solid var(--ink); }
 .drawer-close { position: absolute; z-index: 90; top: 12px; right: 12px; display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border-color: transparent; background: transparent; }
 .drawer-close svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
 .drawer-close:hover:not(:disabled) { border-color: var(--rule-strong); }
@@ -144,32 +152,34 @@ kbd, .hotkey { color: var(--ink-3); font: 600 11px/1 var(--font-display); letter
 
 @media (max-width: 1180px) {
   .wordmark { display: none; }
+  .hud-links kbd { display: none; }
 }
 @media (max-width: 1050px) {
-  .top-hud { padding: 0 12px; gap: 12px; }
+  .top-hud { padding: 0 8px 0 12px; gap: 12px; }
   .nav-button { padding: 0 8px; font-size: 16px; }
   .nav-button kbd { display: none; }
   .resource-strip { gap: 14px; }
-  .resource-label-full { display: none; }
-  .resource-label-compact { display: inline; }
-  .utility-nav { padding: 0 12px; }
-  .utility-links kbd { display: none; }
+  .hud-links { padding-left: 6px; }
+  .hud-link-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
+  .hud-links button, .menu-trigger { justify-content: center; min-width: 44px; min-height: 44px; padding: 0; }
 }
 @media (max-width: 768px) {
-  .game-shell { grid-template-rows: 92px 92px minmax(0, 1fr); }
-  .top-hud { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: 48px 44px; gap: 0; padding: 0 10px; }
+  .game-shell { grid-template-rows: 92px minmax(0, 1fr); }
+  .top-hud { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: 48px 44px; gap: 0; padding: 0 4px 0 10px; }
   .nav-rail { grid-column: 1; grid-row: 1; }
   .nav-button { padding: 0 8px; font-size: 15px; }
-  .menu-trigger { grid-column: 2; grid-row: 1; min-height: 44px; padding: 0 12px; font-size: 14px; }
-  .resource-strip { grid-column: 1 / -1; grid-row: 2; justify-content: space-between; gap: 6px; }
+  .menu-trigger { grid-column: 2; grid-row: 1; justify-self: end; border-color: transparent; }
+  .resource-strip { grid-column: 1; grid-row: 2; justify-content: flex-start; gap: 18px; }
+  .stock-chip { margin: 0 -8px; }
   .resource-chip { gap: 4px; }
   .resource-label { font-size: 12px; }
   .resource-chip strong { font-size: 18px; }
-  .utility-nav { display: grid; grid-template-rows: 48px 44px; gap: 0; padding: 0 8px; }
+  .hud-links { grid-column: 2; grid-row: 2; margin: 0; padding-left: 4px; border-left: 0; }
+  .goal-card { top: 8px; left: 8px; right: 8px; max-width: none; min-height: 44px; gap: 8px; padding-block: 4px; }
+  .goal-card .research-compass-dial { width: 36px; height: 36px; }
+  .goal-step { flex: 1; }
   .objective-text { font-size: 15px; }
-  .objective-action { min-height: 44px; padding: 4px 12px; font-size: 14px; }
-  .utility-links { justify-content: space-between; border-top: 1px solid var(--rule); }
-  .utility-links button { padding: 0 6px; font-size: 13px; }
+  .objective-action { min-height: 44px; padding: 0 12px; font-size: 14px; }
   .game-drawer { width: 100%; }
   .game-modal-backdrop { padding: 12px; }
   .game-modal { padding: 22px; }

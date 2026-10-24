@@ -1679,17 +1679,12 @@ export function Factory({
       <div className={`world-layout${diagnosticsOpen ? " has-inspector" : ""}`}>
         <section className="world-viewport factory-world" aria-label={`${facilityName} construction workspace`}>
           {rendererError !== null && <div role="alert" data-testid="factory-render-error" className="game-alert factory-render-alert">{rendererError}</div>}
-          {mode === "pilot" ? (
-            <div className="factory-mode-mark is-plan" data-testid="factory-mode-mark">Plan · Free</div>
-          ) : (
-            <div className={`factory-mode-mark is-${runState}`} data-testid="factory-mode-mark" role="status">
-              Production
-              <span className="run-state"><RunStateGlyph state={runState} />{runState === "blocked" ? "Blocked" : runState === "running" ? "Running" : "Paused"}</span>
-            </div>
-          )}
           <div className="transport-bar factory-controls" aria-label={`${facilityName} controls`}>
             {mode === "production" && (
               <div className="control-group">
+                <span className={`run-state is-${runState}`} data-testid="factory-run-state" role="status" aria-label={`Production ${runState}`}>
+                  <RunStateGlyph state={runState} />{runState === "blocked" && "Blocked"}
+                </span>
                 <button type="button" onClick={() => setPlaying(true)} disabled={playing || state.deadlocked} className={playing ? "is-active" : ""} data-testid="factory-play" aria-label="Play Production" title="Play (Space)">Play</button>
                 <button type="button" onClick={() => setPlaying(false)} disabled={!playing} data-testid="factory-pause" aria-label="Pause Production" title="Pause (Space)">Pause</button>
                 <button type="button" onClick={stepOnce} disabled={playing} data-testid="factory-step" aria-label="Step Production one tick" title="Step one tick (.)">Step</button>
@@ -1706,7 +1701,6 @@ export function Factory({
             )}
             <div className="control-group view-group">
               <button type="button" onClick={() => { const fitted = fitCamera(); cameraRef.current = fitted; setCamera(fitted); }} data-testid="factory-camera-reset" aria-label={`Reset ${facilityName} camera`}>Center</button>
-              <output className="zoom-readout" data-testid="factory-zoom">{Math.round(camera.zoom * 100)}%</output>
               <button type="button" data-testid="factory-diagnostics" aria-expanded={diagnosticsOpen} onClick={() => setDiagnosticsOpen((open) => !open)}>Details</button>
             </div>
             {onCommand !== undefined && commandLabel !== undefined && (
@@ -1753,6 +1747,7 @@ export function Factory({
             className="factory-canvas-frame"
             ref={frameRef}
             data-testid="factory-canvas"
+            data-camera-zoom={camera.zoom}
             onPointerDown={onCanvasPointerDown}
             onPointerMove={onCanvasPointerMove}
             onPointerUp={finishCanvasGesture}

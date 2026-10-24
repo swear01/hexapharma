@@ -25,8 +25,9 @@
 
 ## 3. Shell / navigation
 
-- 單一頂部 Research／Plan／Production 導航；Cash、Stock、合約以無框短列顯示。Menu 收納 seed、New、slot、Save、Load、Rewind、Recover；不常駐系統工具列。New 仍有可見文字與可取消確認，save checkpoints 與跨局 Blueprint Library 保留。
-- Market／Technology／Blueprints 是 M／T／B drawers；Guide 在次要工具列，X 或 Escape 關閉。沒有 Formulas。
+- 只有一條頂列（D44）：左邊 Research／Plan／Production 分頁；右邊 Cash、Stock（點開 Market）、Market／Technology／Blueprints（圖示＋名稱＋M／T／B，窄屏只留圖示）與 Menu。沒有第二條工具列。Menu 是 Menu 鈕下方的短控制表：seed、New game、slot、Save、Load、Rewind、Recover 與 Guide。New 仍有可見文字與可取消確認，save checkpoints 與跨局 Blueprint Library 保留。
+- Objective 是 stage 左上的釘選目標卡：一行下一步（Find Disease N · look … → Plan a line／Commission the Plan → Run Production → Ship → 下一種疾病）、`Contract n / 3` 與直接動作（已在目的地時隱藏）；Research 時卡片左側是羅盤。
+- Market／Technology／Blueprints 是 M／T／B drawers；Guide 從 Menu 開啟；X 或 Escape 關閉。沒有 Formulas。
 - 已造訪建築 mounted 保存 camera/tool/history；hidden page 不接 gameplay keys/pointers。切換建築或一般 drawer 不停止 Production。
 - blocking alertdialog 開啟時 timer callback 與 productionTicks dispatch 都凍結；Cancel 保留先前 Play／Pause，確認 New／Load／Rewind／Reset／擴廠後停止舊 timer。Blueprint Delete 不換 Production authority，關閉後恢復原播放狀態。
 - drawer 開啟時 world 不接 gameplay hotkeys；input/contenteditable 保留文字鍵，focused button 保留原生 Enter／Space。
@@ -47,7 +48,7 @@
 F1 只有一張大型單層 Atlas：
 
 - Research拖曳任一滑鼠鍵都可pan，與Factory的Shift+LMB／MMB手勢分開；pointer cancel只取消gesture，不得commit或erase。camera開局聚焦世界中心的generator start；fresh fog只揭露中心radius-two 19-cell hex disk，平常只看見大地圖的一小部分。Center（`F`）在有規劃時聚焦規劃終點，否則聚焦最近試驗的實際終點；地圖左下只有這個控制，不顯示揭露格數、zoom或Cure計數。每次Run在單一intent中resolve，UI不顯示timed Dose phase或自動camera follow；唯一例外是剛resolve出Cure的試驗會以≤220 ms（reduced motion即時、任何pointer／wheel／focus可中斷）把camera fit到整條實際路線，避開結果readout與step清單；建築往返不因舊outcome重設手動camera。
-- mission readout是地圖左上角的羅盤：以紫色扇區標出目標方向、箭頭標出規劃終點的heading，並顯示疾病、Look broad sector與Heading（mobile 仍保留疾病與Look）；accessible name仍為Active assay；sector只可為local或east／south-east／south-west／west／north-west／north-east，不顯示座標、距離、reference或region大小。
+- mission readout是釘選目標卡左側的羅盤：以紫色扇區標出目標方向、箭頭標出規劃終點的heading；疾病與 Look sector 在目標文字中，heading 只在 accessible name（`Target …, heading …`）；sector只可為local或east／south-east／south-west／west／north-west／north-east，不顯示座標、距離、reference或region大小。
 - 霧是未印的紙：只有與seed／座標有關、與隱藏地形無關的淡等高線；Wall在霧下仍可讀，格線只畫在已揭露格。
 - Abyss、Swamp、Portal A+B、Cure與SideEffect未揭露前不能有 motif、sprite、region edge、preview差異或 outcome洩漏。只揭露單一 Portal 端點時可顯示未配對端點，但配對標記、方向、目的座標與 preview jump 必須等兩端都揭露。
 - palette是map legend：每個machine以footprint＋完整path的token、全名、價格與hotkey辨識；沒有 path-length control。
@@ -76,7 +77,7 @@ F1 只有一張大型單層 Atlas：
 - Factory clipboard精確保存tile payload；Source period、Splitter outputs與Merger inputs不可在paste時重設。
 - tile與machine移除不退款；只有接受的edit才停止播放並令runtime歸零，累積waste保留。no-op、invalid與insufficient-cash rejection不暫停也不改history。
 - 有runtime進度時Reset先以可取消確認列出「清runtime／保留inventory與waste」；initial runtime不需要可用Reset。
-- Details 按需顯示 tick、sink outcomes、waste、十進位 units/tick 與 bottleneck；空 inspector 預設關閉。建造工具、報價、Rotate、Undo／Redo 與 Play／Pause 在底部操作區。選取機器顯示名稱、input/output 數量、ticks/unit、processing cost、rotation；blocked 狀態仍直接顯示在 world。
+- Details 按需顯示 tick、sink outcomes、waste、十進位 units/tick 與 bottleneck；空 inspector 預設關閉。建造工具、報價、Rotate、Undo／Redo 與 Play／Pause 在底部操作區；Play 左側的圖示是唯一的 run state（Blocked 才加字），沒有 Plan／Production 角標或 zoom 百分比。選取機器顯示名稱、input/output 數量、ticks/unit、processing cost、rotation；blocked 狀態仍直接顯示在 world。
 - machine hotbar tooltip同時顯示ticks/unit與每件processing cost；不要把一次性建造費和持續生產成本混成同一數字。
 - no-cure／failed產品進waste；side effects跟實體產品進市場計價，UI不先過濾成「合法配方」。
 - 正常new game顯示$1000；fresh Research後的有效first line必須可支付，insufficient-cash錯誤不能是正常bootstrap必經狀態。
@@ -111,7 +112,7 @@ F1 只有一張大型單層 Atlas：
 - 探索輔助只能放大actual executed segment的sensor radius；打開開關本身不能揭霧。
 - 擴廠開關若清Production runtime／waste，開或關前必須有可取消確認；不改 Research 的 lastTrial 或本地規劃。
 - Load若會覆蓋不同的current game、Rewind若會永久丟棄最新checkpoint，都必須先列出影響並可取消。
-- desktop 與 mobile 皆讓 world 佔主體；Details 預設關閉，桌面展開在 world 旁、窄屏在下方。工具與主要動作獨立排版，不蓋住 canvas；touch controls 至少 44px、focus 可見、錯誤 aria-live。窄屏 HUD 兩列，system controls 收 Menu，工具列保留可見 scroll 提示。
+- desktop 與 mobile 皆讓 world 佔主體；Details 預設關閉，桌面展開在 world 旁、窄屏在下方。工具與主要動作獨立排版，不蓋住 canvas；touch controls 至少 44px、focus 可見、錯誤 aria-live。窄屏 HUD 兩列（分頁＋Menu；資源＋drawer 圖示），system controls 收 Menu，工具列保留可見 scroll 提示。
 - machine以silhouette、footprint、full-path glyph、ports辨識；terrain/portal不能用raw debug text冒充美術。
 - Atlas與Factory都顯示pointy-top axial hex；cell authority是`{q,r}`，六方向依序為E／SE／SW／W／NW／NE，dense arrays以`r * width + q`索引。hit-test、ghost、region edge、transport與renderer必須一致；兩個domain的payload／validator仍分離。
 - 定向越野地圖語言的嚴格俯視 2D：紙底＋近黑墨印；ISOM 色語（山＝淡褐、水＝藍色水平線、黑格＝黑墨、治療＝綠、副作用＝琥珀、失敗＝紅、流動＝藍；霧下只有單一墨色等高線）；路線紫只屬玩家自己的線（研究實際路線、規劃虛線、選取、Plan overprint）。Production 為黑墨實印、Plan 為紫色 overprint。手繪感只來自確定性墨線抖動，不用於 port、belt 接點、hit-test 幾何或文字；Pixi vector runtime 保留 canonical true hex。完整規格見 [design.md](design.md#visual-language)。

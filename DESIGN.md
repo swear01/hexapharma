@@ -246,7 +246,7 @@ The palette is a printed map: three warm paper tones, three ink greys, two paper
 - **Title** (600, 19px, 1.1, uppercase): section headings (`h2`), patent names and market values. Legend and machine names use the same face at 15–17px.
 - **Numeral** (600, 22px, 1, tabular): HUD resources (Cash, Stock, Contract) and other headline numbers. Market net uses 23px.
 - **Nav** (600, 18px, 1, 0.03em, uppercase): Research, Plan and Production tabs, and the compass disease name. The Run button uses the same face at 19px.
-- **Action** (600, 16px, 1, 0.05em, uppercase): primary buttons. Factory and utility controls use 15px.
+- **Action** (600, 16px, 1, 0.05em, uppercase): primary buttons. Every other button, including drawer, Menu, Factory and top-bar controls, uses it at 15px.
 - **Label** (600, 13px, 1.2, 0.06em, uppercase, `ink-3`): field labels, sheet `dt` labels, patent group headings and resource labels.
 - **Hotkey** (600, 11px, 1, 0.04em, `ink-3`): keycap hints beside controls (F1, M, 1–0). Hotkey hints are hidden below 1050–1180px.
 - **Body** (400, 14px, 1.55): root size and paragraphs. **Body small** (13px, 1.45) covers drawer copy, toasts and readouts. Blueprint import text uses 12px monospace.
@@ -258,15 +258,16 @@ The palette is a printed map: three warm paper tones, three ink greys, two paper
 
 ## Layout
 
-The game is a full-viewport grid (`100dvw × 100dvh`, no page scroll). On desktop it has three rows: a 56px top bar (wordmark, field tabs, resource strip, Menu), a 44px utility row (Objective line with a direct action on the left, drawer links on the right) and the world stage. The world fills the stage. Map-margin furniture is inset 12px from the stage edges: compass and disease card top-left, course list below it, result card top-right, atlas status bottom-left. Below the world, the legend hotbar and the command bar share a bottom row separated from the map by a 2px ink rule.
+The game is a full-viewport grid (`100dvw × 100dvh`, no page scroll). It has two rows: a 56px top bar (wordmark, field tabs; then Cash, Stock, the Market / Technology / Blueprints links and Menu on the right) and the world stage. The world fills the stage. Map-margin furniture is inset 12px from the stage edges: the pinned goal card top-left (with the compass in Research), course list below it, result card top-right, atlas status bottom-left. Below the world, the legend hotbar and the command bar share a bottom row separated from the map by a 2px ink rule.
 
 The Factory uses a canvas / toolbelt / status-and-controls grid with a 56px bottom bar and an optional 280px inspector. Drawers slide over from the right at `min(560px, 100%)`.
 
 Spacing runs on a 4px base: 4, 8, 12, 16, 20 and 24px. Gaps inside controls are 8–12px, edge insets are 12px, shell gutters are 20px and drawer padding is 24px. Breakpoints:
 - **1180px** hides the wordmark and legend hotkeys.
 - **1100px** stacks the Factory status, toolbelt and controls.
-- **1050px** compacts resource labels and drops nav hotkeys.
-- **768px** switches to the touch layout: the top bar and utility row each become two 44–48px rows, the course list becomes a horizontal snap strip, the result card moves above the bottom bar, drawers go full width and every control is at least 44px.
+- **1180px** also drops drawer-link hotkeys.
+- **1050px** drops nav hotkeys and turns drawer links and Menu into 44px icon buttons.
+- **768px** switches to the touch layout: the top bar becomes two rows (tabs + Menu; resources + drawer icons), the goal card spans the stage width, the course list becomes a horizontal snap strip, the result card moves above the bottom bar, drawers go full width and every control is at least 44px.
 
 ### Named Rules
 **The World-First Rule.** The map or floor fills everything chrome doesn't need. Margin furniture sits in the corners at a fixed 12px inset and never covers the centre of the sheet.
@@ -289,10 +290,10 @@ Corners are nearly square: 3px on buttons, inputs, cards, toasts and modals, and
 
 Line weight follows a fixed hierarchy:
 - **2px ink:** sheet edges (top bar bottom, hotbar top, drawer left, modal).
-- **1.5px ink:** print marks (Factory mode mark, machine selection legend, quoted cost).
+- **1.5px ink:** print marks (machine selection legend, quoted cost).
 - **1px rule:** row dividers.
 
-Dashed lines mean draft or absence: Plan overprint outlines and the Plan mode mark, the candidate leg, empty-state boxes and invalid placement ghosts.
+Dashed lines mean draft or absence: Plan overprint outlines, the candidate leg, empty-state boxes and invalid placement ghosts.
 
 ### Named Rules
 **The Overprint Rule.** A Plan is purple overprint: dashed outlines at 0.85 ink alpha, 0.4 alpha channels, 0.06 fill and no wobble. Production is solid black print with blue flow channels and 0.6px outline wobble. Free drafts and paid builds must never look alike.
@@ -304,22 +305,22 @@ Dashed lines mean draft or absence: Plan overprint outlines and the Plan mode ma
 ### Buttons
 Square, printed and plainly labelled.
 - **Shape:** gently squared (3px). Minimum height is 44px, or 40px in dense desktop bars.
-- **Default:** `paper-raised` face, 1px `rule-strong` border and body type. Hover darkens the border to `ink-2`. Background, border and colour transition over 0.12s ease-out.
-- **Primary:** solid `ink` with `paper-raised` Action caps, `ink-2` on hover. Use it for the Objective action, Commission/Ship-style commands and confirmations.
+- **Default:** `paper-raised` face, 1px `rule-strong` border and 15px Action caps. Hover darkens the border to `ink-2`. Background, border and colour transition over 0.12s ease-out.
+- **Primary:** solid `ink` with `paper-raised` Action caps, `ink-2` on hover. Use it for the goal card action, Commission/Ship-style commands and confirmations.
 - **Course:** solid `course` with `paper-raised` caps, `course-ink` on hover. Reserve it for committing the player's line: Run (48px tall) and Open in Plan. When disabled it drops to `paper-sunk` with `ink-3` text.
 - **Danger:** solid `failure-border`, `failure-ink` on hover. Use it only for destructive confirmations.
-- **Quiet:** transparent, borderless display caps for utility links, factory controls and atlas status. Hover shows a `rule-strong` border or a `course-tint` wash when active.
+- **Quiet:** transparent, borderless display caps for top-bar drawer links, factory controls and atlas status. Hover shows a `rule-strong` border or a `course-tint` wash when active.
 - **Active / Selected:** `course` border, `course-ink` text and `course-tint` wash.
 - **Focus:** 2px `course` outline with a 2px offset on every focusable element.
 
 ### Navigation
-Field tabs are display caps (18px) on the paper top bar. The active tab is `course-ink` with a 4px `course` underline sitting on the 2px ink rule. Hover shows a `rule-strong` underline. On touch they share a 48px row with Menu. Menu is an outlined ink button in display caps.
+Field tabs are display caps (18px) on the paper top bar. The active tab is `course-ink` with a 4px `course` underline sitting on the 2px ink rule. Hover shows a `rule-strong` underline. On touch they share a 48px row with Menu. Menu is an outlined ink button with a three-line glyph; drawer links carry a drawn 18px glyph (crate, branch, ruled sheet) beside the name and hotkey.
 
 ### Map-margin cards
 The compass and disease card, the course list, the trial readout and the atlas status are printed boxes: `paper-raised`, a 1px `rule-strong` border, 3px corners and no shadow. The course list numbers each row with a control circle (2px `course` ring, `course-ink` numeral). A failed readout switches to the failure surface with a red cross.
 
 ### Trial readout
-A Run's result is a single printed line in the map margin (`Cure Disease N · …`, `No cure · …`, `Failed · …`); there is no formula card. A cure is celebrated by the Objective turning to "Plan a line to Disease N".
+A Run's result is a single printed line in the map margin (`Cure Disease N · …`, `No cure · …`, `Failed · …`); there is no formula card. A cure is celebrated by the goal card turning to "Plan a line to Disease N".
 
 ### Legend hotbar / toolbelt
 The machine key is printed in the map margin. In Research each entry is a 36px machine symbol beside the name (display caps 15px), the cost (12px tabular) and a hotkey. In the Factory, tool slots are 76px wide with the symbol stacked over the name. Entries are transparent. The selected entry gets a `course` border with a `course-tint` wash. Locked entries fade the symbol to 0.45 and show a lock. A machine's symbol is the same path/footprint SVG (`MachineIcon`) on the map, in the hotbar and on the floor; the Research hotbar draws the path rotated to the heading at the end of the planned route.
@@ -330,10 +331,13 @@ The machine key is printed in the map margin. In Research each entry is a 36px m
 - **Error:** `failure-border` border with a 12px `failure-ink` message below. A field label uses the Label style above the input.
 
 ### Drawers and sheets
-Market, Technology, Blueprints, Guide and Menu are legend and control-description sheets: `paper-raised`, with a 2px ink rule under the Display title and rows divided by 1px rules. Values use display numerals, and labels use the Label style.
+Market, Technology, Blueprints and Guide are legend and control-description sheets: `paper-raised`, with a 2px ink rule under the Display title and rows divided by 1px rules. Values use display numerals, and labels use the Label style. Menu is a short control sheet (360px, auto height) hanging under the Menu button, with no title: Seed, New game, Slot, Save / Load / Rewind, then Guide.
 
-### Factory mode mark
-A small top-left print mark names the sheet ("Production ▸ Running"): 1.5px ink border, display caps with 0.08em tracking. In Plan it is dashed `course`, and when blocked it has a `failure-border` border.
+### Pinned goal card
+The shapez-style pinned goal at the stage's top-left: one display-caps line naming the next step, a Label-style `Contract n / 3` (value in `cure-ink`) and a primary action that disappears when the player is already there. In Research the compass dial sits at its left. It is printed map furniture (1px `rule-strong`, no shadow) and only its action button takes pointer input, so drags and builds under it still reach the world.
+
+### Run state
+Production has no sheet mark. A 12px glyph left of Play shows running (▶, ink) or paused (‖, `ink-3`); only Blocked adds a word, in `failure-ink`.
 
 ## Do's and Don'ts
 

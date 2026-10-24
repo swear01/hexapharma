@@ -11,21 +11,29 @@ const base: ObjectiveInput = {
   knownCureDiseases: [],
   profitableUnits: () => 0,
   stockFor: () => 0,
+  planHasMachines: false,
   productionHasMachines: false,
   producingOther: false,
   sector: "east",
 };
 
 describe("currentObjective", () => {
-  it("walks the loop from finding a revealed Cure to Plan, production and shipping", () => {
+  it("walks the loop: find a Cure, Plan, Commission, run Production, ship", () => {
     expect(currentObjective(base)).toMatchObject({ target: "research", text: "Find Disease 1 · look east" });
     expect(currentObjective({ ...base, sector: "local" }).text).toBe("Find Disease 1 · near the start");
-    expect(currentObjective({ ...base, knownCureDiseases: [0] }))
-      .toMatchObject({ target: "pilot", actionLabel: "Open Plan", text: "Plan a line to Disease 1" });
     expect(currentObjective({ ...base, knownCureDiseases: [1] }).target).toBe("research");
-    expect(currentObjective({ ...base, knownCureDiseases: [0], productionHasMachines: true }).target).toBe("production");
-    expect(currentObjective({ ...base, knownCureDiseases: [0], productionHasMachines: true, profitableUnits: () => 4 }))
-      .toMatchObject({ target: "market", text: "Ship Disease 1 · 0 of 3" });
+    const cured = { ...base, knownCureDiseases: [0] };
+    expect(currentObjective(cured)).toMatchObject({ target: "pilot", actionLabel: "Plan", text: "Plan a line to Disease 1" });
+    expect(currentObjective({ ...cured, planHasMachines: true }))
+      .toMatchObject({ target: "pilot", text: "Commission the Plan for Disease 1" });
+    expect(currentObjective({ ...cured, planHasMachines: true, productionHasMachines: true }))
+      .toMatchObject({ target: "production", text: "Run Production to make Disease 1" });
+    expect(currentObjective({ ...cured, productionHasMachines: true, profitableUnits: () => 4 }))
+      .toMatchObject({ target: "market", actionLabel: "Ship", text: "Ship Disease 1" });
+  });
+
+  it("ships profitable stock even before the Cure is revealed on this map", () => {
+    expect(currentObjective({ ...base, profitableUnits: () => 1 }).target).toBe("market");
   });
 
   it("moves to the next disease once a contract is filled", () => {
@@ -41,6 +49,6 @@ describe("currentObjective", () => {
 
   it("reports when every contract is filled", () => {
     const done = { ...base, contracts: [contract(0, 3), contract(1, 3)] };
-    expect(currentObjective(done).target).toBe("market");
+    expect(currentObjective(done)).toMatchObject({ target: "market", text: "Every contract filled" });
   });
 });

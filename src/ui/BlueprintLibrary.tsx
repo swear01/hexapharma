@@ -176,90 +176,94 @@ export function BlueprintLibrary({
   }, [refresh]);
 
   return (
-    <div className="blueprint-library" data-testid="blueprint-library">
-      <h1>Blueprints</h1>
+    <div className="game-view management-view blueprint-library" data-testid="blueprint-library">
+      <header className="management-header">
+        <h1>Blueprints</h1>
+        <p>Kept across saves and new games.</p>
+      </header>
+      <div className="blueprint-body">
+        <section className="blueprint-capture" aria-label="Save a blueprint">
+          <label className="game-field">
+            <span>Name</span>
+            <input value={name} maxLength={80} onChange={(event) => setName(event.target.value)} data-testid="blueprint-name" />
+          </label>
+          <div className="panel-actions">
+            <button type="button" disabled={pilotLayout === null} onClick={() => void capturePilot()} data-testid="blueprint-save-pilot">Save Plan</button>
+            <button type="button" onClick={() => void captureProduction()} data-testid="blueprint-save-production">Save Production</button>
+          </div>
+        </section>
 
-      <section className="panel-section blueprint-capture" aria-label="Save a blueprint">
-        <label className="game-field">
-          <span>Name</span>
-          <input value={name} maxLength={80} onChange={(event) => setName(event.target.value)} data-testid="blueprint-name" />
-        </label>
-        <div className="panel-actions">
-          <button type="button" disabled={pilotLayout === null} onClick={() => void capturePilot()} data-testid="blueprint-save-pilot">Save Plan</button>
-          <button type="button" onClick={() => void captureProduction()} data-testid="blueprint-save-production">Save Production</button>
-        </div>
-      </section>
-
-      <section className="panel-section blueprint-list" aria-labelledby="blueprint-list-title">
-        <div className="panel-heading"><h2 id="blueprint-list-title">Library</h2><span className="blueprint-count">{entries.length}/64</span></div>
-        {loaded && entries.length === 0 && (
-          <p className="panel-empty">No blueprints yet. Save your Plan or Production above, or import a shared .json file below. The Library is kept across saves and new games.</p>
-        )}
-        {entries.map((entry) => {
-          const factoryLayout = entry.blueprint.kind === "factory-layout"
-            ? materializeFactoryLayout(entry.blueprint)
-            : null;
-          const buildQuote = factoryLayout === null
-            ? null
-            : factoryBlueprintBuildQuote(productionLayout, factoryLayout, quoteProduction);
-          const reasonId = `blueprint-reason-${entry.id}`;
-          return <article key={entry.id} className="blueprint-card">
-            <div className="blueprint-card-title">
-              <strong>{entry.blueprint.name}</strong>
-              <span>{entry.blueprint.kind === "research-program"
-                ? `Research · ${entry.blueprint.program.steps.length} ${entry.blueprint.program.steps.length === 1 ? "step" : "steps"}`
-                : `Factory · ${entry.blueprint.layout.width}×${entry.blueprint.layout.height} · ${entry.blueprint.layout.machines.length} ${entry.blueprint.layout.machines.length === 1 ? "machine" : "machines"}`}</span>
-            </div>
-            <div className="panel-actions">
-              {entry.blueprint.kind === "factory-layout" && (
-                <>
-                  <button type="button" disabled={buildQuote === null} aria-describedby={buildQuote === null ? reasonId : undefined} onClick={() => loadFactory(entry, "pilot")}>Open in Plan</button>
-                  <button type="button" disabled={buildQuote === null} aria-describedby={buildQuote === null ? reasonId : undefined} onClick={() => loadFactory(entry, "production")}>{buildQuote === null ? "Commission" : `Commission $${buildQuote}`}</button>
-                </>
+        <section className="panel-section blueprint-list" aria-labelledby="blueprint-list-title">
+          <div className="panel-heading"><h2 id="blueprint-list-title">Library</h2><span className="blueprint-count">{entries.length} / 64</span></div>
+          {loaded && entries.length === 0 && (
+            <p className="panel-empty">Empty</p>
+          )}
+          {entries.map((entry) => {
+            const factoryLayout = entry.blueprint.kind === "factory-layout"
+              ? materializeFactoryLayout(entry.blueprint)
+              : null;
+            const buildQuote = factoryLayout === null
+              ? null
+              : factoryBlueprintBuildQuote(productionLayout, factoryLayout, quoteProduction);
+            const reasonId = `blueprint-reason-${entry.id}`;
+            return <article key={entry.id} className="blueprint-card">
+              <div className="blueprint-card-title">
+                <strong>{entry.blueprint.name}</strong>
+                <span>{entry.blueprint.kind === "research-program"
+                  ? `Research · ${entry.blueprint.program.steps.length} ${entry.blueprint.program.steps.length === 1 ? "step" : "steps"}`
+                  : `Factory · ${entry.blueprint.layout.width}×${entry.blueprint.layout.height} · ${entry.blueprint.layout.machines.length} ${entry.blueprint.layout.machines.length === 1 ? "machine" : "machines"}`}</span>
+              </div>
+              <div className="panel-actions">
+                {entry.blueprint.kind === "factory-layout" && (
+                  <>
+                    <button type="button" disabled={buildQuote === null} aria-describedby={buildQuote === null ? reasonId : undefined} onClick={() => loadFactory(entry, "pilot")}>Open in Plan</button>
+                    <button type="button" disabled={buildQuote === null} aria-describedby={buildQuote === null ? reasonId : undefined} onClick={() => loadFactory(entry, "production")}>{buildQuote === null ? "Commission" : `Commission $${buildQuote}`}</button>
+                  </>
+                )}
+                <button type="button" onClick={() => void exportEntry(entry)}>Download</button>
+                <button
+                  type="button"
+                  className="blueprint-delete"
+                  onClick={(event) => {
+                    deleteTriggerRef.current = event.currentTarget;
+                    setPendingDelete(entry);
+                  }}
+                  aria-label={`Delete ${entry.blueprint.name}`}
+                >Delete</button>
+              </div>
+              {buildQuote === null && entry.blueprint.kind === "factory-layout" && (
+                <small id={reasonId} className="blueprint-reason">
+                  Built for a {entry.blueprint.layout.width}×{entry.blueprint.layout.height} floor; Production is {productionLayout.width}×{productionLayout.height}.
+                </small>
               )}
-              <button type="button" onClick={() => void exportEntry(entry)}>Download</button>
-              <button
-                type="button"
-                className="blueprint-delete"
-                onClick={(event) => {
-                  deleteTriggerRef.current = event.currentTarget;
-                  setPendingDelete(entry);
-                }}
-                aria-label={`Delete ${entry.blueprint.name}`}
-              >Delete</button>
-            </div>
-            {buildQuote === null && entry.blueprint.kind === "factory-layout" && (
-              <small id={reasonId} className="blueprint-reason">
-                Built for a {entry.blueprint.layout.width}×{entry.blueprint.layout.height} floor; Production is {productionLayout.width}×{productionLayout.height}.
-              </small>
-            )}
-          </article>;
-        })}
-      </section>
+            </article>;
+          })}
+        </section>
 
-      <section className="panel-section blueprint-import" aria-labelledby="blueprint-import-title">
-        <h2 id="blueprint-import-title">Import</h2>
-        <input
-          ref={fileRef}
-          type="file"
-          accept="application/json,.json"
-          className="sr-only"
-          data-testid="blueprint-file"
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file !== undefined) void readBlueprintUpload(file).then(importJson, (error: unknown) => {
-              setStatus(`Could not read blueprint file: ${message(error)}`);
-            });
-            event.target.value = "";
-          }}
-        />
-        <textarea value={json} onChange={(event) => setJson(event.target.value)} placeholder="Paste blueprint JSON" aria-label="Blueprint JSON" data-testid="blueprint-json" />
-        <div className="panel-actions">
-          <button type="button" disabled={json.trim() === ""} onClick={() => void importJson(json)} data-testid="blueprint-import">Import pasted JSON</button>
-          <button type="button" onClick={() => fileRef.current?.click()} data-testid="blueprint-upload">Upload file</button>
-        </div>
-      </section>
-      <output className="blueprint-status" role="status" data-testid="blueprint-status">{status}</output>
+        <section className="panel-section blueprint-import" aria-labelledby="blueprint-import-title">
+          <h2 id="blueprint-import-title">Import</h2>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="application/json,.json"
+            className="sr-only"
+            data-testid="blueprint-file"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file !== undefined) void readBlueprintUpload(file).then(importJson, (error: unknown) => {
+                setStatus(`Could not read blueprint file: ${message(error)}`);
+              });
+              event.target.value = "";
+            }}
+          />
+          <textarea value={json} onChange={(event) => setJson(event.target.value)} placeholder="Paste blueprint JSON" aria-label="Blueprint JSON" data-testid="blueprint-json" />
+          <div className="panel-actions">
+            <button type="button" disabled={json.trim() === ""} onClick={() => void importJson(json)} data-testid="blueprint-import">Import</button>
+            <button type="button" onClick={() => fileRef.current?.click()} data-testid="blueprint-upload">Upload file</button>
+          </div>
+        </section>
+        <output className="blueprint-status" role="status" data-testid="blueprint-status">{status}</output>
+      </div>
       {pendingDelete !== null && createPortal(
         <div
           className="game-modal-backdrop"

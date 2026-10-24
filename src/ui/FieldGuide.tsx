@@ -56,7 +56,7 @@ const LEGEND: readonly { readonly group: string; readonly items: readonly (reado
 export function FieldGuide() {
   return (
     <section className="help-panel">
-      <h1>Field guide</h1>
+      <h1>Guide</h1>
       <h2>Research</h2>
       <p>Click machines (or press 1–9) to plan a route; each machine turns the drug, so later paths rotate. <strong>Run · $N</strong> (Enter) pays once and runs the whole route on the real map, which can differ under fog. The solid line is what happened; only that land is revealed.</p>
       <p>Backspace or <kbd>Ctrl</kbd>+<kbd>Z</kbd> removes the last step; <strong>Clear</strong> empties the plan.</p>
