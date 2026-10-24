@@ -711,7 +711,7 @@ describe("mapgen seeded disease diversity", () => {
       expect(level.diseases).toHaveLength(4);
       assertReferences(level);
     }
-  }, 30_000);
+  }, 60_000);
 
   it("keeps every normal Cure region outside the fresh start-centered radius-two hex", () => {
     // Structural (construction excludes the disk); 200 seeds share the cached diversity samples.

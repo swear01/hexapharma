@@ -1041,8 +1041,9 @@ function reduceGameIntent(game: GameState, intent: GameIntent): GameState {
           if (next.pilot.layout !== null) requireEntitledFacilityLayout(next, next.pilot.layout, "Pilot Plant");
           requireEntitledFacilityLayout(next, next.production.layout, "Production");
         }
-      } catch {
-        throw new Error(`game intent: Technology "${intent.id}" is still in use in Plan or Production`);
+      } catch (err) {
+        if (!(err instanceof Error) || !err.message.startsWith("game intent:")) throw err;
+        throw new Error(`game intent: Technology "${intent.id}" is still in use in Plan or Production`, { cause: err });
       }
       return next;
     }
