@@ -82,6 +82,8 @@ export interface ResearchWorkspaceProps {
   readonly trails: readonly (readonly (Vec2 | null)[])[];
   /** Planned route on the known map. */
   readonly previewTrails: readonly (readonly (Vec2 | null)[])[];
+  /** The Production Plan line's route on the known map. */
+  readonly lineTrails?: readonly (readonly (Vec2 | null)[])[];
   readonly previewDrug: DrugState;
   readonly estimate: boolean;
   readonly deviation: ResearchDeviation | null;
@@ -129,6 +131,7 @@ export function ResearchWorkspace(props: ResearchWorkspaceProps) {
         drug={props.drug}
         trails={props.trails}
         previewTrails={props.previewTrails}
+        lineTrails={props.lineTrails}
         previewDrug={props.previewDrug}
         estimate={props.estimate}
         deviation={props.deviation}

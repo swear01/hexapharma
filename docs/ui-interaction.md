@@ -63,6 +63,8 @@ F1 只有一張大型單層 Atlas：
 - 獨立 F2 page；完整 FactoryLayout editor，空地合法。
 - 沒有 clock、build cost、inventory 或 waste；layout edit與undo/redo都免費。
 - inspector 可顯示 throughput、bottleneck與analysis error；sample outcome 必須由 Research fog 遮罩後的 planning map 計算，不能顯示未揭露 cure／side effect／portal 或權威終點，也沒有通關判斷。
+- Splitter／Merger 在取得 `Split / Merge` 前顯示鎖頭；點擊、hover 或按 `2`／`3` 只顯示解鎖提示，不切換 brush。
+- Plan 產線（第一個 Source → Sink，Splitter 走第一個 output）的路徑在 Research 地圖上以淡紫寬帶＋`Plan` 標記預估，fog 當平地；`lab-map-frame` 的 `data-plan-line` 是該路徑點數。
 - `Commission $N` 是可選快捷：以 Production 目前 layout為基準報價，成功後開啟 Production。
 - 關閉或從未使用 Production Plan，不影響玩家直接在 Production 建造。
 

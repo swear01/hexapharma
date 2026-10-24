@@ -102,7 +102,8 @@ Research 不使用 FactoryLayout、source／belt／sink、線性 route descripto
 
 - Production Plan 是獨立 F2 world page，使用與 Production 相同的 Factory editor 與幾何規則；內部 `PilotFacilityState`／`setPilotLayout` 名稱暫不改變玩家語意。
 - 建造、旋轉、移動、刪除、undo／redo、copy／paste 都免費；沒有時間、耗材、inventory 或 waste。
-- source、belt、machine、splitter、merger、sink 可以組成任意合法 layout；不要求 Research 結果或特定產品。
+- source、belt、machine、sink 可以組成任意合法 layout；不要求 Research 結果或特定產品。splitter／merger 需先在 Technology 取得 `Split / Merge`，未取得時 Plan 與 Production 的 layout 驗證都拒絕這兩種 tile。
+- Plan 產線的藥效路徑畫在 Research Atlas 上：取第一個 Source 送出的第一個 unit 走到 Sink 經過的機器順序（Splitter 走第一個 output），在同一張 fog-masked planning map 上以淡紫寬帶＋`Plan` 標記呈現；沒有到 Sink 的線不畫。
 - 即時 diagnostics 可顯示 throughput、bottleneck、deadlock 或分析錯誤；sample outcome 只能依 Research fog 遮罩後的 planning map 計算，不能用免費 Production Plan 洩漏未發現的 cure、side effect、portal pairing 或權威終點。
 - Plan 的 layout 可保存為通用 Factory Blueprint，或按 `Commission $N` 依 Production 當前 layout 的差異付費建造。
 - 玩家可以完全跳過 Production Plan，直接在 Production 建造。
@@ -153,7 +154,7 @@ Production 是唯一持續推進 factory tick 的場域。source、transport、m
 - Market 對同一疾病先排 side effect 較少、再排 production cost 較低、最後排 inventory ID 較早的產品。`Ship best` 掃描此順序並賣第一件正 net產品；`Ship profitable` 依同一順序掃描全部庫存、略過不賺錢的候選，只讓實際選中的產品消耗後續demand，不得因較前面的昂貴產品而封鎖後面的正net產品，也不得自動虧本出售。
 - 每件成功出售增加1 Knowledge。Market card必須把最佳庫存的Next gross、production cost、每effect $25 penalty與net直接列出；Clean／Tainted是庫存件數。Ship disabled時顯示「沒有治療庫存」或「沒有正net庫存」的原因；只有authority接受出售後才顯示Knowledge成功回饋。
 - 每種疾病另有 shipping contract，quota 固定為 3 件；HUD 顯示首個未完成疾病的 `sold / 3`，全部完成後顯示最後一份 completed contract。合約只由 accepted sales 推進，不另行消耗庫存。
-- machine patent gates 依疾病順序綁定：Disease 1 contract 完成後才可取得 Zigzag，Disease 2 才可取得 Loop，Disease 3 才可取得 Straight 與 Crane；cash、Knowledge 與既有 patent prerequisites 仍同時適用。其他 patents 不受 shipping contract gate 影響。解鎖鏈：Zigzag $100（無前置）、Loop $180（Bench expansion）、Straight $340（Zigzag＋Bench expansion）、Crane $300（Loop＋Trail scanner）。
+- machine patent gates 依疾病順序綁定：Disease 1 contract 完成後才可取得 Zigzag，Disease 2 才可取得 Loop，Disease 3 才可取得 Straight 與 Crane；cash、Knowledge 與既有 patent prerequisites 仍同時適用。其他 patents 不受 shipping contract gate 影響。解鎖鏈：Zigzag $100（無前置）、Loop $180（Bench expansion）、Straight $340（Zigzag＋Bench expansion）、Crane $300（Loop＋Trail scanner）。`Split / Merge`（$90、1 Knowledge、無前置、無合約 gate）解鎖 Splitter 與 Merger。
 - 白箱 progression 只買該疾病 reference 實際用到的機器 patent 及其前置。五個固定 seed 與更廣代表樣本的合法 reference/compiler 白箱路線必須從 $1000 完成四病，且全程保留至少 $100 作為一次合理 assay 重試或小幅改建預算；這只證明可達性，不代表真人探索有趣。
 - Technology 可解鎖 factory machines、場地、Research PathStamps、motifs 或實際路徑的感測半徑；不能以跨層互動作現行進程。
 - 會重生 Atlas 或清除 Production authority 的解鎖，必須顯示受影響資料並要求確認。

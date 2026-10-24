@@ -16,6 +16,7 @@ import {
   factoryResetPlaybackAfterClose,
   facilityMayAnalyzeOutcome,
   facilityOutcomeMap,
+  factoryLineProgram,
   factoryMachineFlowOrder,
   factoryPaperTexture,
   fitFactoryCamera,
@@ -306,6 +307,14 @@ describe("factory framing and legend copy", () => {
       .sort((a, b) => order.get(a.id)! - order.get(b.id)!)
       .map((machine) => machine.def.typeId);
     expect(byNumber).toEqual(steps);
+  });
+
+  it("reads a compiled line back as its program, and nothing without a Sink", () => {
+    const program = generate(defaultGenOptions(14)).diseases[0]!.reference;
+    const layout = compileEntitledPrototype(program, 24, 12).layout;
+    expect(factoryLineProgram(layout)?.steps.map((step) => step.typeId)).toEqual(program.steps.map((step) => step.typeId));
+    const noSink = { ...layout, tiles: layout.tiles.map((tile) => tile.kind === "sink" ? { kind: "empty" as const } : tile) };
+    expect(factoryLineProgram(noSink)).toBeNull();
   });
 
   it("prints the unbuilt ground as one deterministic contour tile", () => {

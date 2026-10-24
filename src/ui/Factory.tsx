@@ -42,6 +42,8 @@ import type {
   MultiMap,
   ThroughputReport,
   Outcome,
+  Machine,
+  Template,
 } from "../sim/phase0_interfaces";
 import { DEFAULT_CATALOG, DEFAULT_SHAPES } from "../sim/phase0_interfaces";
 import { initFactory, analyzeThroughput } from "../sim/factory-sim";
@@ -49,7 +51,7 @@ import { factoryOutcome } from "../sim/recipe";
 import { quoteProductionBuild } from "../sim/construction";
 import { worldCells } from "../sim/factory-geom";
 import { hexInBounds, hexIndex, rotateHexCoord } from "../sim/hex";
-import { buildFactoryTransportTopology } from "../render/factoryTransportTopology";
+import { buildFactoryTransportTopology, type FactoryTransportEdge } from "../render/factoryTransportTopology";
 import { inkJitter } from "../render/ink";
 import { hexBoardBounds, hexPolygon, hexToPixel } from "../render/hexProjection";
 import type { FactoryRenderer } from "../render/factoryRenderer";
@@ -171,6 +173,8 @@ export function machineLockReason(typeId: MachineTypeId): string {
     : `${machineName(typeId)} locked · ship the ${diseaseName(disease)} contract, then unlock in Technology`;
 }
 
+export const ROUTING_LOCK_REASON = "Splitter and Merger locked · unlock Split / Merge in Technology";
+
 function machineDef(typeId: MachineTypeId): FactoryMachineDef {
   const entry = entryOf(typeId);
   return {
@@ -284,6 +288,42 @@ export function factoryMachineFlowOrder(layout: FactoryLayout): ReadonlyMap<numb
     if (!order.has(machine.id)) order.set(machine.id, order.size + 1);
   }
   return order;
+}
+
+/** Machines the first unit from the first Source passes through on its way to a Sink (a Splitter sends it out its first output). */
+export function factoryLineProgram(layout: FactoryLayout): Template | null {
+  const topology = buildFactoryTransportTopology(layout);
+  const area = layout.width * layout.height;
+  const owner = new Int32Array(area).fill(-1);
+  const byId = new Map<number, PlacedMachine>();
+  for (const machine of layout.machines) {
+    byId.set(machine.id, machine);
+    for (const cell of worldCells(machine)) owner[hexIndex(layout.width, cell.q, cell.r)] = machine.id;
+  }
+  const exits: FactoryTransportEdge[][] = Array.from({ length: area }, () => []);
+  for (const edge of topology.edges) exits[hexIndex(layout.width, edge.from.q, edge.from.r)]!.push(edge);
+  const steps: Machine[] = [];
+  const seen = new Uint8Array(area);
+  let at = layout.tiles.findIndex((tile) => tile.kind === "source");
+  while (at >= 0 && seen[at] === 0) {
+    const tile = layout.tiles[at];
+    if (tile?.kind === "sink") return steps.length > 0 ? { steps } : null;
+    seen[at] = 1;
+    let options = exits[at]!;
+    const machine = byId.get(owner[at]!);
+    if (machine !== undefined) {
+      steps.push({ typeId: machine.def.typeId, path: machine.def.path, turn: machine.def.turn });
+      options = [];
+      for (const cell of worldCells(machine)) {
+        const index = hexIndex(layout.width, cell.q, cell.r);
+        seen[index] = 1;
+        options = options.concat(exits[index]!);
+      }
+    }
+    const edge = (tile?.kind === "splitter" ? options.find((candidate) => candidate.dir === tile.outDirs[0]) : undefined) ?? options[0];
+    at = edge === undefined ? -1 : hexIndex(layout.width, edge.to.q, edge.to.r);
+  }
+  return null;
 }
 
 const PAPER_TILE_CELLS = 120;
@@ -767,6 +807,8 @@ interface FactoryProps {
   readonly entitledWidth: number;
   readonly entitledHeight: number;
   readonly catalog: readonly MachineCatalogEntry[];
+  /** Splitter and Merger are unlocked in Technology. */
+  readonly routing: boolean;
   readonly onLayoutChange: (layout: FactoryLayout) => boolean;
   readonly onAdvance?: (ticks: number) => boolean;
   readonly onReset?: () => boolean;
@@ -786,6 +828,7 @@ export function Factory({
   entitledWidth,
   entitledHeight,
   catalog,
+  routing,
   onLayoutChange,
   onAdvance,
   onReset,
@@ -1492,7 +1535,9 @@ export function Factory({
       } else if (/^Digit[1-6]$/.test(event.code)) {
         event.preventDefault();
         const next = tileBrushes[Number(event.code.slice(5)) - 1];
-        if (next !== undefined) setBrush(next);
+        if (next !== undefined && !routing && (next.kind === "splitter" || next.kind === "merger")) {
+          setLockedHint(ROUTING_LOCK_REASON);
+        } else if (next !== undefined) setBrush(next);
       } else if (/^Digit[7-9]$/.test(event.code) || event.code === "Digit0") {
         event.preventDefault();
         const slot = event.code === "Digit0" ? 3 : Number(event.code.slice(5)) - 7;
@@ -1520,7 +1565,7 @@ export function Factory({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [active, catalog, copyHovered, mode, pasteHovered, pickHovered, playing, redoLayout, rotateHoveredOrActive, state.deadlocked, stepOnce, undoLayout]);
+  }, [active, catalog, routing, copyHovered, mode, pasteHovered, pickHovered, playing, redoLayout, rotateHoveredOrActive, state.deadlocked, stepOnce, undoLayout]);
 
   const brushIsMachine = brush.kind === "machine";
   const brushLabel = brush.kind === "machine" ? machineName(brush.typeId) : brush.kind;
@@ -1592,20 +1637,31 @@ export function Factory({
         })
       : [hoverCell];
 
-  const tileBrushBtn = (kind: TileBrushKind, label: string, hotkey: string) => (
-    <button
-      type="button"
-      onClick={() => setBrush({ kind })}
-      className={`tool-slot${brush.kind === kind ? " is-selected" : ""}`}
-      aria-pressed={brush.kind === kind}
-      data-testid={`brush-${kind}`}
-      title={`${label} (${hotkey})`}
-    >
-      <span className="hotkey">{hotkey}</span>
-      <span className="tool-symbol"><ToolGlyph kind={kind} /></span>
-      <span className="tool-name">{label}</span>
-    </button>
-  );
+  const tileBrushBtn = (kind: TileBrushKind, label: string, hotkey: string) => {
+    const locked = !routing && (kind === "splitter" || kind === "merger");
+    const showHint = locked ? () => setLockedHint(ROUTING_LOCK_REASON) : undefined;
+    const hideHint = locked ? () => setLockedHint(null) : undefined;
+    return (
+      <button
+        type="button"
+        onClick={locked ? showHint : () => setBrush({ kind })}
+        onMouseEnter={showHint}
+        onMouseLeave={hideHint}
+        onFocus={showHint}
+        onBlur={hideHint}
+        aria-disabled={locked ? true : undefined}
+        className={`tool-slot${brush.kind === kind ? " is-selected" : ""}${locked ? " is-locked" : ""}`}
+        aria-pressed={brush.kind === kind}
+        data-testid={`brush-${kind}`}
+        title={locked ? ROUTING_LOCK_REASON : `${label} (${hotkey})`}
+      >
+        <span className="hotkey">{hotkey}</span>
+        {locked && <LockGlyph />}
+        <span className="tool-symbol"><ToolGlyph kind={kind} /></span>
+        <span className="tool-name">{label}</span>
+      </button>
+    );
+  };
 
   const facilityName = mode === "pilot" ? "Production Plan" : "Production";
   const runState: RunState = state.deadlocked ? "blocked" : playing ? "running" : "paused";

@@ -57,7 +57,7 @@ describe("DEFAULT_PATENTS tree", () => {
   it("contains only single-Atlas effects and a prerequisite chain", () => {
     const kinds = new Set(DEFAULT_PATENTS.map((n) => n.effect.kind));
     expect(kinds).toEqual(
-      new Set(["expandFactory", "revealAid", "unlockMachine"]),
+      new Set(["expandFactory", "revealAid", "unlockMachine", "unlockRouting"]),
     );
     expect(DEFAULT_PATENTS).not.toHaveProperty("unlockMap");
     const floorDepth = DEFAULT_PATENTS.find((n) => n.id === "floor-depth");
@@ -251,18 +251,20 @@ describe("activeEffects", () => {
       factoryDh: 0,
       revealAid: 0,
       unlockedMachines: [],
+      routing: false,
     });
   });
 
   it("aggregates all unlocked effects", () => {
     const state: PatentState = {
-      unlocked: ["bench-2", "reveal-aid", "zigzag-unlock", "loop-unlock", "floor-depth", "field-survey"],
+      unlocked: ["bench-2", "reveal-aid", "split-merge", "zigzag-unlock", "loop-unlock", "floor-depth", "field-survey"],
     };
     const eff = activeEffects(DEFAULT_PATENTS, state);
     expect(eff.factoryDw).toBe(2);
     expect(eff.factoryDh).toBe(2);
     expect(eff.revealAid).toBe(7);
     expect(eff.unlockedMachines).toEqual(["zigzag", "loop"]);
+    expect(eff.routing).toBe(true);
   });
 
   it("unlockedMachines follow unlock order", () => {

@@ -20,6 +20,7 @@ import type {
 const PATENT_DEFINITIONS = [
   { id: "bench-2", cost: 120, researchCost: 2, requires: [], effect: { kind: "expandFactory", dw: 2, dh: 0 } },
   { id: "reveal-aid", cost: 80, researchCost: 1, requires: [], effect: { kind: "revealAid", amount: 3 } },
+  { id: "split-merge", cost: 90, researchCost: 1, requires: [], effect: { kind: "unlockRouting" } },
   { id: "zigzag-unlock", cost: 100, researchCost: 1, requires: [], effect: { kind: "unlockMachine", typeId: "zigzag" } },
   { id: "loop-unlock", cost: 180, researchCost: 3, requires: ["bench-2"], effect: { kind: "unlockMachine", typeId: "loop" } },
   { id: "floor-depth", cost: 300, researchCost: 5, requires: ["bench-2"], effect: { kind: "expandFactory", dw: 0, dh: 2 } },
@@ -74,6 +75,8 @@ function validateEffect(node: PatentNode): void {
       return;
     case "revealAid":
       requireNonNegativeSafeInteger(effect.amount, `patent "${node.id}" reveal amount`);
+      return;
+    case "unlockRouting":
       return;
     default:
       throw new Error(`patent "${node.id}" has an unknown effect kind`);
@@ -231,6 +234,8 @@ export interface ActiveEffects {
   readonly revealAid: number;
   /** Machine typeIds unlocked, in unlock order. */
   readonly unlockedMachines: readonly MachineTypeId[];
+  /** Splitter and Merger tiles may be built. */
+  readonly routing: boolean;
 }
 
 /** Summarize the effects of the unlocked patents (cold path, UI helper). */
@@ -240,6 +245,7 @@ export function activeEffects(tree: readonly PatentNode[], state: PatentState): 
   let factoryDw = 0;
   let factoryDh = 0;
   let revealAid = 0;
+  let routing = false;
   const unlockedMachines: MachineTypeId[] = [];
 
   for (const id of state.unlocked) {
@@ -256,8 +262,11 @@ export function activeEffects(tree: readonly PatentNode[], state: PatentState): 
       case "unlockMachine":
         unlockedMachines.push(e.typeId);
         break;
+      case "unlockRouting":
+        routing = true;
+        break;
     }
   }
 
-  return { factoryDw, factoryDh, revealAid, unlockedMachines };
+  return { factoryDw, factoryDh, revealAid, unlockedMachines, routing };
 }

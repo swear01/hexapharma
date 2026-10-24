@@ -66,6 +66,7 @@ const clipboardPayloads = [
 
 function clipboardPayloadSave(): string {
   let game = createGameState(defaultGenOptions(14), 10_000, 100);
+  game = applyGameIntent(game, { kind: "unlockPatent", id: "split-merge" });
   const tiles: FactoryTile[] = Array.from(
     { length: BASE_GAME_FACTORY_WIDTH * BASE_GAME_FACTORY_HEIGHT },
     () => ({ kind: "empty" as const }),
@@ -594,6 +595,8 @@ test("focused Factory tool controls still allow R, number, and Q world hotkeys",
 test("Pilot builds without a Research contract and Production is an exact copy", async ({ page }) => {
   await loadSaveFixture(page, pilotSave());
   await expect(page.getByTestId("research-program-strip").getByRole("listitem")).toHaveCount(0);
+  await expect.poll(async () => Number(await page.getByTestId("lab-map-frame").getAttribute("data-plan-line")))
+    .toBeGreaterThan(1);
   await page.getByTestId("view-pilot").click();
   await expect(page.getByTestId("pilot-facility-workspace")).toBeVisible();
   await expect(page.getByTestId("factory-play")).toHaveCount(0);
@@ -609,6 +612,20 @@ test("Pilot builds without a Research contract and Production is an exact copy",
   const saved = deserializeSnapshot(envelope.head);
   expect(saved.research.lastTrial).toBeNull();
   expect(saved.production.layout).toEqual(saved.pilot.layout);
+});
+
+test("Splitter and Merger stay locked until Split / Merge is unlocked", async ({ page }) => {
+  await loadSaveFixture(page, pilotSave());
+  await expect(page.getByTestId("lab-map-frame")).toBeVisible();
+  await page.getByTestId("view-pilot").click();
+  const workspace = page.getByTestId("pilot-facility-workspace");
+  await expect(workspace.getByTestId("brush-splitter")).toHaveAttribute("aria-disabled", "true");
+  await expect(workspace.getByTestId("brush-merger")).toHaveAttribute("aria-disabled", "true");
+  await workspace.getByTestId("brush-belt").click();
+  await workspace.getByTestId("factory-canvas").hover();
+  await page.keyboard.press("Digit2");
+  await expect(workspace.getByTestId("brush-selected")).toHaveText("belt");
+  await expect(workspace.getByRole("status").filter({ hasText: "Split / Merge" })).toBeVisible();
 });
 
 test("a fresh game opens its empty Production floor without using Pilot", async ({ page }) => {
