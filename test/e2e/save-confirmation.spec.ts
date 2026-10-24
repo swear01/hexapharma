@@ -18,7 +18,7 @@ test("Ctrl+S saves the game while text entry keeps its native keys", async ({ pa
 });
 
 test("Load confirms before replacing a different current game and remains cancelable", async ({ page }) => {
-  await page.goto("/?cash=9999&research=9999");
+  await page.goto("/?cash=9999");
   await openMenu(page);
   await page.getByTestId("save").click();
   await page.getByTestId("view-research").click();
@@ -87,7 +87,7 @@ test("Load confirms before replacing a different current game and remains cancel
 });
 
 test("Rewind confirms before dropping the latest checkpoint and restoring the older game", async ({ page }) => {
-  await page.goto("/?cash=9999&research=9999");
+  await page.goto("/?cash=9999");
   await openMenu(page);
   await page.getByTestId("save").click();
   await page.getByTestId("view-research").click();

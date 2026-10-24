@@ -218,7 +218,7 @@ function terrainResearchFixture(): {
 } {
   const options = defaultGenOptions(15);
   const level = generate(options);
-  const game = createGameState(options, 1_000_000, 0);
+  const game = createGameState(options, 1_000_000);
   const map = level.mm.maps[0]!;
   const targets: Record<number, HexCoord> = {};
   for (const kind of [CellKind.Wall, CellKind.Abyss, CellKind.Swamp]) {

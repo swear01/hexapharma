@@ -30,7 +30,7 @@ function preparedFacilitiesSave(seed = 14): string {
     BASE_GAME_FACTORY_WIDTH,
     BASE_GAME_FACTORY_HEIGHT,
   ).layout;
-  let game = createGameState(options, DEFAULT_STARTING_CASH, 0);
+  let game = createGameState(options, DEFAULT_STARTING_CASH);
   game = applyGameIntent(game, { kind: "runResearchTrial", program });
   game = applyGameIntent(game, { kind: "setPilotLayout", layout });
   return serializeGame(game);
@@ -69,7 +69,6 @@ test("full loop: paid Research trial → Production Plan → Production → ship
   await expect(page.getByTestId("shipping-contract")).toContainText("1 / 3");
   await page.getByTestId("view-technology").click();
   await expect(page.getByTestId("technology-drawer")).toBeVisible();
-  await expect(page.getByTestId("research")).toHaveText("1");
 });
 
 test("Blueprint Library persists Pilot layouts independently of save-slot loading", async ({ page }) => {
@@ -130,7 +129,7 @@ test("deleting a cross-save Blueprint requires an explicit cancelable confirmati
 test("an expanded-floor Blueprint stays readable on a smaller Production floor", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto("/?cash=9999&research=9999");
+  await page.goto("/?cash=9999");
   await page.getByTestId("view-technology").click();
   await page.getByTestId("patent-switch-bench-2").click();
   await page.getByTestId("view-blueprints").click();

@@ -686,8 +686,6 @@ export interface SoldCount {
 
 export interface EconomyState {
   readonly cash: number;
-  /** Research points earned by selling physical products. */
-  readonly research: number;
   readonly sold: readonly SoldCount[]; // per-disease cumulative sales (deterministic order)
 }
 

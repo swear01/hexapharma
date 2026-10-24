@@ -23,7 +23,7 @@ Market／Technology：Technology 目前是免費開關（測試期，D42）→ �
 - **Production Plan** 擁有可為空的 sandbox `FactoryLayout`；沒有 clock、建造費、inventory 或 waste。
 - **Production** 新局即擁有空白 24×12 `FactoryLayout` 與 runtime；玩家可直接編輯。
 - Blueprint Library 在 GameState／save slot 之外。目前 UI 只建立／套用 FactoryLayout；codec可保存與驗證現行ordered `research-program`文件，但card只可import／download／delete，不能提交試驗、揭霧或產生outcome。
-- 正常新局以 $1000 開始；不用 query override、隱藏 reference、預製 Blueprint 或注入 Knowledge，就必須付得起一次有效 Research、對應建廠與第一件產品出售。
+- 正常新局以 $1000 開始；不用 query override、隱藏 reference、預製 Blueprint 就必須付得起一次有效 Research、對應建廠與第一件產品出售。
 
 ## 1.2 單層 Atlas、霧與地形
 
@@ -152,9 +152,9 @@ Production 是唯一持續推進 factory tick 的場域。source、transport、m
 - 產品的 demand 價＝`nextUnitPrice(終點所在區的價格, 已售件數)`（`Outcome.regions` 與 `cured` 一一對應）。終點在該疾病 ★（tier 2）Cure 的產品，gross 是 `demand + floor(demand / 2)`；仍只消耗一件 demand。Market 的 Stock 列出 ★ 件數，Next unit 在最佳庫存是 ★ 時顯示加成後的價格與「★ price」。
 - 某疾病第 0 件的 gross 是該件所在區的價格；每次出售後下一件是 `floor(previous × 19 / 20)`，持續衰減到 0，沒有永久正值底價。net 再扣實際 production cost 與每個 side effect 的 $25 penalty。
 - Market 對同一疾病先排 side effect 較少、再排 production cost 較低、最後排 inventory ID 較早的產品。`Ship best` 掃描此順序並賣第一件正 net產品；`Ship profitable` 依同一順序掃描全部庫存、略過不賺錢的候選，只讓實際選中的產品消耗後續demand，不得因較前面的昂貴產品而封鎖後面的正net產品，也不得自動虧本出售。
-- 每件成功出售增加1 Knowledge。Market card必須把最佳庫存的Next gross、production cost、每effect $25 penalty與net直接列出；Clean／Tainted是庫存件數。Ship disabled時顯示「沒有治療庫存」或「沒有正net庫存」的原因；只有authority接受出售後才顯示Knowledge成功回饋。
+- Market card必須把最佳庫存的Next gross、production cost、每effect $25 penalty與net直接列出；Clean／Tainted是庫存件數。Ship disabled時顯示「沒有治療庫存」或「沒有正net庫存」的原因；只有authority接受出售後才顯示`Shipped`成功回饋。
 - 每種疾病另有 shipping contract，quota 固定為 3 件；HUD 顯示首個未完成疾病的 `sold / 3`，全部完成後顯示最後一份 completed contract。合約只由 accepted sales 推進，不另行消耗庫存。
-- 測試期（D42）Technology 每個節點都是免費、獨立的開關：沒有 cash／Knowledge 成本、前置或合約 gate。可隨時開或關；關閉時若 Plan 或 Production 仍用到該機器、Splitter／Merger 或擴出來的格子，sim 拒絕並說明仍在使用。擴廠開或關都在遠端邊緣增減格子並重建 Production runtime、清 waste。正式的解鎖條件與樹狀圖留待之後（plan §7）。
+- 測試期（D42）Technology 每個節點都是免費、獨立的開關：沒有成本、前置或合約 gate。可隨時開或關；關閉時若 Plan 或 Production 仍用到該機器、Splitter／Merger 或擴出來的格子，sim 拒絕並說明仍在使用。擴廠開或關都在遠端邊緣增減格子並重建 Production runtime、清 waste。正式的解鎖條件與樹狀圖留待之後（plan §7）。
 - 白箱 progression 只打開該疾病 reference 實際用到的機器開關（不收費）。五個固定 seed 與更廣代表樣本的合法 reference/compiler 白箱路線必須從 $1000 完成四病，且全程保留至少 $100 作為一次合理 assay 重試或小幅改建預算；這只證明可達性，不代表真人探索有趣。
 - Technology 可解鎖 factory machines、場地、Research PathStamps、motifs 或實際路徑的感測半徑；不能以跨層互動作現行進程。
 - 會重生 Atlas 或清除 Production authority 的解鎖，必須顯示受影響資料並要求確認。
@@ -211,11 +211,11 @@ Blueprint 與 save slot 完全分離，Library envelope version 是 4，使用 `
 - **字**：標題、數字、標籤用自帶 Barlow Condensed 600（`src/ui/fonts/`，OFL），內文系統字；所有數字 tabular。
 - **手繪感**：只來自 `src/render/ink.ts` 的確定性抖動，用於斷崖刻痕、陰影線與路線墨線；不得作用於 port、belt 接點、hit-test 幾何或文字，同一狀態必須逐幀一致。
 - **動態**：每個場域只有一個 authored moment（研究步驟的墨線描出 ≤250 ms），`prefers-reduced-motion` 時立即完成；Pixi auto-ticker 維持關閉。
-- **Shell**：頂列（場域分頁、Cash／Knowledge／Stock→Market／合約）與 Objective 列（依遊戲狀態指出下一步並提供直接動作）；Market／Technology／Blueprints／Guide 是右側 legend 式抽屜（沒有 Formulas）。
+- **Shell**：頂列（場域分頁、Cash／Stock→Market／合約）與 Objective 列（依遊戲狀態指出下一步並提供直接動作）；Market／Technology／Blueprints／Guide 是右側 legend 式抽屜（沒有 Formulas）。
 
 ## 1.11 Save v14 — 開放、可編輯的 alpha 存檔
 
-- 存檔是 plain JSON、可攜且可由玩家修改；不加密、不簽章、不持有 browser key，也不要求 Cash／Knowledge 的收入 trace 或 checksum。合法資源修改必須能載入。
+- 存檔是 plain JSON、可攜且可由玩家修改；不加密、不簽章、不持有 browser key，也不要求 Cash 的收入 trace 或 checksum。合法資源修改必須能載入。
 - full envelope 是 `{version:14, contentBuild, game}`；直接保存完整冷狀態。compact envelope 是 `{version:14, contentBuild, snapshot}`，只有 inventory 將連續相同的產品資料分組、列出各件 ID，以便滿倉 24,500 件仍可放入原有 slot 預算。兩者都不重播歷史。
 - GameState 不保存 `origin`、`intentTrace` 或 `replayTicks`。Research `lastTrial`／fog、Plan、Production layout／cold runtime／waste、economy／sold、patents、inventory／nextInventoryId／rng 都必須完整還原；在途 unit、加工進度、分流游標與 counters 不重設。
 - replay 只供以明確 initial state + intents 重現行為；同一輸入仍須逐欄位／hash 相同。生產的 tick／work 限制只約束單次 API batch，不累積成遊戲壽命。存檔不接受或執行附帶的 trace。
@@ -264,7 +264,7 @@ Pure TS sim core  → authoritative deterministic transitions
 
 - TDD：先有能失敗的 behavior/property/E2E test，再改實作。
 - `npm run check`：typecheck、lint、unit/property/integration、headless Playwright 全部通過。
-- `0.0.0.0:53346 --strictPort` 真人 smoke 必須從真正 fresh save 開始，不注入 cash／Knowledge、不讀 mapgen reference、不用 reference compiler 或預製 Blueprint，人工完成 planned-route Research trial → affordable build／Commission → Production → first profitable sale；另覆蓋 optional Production Plan、shipping contracts、patent gates、Blueprint、Save/Load/Rewind 與 responsive reachability。
+- `0.0.0.0:53346 --strictPort` 真人 smoke 必須從真正 fresh save 開始，不注入 cash、不讀 mapgen reference、不用 reference compiler 或預製 Blueprint，人工完成 planned-route Research trial → affordable build／Commission → Production → first profitable sale；另覆蓋 optional Production Plan、shipping contracts、patent gates、Blueprint、Save/Load/Rewind 與 responsive reachability。
 - 自動 gate 證明 correctness，不宣稱樂趣。真人 fresh-loop 要另外記錄首次理解、嘗試次數、剩餘現金、第一次出售時間、困惑點與主觀是否願意再解下一種疾病。
 - `npm run progression` 保存 34 個 unique seeds（0..31、42、100）的四疾病白箱資金 ledger（research、build、gross/net、sold、剩餘正利潤 demand、最低 cash與第一個不可達動作）；它可使用 dev-only reference/compiler，但不得接入遊戲。
 - balance calibration 覆蓋上述34 seeds。`9/10` demand pacing 在樣本中多次阻擋後段建造，`47/50`仍有7個阻擋樣本；`19/20`配合Settle $700→$670後，全部都完成4份authority shipping contracts、每病正net且最低cash至少$100。v2 Step 4（8 台機器＋分區定價）後 34 seeds 全部完成、每病正 net，最低 cash $574（seed 9）。這是白箱存在性／容錯預算，不是human-fun證據。

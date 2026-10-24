@@ -35,7 +35,7 @@ The same machine is both a path on the map and a footprint on the factory floor:
 - Plan is free/no clock; Production edits cost cash (diff quote); Commission builds a Plan into Production.
 - Finite per-disease demand; shipping contracts (quota 3) gate patents.
 - Hot render loops must not allocate per tick.
-- Terminology for players: Research, Run, Plan, Production, Commission, Cure, Side effect, Market, Technology, Knowledge, Blueprint. Internal `pilot` naming is never player copy.
+- Terminology for players: Research, Run, Plan, Production, Commission, Cure, Side effect, Market, Technology, Blueprint. Internal `pilot` naming is never player copy.
 
 ## Brand Commitments
 

@@ -384,7 +384,6 @@ export function Game() {
     createGameState(
       initialGenOptions(),
       queryInt("cash", DEFAULT_STARTING_CASH),
-      queryInt("research", 0, 0),
     ),
   );
   const gameRef = useRef(game);
@@ -550,7 +549,7 @@ export function Game() {
     if (newGameSeed === null) return;
     const seed = parseNewGameSeed(newGameSeed);
     if (seed === null) return;
-    replaceGame(createGameState(defaultGenOptions(seed), DEFAULT_STARTING_CASH, 0));
+    replaceGame(createGameState(defaultGenOptions(seed), DEFAULT_STARTING_CASH));
     setBuilding("research");
     setDrawer(null);
     setVisited({ research: true, pilot: false, production: false });
@@ -868,10 +867,6 @@ export function Game() {
           <span className="resource-chip" aria-label={`Cash ${game.economy.cash}`} title={`Cash ${game.economy.cash}`}>
             <span className="resource-label" aria-hidden="true"><span className="resource-label-full">Cash</span><span className="resource-label-compact">Cash</span></span>
             <strong><span className="resource-unit" aria-hidden="true">$</span><span data-testid="cash">{game.economy.cash}</span></strong>
-          </span>
-          <span className="resource-chip" aria-label={`Knowledge ${game.economy.research}`} title={`Knowledge ${game.economy.research}`}>
-            <span className="resource-label" aria-hidden="true"><span className="resource-label-full">Knowledge</span><span className="resource-label-compact">Know.</span></span>
-            <strong data-testid="research">{game.economy.research}</strong>
           </span>
           <button type="button" className="resource-chip stock-chip" onClick={() => setDrawer((current) => current === "market" ? null : "market")} aria-label={`Stock ${game.inventory.length}, open Market`} title="Stock · open Market (M)">
             <span className="resource-label" aria-hidden="true"><span className="resource-label-full">Stock</span><span className="resource-label-compact">Stock</span></span>

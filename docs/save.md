@@ -1,6 +1,6 @@
 # Save v14 — open alpha snapshots
 
-存檔是可攜、可編輯的 plain JSON。玩家可以直接修改合法的 Cash、Knowledge、sold 或 fog；沒有加密、簽章、browser key、資源收入 trace 或狀態 checksum。嚴格驗證只保護結構、記憶體／計算資源與可執行狀態。
+存檔是可攜、可編輯的 plain JSON。玩家可以直接修改合法的 Cash、sold 或 fog；沒有加密、簽章、browser key、資源收入 trace 或狀態 checksum。嚴格驗證只保護結構、記憶體／計算資源與可執行狀態。
 
 ## 格式與 APIs
 
@@ -12,7 +12,7 @@
 
 full 與 compact 的差異只為實際容量需要：24,500 件相同產品若逐件重複完整資料會超過 browser slot 的原有上限，分組後仍可保存。兩者都直接還原 state，不執行 replay，也不持有 checkpoint chain。
 
-例如修改 full save 的 `game.economy.cash` 或 `game.economy.research` 後直接載入；compact save 對應 `snapshot.economy`。Cash 可為任意 safe integer（含負值），Knowledge 須為 non-negative safe integer。不需修改 `contentBuild` 或提供原始收入記錄。
+例如修改 full save 的 `game.economy.cash` 後直接載入；compact save 對應 `snapshot.economy`。Cash 可為任意 safe integer（含負值）。不需修改 `contentBuild` 或提供原始收入記錄。
 
 ## 完整狀態與驗證
 
@@ -45,7 +45,7 @@ key 為 `hexapharma.save.v14.checkpoint.${slot}`。外層 `{version:2, head, his
 | Browser slot blob | 最多 1,250,000 characters，最多 20 snapshots；無法容納 head 或 storage quota 不足時明確失敗 |
 | Inventory | 最多 24,500 physical products；滿倉的生產操作原子拒絕，出售騰出空間後可繼續 |
 | 其他 collections | fog 受地圖大小限制，Research 只保存最近一次試驗（program ≤ 256 machines），patents 受固定樹限制，in-flight units 受工廠容量限制；不保留終生操作 list |
-| 數值 counters | tick、waste、save-global inventory ID、Cash／Knowledge／sold 受 safe-integer 表示範圍限制；溢位操作明確拒絕，不 wrap |
+| 數值 counters | tick、waste、save-global inventory ID、Cash／sold 受 safe-integer 表示範圍限制；溢位操作明確拒絕，不 wrap |
 | Factory IDs／加工 buffers | 保留既有 Int32 表示範圍；factory unit IDs 為 0..2,147,483,647，每個 runtime 最多配置 2,147,483,648 IDs。Reset／重建會重設 runtime-local IDs／counters，不清 inventory 或其全局 IDs；沒有宣稱數學上的無限運行 |
 
 這些是現有空間與數字表示的限制。曾經歷多少合法操作、tick 或 replay work，不再讓整局永久失去操作能力。

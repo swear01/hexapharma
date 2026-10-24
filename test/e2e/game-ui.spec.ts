@@ -53,7 +53,7 @@ test("the complete HUD stays reachable across narrow widths", async ({ page }) =
 
   for (const width of [390, 430, 560, 651]) {
     await page.setViewportSize({ width, height: 844 });
-    await page.goto("/?cash=999712&research=100000");
+    await page.goto("/?cash=999712");
     await expect(page.getByTestId("shipping-contract")).toHaveCSS("display", "grid");
 
     for (const element of await page.locator(".top-hud .resource-chip, .top-hud button").all()) {

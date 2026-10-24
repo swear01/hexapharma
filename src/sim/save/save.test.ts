@@ -58,7 +58,7 @@ function partialResearch(game: GameState, program = researchFixture(game.genOpti
   return applyGameIntent(game, { kind: "runResearchTrial", program: { steps: [program.steps[0]!] } });
 }
 
-function reachProduction(game = createGameState(OPTIONS, 10_000, 100)): GameState {
+function reachProduction(game = createGameState(OPTIONS, 10_000)): GameState {
   const { layout } = researchFixture(game.genOptions);
   let next = completeResearch(game);
   next = applyGameIntent(next, { kind: "setPilotLayout", layout });
@@ -148,12 +148,12 @@ describe("serializeGame / deserializeGame", () => {
   });
 
   it("round-trips empty, partial-trial, curing-trial, Pilot, and negative-cash states", () => {
-    const empty = createGameState(OPTIONS, 0, 0);
+    const empty = createGameState(OPTIONS, 0);
     const { layout, program } = researchFixture();
-    const partial = partialResearch(createGameState(OPTIONS, 10_000, 0), program);
-    const completed = completeResearch(createGameState(OPTIONS, 10_000, 0), program);
+    const partial = partialResearch(createGameState(OPTIONS, 10_000), program);
+    const completed = completeResearch(createGameState(OPTIONS, 10_000), program);
     const pilot = applyGameIntent(completed, { kind: "setPilotLayout", layout });
-    const negative = createGameState(OPTIONS, -250, 0);
+    const negative = createGameState(OPTIONS, -250);
 
     for (const game of [empty, partial, completed, pilot, negative]) {
       expect(deserializeGame(serializeGame(game))).toEqual(game);
@@ -163,7 +163,7 @@ describe("serializeGame / deserializeGame", () => {
   it("round-trips direct Pilot editing and Production reset intents", () => {
     const { layout } = researchFixture();
 
-    const pilot = applyGameIntent(createGameState(OPTIONS, 0, 0), {
+    const pilot = applyGameIntent(createGameState(OPTIONS, 0), {
       kind: "setPilotLayout",
       layout: emptyFactory(layout),
     });
@@ -210,25 +210,24 @@ describe("serializeGame / deserializeGame", () => {
     expect(deserializeGame(serializeGame(game))).toEqual(game);
   });
 
-  it("loads edited cash and Knowledge without a revenue trace or checksum", () => {
+  it("loads edited cash without a revenue trace or checksum", () => {
     const game = baseGame();
     const edited = wire(game);
     edited.game.economy.cash = 123456;
-    edited.game.economy.research = 999;
     expect(edited.game).not.toHaveProperty("intentTrace");
     expect(edited.game).not.toHaveProperty("origin");
     expect(edited.game).not.toHaveProperty("stateHash");
     const loaded = deserializeGame(JSON.stringify(edited));
-    expect(loaded.economy).toEqual({ ...game.economy, cash: 123456, research: 999 });
+    expect(loaded.economy).toEqual({ ...game.economy, cash: 123456 });
     expect(loaded.production).toEqual(game.production);
     expect(deserializeGame(serializeGame(loaded))).toEqual(loaded);
   });
 
   it("round-trips Research trials and contract-free Pilot/Production through compact snapshots", () => {
     const { layout, program } = researchFixture();
-    const started = createGameState(OPTIONS, 10_000, 0);
-    const active = partialResearch(createGameState(OPTIONS, 10_000, 0), program);
-    const pilot = applyGameIntent(createGameState(OPTIONS, 10_000, 0), {
+    const started = createGameState(OPTIONS, 10_000);
+    const active = partialResearch(createGameState(OPTIONS, 10_000), program);
+    const pilot = applyGameIntent(createGameState(OPTIONS, 10_000), {
       kind: "setPilotLayout",
       layout,
     });
@@ -330,7 +329,7 @@ describe("deserializeGame schema validation", () => {
   ])(
     "rejects removed %s intents instead of falling back",
     (kind) => {
-      const parsed = wire(createGameState(OPTIONS, 0, 0));
+      const parsed = wire(createGameState(OPTIONS, 0));
       parsed.game.intentTrace = [{ kind }];
       expect(() => deserializeGame(JSON.stringify(parsed))).toThrow(/unknown field game.intentTrace/i);
     },
@@ -651,7 +650,7 @@ describe("snapshot safety", () => {
       catalog: availableCatalog({ unlocked: [] }),
     };
     const level = generate(options);
-    const game = completeResearch(createGameState(options, 100_000, 100), level.diseases[0]!.reference);
+    const game = completeResearch(createGameState(options, 100_000), level.diseases[0]!.reference);
     expect(game.research.lastTrial?.outcome.cured).toEqual([0]);
     expect(deserializeGame(serializeGame(game))).toEqual(game);
 
@@ -705,7 +704,7 @@ describe("snapshot safety", () => {
   it("keeps cloned layout identity coherent with its restored runtime", () => {
     const restore = vi.spyOn(factorySim, "restoreFactory");
     try {
-      const game = validateGameState(createGameState(OPTIONS, 1000, 0));
+      const game = validateGameState(createGameState(OPTIONS, 1000));
       const map = restore.mock.calls.at(-1)![1];
       factorySim.stepFactory(game.production.layout, map, game.production.runtime);
       expect(game.production.runtime.tick).toBe(1);
@@ -740,7 +739,7 @@ describe("snapshot safety", () => {
 
 describe("multi-save slots and rewind", () => {
   it("round-trips isolated slot snapshots deterministically", () => {
-    const states = [baseGame(), createGameState({ ...OPTIONS, seed: 15 }, 5, 1)];
+    const states = [baseGame(), createGameState({ ...OPTIONS, seed: 15 }, 5)];
     const blob = serializeSlots(states);
     expect(serializeSlots(states)).toBe(blob);
     expect(deserializeSlots(blob)).toEqual(states);
@@ -748,8 +747,8 @@ describe("multi-save slots and rewind", () => {
 
   it("round-trips a Research trial, independent Pilot, and live Production slot states", () => {
     const { layout, program } = researchFixture();
-    const active = partialResearch(createGameState(OPTIONS, 10_000, 0), program);
-    const pilot = applyGameIntent(createGameState(OPTIONS, 10_000, 0), {
+    const active = partialResearch(createGameState(OPTIONS, 10_000), program);
+    const pilot = applyGameIntent(createGameState(OPTIONS, 10_000), {
       kind: "setPilotLayout",
       layout,
     });
@@ -776,8 +775,8 @@ describe("multi-save slots and rewind", () => {
 
   it("rewinds to a cold-cloned prior state and truncates history", () => {
     const a = baseGame();
-    const b = createGameState({ ...OPTIONS, seed: 15 }, 5, 1);
-    const c = createGameState({ ...OPTIONS, seed: 16 }, 6, 2);
+    const b = createGameState({ ...OPTIONS, seed: 15 }, 5);
+    const c = createGameState({ ...OPTIONS, seed: 16 }, 6);
     const result = rewind([a, b, c], 1);
     expect(result.state).toEqual(b);
     expect(result.state).not.toBe(b);
@@ -787,8 +786,8 @@ describe("multi-save slots and rewind", () => {
 
   it("rewinds exactly to a Research trial without inventing factory contracts", () => {
     const { layout, program } = researchFixture();
-    const active = partialResearch(createGameState(OPTIONS, 10_000, 0), program);
-    const pilot = applyGameIntent(createGameState(OPTIONS, 10_000, 0), {
+    const active = partialResearch(createGameState(OPTIONS, 10_000), program);
+    const pilot = applyGameIntent(createGameState(OPTIONS, 10_000), {
       kind: "setPilotLayout",
       layout,
     });
@@ -803,7 +802,7 @@ describe("multi-save slots and rewind", () => {
 
   it("uses one step by default and rejects rewinding past the start", () => {
     const a = baseGame();
-    const b = createGameState({ ...OPTIONS, seed: 15 }, 5, 1);
+    const b = createGameState({ ...OPTIONS, seed: 15 }, 5);
     expect(rewind([a, b]).state).toEqual(a);
     expect(() => rewind([a], 5)).toThrow(SaveError);
   });

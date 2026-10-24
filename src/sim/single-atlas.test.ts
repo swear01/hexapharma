@@ -25,7 +25,7 @@ describe("single Research Atlas authority", () => {
     }
 
     const machine = DEFAULT_CATALOG[0]!;
-    const game = applyGameIntent(createGameState(singleAtlasOptions, 200, 0), {
+    const game = applyGameIntent(createGameState(singleAtlasOptions, 200), {
       kind: "runResearchTrial",
       program: { steps: [machine] },
     });
@@ -41,14 +41,14 @@ describe("single Research Atlas authority", () => {
       ...singleAtlasOptions,
       nMaps: 2,
       diseaseCount: 2,
-    }, 200, 0)).toThrow(/single Research Atlas/i);
+    }, 200)).toThrow(/single Research Atlas/i);
   });
 
   it("supports several independent diseases on the one active Atlas", () => {
     const game = createGameState({
       ...singleAtlasOptions,
       diseaseCount: 3,
-    }, 800, 0);
+    }, 800);
 
     expect(game.genOptions.nMaps).toBe(1);
     expect(game.genOptions.diseaseCount).toBe(3);

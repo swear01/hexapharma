@@ -74,7 +74,7 @@ describe("integration: Atlas → program → factory plus economy, patent, and s
     const level = generate(opts(7));
     const dA = level.diseases[0]!;
     const dB = { id: dA.id + 1, basePrice: dA.basePrice };
-    let econ: EconomyState = { cash: 0, research: 0, sold: [] };
+    let econ: EconomyState = { cash: 0, sold: [] };
 
     // spam disease A: each successive unit nets no more than the previous
     const nets: number[] = [];
@@ -105,7 +105,7 @@ describe("integration: Atlas → program → factory plus economy, patent, and s
       maxDepth: 12,
       targets: [0],
     })!.template;
-    let g = createGameState(options, 10_000, 100);
+    let g = createGameState(options, 10_000);
     const layout = compileEntitledPrototype(
       template,
       BASE_GAME_FACTORY_WIDTH,

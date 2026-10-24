@@ -28,7 +28,6 @@ test("a player can start a different seeded run without deleting saved checkpoin
   await dialog.getByRole("button", { name: "Start" }).click();
   await expect(page.getByTestId("seed")).toHaveText("16");
   await expect(page.getByTestId("cash")).toHaveText("1000");
-  await expect(page.getByTestId("research")).toHaveText("0");
   await page.getByTestId("view-blueprints").click();
   await expect(page.getByTestId("blueprint-library")).toContainText("Cross-seed floor");
   await page.keyboard.press("Escape");

@@ -18,7 +18,7 @@
 
 ### Phase 3 — Economy / Technology / save
 
-完成 Market、Knowledge、shipping contracts、patents、獨立 intent replay debug／開放 checkpoint。當前 wire 是 Save v14（v2 Step 4），早期 schema 不再支援。
+完成 Market、shipping contracts、patents、獨立 intent replay debug／開放 checkpoint。當前 wire 是 Save v14（v2 Step 4），早期 schema 不再支援。
 
 ### Phase 4 — Direct-operation shell
 

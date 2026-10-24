@@ -16,7 +16,7 @@ A fresh default seed 14 run started with $1000 and no injected state, funds, ref
 | Construction | $320; no layout rebuilds |
 | Minimum cash | $652 |
 | First sale | $136 gross − $28 processing − $25 effect penalty = $83 net |
-| After first sale | $735 cash, 1 Knowledge, 48 stock |
+| After first sale | $735 cash, 48 stock |
 
 The run was saved with the normal UI. Its authority input trace and original screenshots are preserved in `/tmp/hexapharma-ui-acceptance` and `/tmp/hexapharma-ui-manual-*.png` on the task machine. Populated screenshot captures load that same manual checkpoint; they are not compiler fixtures. Browser traces of the capture pass document loading and interacting with the checkpoint, not the original fresh playthrough.
 

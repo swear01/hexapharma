@@ -8,7 +8,6 @@ import { defaultGenOptions } from "../../src/ui/Game";
 const maximumGameMap = createGameState(
   { ...defaultGenOptions(14), width: 64, height: 64 },
   200,
-  0,
 );
 const maximumGameMapCheckpoint = JSON.stringify({
   version: 2,

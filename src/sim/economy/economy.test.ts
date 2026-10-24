@@ -3,7 +3,7 @@ import fc from "fast-check";
 import type { DiseaseId, EconomyState } from "../phase0_interfaces";
 import { nextUnitPrice, sellUnit } from "./index";
 
-const empty: EconomyState = { cash: 0, research: 0, sold: [] };
+const empty: EconomyState = { cash: 0, sold: [] };
 
 describe("nextUnitPrice — diminishing returns", () => {
   it("alreadySold = 0 returns basePrice", () => {
@@ -104,7 +104,7 @@ describe("sellUnit — cash conservation", () => {
   it("rejects malformed economy and negative physical costs", () => {
     expect(() => sellUnit(empty, 0, 100, -1, 0)).toThrow(/cost/i);
     expect(() => sellUnit(empty, 0, 100, 0, -1)).toThrow(/penalty/i);
-    expect(() => sellUnit({ cash: 0, research: 0, sold: [{ disease: 0, count: -1 }] }, 0, 100, 0, 0))
+    expect(() => sellUnit({ cash: 0, sold: [{ disease: 0, count: -1 }] }, 0, 100, 0, 0))
       .toThrow(/sold count/i);
   });
 
@@ -122,7 +122,7 @@ describe("sellUnit — cash conservation", () => {
           { maxLength: 60 },
         ),
         (initialCash, sales) => {
-          let econ: EconomyState = { cash: initialCash, research: 0, sold: [] };
+          let econ: EconomyState = { cash: initialCash, sold: [] };
           let sumNet = 0;
           for (const s of sales) {
             const r = sellUnit(econ, s.disease, s.base, s.cost, s.penalty);
@@ -131,7 +131,6 @@ describe("sellUnit — cash conservation", () => {
             econ = r.econ;
           }
           expect(econ.cash).toBe(initialCash + sumNet);
-          expect(econ.research).toBe(sales.length);
         },
       ),
     );
@@ -182,7 +181,6 @@ describe("sellUnit — per-disease independence (parallel demand)", () => {
   it("keeps fresh-disease demand intact after another disease reaches zero", () => {
     const exhausted: EconomyState = {
       cash: 0,
-      research: 512,
       sold: [{ disease: 0, count: 512 }],
     };
 
@@ -193,7 +191,6 @@ describe("sellUnit — per-disease independence (parallel demand)", () => {
   it("lets a different disease sell when another counter is saturated", () => {
     const econ: EconomyState = {
       cash: 0,
-      research: 0,
       sold: [{ disease: 1, count: Number.MAX_SAFE_INTEGER }],
     };
 
@@ -202,7 +199,6 @@ describe("sellUnit — per-disease independence (parallel demand)", () => {
     expect(result.revenue).toBe(100);
     expect(result.econ).toEqual({
       cash: 100,
-      research: 1,
       sold: [
         { disease: 0, count: 1 },
         { disease: 1, count: Number.MAX_SAFE_INTEGER },
@@ -214,12 +210,10 @@ describe("sellUnit — per-disease independence (parallel demand)", () => {
   it("atomically rejects incrementing the saturated target disease", () => {
     const econ: EconomyState = {
       cash: 7,
-      research: 3,
       sold: [{ disease: 0, count: Number.MAX_SAFE_INTEGER }],
     };
     const before: EconomyState = {
       cash: econ.cash,
-      research: econ.research,
       sold: econ.sold.map((entry) => ({ ...entry })),
     };
 
@@ -297,7 +291,7 @@ describe("sellUnit — determinism", () => {
         fc.integer({ min: 0, max: 200 }),
         fc.integer({ min: 0, max: 200 }),
         (cash, disease, base, cost, penalty) => {
-          const econ: EconomyState = { cash, research: 0, sold: [{ disease, count: 3 }] };
+          const econ: EconomyState = { cash, sold: [{ disease, count: 3 }] };
           const a = sellUnit(econ, disease, base, cost, penalty);
           const b = sellUnit(econ, disease, base, cost, penalty);
           expect(a).toEqual(b);

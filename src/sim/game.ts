@@ -662,12 +662,10 @@ export function validateGameOptions(genOptions: GenOptions): void {
   validateGameCatalog(genOptions.catalog);
 }
 
-export function createGameState(genOptions: GenOptions, cash: number, research: number): GameState {
+export function createGameState(genOptions: GenOptions, cash: number): GameState {
   requireSafeInteger(cash, "game state: starting cash");
-  requireSafeInteger(research, "game state: starting research", 0);
   const ownedOptions = ownGenOptions(genOptions);
   const ownedCash = canonicalNumber(cash);
-  const ownedResearch = canonicalNumber(research);
   validateGameOptions(ownedOptions);
   const level = levelFor(ownedOptions);
   const productionLayout = ownFactoryLayout({
@@ -679,7 +677,7 @@ export function createGameState(genOptions: GenOptions, cash: number, research: 
   });
   return {
     genOptions: ownedOptions,
-    economy: { cash: ownedCash, research: ownedResearch, sold: [] },
+    economy: { cash: ownedCash, sold: [] },
     patents: { unlocked: [] },
     research: Object.freeze({ lastTrial: null }),
     pilot: Object.freeze({ layout: null }),
@@ -1330,7 +1328,6 @@ export function validateGameState(game: GameState): GameState {
   validateGameOptions(game.genOptions);
   const level = levelFor(game.genOptions);
   requireSafeInteger(game.economy.cash, "game state: cash");
-  requireSafeInteger(game.economy.research, "game state: research", 0);
   const soldDiseases = new Set<number>();
   const diseaseIds = new Set(level.diseases.map((disease) => disease.id));
   let previousSoldDisease = -1;

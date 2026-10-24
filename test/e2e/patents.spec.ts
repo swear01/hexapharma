@@ -27,7 +27,7 @@ function productionCheckpoint(): string {
     BASE_GAME_FACTORY_WIDTH,
     BASE_GAME_FACTORY_HEIGHT,
   ).layout;
-  let game = createGameState(options, 9_999, 9_999);
+  let game = createGameState(options, 9_999);
   game = applyGameIntent(game, { kind: "setPilotLayout", layout });
   game = applyGameIntent(game, { kind: "buildProductionLayout", layout });
   game = applyGameIntent(game, { kind: "productionTicks", ticks: 1 });
@@ -40,7 +40,7 @@ function revealedOf(text: string | null): number {
 }
 
 test("reveal aid is a free switch that expands the next Research trial sensor", async ({ page }) => {
-  await page.goto("/?cash=9999&research=9999");
+  await page.goto("/?cash=9999");
   const revealed = page.getByTestId("lab-map-frame");
   const before = revealedOf(await revealed.getAttribute("data-revealed"));
   await page.getByTestId("view-technology").click();
@@ -50,7 +50,6 @@ test("reveal aid is a free switch that expands the next Research trial sensor", 
   await expect(scanner).toHaveAttribute("aria-checked", "true");
   await expect(scanner).toHaveText("On");
   await expect(page.getByTestId("cash")).toHaveText("9999");
-  await expect(page.getByTestId("research")).toHaveText("9999");
   await page.getByTestId("view-research").click();
   expect(revealedOf(await revealed.getAttribute("data-revealed"))).toBe(before);
   await page.getByTestId(`research-machine-${DEFAULT_CATALOG[0]!.typeId}`).click();
@@ -101,7 +100,7 @@ test("factory expansion confirms before resetting built Production", async ({ pa
 });
 
 test("Technology lists every node as a free switch with only its effect", async ({ page }) => {
-  await page.goto("/?cash=0&research=0");
+  await page.goto("/?cash=0");
   await page.getByTestId("view-technology").click();
 
   await expect(page.getByTestId("patents-effects")).toHaveCount(0);

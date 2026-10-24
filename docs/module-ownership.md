@@ -23,7 +23,7 @@
 | replay work | `src/sim/replay-work.ts` | integrator（agent 交付） | ✅ 單次 Production batch work preflight／獨立 replay 估算 |
 | economy | `src/sim/economy/` | integrator（agent 交付） | ✅ finite per-disease demand／eventual zero gross |
 | save | `src/sim/save/` | integrator（agent 交付） | ✅ Save v14 開放 cold snapshots／lastTrial replay／heading-offset executable-state validation |
-| patent | `src/sim/patent/` | integrator（agent 交付） | ✅ cash+Knowledge、機器／擴廠／actual-trail sensor；無layer progression |
+| patent | `src/sim/patent/` | integrator（agent 交付） | ✅ 免費開關（D42）、機器／擴廠／actual-trail sensor；無layer progression |
 | render | `src/render/` | integrator（agent 交付） | ✅ shared projection／Lab／Factory pointy-top renderers |
 | ui shell/workspaces | `src/ui/Game.tsx`、`src/ui/App.tsx` | integrator | ✅ q/r Research camera／picking／six-sector caller |
 | UI chrome | `src/ui/game.css`（tokens＋shell）、`research.css`／`factory.css`／`panels.css` | integrator（agent 交付） | ✅ orienteering-map paper/ink stylesheet |

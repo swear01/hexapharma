@@ -32,7 +32,7 @@ describe("fresh-save playable loop", () => {
     const level = generate(genOptions);
     expect(level.diseases).toHaveLength(4);
     const program = level.diseases[0]!.reference;
-    let game = createGameState(genOptions, DEFAULT_STARTING_CASH, 0);
+    let game = createGameState(genOptions, DEFAULT_STARTING_CASH);
 
     game = applyGameIntent(game, { kind: "runResearchTrial", program });
     expect(game.research.lastTrial?.outcome.cured).toContain(level.diseases[0]!.id);
@@ -59,6 +59,5 @@ describe("fresh-save playable loop", () => {
       disease: level.diseases[0]!.id,
     });
     expect(game.economy.cash).toBeGreaterThan(beforeSale);
-    expect(game.economy.research).toBe(1);
   });
 });

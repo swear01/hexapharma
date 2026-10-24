@@ -1,6 +1,6 @@
 # Early Development Policy
 
-HexaPharma 目前是 alpha。存檔採**完全開放、plain JSON、可攜且可由玩家編輯**的政策；不需要加密、browser key、簽章、防作弊或資源來源證明。合法修改 Cash／Knowledge 不要求修改任何 checksum 或收入 trace。
+HexaPharma 目前是 alpha。存檔採**完全開放、plain JSON、可攜且可由玩家編輯**的政策；不需要加密、browser key、簽章、防作弊或資源來源證明。合法修改 Cash 不要求修改任何 checksum 或收入 trace。
 
 ## 存檔相容性
 

@@ -56,7 +56,6 @@ export interface ProgressionLedger {
   readonly completed: boolean;
   readonly blockedAction: string | null;
   readonly finalCash: number;
-  readonly finalResearch: number;
   readonly minimumCash: number;
   readonly completedContracts: number;
   readonly everyDiseasePositiveNet: boolean;
@@ -83,7 +82,7 @@ export function unlocksFor(reference: Template, owned: readonly string[]): reado
 
 export function progressionLedger(seed: number, startingCash = DEFAULT_STARTING_CASH): ProgressionLedger {
   const level = generate(options(seed));
-  let game = createGameState(options(seed), startingCash, 0);
+  let game = createGameState(options(seed), startingCash);
   let minimumCash = game.economy.cash;
   const entries: ProgressionEntry[] = [];
 
@@ -155,7 +154,6 @@ export function progressionLedger(seed: number, startingCash = DEFAULT_STARTING_
         completed: false,
         blockedAction: error instanceof Error ? error.message : String(error),
         finalCash: game.economy.cash,
-        finalResearch: game.economy.research,
         minimumCash,
         completedContracts: shippingContracts(game).filter((contract) => contract.completed).length,
         everyDiseasePositiveNet: entries.every((entry) => entry.net > 0),
@@ -172,7 +170,6 @@ export function progressionLedger(seed: number, startingCash = DEFAULT_STARTING_
       ? null
       : "four authoritative shipping contracts with positive net were not completed",
     finalCash: game.economy.cash,
-    finalResearch: game.economy.research,
     minimumCash,
     completedContracts,
     everyDiseasePositiveNet,

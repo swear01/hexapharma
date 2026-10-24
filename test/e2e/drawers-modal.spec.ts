@@ -15,7 +15,7 @@ function discover(game: GameState, disease: number): GameState {
 }
 
 function fixture(): GameState {
-  let game = discover(createGameState(defaultGenOptions(14), 9999, 9999), 0);
+  let game = discover(createGameState(defaultGenOptions(14), 9999), 0);
   const program = generate(game.genOptions).diseases[0]!.reference;
   const layout = compileEntitledPrototype(program, BASE_GAME_FACTORY_WIDTH, BASE_GAME_FACTORY_HEIGHT).layout;
   game = applyGameIntent(game, { kind: "buildProductionLayout", layout });
@@ -48,12 +48,12 @@ test("Research keeps no formula ledger or Formulas drawer", async ({ page }) => 
 });
 
 async function readProduction(page: Page): Promise<readonly (string | null)[]> {
-  return Promise.all(["factory-tick", "factory-produced", "factory-waste", "cash", "research", "stock"].map((id) => page.getByTestId(id).textContent()));
+  return Promise.all(["factory-tick", "factory-produced", "factory-waste", "cash", "stock"].map((id) => page.getByTestId(id).textContent()));
 }
 
 test("an open drawer suppresses factory input across resize without pausing Production", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await loadFixture(page, discover(createGameState(defaultGenOptions(14), 1000, 0), 0));
+  await loadFixture(page, discover(createGameState(defaultGenOptions(14), 1000), 0));
   await page.getByTestId("view-production").click();
   const box = (await page.getByTestId("production-facility-workspace").locator("canvas").boundingBox())!;
   await page.mouse.click(box.x + 12 + Math.sqrt(3) * 21 / 2, box.y + 12 + 21);
@@ -91,7 +91,7 @@ test("Escape closes Blueprints and Menu after their fields receive focus", async
 
 test("Research hotkeys work only while the world is visible", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await loadFixture(page, discover(createGameState(defaultGenOptions(14), 1000, 0), 0));
+  await loadFixture(page, discover(createGameState(defaultGenOptions(14), 1000), 0));
   await page.getByTestId("view-help").click();
   await page.getByRole("heading", { name: "Field guide" }).click();
   const cash = await page.getByTestId("cash").textContent();

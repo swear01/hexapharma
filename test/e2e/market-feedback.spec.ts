@@ -24,9 +24,9 @@ function preparedMarketSave(priorSales: number): string {
     BASE_GAME_FACTORY_WIDTH,
     BASE_GAME_FACTORY_HEIGHT,
   ).layout;
-  const empty = createGameState(options, 10_000, 0);
+  const empty = createGameState(options, 10_000);
   const buildCost = quoteProductionBuild(empty.production.layout, layout);
-  let game = createGameState(options, buildCost + 1_000, 0);
+  let game = createGameState(options, buildCost + 1_000);
   game = applyGameIntent(game, { kind: "buildProductionLayout", layout });
   game = applyGameIntent(game, { kind: "productionTicks", ticks: 400 });
   for (let index = 0; index < priorSales; index++) {
@@ -55,7 +55,7 @@ async function loadMarket(
   await page.getByTestId("view-market").click();
 }
 
-test("Market explains Ship best economics and reports Knowledge from a sale", async ({ page }) => {
+test("Market explains Ship best economics and reports a sale", async ({ page }) => {
   await loadMarket(page, 0);
   const row = page.getByTestId("shop-row-0");
 
@@ -73,10 +73,7 @@ test("Market explains Ship best economics and reports Knowledge from a sale", as
   await expect(row.locator(".market-stock.is-tainted")).toContainText("Tainted");
 
   await row.getByTestId("shop-sell-0").click();
-  await expect(page.getByTestId("market-sale-feedback")).toHaveText(
-    "Shipped 1 · +1 Knowledge",
-  );
-  await expect(page.getByTestId("research")).toHaveText("1");
+  await expect(page.getByTestId("market-sale-feedback")).toHaveText("Shipped 1");
 });
 
 test("Market gives a visible reason when no stock can ship profitably", async ({ page }) => {

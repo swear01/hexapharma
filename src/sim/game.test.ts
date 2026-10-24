@@ -112,7 +112,7 @@ function shipContract(
 
 describe("whole-game deterministic state", () => {
   it("starts with an editable empty Production floor without a Pilot gate", () => {
-    const game = createGameState(opts, 200, 0);
+    const game = createGameState(opts, 200);
 
     expect(game.production.layout).toEqual(baseLayout());
     expect(game.production.runtime).not.toBeNull();
@@ -121,7 +121,7 @@ describe("whole-game deterministic state", () => {
   });
 
   it("builds directly in Production and charges the exact construction quote", () => {
-    const initial = createGameState(opts, 200, 0);
+    const initial = createGameState(opts, 200);
     const proposed = directSinkFactory(baseLayout());
     const built = applyGameIntent(initial, { kind: "buildProductionLayout", layout: proposed });
 
@@ -133,7 +133,7 @@ describe("whole-game deterministic state", () => {
   });
 
   it("rejects unaffordable Production construction atomically", () => {
-    const initial = createGameState(opts, 17, 0);
+    const initial = createGameState(opts, 17);
     const beforeHash = hashGame(initial);
 
     expect(() => applyGameIntent(initial, {
@@ -144,7 +144,7 @@ describe("whole-game deterministic state", () => {
   });
 
   it("charges every paid Production build", () => {
-    let game = createGameState(opts, 200, 0);
+    let game = createGameState(opts, 200);
     const east = { ...baseLayout(), tiles: [...baseLayout().tiles] };
     east.tiles[0] = { kind: "belt", dir: 0 };
     const south = { ...baseLayout(), tiles: [...baseLayout().tiles] };
@@ -161,7 +161,7 @@ describe("whole-game deterministic state", () => {
     const template = recipe();
     expect(applyTemplate(level.mm, initialState(level.mm), template).pos).not.toEqual(level.start.pos);
 
-    let game = buildTemplate(createGameState(opts, 1_000, 0), template);
+    let game = buildTemplate(createGameState(opts, 1_000), template);
     game = applyGameIntent(game, {
       kind: "buildProductionLayout",
       layout: directSinkFactory(game.production.layout),
@@ -177,7 +177,7 @@ describe("whole-game deterministic state", () => {
     const expectedCost = template.steps.reduce((total, step) => {
       return total + (DEFAULT_CATALOG.find((entry) => entry.typeId === step.typeId)?.cost ?? 0);
     }, 0);
-    let game = buildTemplate(createGameState(opts, 500, 0), template);
+    let game = buildTemplate(createGameState(opts, 500), template);
     game = applyGameIntent(game, { kind: "productionTicks", ticks: 200 });
     const product = game.inventory[0]!;
     expect(product.productionCost).toBe(expectedCost);
@@ -192,7 +192,6 @@ describe("whole-game deterministic state", () => {
     });
 
     expect(game.inventory.some((candidate) => candidate.inventoryId === product.inventoryId)).toBe(false);
-    expect(game.economy.research).toBe(1);
     expect(game.economy.cash).toBe(
       cashBefore + diseaseSpec.basePrice - product.productionCost
         - product.outcome.sideEffects.length * 25,
@@ -205,7 +204,7 @@ describe("whole-game deterministic state", () => {
     const firstDisease = diseaseSpecs[0]!.id;
     const secondDisease = diseaseSpecs[1]!.id;
     let game = buildTemplate(
-      createGameState(twoDiseaseOptions, 1_000, 0),
+      createGameState(twoDiseaseOptions, 1_000),
       diseaseSpecs[0]!.reference,
     );
 
@@ -239,10 +238,10 @@ describe("whole-game deterministic state", () => {
   });
 
   it("switches Technology on and off for free, refusing to turn off what a layout still uses", () => {
-    let game = createGameState(opts, 10_000, 0);
+    let game = createGameState(opts, 10_000);
     game = applyGameIntent(game, { kind: "setPatent", id: "crane-unlock", enabled: true });
     expect(availableCatalog(game.patents).map((entry) => entry.typeId)).toContain("crane");
-    expect(game.economy).toEqual(createGameState(opts, 10_000, 0).economy);
+    expect(game.economy).toEqual(createGameState(opts, 10_000).economy);
 
     game = applyGameIntent(game, { kind: "setPatent", id: "bench-2", enabled: true });
     expect(game.production.layout.width).toBe(BASE_GAME_FACTORY_WIDTH + 2);
@@ -260,7 +259,7 @@ describe("whole-game deterministic state", () => {
   });
 
   it("advances adjacent Production batches without retaining a lifetime trace", () => {
-    let game = buildTemplate(createGameState(opts, 500, 0));
+    let game = buildTemplate(createGameState(opts, 500));
     const first = directSinkFactory(game.production.layout);
     const second = directSinkFactory(game.production.layout, 2);
     game = applyGameIntent(game, { kind: "buildProductionLayout", layout: first });
@@ -272,7 +271,7 @@ describe("whole-game deterministic state", () => {
   });
 
   it("settles consecutive same-disease sales identically to a bulk sale", () => {
-    let game = buildTemplate(createGameState(opts, 500, 0));
+    let game = buildTemplate(createGameState(opts, 500));
     game = applyGameIntent(game, { kind: "productionTicks", ticks: 200 });
     const first = game.inventory[0]!;
     const second = game.inventory[1]!;
@@ -295,7 +294,7 @@ describe("whole-game deterministic state", () => {
       difficulty: { min: 1, max: 1 },
     };
     const fastRecipe = generate(fastOptions).diseases[0]!.reference;
-    let game = buildTemplate(createGameState(fastOptions, 500, 0), fastRecipe);
+    let game = buildTemplate(createGameState(fastOptions, 500), fastRecipe);
     game = applyGameIntent(game, { kind: "productionTicks", ticks: 4096 * 4 + 512 });
     const disease = game.inventory[0]!.outcome.cured[0]!;
     const productIds = game.inventory
@@ -304,12 +303,11 @@ describe("whole-game deterministic state", () => {
     expect(productIds.length).toBeGreaterThan(4096);
     game = applyGameIntent(game, { kind: "sellProducts", productIds, disease });
     expect(game.inventory.some((product) => productIds.includes(product.inventoryId))).toBe(false);
-    expect(game.economy.research).toBe(productIds.length);
   });
 
   it("does not regenerate an unchanged level on each Production tick", () => {
     const generateSpy = vi.spyOn(mapgenModule, "generate");
-    let game = buildTemplate(createGameState(opts, 500, 0));
+    let game = buildTemplate(createGameState(opts, 500));
     const callsBeforeTick = generateSpy.mock.calls.length;
     game = applyGameIntent(game, { kind: "productionTicks", ticks: 1 });
     expect(game.production.runtime?.tick).toBe(1);
@@ -319,7 +317,7 @@ describe("whole-game deterministic state", () => {
 
   it("uses a Pilot plan as an optional paid Production build without aliasing it", () => {
     const layout = entitledLayout(recipe());
-    let game = createGameState(opts, 500, 0);
+    let game = createGameState(opts, 500);
     expect(game.research.lastTrial).toBeNull();
     game = applyGameIntent(game, { kind: "setPilotLayout", layout });
     const pilot = game.pilot.layout!;
@@ -335,7 +333,7 @@ describe("whole-game deterministic state", () => {
 
   it("keeps free Pilot edits independent from the live Production floor", () => {
     const layout = baseLayout();
-    let game = createGameState(opts, 500, 0);
+    let game = createGameState(opts, 500);
     const production = game.production;
     game = applyGameIntent(game, { kind: "setPilotLayout", layout });
 
@@ -350,7 +348,7 @@ describe("whole-game deterministic state", () => {
       steps: [{ typeId: skew.typeId, path: skew.path, turn: skew.turn }],
     };
     const locked = entitledLayout(lockedProgram);
-    const game = createGameState(opts, 500, 0);
+    const game = createGameState(opts, 500);
     expect(() => applyGameIntent(game, {
       kind: "runResearchTrial",
       program: lockedProgram,
@@ -376,7 +374,7 @@ describe("whole-game deterministic state", () => {
   });
 
   it("expands Pilot and Production while preserving the non-spatial ResearchProgram", () => {
-    let game = buildTemplate(createGameState(opts, 10_000, 100), recipe(), true);
+    let game = buildTemplate(createGameState(opts, 10_000), recipe(), true);
     const width = game.production.layout.width;
     const research = game.research;
     game = applyGameIntent(game, { kind: "setPatent", id: "bench-2", enabled: true });
@@ -392,7 +390,7 @@ describe("whole-game deterministic state", () => {
   });
 
   it("expands facilities without rewriting the last Research trial", () => {
-    let game = createGameState(opts, 10_000, 100);
+    let game = createGameState(opts, 10_000);
     game = applyGameIntent(game, { kind: "runResearchTrial", program: recipe() });
     const research = game.research;
     expect(research.lastTrial).not.toBeNull();
@@ -407,9 +405,9 @@ describe("whole-game deterministic state", () => {
       ...opts,
       width: MAX_GAME_MAP_DIMENSION + 1,
       height: MAX_GAME_MAP_DIMENSION + 1,
-    }, 200, 0)).toThrow(/game.*map|dimensions/i);
+    }, 200)).toThrow(/game.*map|dimensions/i);
 
-    const empty = createGameState(opts, 200, 0);
+    const empty = createGameState(opts, 200);
     expect(applyGameIntent(empty, { kind: "productionTicks", ticks: 0 })).toBe(empty);
     for (const ticks of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
       expect(() => applyGameIntent(empty, { kind: "productionTicks", ticks })).toThrow(/ticks|integer/i);
@@ -439,7 +437,7 @@ describe("whole-game deterministic state", () => {
         shape: DEFAULT_SHAPES.hook!,
       }],
     };
-    const game = createGameState(opts, 200, 0);
+    const game = createGameState(opts, 200);
     expect(() => applyGameIntent(game, { kind: "buildProductionLayout", layout })).toThrow(/catalog/i);
     const badPeriod = { ...baseLayout(), tiles: [...baseLayout().tiles] };
     (badPeriod.tiles as FactoryLayout["tiles"][number][])[0] = {
@@ -460,7 +458,7 @@ describe("whole-game deterministic state", () => {
       tiles: new Array(MAX_FACTORY_CELLS * 2),
       machines: [],
     } as unknown as FactoryLayout;
-    const game = createGameState(opts, 200, 0);
+    const game = createGameState(opts, 200);
     expect(() => applyGameIntent(game, {
       kind: "buildProductionLayout",
       layout: oversized,
@@ -492,7 +490,7 @@ describe("whole-game deterministic state", () => {
       catalog: opts.catalog.map((entry) => ({ ...entry })),
       difficulty: { ...opts.difficulty },
     };
-    let game = createGameState(mutableOptions, -0, 0);
+    let game = createGameState(mutableOptions, -0);
     (mutableOptions as unknown as { seed: number }).seed = 99;
     expect(game.genOptions.seed).toBe(14);
     expect(Object.is(game.economy.cash, -0)).toBe(false);
@@ -509,7 +507,7 @@ describe("whole-game deterministic state", () => {
   });
 
   it("drains every product once and does not mutate the input runtime", () => {
-    const game = buildTemplate(createGameState(opts, 500, 0));
+    const game = buildTemplate(createGameState(opts, 500));
     const runtime = game.production.runtime!;
     const before = snapshotFactory(runtime);
     const next = applyGameIntent(game, { kind: "productionTicks", ticks: 200 });
@@ -522,7 +520,7 @@ describe("whole-game deterministic state", () => {
   });
 
   it("resets Production without affecting Research or Pilot", () => {
-    let game = buildTemplate(createGameState(opts, 500, 0));
+    let game = buildTemplate(createGameState(opts, 500));
     const research = game.research;
     const pilot = game.pilot;
     expect(applyGameIntent(game, { kind: "resetProduction" })).toBe(game);
@@ -535,7 +533,7 @@ describe("whole-game deterministic state", () => {
   });
 
   it("preserves accumulated waste across layout edits and runtime reset", () => {
-    let game = createGameState(opts, 500, 0);
+    let game = createGameState(opts, 500);
     game = applyGameIntent(game, {
       kind: "buildProductionLayout",
       layout: directSinkFactory(game.production.layout),
@@ -552,7 +550,7 @@ describe("whole-game deterministic state", () => {
   });
 
   it("rejects invalid sales atomically", () => {
-    let game = buildTemplate(createGameState(opts, 500, 0));
+    let game = buildTemplate(createGameState(opts, 500));
     game = applyGameIntent(game, { kind: "productionTicks", ticks: 200 });
     const first = game.inventory[0]!;
     const disease = first.outcome.cured[0]!;
@@ -571,7 +569,7 @@ describe("whole-game deterministic state", () => {
   });
 
   it("enforces inventory and replay bounds", () => {
-    let game = buildTemplate(createGameState(opts, 500, 0));
+    let game = buildTemplate(createGameState(opts, 500));
     game = applyGameIntent(game, { kind: "productionTicks", ticks: 200 });
     const oversized = {
       ...game,
@@ -585,7 +583,7 @@ describe("whole-game deterministic state", () => {
   });
 
   it("keeps locked machines out of all facility palettes", () => {
-    const ids = availableCatalog(createGameState(opts, 200, 0).patents).map((entry) => entry.typeId);
+    const ids = availableCatalog(createGameState(opts, 200).patents).map((entry) => entry.typeId);
     expect(ids).not.toContain("zigzag");
     expect(ids).not.toContain("loop");
     expect(ids).toContain("hook");
@@ -594,7 +592,7 @@ describe("whole-game deterministic state", () => {
   });
 
   it("applies machine unlock and both factory expansion patents without changing Atlas authority", () => {
-    let game = buildTemplate(createGameState(opts, 10_000, 100));
+    let game = buildTemplate(createGameState(opts, 10_000));
     game = shipContract(game, 0, recipe());
     game = applyGameIntent(game, { kind: "setPatent", id: "zigzag-unlock", enabled: true });
     expect(availableCatalog(game.patents).map((entry) => entry.typeId)).toContain("zigzag");
@@ -609,7 +607,7 @@ describe("whole-game deterministic state", () => {
   });
 
   it("replays and serializes the three-facility trace deterministically", () => {
-    const initial = createGameState(opts, 500, 0);
+    const initial = createGameState(opts, 500);
     const template = recipe();
     const intents: GameIntent[] = [
       { kind: "runResearchTrial", program: template },
@@ -625,9 +623,9 @@ describe("whole-game deterministic state", () => {
   });
 
   it("streams the whole-game hash without materializing one giant canonical JSON string", () => {
-    const empty = createGameState(opts, 200, 0);
-    expect(hashGame(empty)).toBe(hashGame(createGameState(opts, 200, 0)));
-    const produced = buildTemplate(createGameState(opts, 500, 0));
+    const empty = createGameState(opts, 200);
+    expect(hashGame(empty)).toBe(hashGame(createGameState(opts, 200)));
+    const produced = buildTemplate(createGameState(opts, 500));
     expect(hashGame(produced)).not.toBe(hashGame(empty));
     const source = readFileSync(new URL("./game.ts", import.meta.url), "utf8");
     const hashBody = source.slice(source.indexOf("export function hashGame"));
@@ -645,13 +643,13 @@ describe("whole-game deterministic state", () => {
   });
 
   it("rejects unknown patent intents", () => {
-    const game = createGameState(opts, 200, 0);
+    const game = createGameState(opts, 200);
     expect(() => applyGameIntent(game, { kind: "setPatent", id: "unknown", enabled: true })).toThrow(/unknown/i);
   });
 
   it("canonicalizes intent objects to authoritative fields", () => {
     const layout = directSinkFactory(baseLayout());
-    const game = applyGameIntent(createGameState(opts, 200, 0), {
+    const game = applyGameIntent(createGameState(opts, 200), {
       kind: "setPilotLayout",
       layout,
       ignored: "not authoritative",

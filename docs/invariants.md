@@ -87,7 +87,7 @@
 ## Whole-game authority 與 economy
 
 - GameState 同時 own `research`、內部 `pilot`、`production`，三者不得 alias layout 或以隱藏 token 耦合；玩家文案必須稱 Production Plan／Commission。
-- 正常UI new game 的starting cash恰為1000、research為0；fresh loop不得需要外部資金／Knowledge或hidden reference才能到first sale。
+- 正常UI new game 的starting cash恰為1000；fresh loop不得需要外部資金或hidden reference才能到first sale。
 - Menu → New Game 只可用unsigned 32-bit seed建立標準fresh GameState；不得刪除save checkpoints或Blueprint Library。確認modal開啟期間，背景hotkeys不得產生GameIntent、Factory edit或navigation authority change。
 - 每個 cure region 有唯一 id（1..），其所有格的 `regionId` 等於該 id；區價恰為 `regionPrice(difficulty) = 60 + 2 × difficulty`，difficulty 恰為 `min(120, reachCost + 6 × 窄段 + 2 × 路線旁 Abyss)`（到不了＝120、`capped`），全部 safe integer。`DiseaseSpec.basePrice` 是該疾病最便宜的區價。
 - 每個疾病的 hard 區最高價 > easy 區最高價（pinned 34 seeds 測試；generator 不成立時 redraw）。
@@ -95,10 +95,10 @@
 - 出售的產品若 `outcome.premium` 含該疾病，gross 恰為 `demand + floor(demand / 2)`（demand＝該件的 diminishing price）；只推進一次該疾病的 sold counter。
 - 每疾病demand獨立：第0件gross=base；下一件反覆`floor(previous × 19 / 20)`直到0，無正值floor。
 - Market 每個 inventory product 只可賣一次；收入由實際 cure、side effects、production cost 與 sold counters 決定。
-- Market的`Shipped`與Knowledge成功回饋只能由accepted `sellProducts` intent產生；rejected或stale inventory intent必須顯示錯誤，不得同時假報成功。
+- Market的`Shipped`成功回饋只能由accepted `sellProducts` intent產生；rejected或stale inventory intent必須顯示錯誤，不得同時假報成功。
 - Market候選stable order為side-effect count、production cost、inventory ID；single/bulk automatic shipping必須略過non-positive候選，只出售逐件計入demand後仍有positive net的產品。略過項目不消耗demand，不得自動虧本出售。
 - 每疾病 shipping contract quota 恰為3；progress只由該疾病 accepted sales 的sold count推導。active contract是首個未完成疾病；全部完成時是最後一個completed contract。
-- 測試期（D42）Technology 是免費開關：開啟不扣 cash／Knowledge、沒有前置或合約 gate；關閉時 Plan 與 Production layout 必須在新 entitlement 下仍合法（不用該機器、Splitter／Merger，縮小的邊緣沒有 tile），否則原子拒絕。
+- 測試期（D42）Technology 是免費開關：開啟不扣 cash、沒有前置或合約 gate；關閉時 Plan 與 Production layout 必須在新 entitlement 下仍合法（不用該機器、Splitter／Merger，縮小的邊緣沒有 tile），否則原子拒絕。
 - 同 initial GameState + 明確提供的 intents replay 必須逐欄位與 hash 相同。
 - 擴廠若清 runtime／waste，確認前全部 authority 原子不變；開關不得改 Research `lastTrial`。
 
@@ -113,7 +113,7 @@
 
 ## Save v14 與 checkpoints
 
-- full／compact／slots／rewind 都是開放、可攜、可編輯的 plain JSON 冷快照；合法 Cash／Knowledge／sold／fog 編輯不要求操作或收入證明，不加密、簽章或驗資源 checksum。
+- full／compact／slots／rewind 都是開放、可攜、可編輯的 plain JSON 冷快照；合法 Cash／sold／fog 編輯不要求操作或收入證明，不加密、簽章或驗資源 checksum。
 - loader 不 replay；`origin`／`intentTrace`／`replayTicks`／`stateHash` 不是存檔欄位。`replayGame(initial, intents)` 的逐欄位／hash determinism 是獨立除錯契約。
 - 在途 unit／進度／cost、splitter cursors、runtime counters、inventory／nextInventoryId、waste、Research `lastTrial`、economy、patents、fog、rng 必須完整保存；每個 drug 保存 heading 與 offset。返回 layout 與 runtime 綁定同一 owned layout，nested typed/runtime data 不得 alias。
 - decoder 在 allocation／restore 前驗 dimensions、collection counts、inventory group expansion 和 typed-array 可表示範圍；另驗合法 layout、runtime 質量守恆與容量、catalog（含 turn）、heading 0–5、offset 只在 Swamp 內非零、`lastTrial` 重播一致、inventory 結果等可執行不變式。unknown／missing fields、unsafe integers、無效狀態、oversize 顯式失敗。

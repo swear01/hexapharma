@@ -32,7 +32,7 @@ Blueprint Library 與 save slot 分離；New Game、Load、Rewind、換 slot 都
 
 目前 [Save v14](save.md) 是開放、可編輯的 plain JSON。獨立 checkpoint/history 外層仍是 v2，內層使用 Save v14；舊開發版（含 v13）不會自動升級。
 
-正常新局從 $1000 cash、0 Knowledge開始，同一張 Atlas 預設有4種疾病。全新 origin 的 Blueprint Library 為空；之後換 seed 會保留既有藍圖。URL query注入的cash／research只供開發驗證，不是正常玩法。
+正常新局從 $1000 cash開始，同一張 Atlas 預設有4種疾病。全新 origin 的 Blueprint Library 為空；之後換 seed 會保留既有藍圖。URL query注入的cash／research只供開發驗證，不是正常玩法。
 
 ## Research
 
@@ -160,7 +160,7 @@ Production Plan與Production使用相同editor，但一眼可分：Plan 以紫�
 - 若目前庫存沒有正net出貨，先改善成本／品質或嘗試另一種疾病。只有整局確實沒有可行改善時才以New Game重開。
 - 同一疾病的每塊治療區各有價格：越難到（最便宜路線越貴、要穿過窄段、旁邊有黑格）越貴，深入盆地的大區比近處小區值錢。產品依終點所在的區計價；第一次出售取得該區價格，之後同疾病的價格逐次乘`19/20`（取整）直到0。不同疾病各算自己的Sold與Next。
 - 每張需求卡以Clean stock／Tainted stock計數庫存件數，有 ★ 產品時另列`★ pay ×1.5`件數（★ 售價＝價格＋價格的一半，取整）；最佳可售庫存會列Next gross（★ 產品顯示加成後的`★ price`）、production cost、每個effect `$25`的penalty算式與net。無治療庫存或沒有正net庫存時，Ship disabled並直接顯示原因。
-- Market的`Ship best`按side effects最少、production cost最低、inventory ID最早的順序，略過不賺錢的候選後出售第一件正net產品。`Ship profitable`掃描相同順序，只出售在當下demand仍為正net的項目；略過的庫存不消耗demand，也不會被自動丟棄。每件成功出售另取得1 Knowledge；畫面會顯示本次回饋。
+- Market的`Ship best`按side effects最少、production cost最低、inventory ID最早的順序，略過不賺錢的候選後出售第一件正net產品。`Ship profitable`掃描相同順序，只出售在當下demand仍為正net的項目；略過的庫存不消耗demand，也不會被自動丟棄。畫面會顯示本次出售回饋。
 - 擴廠若會清除Production runtime／waste，確認視窗會先列出影響；Cancel不改任何authority。
 - blocking confirmation 開啟期間 Production timer 不增加 tick、inventory、cash 或 waste；Cancel 恢復原播放狀態，原本 Pause 不會自動 Play。確認 New／Load／Rewind／Reset／擴廠後舊 timer 停止。一般 drawer 與場域切換不暂停生產。
 - Reset Production有進度時先確認；確認後只重建目前layout的runtime，不把建造費退回，也不清inventory／累積waste。
@@ -179,4 +179,4 @@ Production Plan與Production使用相同editor，但一眼可分：Plan 以紫�
 
 World hotkeys are disabled while any drawer is open, but Production keeps running. The build readout quotes the pointed placement or move through the construction authority; it does not promise a generic replacement price.
 
-Market states how much the currently profitable stock can still net, and how many units that covers, with demand declining after every selected shipment. This is not a lifetime estimate for the line. Unprofitable stock suggests improving cost or quality, or another disease. Technology shows missing cash, Knowledge, and contract shipments. With no cash left, it points to Market and cheaper routes, with Menu → New Game as an optional fresh start after saving; it does not declare the run irrecoverable.
+Market states how much the currently profitable stock can still net, and how many units that covers, with demand declining after every selected shipment. This is not a lifetime estimate for the line. Unprofitable stock suggests improving cost or quality, or another disease. With no cash left, it points to Market and cheaper routes, with Menu → New Game as an optional fresh start after saving; it does not declare the run irrecoverable.
