@@ -88,6 +88,11 @@ test("Escape closes Blueprints and Menu after their fields receive focus", async
   await page.getByTestId("save-slot").focus();
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("save-slot")).toBeHidden();
+  await openMenu(page);
+  await page.getByTestId("view-help").click();
+  await page.getByTestId("view-menu").click();
+  await expect(page.getByRole("heading", { name: "Guide" })).toBeHidden();
+  await expect(page.getByTestId("menu-drawer")).toBeHidden();
 });
 
 test("Research hotkeys work only while the world is visible", async ({ page }) => {

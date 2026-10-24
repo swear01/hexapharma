@@ -898,7 +898,7 @@ export function Game() {
           {drawerButton("technology", "Technology", "T")}
           {drawerButton("blueprints", "Blueprints", "B")}
         </nav>
-        <button type="button" className="menu-trigger" data-testid="view-menu" aria-expanded={drawer === "menu" || drawer === "help"} onClick={() => toggleDrawer("menu")} aria-label="Menu" title="Menu">
+        <button type="button" className="menu-trigger" data-testid="view-menu" aria-expanded={drawer === "menu" || drawer === "help"} onClick={() => setDrawer((current) => current === "menu" || current === "help" ? null : "menu")} aria-label="Menu" title="Menu">
           <HudGlyph kind="menu" /><span className="hud-link-label">Menu</span>
         </button>
       </header>
