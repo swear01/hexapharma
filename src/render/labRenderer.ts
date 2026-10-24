@@ -562,26 +562,16 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
         else if (view.finish !== true) marks.circle(center.x, center.y, cell * 0.11).fill({ color: LAB_SCHEMATIC_STYLE.course });
       }
 
-      if (view.lineTrail !== undefined && view.lineTrail.length > 1) {
-        const band = cell * 0.3;
-        let end: PixelPoint | null = null;
+      if (view.lineTrail !== undefined) {
         for (let index = 1; index < view.lineTrail.length; index++) {
           const fromPoint = view.lineTrail[index - 1];
           const toPoint = view.lineTrail[index];
           if (fromPoint === null || fromPoint === undefined || toPoint === null || toPoint === undefined) continue;
           const a = labCellCenter(camera, fromPoint);
-          end = labCellCenter(camera, toPoint);
-          marks.moveTo(a.x, a.y).lineTo(end.x, end.y);
+          const b = labCellCenter(camera, toPoint);
+          marks.moveTo(a.x, a.y).lineTo(b.x, b.y);
         }
-        marks.stroke({ color: LAB_SCHEMATIC_STYLE.course, width: band, cap: "round", join: "round", alpha: 0.18 });
-        if (end !== null) {
-          const text = label(labelCount++);
-          if (text.text !== "Plan") text.text = "Plan";
-          if (text.style.fontSize !== fontSize) text.style.fontSize = fontSize;
-          if (text.style.fill !== LAB_SCHEMATIC_STYLE.course) text.style.fill = LAB_SCHEMATIC_STYLE.course;
-          text.visible = true;
-          text.position.set(end.x + band * 0.6, end.y + band * 0.2);
-        }
+        marks.stroke({ color: LAB_SCHEMATIC_STYLE.course, width: cell * 0.3, cap: "round", join: "round", alpha: 0.18 });
       }
       const previewPos = view.previewDrug === undefined ? undefined : drugDrawPoint(view.previewDrug, view.activeMap);
       if (!animating && view.previewTrail !== undefined) {

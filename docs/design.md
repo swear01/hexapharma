@@ -103,7 +103,7 @@ Research 不使用 FactoryLayout、source／belt／sink、線性 route descripto
 - Production Plan 是獨立 F2 world page，使用與 Production 相同的 Factory editor 與幾何規則；內部 `PilotFacilityState`／`setPilotLayout` 名稱暫不改變玩家語意。
 - 建造、旋轉、移動、刪除、undo／redo、copy／paste 都免費；沒有時間、耗材、inventory 或 waste。
 - source、belt、machine、sink 可以組成任意合法 layout；不要求 Research 結果或特定產品。splitter／merger 需先在 Technology 取得 `Split / Merge`，未取得時 Plan 與 Production 的 layout 驗證都拒絕這兩種 tile。
-- Plan 產線的藥效路徑畫在 Research Atlas 上：取第一個 Source 送出的第一個 unit 走到 Sink 經過的機器順序（Splitter 走第一個 output），在同一張 fog-masked planning map 上以淡紫寬帶＋`Plan` 標記呈現；沒有到 Sink 的線不畫。
+- Plan 產線的藥效路徑畫在 Research Atlas 上：取第一個 Source 送出的第一個 unit 走到 Sink 經過的機器順序（Splitter 走第一個接得上的 output），在同一張 fog-masked planning map 上以淡紫寬帶呈現；沒有到 Sink 的線不畫。
 - 即時 diagnostics 可顯示 throughput、bottleneck、deadlock 或分析錯誤；sample outcome 只能依 Research fog 遮罩後的 planning map 計算，不能用免費 Production Plan 洩漏未發現的 cure、side effect、portal pairing 或權威終點。
 - Plan 的 layout 可保存為通用 Factory Blueprint，或按 `Commission $N` 依 Production 當前 layout 的差異付費建造。
 - 玩家可以完全跳過 Production Plan，直接在 Production 建造。
