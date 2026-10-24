@@ -24,11 +24,12 @@ async function factoryCellPoint(
   };
 }
 
-test("a default run starts with a viable budget and four independent disease markets", async ({ page }) => {
+test("a default run starts with a viable budget and six independent disease markets across three bases", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByTestId("cash")).toHaveText("1000");
   await page.getByTestId("view-market").click();
-  await expect(page.locator(".market-card")).toHaveCount(4);
+  await expect(page.locator(".market-card")).toHaveCount(6);
+  await expect(page.getByTestId("shop-row-1").getByRole("heading")).toHaveText("Disease 2 · Oil");
   await expect(page.getByText(/complexity|difficulty/i)).toHaveCount(0);
 });
 

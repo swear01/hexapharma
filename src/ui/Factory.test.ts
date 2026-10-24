@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { generate } from "../sim/mapgen";
-import { compileEntitledPrototype } from "../sim/recipe";
+import { compileEntitledPrototype, withSourceBase } from "../sim/recipe";
 import { defaultGenOptions } from "./Game";
 import {
   DEFAULT_CATALOG,
@@ -150,7 +150,7 @@ describe("direct machine manipulation", () => {
 
 describe("Factory clipboard tile payload", () => {
   const payloads: readonly FactoryTile[] = [
-    { kind: "source", dir: 2, period: 7 },
+    { kind: "source", dir: 2, period: 7, base: 0 },
     { kind: "splitter", inDir: 3, outDirs: [0, 1, 2] },
     { kind: "merger", inDirs: [0, 2, 3], outDir: 1 },
   ];
@@ -312,7 +312,8 @@ describe("factory framing and legend copy", () => {
   it("reads a compiled line back as its program, and nothing without a Sink", () => {
     const program = generate(defaultGenOptions(14)).diseases[0]!.reference;
     const layout = compileEntitledPrototype(program, 24, 12).layout;
-    expect(factoryLineProgram(layout)?.steps.map((step) => step.typeId)).toEqual(program.steps.map((step) => step.typeId));
+    expect(factoryLineProgram(layout)?.program.steps.map((step) => step.typeId)).toEqual(program.steps.map((step) => step.typeId));
+    expect(factoryLineProgram(withSourceBase(layout, 2))?.base).toBe(2);
     const noSink = { ...layout, tiles: layout.tiles.map((tile) => tile.kind === "sink" ? { kind: "empty" as const } : tile) };
     expect(factoryLineProgram(noSink)).toBeNull();
   });

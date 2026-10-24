@@ -18,7 +18,7 @@ import {
   type GenOptions,
   type Template,
 } from "../src/sim/phase0_interfaces";
-import { compileEntitledPrototype } from "../src/sim/recipe";
+import { compileEntitledPrototype, withSourceBase } from "../src/sim/recipe";
 import { pathToFileURL } from "node:url";
 
 export const REFERENCE_PROGRESSION_SEEDS = Object.freeze([14, 15, 1, 42, 100]);
@@ -30,11 +30,11 @@ export const PRODUCTION_TICKS_PER_DISEASE = 1_500;
 export const PROGRESSION_RETRY_BUDGET = 100;
 
 const OPTIONS = Object.freeze({
-  nMaps: 1,
+  nMaps: 3,
   width: 49,
   height: 49,
   catalog: DEFAULT_CATALOG,
-  diseaseCount: 4,
+  diseaseCount: 6,
   difficulty: Object.freeze({ min: 4, max: 12 }),
 });
 
@@ -69,9 +69,12 @@ function unlock(game: GameState, id: string): GameState {
   return applyGameIntent(game, { kind: "setPatent", id, enabled: true });
 }
 
-/** Technology switches still off for the reference's machines. */
-export function unlocksFor(reference: Template, owned: readonly string[]): readonly string[] {
+/** Technology switches still off for the reference's machines and its base. */
+export function unlocksFor(reference: Template, owned: readonly string[], base = 0): readonly string[] {
   const needed: string[] = [];
+  const baseNode = DEFAULT_PATENTS.find((candidate) =>
+    candidate.effect.kind === "unlockBase" && candidate.effect.base === base);
+  if (baseNode !== undefined && !owned.includes(baseNode.id)) needed.push(baseNode.id);
   for (const step of reference.steps) {
     const node = DEFAULT_PATENTS.find((candidate) =>
       candidate.effect.kind === "unlockMachine" && candidate.effect.typeId === step.typeId);
@@ -88,12 +91,12 @@ export function progressionLedger(seed: number, startingCash = DEFAULT_STARTING_
 
   for (const disease of level.diseases) {
     const cashBefore = game.economy.cash;
-    const patentIds = unlocksFor(disease.reference, game.patents.unlocked);
+    const patentIds = unlocksFor(disease.reference, game.patents.unlocked, disease.map);
     try {
       for (const id of patentIds) game = unlock(game, id);
       minimumCash = Math.min(minimumCash, game.economy.cash);
 
-      game = applyGameIntent(game, { kind: "runResearchTrial", program: disease.reference });
+      game = applyGameIntent(game, { kind: "runResearchTrial", program: disease.reference, base: disease.map });
       minimumCash = Math.min(minimumCash, game.economy.cash);
       if (!game.research.lastTrial?.outcome.cured.includes(disease.id)) {
         throw new Error(`reference did not cure disease ${disease.id}`);
@@ -101,11 +104,11 @@ export function progressionLedger(seed: number, startingCash = DEFAULT_STARTING_
       const researchCost = game.research.lastTrial.cost;
       const referencePrice = cureRegionPrice(disease, game.research.lastTrial.outcome);
       const effects = activeEffects(DEFAULT_PATENTS, game.patents);
-      const layout = compileEntitledPrototype(
+      const layout = withSourceBase(compileEntitledPrototype(
         disease.reference,
         BASE_GAME_FACTORY_WIDTH + effects.factoryDw,
         BASE_GAME_FACTORY_HEIGHT + effects.factoryDh,
-      ).layout;
+      ).layout, disease.map);
       const buildCost = quoteProductionBuild(game.production.layout, layout);
       game = applyGameIntent(game, { kind: "buildProductionLayout", layout });
       minimumCash = Math.min(minimumCash, game.economy.cash);
@@ -161,14 +164,15 @@ export function progressionLedger(seed: number, startingCash = DEFAULT_STARTING_
     }
   }
   const completedContracts = shippingContracts(game).filter((contract) => contract.completed).length;
-  const everyDiseasePositiveNet = entries.length === 4 && entries.every((entry) => entry.net > 0);
+  const everyDiseasePositiveNet = entries.length === OPTIONS.diseaseCount && entries.every((entry) => entry.net > 0);
+  const completed = completedContracts === OPTIONS.diseaseCount && everyDiseasePositiveNet;
   return {
     seed,
     entries,
-    completed: completedContracts === 4 && everyDiseasePositiveNet,
-    blockedAction: completedContracts === 4 && everyDiseasePositiveNet
+    completed,
+    blockedAction: completed
       ? null
-      : "four authoritative shipping contracts with positive net were not completed",
+      : "every authoritative shipping contract with positive net was not completed",
     finalCash: game.economy.cash,
     minimumCash,
     completedContracts,
@@ -179,7 +183,7 @@ export function progressionLedger(seed: number, startingCash = DEFAULT_STARTING_
 export function progressionExitCode(ledgers: readonly ProgressionLedger[]): 0 | 1 {
   return ledgers.some((ledger) =>
     !ledger.completed ||
-    ledger.completedContracts !== 4 ||
+    ledger.completedContracts !== OPTIONS.diseaseCount ||
     !ledger.everyDiseasePositiveNet ||
     ledger.minimumCash < PROGRESSION_RETRY_BUDGET
   ) ? 1 : 0;

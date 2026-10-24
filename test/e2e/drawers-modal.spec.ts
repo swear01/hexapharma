@@ -10,8 +10,9 @@ import { openMenu } from "./menu";
 test.setTimeout(90_000);
 
 function discover(game: GameState, disease: number): GameState {
-  const program = generate(game.genOptions).diseases[disease]!.reference;
-  return applyGameIntent(game, { kind: "runResearchTrial", program });
+  const { reference: program, map: base } = generate(game.genOptions).diseases[disease]!;
+  const switched = base === 1 ? applyGameIntent(game, { kind: "setPatent", id: "oil-base", enabled: true }) : game;
+  return applyGameIntent(switched, { kind: "runResearchTrial", program, base });
 }
 
 function fixture(): GameState {

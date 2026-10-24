@@ -56,11 +56,11 @@ describe("integration: Atlas → program → factory plus economy, patent, and s
 
     // recipe → factory line realizes the template (INV-7)
     const layout = compileTemplate(sol!.template);
-    const facOutcome = factoryOutcome(layout, level.mm, start);
+    const facOutcome = factoryOutcome(layout, level.mm);
     expect(facOutcome).toEqual(tmplOutcome);
 
     // produce: run the line; mass conservation holds; units are produced
-    const fs = replayFactory(layout, level.mm, start, 200);
+    const fs = replayFactory(layout, level.mm, 200);
     expect(fs.deadlocked).toBe(false);
     expect(fs.producedTotal).toBeGreaterThan(0);
     expect(fs.nextUnitId).toBe(fs.producedTotal + fs.units.length); // no spawn/vanish
@@ -111,7 +111,7 @@ describe("integration: Atlas → program → factory plus economy, patent, and s
       BASE_GAME_FACTORY_WIDTH,
       BASE_GAME_FACTORY_HEIGHT,
     ).layout;
-    g = applyGameIntent(g, { kind: "runResearchTrial", program: template });
+    g = applyGameIntent(g, { kind: "runResearchTrial", program: template, base: 0 });
     g = applyGameIntent(g, { kind: "setPilotLayout", layout });
     expect(g.research.lastTrial?.outcome.cured).toContain(0);
     expect(g.production.layout.machines).toEqual([]);
@@ -140,10 +140,9 @@ describe("integration: Atlas → program → factory plus economy, patent, and s
     const a = generate(opts(42));
     const b = generate(opts(42));
     expect(a.diseases).toEqual(b.diseases);
-    const start = initialState(a.mm);
     const layout = compileTemplate(a.diseases[0]!.reference);
-    const fa = replayFactory(layout, a.mm, start, 120);
-    const fb = replayFactory(layout, a.mm, start, 120);
+    const fa = replayFactory(layout, a.mm, 120);
+    const fb = replayFactory(layout, a.mm, 120);
     expect(fa).toEqual(fb);
   });
 });

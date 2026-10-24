@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   defaultGenOptions,
+  researchBaseLevel,
   parseNewGameSeed,
   playerFacingIntentError,
   researchAssaySector,
@@ -45,10 +46,10 @@ describe("default Lab world options", () => {
   it("starts a new run on one large odd-sized map", () => {
     expect(defaultGenOptions(14)).toMatchObject({
       seed: 14,
-      nMaps: 1,
+      nMaps: 3,
       width: 49,
       height: 49,
-      diseaseCount: 4,
+      diseaseCount: 6,
     });
     expect(defaultGenOptions(14).catalog).toEqual(DEFAULT_CATALOG);
   });
@@ -98,7 +99,7 @@ describe("default Lab world options", () => {
   });
 
   it("derives the completed Research trail from the fixed-path program", () => {
-    const level = generate(defaultGenOptions(14));
+    const level = researchBaseLevel(generate(defaultGenOptions(14)), 0);
     const trails = researchTrailsForProgram(level.mm, level.start, level.diseases[0]!.reference, 1);
 
     expect(trails).toHaveLength(1);

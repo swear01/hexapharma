@@ -57,7 +57,7 @@ describe("Production construction quote", () => {
 
   it("does not refund removed construction", () => {
     const empty = layout();
-    const source = withTile(empty, 0, { kind: "source", dir: 0, period: 1 });
+    const source = withTile(empty, 0, { kind: "source", dir: 0, period: 1, base: 0 });
     const sink = withTile(empty, 1, { kind: "sink" });
 
     expect(quoteProductionBuild(source, empty)).toBe(0);
@@ -72,7 +72,7 @@ describe("Production construction quote", () => {
       1,
       { kind: "merger", inDirs: [2, 3], outDir: 0 },
     );
-    const second = withTile(first, 2, { kind: "source", dir: 0, period: 2 });
+    const second = withTile(first, 2, { kind: "source", dir: 0, period: 2, base: 0 });
 
     expect(quoteProductionBuild(first, second)).toBe(12);
     expect(quoteProductionBuild(empty, second)).toBe(22);

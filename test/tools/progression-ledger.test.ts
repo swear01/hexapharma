@@ -7,18 +7,17 @@ import {
   progressionLedger,
 } from "../../tools/progression-ledger";
 
-// The v2 Step-1 seed-0 reserve regression ($44) is gone on the v2 Atlas (Step 2): every
-// progression seed now keeps the $100 retry reserve (seed 0 bottoms out at $766).
+// Every progression seed keeps the $100 retry reserve on the three-base, six-disease level.
 
-describe("four-disease progression ledger", () => {
+describe("six-disease progression ledger", () => {
   it.each(PROGRESSION_SEEDS)("completes the legal reference route for seed %i", (seed) => {
     const ledger = progressionLedger(seed);
     expect(ledger, ledger.blockedAction ?? "completed").toMatchObject({
       completed: true,
       blockedAction: null,
     });
-    expect(ledger.entries).toHaveLength(4);
-    expect(ledger.completedContracts).toBe(4);
+    expect(ledger.entries).toHaveLength(6);
+    expect(ledger.completedContracts).toBe(6);
     expect(ledger.everyDiseasePositiveNet).toBe(true);
     expect(ledger.entries.every((entry) => entry.net > 0 && entry.sold >= 3)).toBe(true);
     expect(ledger.minimumCash).toBeGreaterThanOrEqual(PROGRESSION_RETRY_BUDGET);

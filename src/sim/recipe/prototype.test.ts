@@ -7,7 +7,7 @@ import {
   CellKind,
   DEFAULT_CATALOG,
 } from "../phase0_interfaces";
-import { evaluate, initialState } from "../drug-graph";
+import { baseView, evaluate, initialState } from "../drug-graph";
 import { generate } from "../mapgen";
 import { hexDistance } from "../hex";
 import {
@@ -16,6 +16,7 @@ import {
   deriveLinearRoute,
   derivePrototypeTemplate,
   factoryOutcome,
+  withSourceBase,
 } from ".";
 
 function openMap(width = 32, height = 20): EffectMap {
@@ -51,7 +52,7 @@ describe("compilePrototype", () => {
       { length: 4 * 4 },
       (): FactoryTile => ({ kind: "empty" }),
     );
-    tiles[1 * 4 + 2] = { kind: "source", dir: 2 as Dir, period: 1 };
+    tiles[1 * 4 + 2] = { kind: "source", dir: 2 as Dir, period: 1, base: 0 };
     tiles[2 * 4 + 1] = { kind: "sink" };
 
     const route = deriveLinearRoute({ width: 4, height: 4, tiles, machines: [] });
@@ -158,7 +159,7 @@ describe("compilePrototype", () => {
       { length: 5 * 5 },
       (): FactoryTile => ({ kind: "empty" }),
     );
-    cycleTiles[2 * 5 + 1] = { kind: "source", dir: 0, period: 1 };
+    cycleTiles[2 * 5 + 1] = { kind: "source", dir: 0, period: 1, base: 0 };
     cycleTiles[2 * 5 + 2] = { kind: "belt", dir: 1 };
     cycleTiles[3 * 5 + 2] = { kind: "belt", dir: 5 };
     cycleTiles[2 * 5 + 3] = { kind: "belt", dir: 3 };
@@ -200,7 +201,7 @@ describe("compilePrototype", () => {
     expect(layout.machines[0]?.anchor).toEqual({ q: 7, r: 3 });
     expect(layout.machines[0]?.shape.cells.length).toBe(3);
     expect(derivePrototypeTemplate(layout)).toEqual(template);
-    expect(factoryOutcome(layout, mm, initialState(mm))).toEqual(
+    expect(factoryOutcome(layout, mm)).toEqual(
       evaluate(mm, initialState(mm), template),
     );
   });
@@ -224,7 +225,7 @@ describe("compilePrototype", () => {
       { anchor: { q: 7, r: 3 }, footRot: 0 },
     ]);
     const bypassTiles: FactoryTile[] = layout.tiles.map((tile): FactoryTile => tile.kind === "source"
-      ? { kind: "source" as const, dir: 0 as const, period: 1 }
+      ? { kind: "source" as const, dir: 0 as const, period: 1, base: 0 }
       : tile.kind === "sink"
         ? tile
         : { kind: "empty" as const });
@@ -296,8 +297,9 @@ describe("compilePrototype", () => {
             expect(layout.width).toBe(BASE_GAME_FACTORY_WIDTH);
             expect(layout.height).toBe(BASE_GAME_FACTORY_HEIGHT);
             expect(derivePrototypeTemplate(layout)).toEqual(disease.reference);
-            expect(factoryOutcome(layout, level.mm, level.start)).toEqual(
-              evaluate(level.mm, level.start, disease.reference),
+            const base = baseView(level.mm, disease.map);
+            expect(factoryOutcome(withSourceBase(layout, disease.map), level.mm)).toEqual(
+              evaluate(base, initialState(base), disease.reference),
             );
           }
         }),
@@ -323,7 +325,7 @@ describe("compilePrototype", () => {
         BASE_GAME_FACTORY_HEIGHT,
       );
       expect(derivePrototypeTemplate(layout)).toEqual(disease.reference);
-      expect(factoryOutcome(layout, level.mm, level.start)).toEqual(
+      expect(factoryOutcome(layout, level.mm)).toEqual(
         evaluate(level.mm, level.start, disease.reference),
       );
     }
@@ -346,7 +348,7 @@ describe("compilePrototype", () => {
       BASE_GAME_FACTORY_HEIGHT,
     );
     expect(derivePrototypeTemplate(layout)).toEqual(disease.reference);
-    expect(factoryOutcome(layout, level.mm, level.start)).toEqual(
+    expect(factoryOutcome(layout, level.mm)).toEqual(
       evaluate(level.mm, level.start, disease.reference),
     );
   });

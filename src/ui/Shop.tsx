@@ -14,6 +14,7 @@ import type {
   DiseaseSpec,
   InventoryProduct,
 } from "../sim/phase0_interfaces";
+import { BASE_NAMES } from "../sim/phase0_interfaces";
 import { nextUnitPrice, premiumGross } from "../sim/economy";
 import { SHIPPING_CONTRACT_QUOTA, SIDE_EFFECT_PENALTY, cureRegionPrice } from "../sim/game";
 import { diseaseEmblem, diseaseName } from "./effectLabels";
@@ -203,7 +204,7 @@ export function Shop({ level, economy, inventory, onSell }: ShopProps) {
               return (
                 <article key={disease.id} className="market-card is-quiet" data-testid={`shop-row-${disease.id}`}>
                   <span className="disease-emblem">{diseaseEmblem(disease.id)}</span>
-                  <h2>{diseaseName(disease.id)}</h2>
+                  <h2>{diseaseName(disease.id)}{level.mm.maps.length > 1 && ` · ${BASE_NAMES[disease.map]}`}</h2>
                   <span className="market-quiet-price">Next <strong data-testid={`shop-next-${disease.id}`}>{formatMoney(next)}</strong></span>
                   {contract}
                   <span id={disabledReasonId} className="market-reason" data-testid={disabledReasonId}>{disabledReason}</span>
@@ -215,7 +216,7 @@ export function Shop({ level, economy, inventory, onSell }: ShopProps) {
               <article key={disease.id} className="market-card is-active" data-testid={`shop-row-${disease.id}`}>
                 <div className="market-card-heading">
                   <span className="disease-emblem">{diseaseEmblem(disease.id)}</span>
-                  <h2>{diseaseName(disease.id)}</h2>
+                  <h2>{diseaseName(disease.id)}{level.mm.maps.length > 1 && ` · ${BASE_NAMES[disease.map]}`}</h2>
                   {contract}
                 </div>
                 <dl className="market-sheet">

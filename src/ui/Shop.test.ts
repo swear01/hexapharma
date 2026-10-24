@@ -24,6 +24,7 @@ function product(
   return {
     id: inventoryId,
     inventoryId,
+    base: 0,
     drug: { pos: [{ q: 0, r: 0 }], offset: [{ q: 0, r: 0 }], heading: 0, failed: false },
     productionCost,
     outcome: {

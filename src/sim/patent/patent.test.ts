@@ -15,10 +15,10 @@ describe("DEFAULT_PATENTS", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it("contains only single-Atlas effects", () => {
+  it("contains only known effects: base switches, no map overlay", () => {
     const kinds = new Set(DEFAULT_PATENTS.map((n) => n.effect.kind));
     expect(kinds).toEqual(
-      new Set(["expandFactory", "revealAid", "unlockMachine", "unlockRouting"]),
+      new Set(["expandFactory", "revealAid", "unlockMachine", "unlockRouting", "unlockBase"]),
     );
     expect(DEFAULT_PATENTS).not.toHaveProperty("unlockMap");
   });
@@ -62,6 +62,7 @@ describe("activeEffects", () => {
       revealAid: 0,
       unlockedMachines: [],
       routing: false,
+      unlockedBases: [],
     });
   });
 

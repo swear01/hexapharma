@@ -21,6 +21,7 @@ import type {
   HexCoord,
 } from "./phase0_interfaces";
 import {
+  BASE_NAMES,
   DEFAULT_CATALOG,
   DEFAULT_SHAPES,
   BASE_GAME_FACTORY_HEIGHT,
@@ -39,7 +40,14 @@ import {
   MAX_BULK_SALE_PRODUCTS,
   MAX_GAME_REPLAY_WORK,
 } from "./phase0_interfaces";
-import { evaluate, outcomeOf, previewStep, validateDrugState as validateDrugGraphState } from "./drug-graph";
+import {
+  baseView,
+  evaluate,
+  initialState,
+  outcomeOf,
+  previewStep,
+  validateDrugState as validateDrugGraphState,
+} from "./drug-graph";
 import { sellUnit } from "./economy";
 import { MAX_GENERATION_CATALOG_ENTRIES, generateCached } from "./mapgen";
 import { DEFAULT_PATENTS, activeEffects, setPatent } from "./patent";
@@ -59,6 +67,7 @@ import { hexDistance, hexIndex, hexInBounds } from "./hex";
 export const SIDE_EFFECT_PENALTY = 25;
 export const DEFAULT_STARTING_CASH = 1_000;
 export const SHIPPING_CONTRACT_QUOTA = 3;
+export { BASE_NAMES };
 
 export type GameIntent = GameIntentContract;
 
@@ -116,6 +125,7 @@ function ownOutcome(outcome: Outcome): Outcome {
 
 function ownResearchTrial(trial: ResearchTrial): ResearchTrial {
   return Object.freeze({
+    base: canonicalNumber(trial.base),
     program: ownTemplate(trial.program),
     cost: canonicalNumber(trial.cost),
     outcome: ownOutcome(trial.outcome),
@@ -152,8 +162,8 @@ function ownGenOptions(genOptions: GenOptions): GenOptions {
 }
 
 function validateGameMapOptions(genOptions: GenOptions): void {
-  if (genOptions.nMaps !== 1) {
-    throw new Error("game state: current rules require a single Research Atlas");
+  if (!Number.isSafeInteger(genOptions.nMaps) || genOptions.nMaps < 1 || genOptions.nMaps > BASE_NAMES.length) {
+    throw new Error(`game state: the level needs 1..${BASE_NAMES.length} base maps`);
   }
   if (
     !Number.isSafeInteger(genOptions.diseaseCount) ||
@@ -234,6 +244,7 @@ function ownFactoryLayout(layout: FactoryLayout): FactoryLayout {
           kind: "source",
           dir: canonicalNumber(tile.dir) as typeof tile.dir,
           period: canonicalNumber(tile.period),
+          base: canonicalNumber(tile.base),
         });
       case "splitter":
         if (!Array.isArray(tile.outDirs) || tile.outDirs.length < 1 || tile.outDirs.length > 6) {
@@ -303,7 +314,11 @@ function ownGameIntent(intent: GameIntent): GameIntent {
     case "resetProduction":
       return Object.freeze({ kind: intent.kind });
     case "runResearchTrial":
-      return Object.freeze({ kind: "runResearchTrial", program: ownTemplate(intent.program) });
+      return Object.freeze({
+        kind: "runResearchTrial",
+        program: ownTemplate(intent.program),
+        base: canonicalNumber(intent.base),
+      });
     case "setPilotLayout":
       return Object.freeze({ kind: "setPilotLayout", layout: ownFactoryLayout(intent.layout) });
     case "buildProductionLayout":
@@ -388,6 +403,21 @@ export function cureRegionPrice(disease: DiseaseSpec, outcome: Outcome): number 
   return region.price;
 }
 
+/** Whether `base` is a map of this level and its Technology switch is on (Saline always is). */
+export function baseAvailable(game: Pick<GameState, "patents" | "genOptions">, base: number): boolean {
+  return Number.isSafeInteger(base) && base >= 0 && base < game.genOptions.nMaps &&
+    (base === 0 || activeEffects(DEFAULT_PATENTS, game.patents).unlockedBases.includes(base));
+}
+
+function requireAvailableBase(game: Pick<GameState, "patents" | "genOptions">, base: number): void {
+  if (!Number.isSafeInteger(base) || base < 0 || base >= game.genOptions.nMaps) {
+    throw new Error(`game intent: base ${String(base)} is not part of this level`);
+  }
+  if (!baseAvailable(game, base)) {
+    throw new Error(`game intent: ${BASE_NAMES[base] ?? `Base ${base}`} is off · turn it on in Technology`);
+  }
+}
+
 function requireAllowedMachine(game: Pick<GameState, "patents">, machine: Machine): MachineCatalogEntry {
   const entry = availableCatalog(game.patents).find((candidate) => candidate.typeId === machine.typeId);
   if (entry === undefined) throw new Error(`game intent: machine "${machine.typeId}" is locked`);
@@ -411,7 +441,7 @@ function requireDir(value: number, path: string): void {
   }
 }
 
-export function validateFactoryLayout(game: Pick<GameState, "patents">, layout: FactoryLayout): void {
+export function validateFactoryLayout(game: Pick<GameState, "patents" | "genOptions">, layout: FactoryLayout): void {
   if (
     !Number.isSafeInteger(layout.width) ||
     !Number.isSafeInteger(layout.height) ||
@@ -479,6 +509,7 @@ export function validateFactoryLayout(game: Pick<GameState, "patents">, layout: 
         if (!Number.isSafeInteger(tile.period) || tile.period <= 0 || tile.period > 0x7fff_ffff) {
           throw new Error("game intent: factory source period must be a positive int32 integer");
         }
+        requireAvailableBase(game, tile.base);
         break;
       case "splitter":
         if (!routing) throw new Error("game intent: Splitter and Merger are off · turn on Split / Merge in Technology");
@@ -683,7 +714,7 @@ export function createGameState(genOptions: GenOptions, cash: number): GameState
     pilot: Object.freeze({ layout: null }),
     production: Object.freeze({
       layout: productionLayout,
-      runtime: initFactory(productionLayout, level.mm, level.start),
+      runtime: initFactory(productionLayout, level.mm),
       waste: 0,
     }),
     inventory: [],
@@ -725,26 +756,14 @@ function drainProducts(
   const events = runtime.producedEvents;
   if (events.count === 0) return;
   for (let eventIndex = 0; eventIndex < events.count; eventIndex++) {
-    const pos: HexCoord[] = [];
-    const offset: HexCoord[] = [];
-    const base = eventIndex * events.mapCount;
-    for (let mapIndex = 0; mapIndex < events.mapCount; mapIndex++) {
-      pos.push({
-        q: events.drugX[base + mapIndex] ?? 0,
-        r: events.drugY[base + mapIndex] ?? 0,
-      });
-      offset.push({
-        q: events.drugOffsetQ[base + mapIndex] ?? 0,
-        r: events.drugOffsetR[base + mapIndex] ?? 0,
-      });
-    }
+    const base = events.base[eventIndex] ?? 0;
     const drug: DrugState = {
-      pos,
-      offset,
+      pos: [{ q: events.drugX[eventIndex] ?? 0, r: events.drugY[eventIndex] ?? 0 }],
+      offset: [{ q: events.drugOffsetQ[eventIndex] ?? 0, r: events.drugOffsetR[eventIndex] ?? 0 }],
       heading: (events.heading[eventIndex] ?? 0) as DrugState["heading"],
       failed: (events.failed[eventIndex] ?? 0) !== 0,
     };
-    const outcome = evaluate(level.mm, drug, { steps: [] });
+    const outcome = outcomeOf(baseView(level.mm, base), drug);
     if (outcome.failed || outcome.cured.length === 0) {
       if (current.factoryWaste === Number.MAX_SAFE_INTEGER) {
         throw new Error("game intent: waste exceeds safe-integer range");
@@ -764,6 +783,7 @@ function drainProducts(
     if (current.inventory === null) current.inventory = [...current.sourceInventory];
     current.inventory.push({
       id: events.ids[eventIndex] ?? 0,
+      base,
       inventoryId: current.nextInventoryId,
       drug,
       productionCost: events.productionCosts[eventIndex] ?? 0,
@@ -839,7 +859,11 @@ function factoryRuntimeIsInitial(game: GameState): boolean {
   );
 }
 
-export function requireEntitledFacilityLayout(game: Pick<GameState, "patents">, layout: FactoryLayout, facility: string): void {
+export function requireEntitledFacilityLayout(
+  game: Pick<GameState, "patents" | "genOptions">,
+  layout: FactoryLayout,
+  facility: string,
+): void {
   validateFactoryLayout(game, layout);
   const effects = activeEffects(DEFAULT_PATENTS, game.patents);
   const entitledWidth = BASE_GAME_FACTORY_WIDTH + effects.factoryDw;
@@ -864,22 +888,20 @@ export function researchTrialCost(template: Template): number {
   return cost;
 }
 
-/** Per-map cells entered by running `program` from the level start, in order. */
-function researchTrialTrails(mm: MultiMap, start: DrugState, program: Template): {
-  readonly trails: readonly (readonly HexCoord[])[];
+/** Cells entered by running `program` from the start of a one-map base view, in order. */
+function researchTrialTrail(view: MultiMap, program: Template): {
+  readonly trail: readonly HexCoord[];
   readonly final: DrugState;
 } {
-  const trails: HexCoord[][] = mm.maps.map(() => []);
-  let drug = start;
+  const trail: HexCoord[] = [];
+  let drug = initialState(view);
   for (const machine of program.steps) {
     if (drug.failed) break;
-    const preview = previewStep(mm, drug, machine);
-    for (let mapIndex = 0; mapIndex < trails.length; mapIndex++) {
-      for (const cell of preview.trails[mapIndex] ?? []) trails[mapIndex]!.push(cell);
-    }
+    const preview = previewStep(view, drug, machine);
+    for (const cell of preview.trails[0] ?? []) trail.push(cell);
     drug = preview.next;
   }
-  return { trails, final: drug };
+  return { trail, final: drug };
 }
 
 
@@ -890,34 +912,38 @@ function reduceGameIntent(game: GameState, intent: GameIntent): GameState {
       if (program.steps.length < 1 || program.steps.length > MAX_TEMPLATE_STEPS) {
         throw new Error(`game intent: Research trial requires 1..${MAX_TEMPLATE_STEPS} machines`);
       }
+      requireAvailableBase(game, intent.base);
       requireAllowedTemplate(game, program);
       const cost = researchTrialCost(program);
       if (game.economy.cash < cost) {
         throw new Error(`game intent: Research trial requires ${cost} cash`);
       }
       const level = levelFor(game.genOptions);
-      const run = researchTrialTrails(level.mm, level.start, program);
+      const view = baseView(level.mm, intent.base);
+      const run = researchTrialTrail(view, program);
       const sensorRadius = RESEARCH_SENSOR_RADIUS + activeEffects(
         DEFAULT_PATENTS,
         game.patents,
       ).revealAid;
-      const fog = revealResearchTrails(
-        game.fog,
-        level.mm,
-        run.trails,
+      const fog = [...game.fog];
+      fog[intent.base] = revealResearchTrails(
+        [game.fog[intent.base]!],
+        view,
+        [run.trail],
         run.final.pos,
         sensorRadius,
-      );
+      )[0]!;
       return {
         ...game,
         economy: Object.freeze({ ...game.economy, cash: game.economy.cash - cost }),
         fog,
         research: Object.freeze({
           lastTrial: ownResearchTrial({
+            base: intent.base,
             program,
             cost,
             // The same traversal drives the fog reveal and the outcome, so they cannot drift.
-            outcome: outcomeOf(level.mm, run.final),
+            outcome: outcomeOf(view, run.final),
           }),
         }),
       };
@@ -945,7 +971,7 @@ function reduceGameIntent(game: GameState, intent: GameIntent): GameState {
         production: Object.freeze({
           ...game.production,
           layout,
-          runtime: initFactory(layout, level.mm, level.start),
+          runtime: initFactory(layout, level.mm),
         }),
       };
     }
@@ -959,12 +985,7 @@ function reduceGameIntent(game: GameState, intent: GameIntent): GameState {
       }
       const level = levelFor(game.genOptions);
       const layout = game.production.layout;
-      const state = restoreFactory(
-        layout,
-        level.mm,
-        level.start,
-        snapshotFactory(game.production.runtime),
-      );
+      const state = restoreFactory(layout, level.mm, snapshotFactory(game.production.runtime));
       const drained: ProductDrain = {
         sourceInventory: game.inventory,
         inventory: null,
@@ -995,7 +1016,7 @@ function reduceGameIntent(game: GameState, intent: GameIntent): GameState {
         ...game,
         production: Object.freeze({
           ...game.production,
-          runtime: initFactory(game.production.layout, level.mm, level.start),
+          runtime: initFactory(game.production.layout, level.mm),
         }),
       };
     }
@@ -1032,7 +1053,7 @@ function reduceGameIntent(game: GameState, intent: GameIntent): GameState {
             production: Object.freeze({
               ...next.production,
               layout: productionLayout,
-              runtime: initFactory(productionLayout, level.mm, level.start),
+              runtime: initFactory(productionLayout, level.mm),
               waste: 0,
             }),
           };
@@ -1141,12 +1162,13 @@ function requireSafeInteger(value: number, path: string, min?: number): void {
 }
 
 function validateDrugState(
+  base: number,
   drug: DrugState,
   level: GeneratedLevel,
   path: string,
 ): void {
   try {
-    validateDrugGraphState(level.mm, drug);
+    validateDrugGraphState(baseView(level.mm, base), drug);
   } catch (error) {
     throw new Error(`${path} is invalid: ${error instanceof Error ? error.message : String(error)}`, {
       cause: error,
@@ -1169,8 +1191,8 @@ function validateRuntime(
     (count, tile) => count + (tile.kind === "source" ? 1 : 0),
     0,
   );
-  if (runtime.capacity !== capacity || runtime.mapCount !== level.mm.maps.length) {
-    throw new Error("game state: factory runtime capacity/map count does not match layout");
+  if (runtime.capacity !== capacity) {
+    throw new Error("game state: factory runtime capacity does not match layout");
   }
   const unitArrays = [
     runtime.unitIds,
@@ -1181,6 +1203,11 @@ function validateRuntime(
     runtime.unitProductionCosts,
     runtime.unitFailed,
     runtime.unitHeading,
+    runtime.unitBase,
+    runtime.unitDrugX,
+    runtime.unitDrugY,
+    runtime.unitDrugOffsetQ,
+    runtime.unitDrugOffsetR,
   ];
   if (
     !(runtime.unitIds instanceof Int32Array) ||
@@ -1191,6 +1218,7 @@ function validateRuntime(
     !(runtime.unitProductionCosts instanceof Int32Array) ||
     !(runtime.unitFailed instanceof Uint8Array) ||
     !(runtime.unitHeading instanceof Uint8Array) ||
+    !(runtime.unitBase instanceof Uint8Array) ||
     !(runtime.unitDrugX instanceof Int32Array) ||
     !(runtime.unitDrugY instanceof Int32Array) ||
     !(runtime.unitDrugOffsetQ instanceof Int8Array) ||
@@ -1201,14 +1229,6 @@ function validateRuntime(
   }
   if (unitArrays.some((array) => array.length !== capacity)) {
     throw new Error("game state: factory runtime unit buffers have invalid capacity");
-  }
-  if (
-    runtime.unitDrugX.length !== capacity * runtime.mapCount ||
-    runtime.unitDrugY.length !== capacity * runtime.mapCount ||
-    runtime.unitDrugOffsetQ.length !== capacity * runtime.mapCount ||
-    runtime.unitDrugOffsetR.length !== capacity * runtime.mapCount
-  ) {
-    throw new Error("game state: factory runtime drug buffers have invalid capacity");
   }
   const splitters = layout.tiles.filter((tile) => tile.kind === "splitter");
   if (runtime.splitterCursors.length !== splitters.length) {
@@ -1228,6 +1248,7 @@ function validateRuntime(
     !(events.productionCosts instanceof Int32Array) ||
     !(events.failed instanceof Uint8Array) ||
     !(events.heading instanceof Uint8Array) ||
+    !(events.base instanceof Uint8Array) ||
     !(events.drugX instanceof Int32Array) ||
     !(events.drugY instanceof Int32Array) ||
     !(events.drugOffsetQ instanceof Int8Array) ||
@@ -1237,15 +1258,15 @@ function validateRuntime(
   }
   if (
     events.capacity !== eventCapacity ||
-    events.mapCount !== runtime.mapCount ||
     events.ids.length !== eventCapacity ||
     events.productionCosts.length !== eventCapacity ||
     events.failed.length !== eventCapacity ||
     events.heading.length !== eventCapacity ||
-    events.drugX.length !== eventCapacity * runtime.mapCount ||
-    events.drugY.length !== eventCapacity * runtime.mapCount ||
-    events.drugOffsetQ.length !== eventCapacity * runtime.mapCount ||
-    events.drugOffsetR.length !== eventCapacity * runtime.mapCount
+    events.base.length !== eventCapacity ||
+    events.drugX.length !== eventCapacity ||
+    events.drugY.length !== eventCapacity ||
+    events.drugOffsetQ.length !== eventCapacity ||
+    events.drugOffsetR.length !== eventCapacity
   ) {
     throw new Error("game state: factory product-event buffers have invalid capacity");
   }
@@ -1276,20 +1297,14 @@ function validateRuntime(
       runtime.unitMachineIds[i] !== -1 ||
       runtime.unitProductionCosts[i] !== 0 ||
       runtime.unitFailed[i] !== 0 ||
-      runtime.unitHeading[i] !== 0
+      runtime.unitHeading[i] !== 0 ||
+      runtime.unitBase[i] !== 0 ||
+      runtime.unitDrugX[i] !== 0 ||
+      runtime.unitDrugY[i] !== 0 ||
+      runtime.unitDrugOffsetQ[i] !== 0 ||
+      runtime.unitDrugOffsetR[i] !== 0
     ) {
       throw new Error(`game state: factory unused unit slot ${i} is not canonical`);
-    }
-    const base = i * runtime.mapCount;
-    for (let mapIndex = 0; mapIndex < runtime.mapCount; mapIndex++) {
-      if (
-        runtime.unitDrugX[base + mapIndex] !== 0 ||
-        runtime.unitDrugY[base + mapIndex] !== 0 ||
-        runtime.unitDrugOffsetQ[base + mapIndex] !== 0 ||
-        runtime.unitDrugOffsetR[base + mapIndex] !== 0
-      ) {
-        throw new Error(`game state: factory unused drug slot ${i} is not canonical`);
-      }
     }
   }
   for (let i = 0; i < eventCapacity; i++) {
@@ -1297,20 +1312,14 @@ function validateRuntime(
       events.ids[i] !== 0 ||
       events.productionCosts[i] !== 0 ||
       events.failed[i] !== 0 ||
-      events.heading[i] !== 0
+      events.heading[i] !== 0 ||
+      events.base[i] !== 0 ||
+      events.drugX[i] !== 0 ||
+      events.drugY[i] !== 0 ||
+      events.drugOffsetQ[i] !== 0 ||
+      events.drugOffsetR[i] !== 0
     ) {
       throw new Error(`game state: drained product-event slot ${i} is not canonical`);
-    }
-    const base = i * runtime.mapCount;
-    for (let mapIndex = 0; mapIndex < runtime.mapCount; mapIndex++) {
-      if (
-        events.drugX[base + mapIndex] !== 0 ||
-        events.drugY[base + mapIndex] !== 0 ||
-        events.drugOffsetQ[base + mapIndex] !== 0 ||
-        events.drugOffsetR[base + mapIndex] !== 0
-      ) {
-        throw new Error(`game state: drained product-event position ${i} is not canonical`);
-      }
     }
   }
   const snapshot = snapshotFactory(runtime);
@@ -1320,9 +1329,9 @@ function validateRuntime(
     requireSafeInteger(unit.id, `game state: factory unit ${i} id`, 0);
     requireSafeInteger(unit.proc, `game state: factory unit ${i} progress`, 0);
     requireSafeInteger(unit.productionCost, `game state: factory unit ${i} production cost`, 0);
-    validateDrugState(unit.drug, level, `game state: factory unit ${i}.drug`);
+    validateDrugState(unit.base, unit.drug, level, `game state: factory unit ${i}.drug`);
   }
-  restoreFactory(layout, level.mm, level.start, snapshot);
+  restoreFactory(layout, level.mm, snapshot);
 }
 
 export function validateGameState(game: GameState): GameState {
@@ -1367,7 +1376,11 @@ export function validateGameState(game: GameState): GameState {
     if (trial.cost !== researchTrialCost(trial.program)) {
       throw new Error("game state: Research trial cost does not match its program");
     }
-    if (canonical(evaluate(level.mm, level.start, trial.program)) !== canonical(trial.outcome)) {
+    if (!Number.isSafeInteger(trial.base) || trial.base < 0 || trial.base >= level.mm.maps.length) {
+      throw new Error("game state: Research trial base is not part of this level");
+    }
+    const view = baseView(level.mm, trial.base);
+    if (canonical(evaluate(view, initialState(view), trial.program)) !== canonical(trial.outcome)) {
       throw new Error("game state: Research trial outcome does not match its program");
     }
   }
@@ -1398,8 +1411,8 @@ export function validateGameState(game: GameState): GameState {
       throw new Error(`game state: inventory id ${product.inventoryId} is duplicated or not allocated`);
     }
     inventoryIds.add(product.inventoryId);
-    validateDrugState(product.drug, level, `game state: inventory ${i}.drug`);
-    const actual = evaluate(level.mm, product.drug, { steps: [] });
+    validateDrugState(product.base, product.drug, level, `game state: inventory ${i}.drug`);
+    const actual = outcomeOf(baseView(level.mm, product.base), product.drug);
     if (actual.failed || actual.cured.length === 0 || canonical(actual) !== canonical(product.outcome)) {
       throw new Error(`game state: inventory ${i} outcome does not match its physical drug`);
     }
@@ -1438,8 +1451,7 @@ export function validateGameState(game: GameState): GameState {
     }),
     production: Object.freeze({
       layout: productionLayout,
-      runtime: restoreFactory(productionLayout, level.mm, level.start,
-        snapshotFactory(game.production.runtime)),
+      runtime: restoreFactory(productionLayout, level.mm, snapshotFactory(game.production.runtime)),
       waste: game.production.waste,
     }),
     inventory: game.inventory.map((product) => ({
@@ -1471,7 +1483,6 @@ export function replayGame(initial: GameState, intents: readonly GameIntent[]): 
       runtime: restoreFactory(
         initial.production.layout,
         level.mm,
-        level.start,
         snapshotFactory(initial.production.runtime),
       ),
     },

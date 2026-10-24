@@ -5,7 +5,7 @@ import { applyGameIntent, createGameState } from "../../src/sim/game";
 import { generate } from "../../src/sim/mapgen";
 import { SAVE_VERSION, serializeGame } from "../../src/sim/save";
 import { DEFAULT_CATALOG } from "../../src/sim/phase0_interfaces";
-import { defaultGenOptions, researchPlanningTrails } from "../../src/ui/Game";
+import { defaultGenOptions, researchBaseLevel, researchPlanningTrails } from "../../src/ui/Game";
 import { focusLabCamera } from "../../src/render/labCamera";
 import type { HexCoord } from "../../src/sim/hex";
 
@@ -21,11 +21,11 @@ async function confirmLoad(page: import("@playwright/test").Page): Promise<void>
 
 function plannedEndpoint(stepCount: number): HexCoord {
   const options = defaultGenOptions(14);
-  const level = generate(options);
+  const level = researchBaseLevel(generate(options), 0);
   const game = createGameState(options, 200);
   const entry = DEFAULT_CATALOG[0];
   if (entry === undefined) throw new Error("default Research machine is unavailable");
-  const trail = researchPlanningTrails(level.mm, game.fog, level.start, {
+  const trail = researchPlanningTrails(level.mm, [game.fog[0]!], level.start, {
     steps: Array.from({ length: stepCount }, () => entry),
   })[0] ?? [];
   for (let index = trail.length - 1; index >= 0; index--) {
@@ -55,7 +55,7 @@ function completedResearchSave(): string {
   const options = defaultGenOptions(14);
   const program = generate(options).diseases[0]!.reference;
   let game = createGameState(options, 10_000);
-  game = applyGameIntent(game, { kind: "runResearchTrial", program });
+  game = applyGameIntent(game, { kind: "runResearchTrial", program, base: 0 });
   return serializeGame(game);
 }
 

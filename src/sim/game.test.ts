@@ -25,7 +25,7 @@ import {
 } from "./game";
 import { generate } from "./mapgen";
 import * as mapgenModule from "./mapgen";
-import { compileEntitledPrototype } from "./recipe";
+import { compileEntitledPrototype, withSourceBase } from "./recipe";
 import { deserializeGame, serializeGame } from "./save";
 
 const FACTORY_CATALOG = availableCatalog({ unlocked: [] }).filter(
@@ -61,7 +61,7 @@ function buildTemplate(
 ): ReturnType<typeof createGameState> {
   let game = initial;
   if (runResearch) {
-    game = applyGameIntent(game, { kind: "runResearchTrial", program: template });
+    game = applyGameIntent(game, { kind: "runResearchTrial", program: template, base: 0 });
   }
   const layout = entitledLayout(template);
   game = applyGameIntent(game, { kind: "setPilotLayout", layout });
@@ -85,7 +85,7 @@ function directSinkFactory(layout: FactoryLayout, period = 1): FactoryLayout {
     { length: layout.width * layout.height },
     () => ({ kind: "empty" }),
   );
-  tiles[0] = { kind: "source", dir: 0, period };
+  tiles[0] = { kind: "source", dir: 0, period, base: 0 };
   tiles[1] = { kind: "sink" };
   return { width: layout.width, height: layout.height, tiles, machines: [] };
 }
@@ -352,6 +352,7 @@ describe("whole-game deterministic state", () => {
     expect(() => applyGameIntent(game, {
       kind: "runResearchTrial",
       program: lockedProgram,
+      base: 0,
     })).toThrow(/locked/i);
     expect(() => applyGameIntent(game, { kind: "setPilotLayout", layout: locked })).toThrow(/locked/i);
     const built = buildTemplate(game);
@@ -391,7 +392,7 @@ describe("whole-game deterministic state", () => {
 
   it("expands facilities without rewriting the last Research trial", () => {
     let game = createGameState(opts, 10_000);
-    game = applyGameIntent(game, { kind: "runResearchTrial", program: recipe() });
+    game = applyGameIntent(game, { kind: "runResearchTrial", program: recipe(), base: 0 });
     const research = game.research;
     expect(research.lastTrial).not.toBeNull();
 
@@ -419,7 +420,7 @@ describe("whole-game deterministic state", () => {
     const push = DEFAULT_CATALOG.find((entry) => entry.typeId === "hook")!;
     const tampered = baseLayout();
     const tiles = [...tampered.tiles];
-    tiles[0] = { kind: "source", dir: 0, period: 1 };
+    tiles[0] = { kind: "source", dir: 0, period: 1, base: 0 };
     const layout: FactoryLayout = {
       ...tampered,
       tiles,
@@ -444,6 +445,7 @@ describe("whole-game deterministic state", () => {
       kind: "source",
       dir: 0,
       period: 0,
+      base: 0,
     };
     expect(() => applyGameIntent(game, {
       kind: "buildProductionLayout",
@@ -498,9 +500,9 @@ describe("whole-game deterministic state", () => {
     const mutableLayout = directSinkFactory(baseLayout());
     game = applyGameIntent(game, { kind: "setPilotLayout", layout: mutableLayout });
     (mutableLayout.tiles as FactoryLayout["tiles"] & {
-      0: { kind: "source"; dir: 0; period: number };
+      0: { kind: "source"; dir: 0; period: number; base: number };
     })[0].period = 2;
-    expect(game.pilot.layout?.tiles[0]).toEqual({ kind: "source", dir: 0, period: 1 });
+    expect(game.pilot.layout?.tiles[0]).toEqual({ kind: "source", dir: 0, period: 1, base: 0 });
     expect(() => {
       (game.pilot.layout!.tiles as unknown as { period: number }[])[0]!.period = 3;
     }).toThrow();
@@ -610,7 +612,7 @@ describe("whole-game deterministic state", () => {
     const initial = createGameState(opts, 500);
     const template = recipe();
     const intents: GameIntent[] = [
-      { kind: "runResearchTrial", program: template },
+      { kind: "runResearchTrial", program: template, base: 0 },
       { kind: "setPilotLayout", layout: entitledLayout(template) },
       { kind: "buildProductionLayout", layout: entitledLayout(template) },
       { kind: "productionTicks", ticks: 80 },
@@ -656,5 +658,45 @@ describe("whole-game deterministic state", () => {
     } as GameIntent & { ignored: string });
     expect(game).not.toHaveProperty("ignored");
     expect(game.pilot.layout).toEqual(layout);
+  });
+});
+
+describe("base drugs (D43)", () => {
+  const bases: GenOptions = { ...opts, nMaps: 3, diseaseCount: 3 };
+  const oilDisease = () => generate(bases).diseases[1]!;
+  const fogCount = (fog: Uint8Array) => fog.reduce((sum, value) => sum + value, 0);
+
+  it("puts disease d on base d mod 3 and runs a trial on its base only", () => {
+    const level = generate(bases);
+    expect(level.diseases.map((disease) => disease.map)).toEqual([0, 1, 2]);
+    let game = createGameState(bases, 1_000);
+    const fresh = game.fog.map(fogCount);
+    expect(() => applyGameIntent(game, { kind: "runResearchTrial", program: oilDisease().reference, base: 1 }))
+      .toThrow(/game intent: Oil is off · turn it on in Technology/);
+    game = applyGameIntent(game, { kind: "setPatent", id: "oil-base", enabled: true });
+    game = applyGameIntent(game, { kind: "runResearchTrial", program: oilDisease().reference, base: 1 });
+    expect(game.research.lastTrial?.base).toBe(1);
+    expect(game.research.lastTrial?.outcome.cured).toContain(1);
+    expect(game.research.lastTrial?.outcome.final).toHaveLength(1);
+    expect(game.fog.map(fogCount)).toEqual([fresh[0], expect.any(Number), fresh[2]]);
+    expect(fogCount(game.fog[1]!)).toBeGreaterThan(fresh[1]!);
+    expect(() => applyGameIntent(game, { kind: "runResearchTrial", program: oilDisease().reference, base: 3 }))
+      .toThrow(/game intent: base 3/);
+  });
+
+  it("produces on the Source's base, refuses locked bases and keeps a used base on", () => {
+    const disease = oilDisease();
+    const layout = withSourceBase(entitledLayout(disease.reference), 1);
+    let game = createGameState(bases, 1_000);
+    expect(() => applyGameIntent(game, { kind: "setPilotLayout", layout })).toThrow(/Oil is off/);
+    game = applyGameIntent(game, { kind: "setPatent", id: "oil-base", enabled: true });
+    game = applyGameIntent(game, { kind: "buildProductionLayout", layout });
+    game = applyGameIntent(game, { kind: "productionTicks", ticks: 400 });
+    const product = game.inventory.find((candidate) => candidate.outcome.cured.includes(disease.id));
+    expect(product?.base).toBe(1);
+    expect(product?.drug.pos).toHaveLength(1);
+    expect(() => applyGameIntent(game, { kind: "setPatent", id: "oil-base", enabled: false }))
+      .toThrow(/Technology "oil-base" is still in use/);
+    expect(deserializeGame(serializeGame(game))).toEqual(game);
   });
 });

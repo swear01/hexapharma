@@ -19,7 +19,7 @@ import {
   MAX_TEMPLATE_STEPS,
 } from "../phase0_interfaces";
 import { worldCells, worldInPorts, worldOutPorts } from "../factory-geom";
-import { outcomeOf } from "../drug-graph";
+import { baseView, outcomeOf } from "../drug-graph";
 import {
   initFactory,
   requireFactoryAnalysisBudget,
@@ -245,7 +245,7 @@ function compilePrototypeAtSink(
   ) {
     throw new Error("compilePrototype: source and analyzer need distinct cells inside the floor");
   }
-  tiles[at(width, source.q, source.r)] = { kind: "source", dir: E, period: 1 };
+  tiles[at(width, source.q, source.r)] = { kind: "source", dir: E, period: 1, base: 0 };
   tiles[at(width, sink.q, sink.r)] = { kind: "sink" };
   blocked[at(width, source.q, source.r)] = 1;
   blocked[at(width, sink.q, sink.r)] = 1;
@@ -699,6 +699,14 @@ function compileEntitledPlacements(
   );
 }
 
+/** `layout` with every Source switched to `base` (compiled lines start on Saline, base 0). */
+export function withSourceBase(layout: FactoryLayout, base: number): FactoryLayout {
+  return {
+    ...layout,
+    tiles: layout.tiles.map((tile) => (tile.kind === "source" ? { ...tile, base } : tile)),
+  };
+}
+
 /** Deterministically straight-pack when possible, then snake-pack the exact entitled floor. */
 export function compileEntitledPrototype(
   template: Template,
@@ -900,7 +908,7 @@ export const compileTemplate: CompileTemplateFn = (template) => {
   //   Source sits at the west end of the spine and emits EAST directly into m0's input
   //   port (which is anchored at col 1). The sink sits at the far-right of the spine.
   const source: Vec2 = { q: 0, r: spineY };
-  tiles[at(width, source.q, source.r)] = { kind: "source", dir: E, period: 1 };
+  tiles[at(width, source.q, source.r)] = { kind: "source", dir: E, period: 1, base: 0 };
   blocked[at(width, source.q, source.r)] = 1;
   const sink: Vec2 = { q: width - 1, r: spineY };
   tiles[at(width, sink.q, sink.r)] = { kind: "sink" };
@@ -1000,10 +1008,10 @@ function tickCap(layout: FactoryLayout): number {
   return ticks;
 }
 
-export const factoryOutcome: FactoryOutcomeFn = (layout, mm, start) => {
+export const factoryOutcome: FactoryOutcomeFn = (layout, mm) => {
   const cap = tickCap(layout);
   requireFactoryAnalysisBudget(layout, cap, "factory outcome");
-  const runtime = initFactory(layout, mm, start);
+  const runtime = initFactory(layout, mm);
   for (let tick = 0; tick < cap; tick++) {
     stepFactory(layout, mm, runtime);
     if (runtime.producedEvents.count === 0) {
@@ -1013,7 +1021,7 @@ export const factoryOutcome: FactoryOutcomeFn = (layout, mm, start) => {
       continue;
     }
     const first = snapshotProducedEvents(runtime)[0];
-    if (first !== undefined) return outcomeOf(mm, first.drug);
+    if (first !== undefined) return outcomeOf(baseView(mm, first.base), first.drug);
   }
   throw new Error(`factory outcome: first-product replay budget exhausted after ${cap} ticks`);
 };

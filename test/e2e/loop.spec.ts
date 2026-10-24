@@ -31,7 +31,7 @@ function preparedFacilitiesSave(seed = 14): string {
     BASE_GAME_FACTORY_HEIGHT,
   ).layout;
   let game = createGameState(options, DEFAULT_STARTING_CASH);
-  game = applyGameIntent(game, { kind: "runResearchTrial", program });
+  game = applyGameIntent(game, { kind: "runResearchTrial", program, base: 0 });
   game = applyGameIntent(game, { kind: "setPilotLayout", layout });
   return serializeGame(game);
 }

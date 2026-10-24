@@ -22,23 +22,23 @@ describe("balance tool failure boundaries", () => {
     representativeResult = sweep(2);
   }, 60_000);
 
-  it("uses and reports the representative active one-Atlas configuration", () => {
+  it("uses and reports the shipped three-base configuration", () => {
     expect(BALANCE_CONFIG).toEqual({
-      nMaps: 1,
+      nMaps: 3,
       width: 49,
       height: 49,
-      diseaseCount: 4,
+      diseaseCount: 6,
       difficulty: { min: 4, max: 12 },
     });
   });
 
-  it("includes the representative four-disease progression ledger", () => {
+  it("includes the representative six-disease progression ledger", () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
     try {
       expect(runBalance(1)).toBe(0);
       expect(log).toHaveBeenCalledWith(expect.stringMatching(/seed=0 completed=true min-cash=720 /));
       expect(log).toHaveBeenCalledWith(expect.stringMatching(/★ \(tier-2\) reachability/));
-      expect(log).toHaveBeenCalledWith(expect.stringMatching(/four-disease legal progression/));
+      expect(log).toHaveBeenCalledWith(expect.stringMatching(/six-disease legal progression/));
       for (const seed of [14, 15, 1, 42, 100]) {
         expect(log).toHaveBeenCalledWith(expect.stringMatching(`seed=${seed} completed=true`));
       }
@@ -47,9 +47,9 @@ describe("balance tool failure boundaries", () => {
     }
   }, 60_000);
 
-  it("reports min/max for the maximum four-disease sample count without argument spreading", () => {
-    const values = Array.from({ length: MAX_BALANCE_SEEDS * 4 }, (_, index) => index - 50);
-    expect(minMax(values)).toEqual({ min: -50, max: MAX_BALANCE_SEEDS * 4 - 51 });
+  it("reports min/max for the maximum six-disease sample count without argument spreading", () => {
+    const values = Array.from({ length: MAX_BALANCE_SEEDS * 6 }, (_, index) => index - 50);
+    expect(minMax(values)).toEqual({ min: -50, max: MAX_BALANCE_SEEDS * 6 - 51 });
   });
 
   it("rejects trailing CLI arguments", () => {
@@ -77,7 +77,7 @@ describe("balance tool failure boundaries", () => {
         return generate(options);
       },
     });
-    expect(result.samples).toHaveLength(4);
+    expect(result.samples).toHaveLength(6);
     expect(result.failed).toEqual([{ seed: 2, error: "synthetic generation failure" }]);
     expect(sweepExitCode(result)).toBe(1);
   }, 60_000);
@@ -149,7 +149,7 @@ describe("balance tool failure boundaries", () => {
   it("reports minimum-solution gaps and a viable disease-zero bootstrap", () => {
     const result = representativeResult;
     expect(result.failed).toEqual([]);
-    expect(result.samples).toHaveLength(8);
+    expect(result.samples).toHaveLength(12);
     for (const sample of result.samples) {
       expect(sample.solverMinSteps).toBeGreaterThanOrEqual(1);
       expect(sample.solverMinSteps).toBeLessThanOrEqual(sample.refSteps);

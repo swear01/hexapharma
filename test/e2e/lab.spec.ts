@@ -9,7 +9,7 @@ import { generate } from "../../src/sim/mapgen";
 import { serializeGame } from "../../src/sim/save";
 import { DEFAULT_CATALOG } from "../../src/sim/phase0_interfaces";
 import { researchDrugPoint } from "../../src/ui/App";
-import { defaultGenOptions, researchPlanningPreview, type ResearchRoute } from "../../src/ui/Game";
+import { defaultGenOptions, researchBaseLevel, researchPlanningPreview, type ResearchRoute } from "../../src/ui/Game";
 
 test.setTimeout(60_000);
 
@@ -58,11 +58,11 @@ function known(text: string | null): number {
 
 function plannedRoute(typeId: string, stepCount = 1): ResearchRoute {
   const options = defaultGenOptions(14);
-  const level = generate(options);
+  const level = researchBaseLevel(generate(options), 0);
   const game = createGameState(options, 200);
   const entry = DEFAULT_CATALOG.find((candidate) => candidate.typeId === typeId);
   if (entry === undefined) throw new Error(`unknown Research machine ${typeId}`);
-  return researchPlanningPreview(level.mm, game.fog, level.start, {
+  return researchPlanningPreview(level.mm, [game.fog[0]!], level.start, {
     steps: Array.from({ length: stepCount }, () => entry),
   });
 }
@@ -356,18 +356,18 @@ test("a curing trial reports the Cure without a formula card and the objective p
   const options = defaultGenOptions(14);
   const level = generate(options);
   let game = createGameState(options, 1_000);
-  game = applyGameIntent(game, { kind: "runResearchTrial", program: level.diseases[0]!.reference });
+  game = applyGameIntent(game, { kind: "runResearchTrial", program: level.diseases[0]!.reference, base: 0 });
   expect(game.research.lastTrial?.outcome.cured).toContain(0);
 
   await page.goto("/");
-  await expect(page.getByTestId("objective-text")).toHaveText(/^Find Disease 1 · look /);
+  await expect(page.getByTestId("objective-text")).toHaveText(/^Find Disease 1 on Saline · look /);
   await installSaveFixture(page, serializeGame(game));
   await page.reload();
   await confirmLoad(page);
   await expect(page.getByTestId("research-atlas-outcome")).toContainText("Cure Disease 1");
   await expect(page.getByRole("status", { name: /Cure found/ })).toHaveCount(0);
   await expect(page.getByTestId("research-open-plan")).toHaveCount(0);
-  await expect(page.getByTestId("objective-text")).toHaveText("Plan a line to Disease 1");
+  await expect(page.getByTestId("objective-text")).toHaveText("Plan a line to Disease 1 on Saline");
   await page.getByTestId("objective-action").click();
   await expect(page.getByTestId("pilot-facility-workspace")).toBeVisible();
 });
@@ -375,7 +375,7 @@ test("a curing trial reports the Cure without a formula card and the objective p
 for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
   test(`a trial that resolves a Cure brings its actual finish into view at ${viewport.width}px`, async ({ page }) => {
     const options = defaultGenOptions(14);
-    const level = generate(options);
+    const level = researchBaseLevel(generate(options), 0);
     const reference = level.diseases[0]!.reference.steps;
     const finish = applyTemplate(level.mm, level.start, { steps: reference });
     const finishPoint = researchDrugPoint(finish, 0)!;

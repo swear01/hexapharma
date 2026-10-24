@@ -60,9 +60,9 @@ import { DEFAULT_CATALOG, DEFAULT_SHAPES } from "../phase0_interfaces";
 // blob field-by-field and rebuilding a structurally-equal GameState — never
 // defaulting silently on missing/wrong fields.
 
-export const SAVE_VERSION = 14;
+export const SAVE_VERSION = 15;
 export const SAVE_CONTENT_BUILD = fnv1a32Hex(canonical({
-  rules: 5,
+  rules: 6,
   catalog: DEFAULT_CATALOG,
   shapes: DEFAULT_SHAPES,
   patents: DEFAULT_PATENTS,
@@ -316,6 +316,13 @@ function parseDrugState(v: unknown, path: string, expectedMaps?: number): DrugSt
   };
 }
 
+/** A base (map index) of a level with `nMaps` bases; a drug and its outcome live on that one map. */
+function parseBase(v: unknown, path: string, nMaps: number): number {
+  const base = reqInt(v, path);
+  if (base < 0 || base >= nMaps) throw new SaveError(`${path}: expected a base in 0..${nMaps - 1}`);
+  return base;
+}
+
 function parseOutcome(v: unknown, path: string, expectedMaps: number): Outcome {
   const o = reqExactObject(v, path, ["failed", "final", "cured", "premium", "regions", "sideEffects"]);
   const final = reqArray(o.final, `${path}.final`);
@@ -359,11 +366,12 @@ function parseTile(v: unknown, path: string): FactoryTile {
       requireExactKeys(o, ["kind", "dir"], path);
       return { kind: "belt", dir: parseDir(o.dir, `${path}.dir`) };
     case "source":
-      requireExactKeys(o, ["kind", "dir", "period"], path);
+      requireExactKeys(o, ["kind", "dir", "period", "base"], path);
       return {
         kind: "source",
         dir: parseDir(o.dir, `${path}.dir`),
         period: reqInt(o.period, `${path}.period`),
+        base: reqInt(o.base, `${path}.base`),
       };
     case "sink":
       requireExactKeys(o, ["kind"], path);
@@ -523,9 +531,10 @@ function parseNullableFactory(v: unknown, path = "factory"): FactoryLayout | nul
   return v === null ? null : parseFactory(v, path);
 }
 
-function parseUnit(v: unknown, path: string, expectedMaps: number): Unit {
+function parseUnit(v: unknown, path: string, nMaps: number): Unit {
   const o = reqExactObject(v, path, [
     "id",
+    "base",
     "pos",
     "drug",
     "proc",
@@ -534,19 +543,21 @@ function parseUnit(v: unknown, path: string, expectedMaps: number): Unit {
   ]);
   return {
     id: reqInt(o.id, `${path}.id`),
+    base: parseBase(o.base, `${path}.base`, nMaps),
     pos: parseHexCoord(o.pos, `${path}.pos`),
-    drug: parseDrugState(o.drug, `${path}.drug`, expectedMaps),
+    drug: parseDrugState(o.drug, `${path}.drug`, 1),
     proc: reqInt(o.proc, `${path}.proc`),
     machineId: o.machineId === null ? null : reqInt(o.machineId, `${path}.machineId`),
     productionCost: reqInt(o.productionCost, `${path}.productionCost`),
   };
 }
 
-function parseProducedUnit(v: unknown, path: string, expectedMaps: number): ProducedUnit {
-  const o = reqExactObject(v, path, ["id", "drug", "productionCost"]);
+function parseProducedUnit(v: unknown, path: string, nMaps: number): ProducedUnit {
+  const o = reqExactObject(v, path, ["id", "base", "drug", "productionCost"]);
   return {
     id: reqInt(o.id, `${path}.id`),
-    drug: parseDrugState(o.drug, `${path}.drug`, expectedMaps),
+    base: parseBase(o.base, `${path}.base`, nMaps),
+    drug: parseDrugState(o.drug, `${path}.drug`, 1),
     productionCost: reqInt(o.productionCost, `${path}.productionCost`),
   };
 }
@@ -660,13 +671,13 @@ function validateFactorySnapshot(
     if (unit.machineId !== null && !machineIds.has(unit.machineId)) {
       throw new SaveError(`${path}.units[${index}].machineId: unknown machine`);
     }
-    if (unit.drug.pos.length !== nMaps) {
-      throw new SaveError(`${path}.units[${index}].drug: map count mismatch`);
+    if (unit.base < 0 || unit.base >= nMaps || unit.drug.pos.length !== 1) {
+      throw new SaveError(`${path}.units[${index}].drug: base or map count mismatch`);
     }
   }
 }
 
-function parseInventory(v: unknown, expectedMaps: number): InventoryProduct[] {
+function parseInventory(v: unknown, nMaps: number): InventoryProduct[] {
   const inventory = reqArray(v, "inventory");
   if (inventory.length > MAX_GAME_INVENTORY_PRODUCTS) {
     throw new SaveError(`inventory: exceeds ${MAX_GAME_INVENTORY_PRODUCTS} physical products`);
@@ -675,6 +686,7 @@ function parseInventory(v: unknown, expectedMaps: number): InventoryProduct[] {
     const path = `inventory[${i}]`;
     const o = reqExactObject(value, path, [
       "id",
+      "base",
       "drug",
       "productionCost",
       "inventoryId",
@@ -682,10 +694,11 @@ function parseInventory(v: unknown, expectedMaps: number): InventoryProduct[] {
     ]);
     return {
       id: reqInt(o.id, `${path}.id`),
-      drug: parseDrugState(o.drug, `${path}.drug`, expectedMaps),
+      base: parseBase(o.base, `${path}.base`, nMaps),
+      drug: parseDrugState(o.drug, `${path}.drug`, 1),
       productionCost: reqInt(o.productionCost, `${path}.productionCost`),
       inventoryId: reqInt(o.inventoryId, `${path}.inventoryId`),
-      outcome: parseOutcome(o.outcome, `${path}.outcome`, expectedMaps),
+      outcome: parseOutcome(o.outcome, `${path}.outcome`, 1),
     };
   });
 }
@@ -716,17 +729,18 @@ function parseRng(v: unknown): RngState {
   return { s: reqInt(o.s, "rng.s") };
 }
 
-function parseResearchFacility(v: unknown, expectedMaps: number): GameState["research"] {
+function parseResearchFacility(v: unknown, nMaps: number): GameState["research"] {
   const path = "research";
   const o = reqExactObject(v, path, ["lastTrial"]);
   if (o.lastTrial === null) return { lastTrial: null };
   const trialPath = `${path}.lastTrial`;
-  const trial = reqExactObject(o.lastTrial, trialPath, ["program", "cost", "outcome"]);
+  const trial = reqExactObject(o.lastTrial, trialPath, ["base", "program", "cost", "outcome"]);
   return {
     lastTrial: {
+      base: parseBase(trial.base, `${trialPath}.base`, nMaps),
       program: parseTemplate(trial.program, `${trialPath}.program`),
       cost: reqInt(trial.cost, `${trialPath}.cost`),
-      outcome: parseOutcome(trial.outcome, `${trialPath}.outcome`, expectedMaps),
+      outcome: parseOutcome(trial.outcome, `${trialPath}.outcome`, 1),
     },
   };
 }
@@ -785,8 +799,8 @@ function parseGameState(v: unknown): GameState {
   const production = parseProductionFacility(o.production, genOptions.nMaps);
   try {
     const patents = parsePatents(o.patents);
-    requireEntitledFacilityLayout({ patents }, production.layout, "Production");
-    if (pilot.layout !== null) requireEntitledFacilityLayout({ patents }, pilot.layout, "Pilot Plant");
+    requireEntitledFacilityLayout({ patents, genOptions }, production.layout, "Production");
+    if (pilot.layout !== null) requireEntitledFacilityLayout({ patents, genOptions }, pilot.layout, "Pilot Plant");
     validateFactorySnapshot(
       production.snapshot,
       production.layout,
@@ -802,12 +816,7 @@ function parseGameState(v: unknown): GameState {
       pilot,
       production: {
         layout: production.layout,
-        runtime: restoreFactory(
-          production.layout,
-          level.mm,
-          level.start,
-          production.snapshot,
-        ),
+        runtime: restoreFactory(production.layout, level.mm, production.snapshot),
         waste: production.waste,
       },
       inventory: parseInventory(o.inventory, genOptions.nMaps),
@@ -873,6 +882,7 @@ export const deserializeGame: DeserializeGameFn = (serialized) =>
   parseGameState(decode(serialized, "game"));
 
 interface InventoryGroup {
+  readonly base: number;
   readonly drug: DrugState;
   readonly productionCost: number;
   readonly outcome: Outcome;
@@ -885,7 +895,7 @@ export function prepareSnapshot(game: GameState): PreparedSnapshot {
   const inventory: InventoryGroup[] = [];
   let previous = "";
   for (const product of state.inventory) {
-    const payload = { drug: product.drug, productionCost: product.productionCost, outcome: product.outcome };
+    const payload = { base: product.base, drug: product.drug, productionCost: product.productionCost, outcome: product.outcome };
     const key = canonical(payload);
     if (key !== previous) inventory.push({ ...payload, ids: [] });
     inventory[inventory.length - 1]!.ids.push([product.id, product.inventoryId]);
@@ -903,7 +913,7 @@ export function deserializeSnapshot(serialized: string): GameState {
   let count = 0;
   const parsed = groups.map((value, index) => {
     const path = `snapshot.inventory[${index}]`;
-    const group = reqExactObject(value, path, ["drug", "productionCost", "outcome", "ids"]);
+    const group = reqExactObject(value, path, ["base", "drug", "productionCost", "outcome", "ids"]);
     const ids = reqArray(group.ids, `${path}.ids`);
     count += ids.length;
     if (ids.length === 0 || count > MAX_GAME_INVENTORY_PRODUCTS) {
@@ -917,7 +927,7 @@ export function deserializeSnapshot(serialized: string): GameState {
     return {
       id: reqInt(pair[0], `${path}.ids[${index}][0]`),
       inventoryId: reqInt(pair[1], `${path}.ids[${index}][1]`),
-      drug: group.drug, productionCost: group.productionCost, outcome: group.outcome,
+      base: group.base, drug: group.drug, productionCost: group.productionCost, outcome: group.outcome,
     };
   }));
   return parseGameState({ ...state, inventory });

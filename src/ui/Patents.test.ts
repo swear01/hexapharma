@@ -31,6 +31,8 @@ describe("Technology copy", () => {
       "Loop vat",
       "Straight drive",
       "Crane arm",
+      "Oil base",
+      "Ethanol base",
     ]);
     for (const node of DEFAULT_PATENTS) {
       expect(patentTitle(node.id)).not.toBe(node.id);
@@ -44,18 +46,21 @@ describe("Technology copy", () => {
       revealAid: 0,
       unlockedMachines: [],
       routing: false,
+      unlockedBases: [],
     })).toEqual([]);
     expect(patentEffectSummary({
       factoryDw: 2,
       factoryDh: 3,
       revealAid: 4,
       unlockedMachines: ["zigzag", "loop"],
+      unlockedBases: [2, 1],
       routing: true,
     })).toEqual([
       "Factory +2 columns",
       "Factory +3 rows",
       "Research scan radius +4 cells",
       "Splitter and Merger on",
+      "Oil and Ethanol on",
       "2 machines on",
     ]);
   });

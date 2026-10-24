@@ -51,11 +51,11 @@ function researchFixture(options = OPTIONS): { layout: FactoryLayout; program: T
 }
 
 function completeResearch(game: GameState, program = researchFixture(game.genOptions).program): GameState {
-  return applyGameIntent(game, { kind: "runResearchTrial", program });
+  return applyGameIntent(game, { kind: "runResearchTrial", program, base: 0 });
 }
 
 function partialResearch(game: GameState, program = researchFixture(game.genOptions).program): GameState {
-  return applyGameIntent(game, { kind: "runResearchTrial", program: { steps: [program.steps[0]!] } });
+  return applyGameIntent(game, { kind: "runResearchTrial", program: { steps: [program.steps[0]!] }, base: 0 });
 }
 
 function reachProduction(game = createGameState(OPTIONS, 10_000)): GameState {
@@ -74,7 +74,7 @@ function emptyFactory(base: FactoryLayout): FactoryLayout {
     { length: base.width * base.height },
     () => ({ kind: "empty" }),
   );
-  tiles[0] = { kind: "source", dir: 0, period: 4 };
+  tiles[0] = { kind: "source", dir: 0, period: 4, base: 0 };
   tiles[1] = { kind: "sink" };
   return { width: base.width, height: base.height, tiles, machines: [] };
 }
@@ -84,7 +84,7 @@ function splitterFactory(base: FactoryLayout): FactoryLayout {
     { length: base.width * base.height },
     () => ({ kind: "empty" }),
   );
-  tiles[0] = { kind: "source", dir: 0, period: 1 };
+  tiles[0] = { kind: "source", dir: 0, period: 1, base: 0 };
   tiles[1] = { kind: "splitter", inDir: 3, outDirs: [0, 1] };
   tiles[2] = { kind: "sink" };
   tiles[base.width + 1] = { kind: "sink" };
@@ -96,12 +96,12 @@ function wire(game = baseGame()): { version: number; game: Record<string, any> }
 }
 
 describe("serializeGame / deserializeGame", () => {
-  it("uses only the breaking v14 heading/half-step/trial/premium/region schema", () => {
-    expect(SAVE_VERSION).toBe(14);
+  it("uses only the breaking v15 one-base trial/unit/product schema", () => {
+    expect(SAVE_VERSION).toBe(15);
     const serialized = serializeGame(baseGame());
     const parsed = JSON.parse(serialized) as { version: number; game: Record<string, any> };
 
-    expect(parsed.version).toBe(14);
+    expect(parsed.version).toBe(15);
     expect(parsed.game).toHaveProperty("research");
     expect(parsed.game).toHaveProperty("pilot");
     expect(parsed.game).toHaveProperty("production");
@@ -111,14 +111,16 @@ describe("serializeGame / deserializeGame", () => {
     expect(parsed.game).not.toHaveProperty("factoryWaste");
     expect(parsed.game.research).toEqual({
       lastTrial: {
+        base: 0,
         program: expect.objectContaining({ steps: expect.any(Array) }),
         cost: expect.any(Number),
         outcome: expect.objectContaining({ premium: expect.any(Array) }),
       },
     });
+    expect(parsed.game.inventory[0].base).toBe(0);
     expect(parsed.game.inventory[0].drug).toEqual({
-      pos: expect.any(Array),
-      offset: expect.any(Array),
+      pos: [expect.any(Object)],
+      offset: [expect.any(Object)],
       heading: expect.any(Number),
       failed: false,
     });
@@ -270,16 +272,16 @@ describe("serializeGame / deserializeGame", () => {
 });
 
 describe("deserializeGame schema validation", () => {
-  it("rejects v13 envelopes before interpreting their payloads", () => {
-    expect(() => deserializeGame(JSON.stringify({ version: 13, game: null })))
-      .toThrow(/incompatible version 13.*expected 14/i);
-    expect(() => deserializeSnapshot(JSON.stringify({ version: 13, authority: null })))
-      .toThrow(/incompatible version 13.*expected 14/i);
-    expect(() => deserializeSlots(JSON.stringify({ version: 13, slots: null })))
-      .toThrow(/incompatible version 13.*expected 14/i);
+  it("rejects v14 envelopes before interpreting their payloads", () => {
+    expect(() => deserializeGame(JSON.stringify({ version: 14, game: null })))
+      .toThrow(/incompatible version 14.*expected 15/i);
+    expect(() => deserializeSnapshot(JSON.stringify({ version: 14, authority: null })))
+      .toThrow(/incompatible version 14.*expected 15/i);
+    expect(() => deserializeSlots(JSON.stringify({ version: 14, slots: null })))
+      .toThrow(/incompatible version 14.*expected 15/i);
   });
 
-  it.each([13, 12, 11, 10, 9, 8, 7, 6, 2])(
+  it.each([14, 13, 12, 11, 10, 9, 8, 7, 6, 2])(
     "explicitly rejects legacy v%s full saves, snapshots, and slots without migration",
     (legacyVersion) => {
       const game = baseGame();

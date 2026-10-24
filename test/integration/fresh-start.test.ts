@@ -17,11 +17,11 @@ import { quoteProductionBuild } from "../../src/sim/construction";
 function options(seed: number): GenOptions {
   return {
     seed,
-    nMaps: 1,
+    nMaps: 3,
     width: 49,
     height: 49,
     catalog: DEFAULT_CATALOG,
-    diseaseCount: 4,
+    diseaseCount: 6,
     difficulty: { min: 4, max: 12 },
   };
 }
@@ -30,11 +30,12 @@ describe("fresh-save playable loop", () => {
   it("can research, build, produce, and sell the first generated cure without injected money", () => {
     const genOptions = options(14);
     const level = generate(genOptions);
-    expect(level.diseases).toHaveLength(4);
+    expect(level.diseases).toHaveLength(6);
+    expect(level.diseases[0]!.map).toBe(0);
     const program = level.diseases[0]!.reference;
     let game = createGameState(genOptions, DEFAULT_STARTING_CASH);
 
-    game = applyGameIntent(game, { kind: "runResearchTrial", program });
+    game = applyGameIntent(game, { kind: "runResearchTrial", program, base: 0 });
     expect(game.research.lastTrial?.outcome.cured).toContain(level.diseases[0]!.id);
 
     const layout = compileEntitledPrototype(

@@ -72,7 +72,7 @@ export const CellKind = {
 export type CellKind = (typeof CellKind)[keyof typeof CellKind];
 
 /**
- * One effect map = one ingredient/base. Flat arrays indexed by `r * width + q`.
+ * One effect map = one base drug (Saline, Oil, Ethanol, …). Flat arrays indexed by `r * width + q`.
  * Typed arrays keep storage deterministic and pool-friendly.
  */
 export interface EffectMap {
@@ -103,7 +103,10 @@ export interface EffectMap {
   readonly fog: Uint8Array;
 }
 
-/** The static geometry of a level: N effect maps (N = 1..4). */
+/**
+ * The static geometry of a level: N effect maps (N = 1..4). In a game level map i is base i;
+ * a drug lives on exactly one base, so traversal and evaluation use a one-map view of it.
+ */
 export interface MultiMap {
   readonly maps: readonly EffectMap[];
 }
@@ -313,8 +316,14 @@ export const DEFAULT_CATALOG: readonly MachineCatalogEntry[] = deepFreezeData([
   { typeId: "crane", path: [F, F, F, L, L], turn: -2, cost: 11, speed: 5 },
 ]);
 
+/**
+ * Base drugs, one map each (Potion Craft's water / oil / wine): base i is map i of a level.
+ * Saline is always available; the others are Technology switches.
+ */
+export const BASE_NAMES: readonly string[] = deepFreezeData(["Saline", "Oil", "Ethanol"]);
+
 // ═══════════════════════════════ Phase 2 — factory (spatial packing + throughput) ═══════════════════════════════
-// Tick-based deterministic sim. A "unit" is a drug in transit carrying its multi-map
+// Tick-based deterministic sim. A "unit" is a drug in transit carrying its base and single-map
 // DrugState. Machines are MULTI-CELL, MULTI-PORT placed entities (in FactoryLayout.machines,
 // NOT tiles); belts / splitters / mergers route units between machine ports → real
 // fan-out/fan-in so parallel machines actually raise throughput.
@@ -394,7 +403,7 @@ export type FactoryTile =
   | { readonly kind: "belt"; readonly dir: Dir }
   | { readonly kind: "splitter"; readonly inDir: Dir; readonly outDirs: readonly Dir[] }
   | { readonly kind: "merger"; readonly inDirs: readonly Dir[]; readonly outDir: Dir }
-  | { readonly kind: "source"; readonly dir: Dir; readonly period: number }
+  | { readonly kind: "source"; readonly dir: Dir; readonly period: number; readonly base: MapIndex }
   | { readonly kind: "sink" };
 
 export interface FactoryLayout {
@@ -412,6 +421,8 @@ export interface FactoryLayout {
  */
 export interface Unit {
   readonly id: number;
+  /** Base (map index) the unit's single-map `drug` lives on; set by its source. */
+  readonly base: MapIndex;
   readonly pos: HexCoord;
   readonly drug: DrugState;
   readonly proc: number;
@@ -423,6 +434,8 @@ export interface Unit {
 /** One physical unit that reached a sink. */
 export interface ProducedUnit {
   readonly id: number;
+  /** Base (map index) the single-map `drug` lives on. */
+  readonly base: MapIndex;
   readonly drug: DrugState;
   readonly productionCost: number;
 }
@@ -430,16 +443,16 @@ export interface ProducedUnit {
 /** Fixed-capacity, allocation-free product events written by the most recent tick. */
 export interface FactoryProductEventBuffer {
   readonly capacity: number;
-  readonly mapCount: number;
   count: number;
   readonly ids: Int32Array;
   readonly productionCosts: Int32Array;
   readonly failed: Uint8Array;
   readonly heading: Uint8Array;
-  /** Flat `[eventIndex * mapCount + mapIndex]` positions. */
+  /** Base (map index) per event; the drug position is on that map only. */
+  readonly base: Uint8Array;
   readonly drugX: Int32Array;
   readonly drugY: Int32Array;
-  /** Flat `[eventIndex * mapCount + mapIndex]` doubled-unit swamp offsets. */
+  /** Doubled-unit swamp offsets. */
   readonly drugOffsetQ: Int8Array;
   readonly drugOffsetR: Int8Array;
 }
@@ -450,7 +463,6 @@ export interface FactoryProductEventBuffer {
  */
 export interface FactoryRuntime {
   readonly capacity: number;
-  readonly mapCount: number;
   readonly unitIds: Int32Array;
   readonly unitX: Int32Array;
   readonly unitY: Int32Array;
@@ -461,10 +473,11 @@ export interface FactoryRuntime {
   readonly unitFailed: Uint8Array;
   /** Drug heading (0..5) per unit. */
   readonly unitHeading: Uint8Array;
-  /** Flat `[unitIndex * mapCount + mapIndex]` positions. */
+  /** Base (map index) per unit; its drug position is on that map only. */
+  readonly unitBase: Uint8Array;
   readonly unitDrugX: Int32Array;
   readonly unitDrugY: Int32Array;
-  /** Flat `[unitIndex * mapCount + mapIndex]` doubled-unit swamp offsets. */
+  /** Doubled-unit swamp offsets. */
   readonly unitDrugOffsetQ: Int8Array;
   readonly unitDrugOffsetR: Int8Array;
   /** Next output index for each splitter, in row-major splitter order. */
@@ -491,8 +504,11 @@ export interface FactoryState {
   readonly deadlocked: boolean;
 }
 
-/** Allocate a fixed-capacity runtime at tick 0. This is a cold boundary. */
-export type InitFactoryFn = (layout: FactoryLayout, mm: MultiMap, start: DrugState) => FactoryRuntime;
+/**
+ * Allocate a fixed-capacity runtime at tick 0 (cold boundary). `mm` holds the bases: a source of
+ * base b emits a drug at `mm.maps[b].start` heading east, and its machines walk that map only.
+ */
+export type InitFactoryFn = (layout: FactoryLayout, mm: MultiMap) => FactoryRuntime;
 
 /** Advance the mutable runtime one tick without allocating. */
 export type StepFactoryFn = (
@@ -508,11 +524,10 @@ export type SnapshotFactoryFn = (runtime: FactoryRuntime) => FactoryState;
 export type RestoreFactoryFn = (
   layout: FactoryLayout,
   mm: MultiMap,
-  start: DrugState,
   snapshot: FactoryState,
 ) => FactoryRuntime;
 
-/** Copy one product event as `[id, cost, failed, heading, x0, y0, oq0, or0, ...]` into caller storage. */
+/** Copy one product event as `[id, cost, failed, heading, base, x, y, oq, or]` into caller storage. */
 export type CopyFactoryProductEventFn = (
   runtime: FactoryRuntime,
   eventIndex: number,
@@ -548,7 +563,6 @@ export type HashFactoryFn = (s: FactoryState | FactoryRuntime) => number;
 export type ReplayFactoryFn = (
   layout: FactoryLayout,
   mm: MultiMap,
-  start: DrugState,
   ticks: number,
 ) => FactoryState;
 
@@ -557,8 +571,8 @@ export type ReplayFactoryFn = (
 /** Compile a recipe template into a packed, belt-routed source→machines→sink layout. */
 export type CompileTemplateFn = (template: Template) => FactoryLayout;
 
-/** Run a layout to completion for one unit and report its cure/side-effect Outcome. */
-export type FactoryOutcomeFn = (layout: FactoryLayout, mm: MultiMap, start: DrugState) => Outcome;
+/** Run a layout to completion for one unit and report its cure/side-effect Outcome on its base. */
+export type FactoryOutcomeFn = (layout: FactoryLayout, mm: MultiMap) => Outcome;
 
 // ── shared machine shapes (footprint + ports per machine type) ──
 
@@ -721,7 +735,8 @@ export type PatentEffect =
   | { readonly kind: "unlockMachine"; readonly typeId: MachineTypeId }
   | { readonly kind: "expandFactory"; readonly dw: number; readonly dh: number }
   | { readonly kind: "revealAid"; readonly amount: number }
-  | { readonly kind: "unlockRouting" };
+  | { readonly kind: "unlockRouting" }
+  | { readonly kind: "unlockBase"; readonly base: MapIndex };
 
 export interface PatentNode {
   readonly id: string;
@@ -745,8 +760,10 @@ export interface InventoryProduct extends ProducedUnit {
   readonly outcome: Outcome;
 }
 
-/** One paid Research trial: the whole program run from the level start on the true maps. */
+/** One paid Research trial: the whole program run from the start of one base's true map. */
 export interface ResearchTrial {
+  /** Base (map index) the trial ran on; `outcome.final` has that one map. */
+  readonly base: MapIndex;
   readonly program: Template;
   /** Σ catalog cost of the program, charged once. */
   readonly cost: number;
@@ -777,7 +794,7 @@ export interface ProductionFacilityState {
 
 /** Every authoritative whole-game state transition. */
 export type GameIntent =
-  | { readonly kind: "runResearchTrial"; readonly program: Template }
+  | { readonly kind: "runResearchTrial"; readonly program: Template; readonly base: MapIndex }
   | { readonly kind: "setPilotLayout"; readonly layout: FactoryLayout }
   | { readonly kind: "buildProductionLayout"; readonly layout: FactoryLayout }
   | { readonly kind: "productionTicks"; readonly ticks: number }

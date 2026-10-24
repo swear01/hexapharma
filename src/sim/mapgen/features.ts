@@ -220,6 +220,8 @@ export function placeHardRegions(
     }
     if (best >= 0 && bestDistance * 1024 <= basin.rho) candidates.push(best);
   }
+  // Bases share one terrain: each base starts at a different basin so their hard regions differ.
+  candidates.push(...candidates.splice(0, candidates.length === 0 ? 0 : mapIndex % candidates.length));
   const remote: number[] = [];
   for (let index = 0; index < map.cell.length; index++) {
     if (walk[index]! < 0 || startDistance(map, index) < ringOuter) continue;

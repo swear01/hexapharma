@@ -18,6 +18,7 @@ import type {
 } from "../phase0_interfaces";
 import { CellKind, MAX_TEMPLATE_STEPS } from "../phase0_interfaces";
 import {
+  baseView,
   initialState,
   PATH_OUT_STRIDE,
   walkPath,
@@ -25,6 +26,7 @@ import {
   turnHeading,
   validateMachineTurn,
   walkValidatedPathInto,
+  walkValidatedPathMaskedInto,
 } from "../drug-graph";
 import {
   HEX_DIRS,
@@ -730,6 +732,14 @@ function makeProgramCandidate(
 }
 
 const MAX_TREE_DEPTH = 9;
+
+interface BreadthTree {
+  readonly parent: Int32Array;
+  readonly via: Int8Array;
+  readonly depth: Uint8Array;
+  readonly shapes: Uint16Array;
+  readonly order: readonly number[];
+}
 const MAX_TREE_VALIDATIONS = 48;
 
 /**
@@ -753,6 +763,7 @@ function treeCandidate(
   usedSignatures: ReadonlySet<string>,
   forbiddenCures: ReadonlySet<number>,
   transitions: Map<number, Int32Array>,
+  trees: Map<string, BreadthTree>,
 ): ProgramCandidate | null {
   const map = maps[0];
   const effect = terrain.maps[0];
@@ -770,14 +781,7 @@ function treeCandidate(
   const area = map.width * map.height;
   // state = (cell · 7 + offset slot) · 6 + heading
   const stateCount = area * 42;
-  const parent = new Int32Array(stateCount).fill(-1);
-  const via = new Int8Array(stateCount).fill(-1);
-  const depth = new Uint8Array(stateCount).fill(255);
-  const shapes = new Uint16Array(stateCount);
-  const order: number[] = [];
   const root = idx(map.width, map.start.q, map.start.r) * 42;
-  depth[root] = 0;
-  let layer = [root];
   const out = new Int32Array(PATH_OUT_STRIDE);
   // Transitions are shared by every tier (same terrain, same catalog index ⇒ same next state).
   const step = (state: number, machineIndex: number): number => {
@@ -820,22 +824,38 @@ function treeCandidate(
     MAX_TREE_DEPTH,
     disease === 0 && minDifficulty <= 8 ? 7 : MAX_TREE_DEPTH,
   ) - (frontier >= 0 ? 1 : 0);
-  for (let level = 0; level < maxDepth && layer.length > 0; level++) {
-    const next: number[] = [];
-    for (const state of layer) {
-      for (let m = 0; m < machines.length; m++) {
-        const nstate = step(state, m);
-        if (nstate < 0 || depth[nstate] !== 255) continue;
-        depth[nstate] = level + 1;
-        parent[nstate] = state;
-        via[nstate] = m;
-        shapes[nstate] = shapes[state]! | (1 << shapeOf[m]!);
-        next.push(nstate);
-        order.push(nstate);
+  // The tree depends only on the shared terrain, the machines and the depth, so diseases of one
+  // catalog tier (on any base) reuse it.
+  const treeKey = `${machines.length}:${maxDepth}`;
+  let tree = trees.get(treeKey);
+  if (tree === undefined) {
+    const parent = new Int32Array(stateCount).fill(-1);
+    const via = new Int8Array(stateCount).fill(-1);
+    const depth = new Uint8Array(stateCount).fill(255);
+    const shapes = new Uint16Array(stateCount);
+    const order: number[] = [];
+    depth[root] = 0;
+    let layer = [root];
+    for (let level = 0; level < maxDepth && layer.length > 0; level++) {
+      const next: number[] = [];
+      for (const state of layer) {
+        for (let m = 0; m < machines.length; m++) {
+          const nstate = step(state, m);
+          if (nstate < 0 || depth[nstate] !== 255) continue;
+          depth[nstate] = level + 1;
+          parent[nstate] = state;
+          via[nstate] = m;
+          shapes[nstate] = shapes[state]! | (1 << shapeOf[m]!);
+          next.push(nstate);
+          order.push(nstate);
+        }
       }
+      layer = next;
     }
-    layer = next;
+    tree = { parent, via, depth, shapes, order };
+    trees.set(treeKey, tree);
   }
+  const { parent, via, depth, shapes, order } = tree;
 
   const span = maxDifficulty - minDifficulty + 1;
   let targetDifficulty = minDifficulty + (mix32(seedWord ^ Math.imul(disease + 1, 0x2545f491)) % span);
@@ -962,17 +982,24 @@ function constructDiseases(
 ): BuiltDisease[] {
   const built: BuiltDisease[] = [];
   const usedSignatures = new Set<string>();
-  const start = initialState(terrain);
+  // Every base shares one terrain and Cure cells never change traversal, so transitions are shared.
   const transitions = new Map<number, Int32Array>();
+  const trees = new Map<string, BreadthTree>();
   for (let disease = 0; disease < diseaseCount; disease++) {
-    const mapIndex = disease % maps.length;
-    const map = maps[mapIndex];
+    // A disease lives on base `disease % bases`; its reference is built on that one map alone.
+    const base = disease % maps.length;
+    const map = maps[base];
     if (map === undefined) continue;
+    const mapIndex = 0;
+    const baseMaps = [map];
+    const baseTerrain = baseView(terrain, base);
+    const start = initialState(baseTerrain);
+    const baseBuilt = built.filter((other) => other.map === base).map((other) => ({ ...other, map: 0 }));
     const availableCount = diseaseCatalogCount(disease, catalog.length);
     const availableCatalog = catalog.slice(0, availableCount);
     const forbiddenCures = new Set<number>();
     if (minDifficulty >= 2 && Math.min(map.width, map.height) >= 9) {
-      for (const cellIndex of singleStepCureExclusions(terrain, start, availableCatalog, mapIndex)) {
+      for (const cellIndex of singleStepCureExclusions(baseTerrain, start, availableCatalog, mapIndex)) {
         forbiddenCures.add(cellIndex);
       }
       const protectedRadius = 2;
@@ -996,18 +1023,19 @@ function constructDiseases(
       }
     }
     let best = treeCandidate(
-      maps,
-      terrain,
+      baseMaps,
+      baseTerrain,
       start,
       availableCatalog,
       minDifficulty,
       maxDifficulty,
       disease,
       seedWord,
-      built,
+      baseBuilt,
       usedSignatures,
       forbiddenCures,
       transitions,
+      trees,
     );
     // Score the first MAX_CONSTRUCTIVE_CANDIDATES ordinals; only if none fits the terrain, take the
     // first fitting one up to MAX_CONSTRUCTIVE_FALLBACK.
@@ -1018,8 +1046,8 @@ function constructDiseases(
       ordinal++
     ) {
       const candidate = makeProgramCandidate(
-        maps,
-        terrain,
+        baseMaps,
+        baseTerrain,
         start,
         availableCatalog,
         catalog,
@@ -1028,7 +1056,7 @@ function constructDiseases(
         disease,
         ordinal,
         seedWord,
-        built,
+        baseBuilt,
         usedSignatures,
         forbiddenCures,
       );
@@ -1054,7 +1082,7 @@ function constructDiseases(
     ) ^ 0xc0febabe;
     built.push({
       id: disease,
-      map: mapIndex,
+      map: base,
       node: best.endpoint,
       difficulty: best.difficulty,
       cost: best.cost,
@@ -1218,7 +1246,7 @@ export interface GenerationDiagnostics {
   readonly pricing: readonly RegionPricing[];
 }
 
-/** Per-map cells a reference enters (trail) and the cells it rests on between machines. */
+/** Cells a reference enters (trail) and rests on between machines, on its base's one-map view. */
 function referenceFootprint(
   mm: MultiMap,
   reference: Template,
@@ -1243,17 +1271,14 @@ function referenceFootprint(
   }
 }
 
-/** Cells where a single catalog machine from the start comes to rest (never a Cure). */
-function oneStepEndpoints(terrain: MultiMap, catalog: readonly MachineCatalogEntry[]): Uint8Array[] {
+/** Cells where a single catalog machine from the start of one map comes to rest (never a Cure). */
+function oneStepEndpoints(map: EffectMap, catalog: readonly MachineCatalogEntry[]): Uint8Array {
+  const terrain: MultiMap = { maps: [map] };
   const start = initialState(terrain);
-  const excluded = terrain.maps.map((map) => new Uint8Array(map.cell.length));
+  const excluded = new Uint8Array(map.cell.length);
   for (const entry of catalog) {
-    const outcome = simulateReference(terrain, start, { steps: [ownMachine(entry)] });
-    for (let mapIndex = 0; mapIndex < terrain.maps.length; mapIndex++) {
-      const map = terrain.maps[mapIndex]!;
-      const position = outcome.final[mapIndex]!;
-      excluded[mapIndex]![idx(map.width, position.q, position.r)] = 1;
-    }
+    const position = simulateReference(terrain, start, { steps: [ownMachine(entry)] }).final[0]!;
+    excluded[idx(map.width, position.q, position.r)] = 1;
   }
   return excluded;
 }
@@ -1314,6 +1339,7 @@ function cheapestRoutes(
   machines: readonly Machine[],
   costs: readonly number[],
   transitions: (Int32Array | undefined)[],
+  shared: SharedTransitions,
   target: Int32Array,
   targets: number,
 ): { readonly dist: Int32Array; readonly parent: Int32Array; readonly via: Int8Array } {
@@ -1324,6 +1350,7 @@ function cheapestRoutes(
   const out = new Int32Array(PATH_OUT_STRIDE);
   for (let machineIndex = 0; machineIndex < machines.length; machineIndex++) {
     transitions[machineIndex] ??= new Int32Array(stateCount).fill(-2);
+    shared.tables[machineIndex] ??= new Int32Array(stateCount).fill(-2);
   }
   let remaining = targets;
   const settled = new Uint8Array(targets + 1);
@@ -1344,13 +1371,15 @@ function cheapestRoutes(
       }
       for (let machineIndex = 0; machineIndex < machines.length; machineIndex++) {
         const table = transitions[machineIndex]!;
+        const sharedTable = shared.tables[machineIndex]!;
         let reached = table[state]!;
+        if (reached === -2 && sharedTable[state]! >= -1) reached = sharedTable[state]!;
         if (reached === -2) {
           const heading = state % 6;
           const slot = Math.floor(state / 6) % 7;
           const q = cell % map.width;
           const machine = machines[machineIndex]!;
-          walkValidatedPathInto(
+          const touched = walkValidatedPathMaskedInto(
             map,
             q,
             (cell - q) / map.width,
@@ -1360,6 +1389,7 @@ function cheapestRoutes(
             machine,
             out,
             0,
+            shared.varying,
           );
           reached = -1;
           if (out[4] !== 1) {
@@ -1370,6 +1400,7 @@ function cheapestRoutes(
             reached = (idx(map.width, out[0]!, out[1]!) * 7 + nslot) * 6 + turnHeading(heading, machine.turn);
           }
           table[state] = reached;
+          if (sharedTable[state] === -2) sharedTable[state] = touched === 1 ? -3 : reached;
         }
         const total = cost + costs[machineIndex]!;
         if (reached < 0 || total > REGION_REACH_COST_BOUND) continue;
@@ -1384,6 +1415,27 @@ function cheapestRoutes(
   return { dist, parent, via };
 }
 
+/**
+ * Transitions valid on every base. Bases share one terrain and differ only in Abyss (Cure cells
+ * never change traversal), so a walk that enters no `varying` cell is the same on every base.
+ * Table entries: -2 not yet walked, -3 differs per base, else the shared next state (-1 = fails).
+ */
+interface SharedTransitions {
+  readonly varying: Uint8Array;
+  readonly tables: (Int32Array | undefined)[];
+}
+
+function sharedTransitions(mm: MultiMap): SharedTransitions {
+  const first = mm.maps[0]!;
+  const kind = (value: number): number => (value === CellKind.Cure ? CellKind.Empty : value);
+  const varying = new Uint8Array(first.cell.length);
+  for (let cell = 0; cell < varying.length; cell++) {
+    const own = kind(first.cell[cell]!);
+    if (own === CellKind.Abyss || mm.maps.some((map) => kind(map.cell[cell]!) !== own)) varying[cell] = 1;
+  }
+  return { varying, tables: [] };
+}
+
 /** Price every region by how hard its disease's catalog tier makes it to reach (docs/design.md §1.8). */
 function priceRegions(
   mm: MultiMap,
@@ -1395,6 +1447,7 @@ function priceRegions(
   const machines = catalog.map(ownMachine);
   const costs = catalog.map((entry) => entry.cost);
   const transitions = mm.maps.map((): (Int32Array | undefined)[] => []);
+  const shared = sharedTransitions(mm);
   const searches = new Map<string, ReturnType<typeof cheapestRoutes>>();
   return regions.map((region, index) => {
     const map = mm.maps[region.map]!;
@@ -1410,7 +1463,9 @@ function priceRegions(
         targets++;
         for (const cell of other.cells) target[cell] = targets;
       }
-      search = cheapestRoutes(map, machines.slice(0, count), costs.slice(0, count), transitions[region.map]!, target, targets);
+      search = cheapestRoutes(
+        map, machines.slice(0, count), costs.slice(0, count), transitions[region.map]!, shared, target, targets,
+      );
       searches.set(key, search);
     }
     let best = -1;
@@ -1535,8 +1590,18 @@ function generateAttempt(opts: GenOptions, attempt: number): GenerationResult {
   const area = opts.width * opts.height;
   const maps = Array.from({ length: opts.nMaps }, () => makeScratch(opts.width, opts.height));
   const initialMachines = opts.catalog.slice(0, Math.min(4, opts.catalog.length)).map(ownMachine);
-  const terrainSeeds = maps.map(() => rng.u32());
-  const terrainInfo = maps.map((map, mapIndex) => buildTerrain(map, terrainSeeds[mapIndex]!, initialMachines));
+  // Every base (map) shares one terrain, built once; only its diseases, effects and Abyss differ.
+  const terrainSeed = rng.u32();
+  const sharedTerrain = buildTerrain(maps[0]!, terrainSeed, initialMachines);
+  for (const map of maps.slice(1)) {
+    map.cell.set(maps[0]!.cell);
+    map.elevation.set(maps[0]!.elevation);
+    map.pass.set(maps[0]!.pass);
+    map.inside.set(maps[0]!.inside);
+  }
+  const terrainInfo = maps.map(() => sharedTerrain);
+  const terrainSeeds = maps.map((_, mapIndex) =>
+    mapIndex === 0 ? terrainSeed : mix32(terrainSeed ^ Math.imul(mapIndex, 0x9e3779b1)));
   const diseasesOn = (mapIndex: number): number[] => {
     const ids: number[] = [];
     for (let disease = 0; disease < opts.diseaseCount; disease++) {
@@ -1544,7 +1609,7 @@ function generateAttempt(opts: GenOptions, attempt: number): GenerationResult {
     }
     return ids;
   };
-  const noCure = oneStepEndpoints(freezeMaps(maps), opts.catalog);
+  const noCure = maps.map((map) => oneStepEndpoints(freezeMap(map), opts.catalog));
   const regions: AtlasRegion[] = [];
   const hardByMap = maps.map((map, mapIndex) => {
     const hard = placeHardRegions(map, mapIndex, terrainInfo[mapIndex]!, diseasesOn(mapIndex), terrainSeeds[mapIndex]!, noCure[mapIndex]!);
@@ -1578,7 +1643,9 @@ function generateAttempt(opts: GenOptions, attempt: number): GenerationResult {
   const trail = maps.map(() => new Uint8Array(area));
   const prefix = maps.map(() => new Uint8Array(area));
   const placed = freezeMaps(maps);
-  for (const disease of built) referenceFootprint(placed, disease.reference, trail, prefix);
+  for (const disease of built) {
+    referenceFootprint(baseView(placed, disease.map), disease.reference, [trail[disease.map]!], [prefix[disease.map]!]);
+  }
   const black: BlackGroup[][] = [];
   for (let mapIndex = 0; mapIndex < maps.length; mapIndex++) {
     const map = maps[mapIndex]!;
@@ -1616,8 +1683,9 @@ function generateAttempt(opts: GenOptions, attempt: number): GenerationResult {
     throw new ConstructionError(`mapgen.generate: disease ${unordered} hard regions are not harder to reach than its easy region`);
   }
   const diseases: DiseaseSpec[] = built.map((disease) => {
-    const outcome = simulateReference(mm, start, disease.reference);
-    const endpoint = outcome.final[disease.map];
+    const view = baseView(mm, disease.map);
+    const outcome = simulateReference(view, initialState(view), disease.reference);
+    const endpoint = outcome.final[0];
     const map = mm.maps[disease.map]!;
     if (
       outcome.failed ||

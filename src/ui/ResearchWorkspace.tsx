@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   DrugState,
   GeneratedLevel,
@@ -13,6 +13,7 @@ import type {
 import { DEFAULT_CATALOG } from "../sim/phase0_interfaces";
 import type { ResearchDeviation } from "../render/labRenderer";
 import { App, researchOutcomeText } from "./App";
+import { BasePicker } from "./BasePicker";
 import { MachineIcon } from "./MachineIcon";
 import { machineName } from "./machineLabels";
 
@@ -77,8 +78,13 @@ export function researchHeadingPath(path: PathStamp, heading: number): PathStamp
 
 export interface ResearchWorkspaceProps {
   readonly active: boolean;
+  /** The shown base only: a one-map level and its fog. */
   readonly level: GeneratedLevel;
   readonly fog: readonly Uint8Array[];
+  readonly base: number;
+  /** Per base: why it is locked, or null. */
+  readonly baseLocks: readonly (string | null)[];
+  readonly onBase: (base: number) => void;
   /** The local planned route; never authoritative until Run. */
   readonly plan: Template;
   readonly planCost: number;
@@ -106,6 +112,7 @@ export interface ResearchWorkspaceProps {
 
 export function ResearchWorkspace(props: ResearchWorkspaceProps) {
   const { plan } = props;
+  const [baseHint, setBaseHint] = useState<string | null>(null);
   const stepListRef = useRef<HTMLOListElement | null>(null);
   useEffect(() => {
     const list = stepListRef.current;
@@ -165,6 +172,12 @@ export function ResearchWorkspace(props: ResearchWorkspaceProps) {
           </div>
         )}
         {props.lastOutcome !== null && <ResearchResult outcome={props.lastOutcome} />}
+        {props.baseLocks.length > 1 && (
+          <div className="research-bases">
+            {baseHint !== null && <span className="research-base-hint" role="status">{baseHint}</span>}
+            <BasePicker value={props.base} locks={props.baseLocks} onChange={props.onBase} onHint={setBaseHint} testId="research-base" />
+          </div>
+        )}
       </div>
       <div className="research-path-hotbar" role="toolbar" aria-label="Add a machine to the route" data-testid="research-path-hotbar">
         {props.catalog.map((entry, index) => (

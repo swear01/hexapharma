@@ -15,6 +15,8 @@ const base: ObjectiveInput = {
   productionHasMachines: false,
   producingOther: false,
   sector: "east",
+  base: null,
+  baseLocked: false,
 };
 
 describe("currentObjective", () => {
@@ -50,5 +52,14 @@ describe("currentObjective", () => {
   it("reports when every contract is filled", () => {
     const done = { ...base, contracts: [contract(0, 3), contract(1, 3)] };
     expect(currentObjective(done)).toMatchObject({ target: "market", text: "Every contract filled" });
+  });
+
+  it("names the disease's base and sends a locked base to Technology", () => {
+    const oil = { ...base, contracts: [contract(1, 0)], base: "Oil" };
+    expect(currentObjective(oil).text).toBe("Find Disease 2 on Oil · look east");
+    expect(currentObjective({ ...oil, knownCureDiseases: [1] }).text).toBe("Plan a line to Disease 2 on Oil");
+    expect(currentObjective({ ...oil, baseLocked: true }))
+      .toMatchObject({ target: "technology", text: "Turn on Oil in Technology to reach Disease 2" });
+    expect(currentObjective({ ...oil, baseLocked: true, profitableUnits: () => 1 }).target).toBe("market");
   });
 });

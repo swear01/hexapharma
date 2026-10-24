@@ -36,14 +36,12 @@ function hashRuntime(s: FactoryRuntime): number {
     const machineId = s.unitMachineIds[unitIndex] ?? -1;
     h = hashU32(h, machineId < 0 ? 0 : machineId + 1);
     h = hashU32(h, s.unitProductionCosts[unitIndex] ?? 0);
-    h = hashU32(h, s.mapCount);
-    const base = unitIndex * s.mapCount;
-    for (let mapIndex = 0; mapIndex < s.mapCount; mapIndex++) {
-      h = hashU32(h, s.unitDrugX[base + mapIndex] ?? 0);
-      h = hashU32(h, s.unitDrugY[base + mapIndex] ?? 0);
-      h = hashU32(h, s.unitDrugOffsetQ[base + mapIndex] ?? 0);
-      h = hashU32(h, s.unitDrugOffsetR[base + mapIndex] ?? 0);
-    }
+    h = hashU32(h, s.unitBase[unitIndex] ?? 0);
+    h = hashU32(h, 1); // one-base drug, matching hashDrug
+    h = hashU32(h, s.unitDrugX[unitIndex] ?? 0);
+    h = hashU32(h, s.unitDrugY[unitIndex] ?? 0);
+    h = hashU32(h, s.unitDrugOffsetQ[unitIndex] ?? 0);
+    h = hashU32(h, s.unitDrugOffsetR[unitIndex] ?? 0);
     h = hashU32(h, s.unitHeading[unitIndex] ?? 0);
     h = hashU32(h, s.unitFailed[unitIndex] === 0 ? 0 : 1);
   }
@@ -52,14 +50,12 @@ function hashRuntime(s: FactoryRuntime): number {
   for (let eventIndex = 0; eventIndex < s.producedEvents.count; eventIndex++) {
     h = hashU32(h, s.producedEvents.ids[eventIndex] ?? 0);
     h = hashU32(h, s.producedEvents.productionCosts[eventIndex] ?? 0);
-    h = hashU32(h, s.mapCount);
-    const base = eventIndex * s.mapCount;
-    for (let mapIndex = 0; mapIndex < s.mapCount; mapIndex++) {
-      h = hashU32(h, s.producedEvents.drugX[base + mapIndex] ?? 0);
-      h = hashU32(h, s.producedEvents.drugY[base + mapIndex] ?? 0);
-      h = hashU32(h, s.producedEvents.drugOffsetQ[base + mapIndex] ?? 0);
-      h = hashU32(h, s.producedEvents.drugOffsetR[base + mapIndex] ?? 0);
-    }
+    h = hashU32(h, s.producedEvents.base[eventIndex] ?? 0);
+    h = hashU32(h, 1); // one-base drug, matching hashDrug
+    h = hashU32(h, s.producedEvents.drugX[eventIndex] ?? 0);
+    h = hashU32(h, s.producedEvents.drugY[eventIndex] ?? 0);
+    h = hashU32(h, s.producedEvents.drugOffsetQ[eventIndex] ?? 0);
+    h = hashU32(h, s.producedEvents.drugOffsetR[eventIndex] ?? 0);
     h = hashU32(h, s.producedEvents.heading[eventIndex] ?? 0);
     h = hashU32(h, s.producedEvents.failed[eventIndex] === 0 ? 0 : 1);
   }
@@ -87,6 +83,7 @@ function hashSnapshot(s: FactoryState): number {
     h = hashU32(h, unit.proc | 0);
     h = hashU32(h, (unit.machineId === null ? 0 : unit.machineId + 1) | 0);
     h = hashU32(h, unit.productionCost | 0);
+    h = hashU32(h, unit.base | 0);
     h = hashDrug(h, unit.drug);
   }
 
@@ -96,6 +93,7 @@ function hashSnapshot(s: FactoryState): number {
     if (product === undefined) continue;
     h = hashU32(h, product.id | 0);
     h = hashU32(h, product.productionCost | 0);
+    h = hashU32(h, product.base | 0);
     h = hashDrug(h, product.drug);
   }
 
@@ -115,7 +113,6 @@ export const hashFactory: HashFactoryFn = (state) =>
 export const replayFactory: ReplayFactoryFn = (
   layout: FactoryLayout,
   mm: MultiMap,
-  start: DrugState,
   ticks: number,
 ): FactoryState => {
   if (!Number.isSafeInteger(ticks) || ticks < 0 || ticks > MAX_FACTORY_REPLAY_TICKS) {
@@ -123,7 +120,7 @@ export const replayFactory: ReplayFactoryFn = (
       `factory replay: ticks must be a non-negative safe integer <= ${MAX_FACTORY_REPLAY_TICKS}`,
     );
   }
-  const runtime = initFactory(layout, mm, start);
+  const runtime = initFactory(layout, mm);
   for (let tick = 0; tick < ticks; tick++) stepFactory(layout, mm, runtime);
   return snapshotFactory(runtime);
 };

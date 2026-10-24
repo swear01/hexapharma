@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PatentState } from "../sim/phase0_interfaces";
+import { BASE_NAMES } from "../sim/phase0_interfaces";
 import { DEFAULT_PATENTS, activeEffects } from "../sim/patent";
 import { createPortal } from "react-dom";
 
@@ -16,6 +17,7 @@ export const PATENT_TREE: readonly (readonly string[])[] = [
   ["split-merge"],
   ["zigzag-unlock", "straight-unlock"],
   ["loop-unlock", "crane-unlock"],
+  ["oil-base", "ethanol-base"],
 ];
 
 export function patentSwitchWarning(
@@ -40,6 +42,8 @@ function effectLabel(node: (typeof DEFAULT_PATENTS)[number]): string {
       return `Research scan radius +${e.amount} ${e.amount === 1 ? "cell" : "cells"}`;
     case "unlockRouting":
       return "Adds Splitter and Merger to the factory hotbar";
+    case "unlockBase":
+      return `Research and Sources may use ${BASE_NAMES[e.base]}`;
   }
 }
 
@@ -53,6 +57,8 @@ const PATENT_TITLES: Readonly<Record<string, string>> = {
   "field-survey": "Field survey optics",
   "straight-unlock": "Straight drive",
   "crane-unlock": "Crane arm",
+  "oil-base": "Oil base",
+  "ethanol-base": "Ethanol base",
 };
 
 export function patentTitle(id: string): string {
@@ -73,6 +79,9 @@ export function patentEffectSummary(effects: ReturnType<typeof activeEffects>): 
     summary.push(`Research scan radius +${effects.revealAid} ${effects.revealAid === 1 ? "cell" : "cells"}`);
   }
   if (effects.routing) summary.push("Splitter and Merger on");
+  if (effects.unlockedBases.length > 0) {
+    summary.push(`${[...effects.unlockedBases].sort().map((base) => BASE_NAMES[base]).join(" and ")} on`);
+  }
   if (effects.unlockedMachines.length > 0) {
     const count = effects.unlockedMachines.length;
     summary.push(`${count} ${count === 1 ? "machine" : "machines"} on`);

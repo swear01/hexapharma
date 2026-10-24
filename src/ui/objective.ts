@@ -1,7 +1,7 @@
 import type { DiseaseId, ShippingContractProgress } from "../sim/phase0_interfaces";
 import { diseaseName } from "./effectLabels";
 
-export type ObjectiveTarget = "research" | "pilot" | "production" | "market";
+export type ObjectiveTarget = "research" | "pilot" | "production" | "market" | "technology";
 
 export interface Objective {
   readonly text: string;
@@ -21,6 +21,10 @@ export interface ObjectiveInput {
   /** Production has already made a cure, and none of it is for the active contract's disease. */
   readonly producingOther: boolean;
   readonly sector: string;
+  /** Base the contract's disease lives on; null when the level has one base. */
+  readonly base: string | null;
+  /** That base is switched off in Technology. */
+  readonly baseLocked: boolean;
 }
 
 /** The next step of the loop for the first open contract: Research → Plan → Production → Market. */
@@ -33,9 +37,13 @@ export function currentObjective(input: ObjectiveInput): Objective {
   if (input.profitableUnits(contract.disease) > 0) {
     return { text: `Ship ${name}`, target: "market", actionLabel: "Ship" };
   }
+  const onBase = input.base === null ? "" : ` on ${input.base}`;
+  if (input.baseLocked) {
+    return { text: `Turn on ${input.base} in Technology to reach ${name}`, target: "technology", actionLabel: "Technology" };
+  }
   if (!input.knownCureDiseases.includes(contract.disease)) {
     const where = input.sector === "local" ? "near the start" : `look ${input.sector}`;
-    return { text: `Find ${name} · ${where}`, target: "research", actionLabel: "Research" };
+    return { text: `Find ${name}${onBase} · ${where}`, target: "research", actionLabel: "Research" };
   }
   if (input.stockFor(contract.disease) > 0) {
     return { text: `${name} stock no longer earns · improve the line`, target: "production", actionLabel: "Production" };
@@ -43,10 +51,10 @@ export function currentObjective(input: ObjectiveInput): Objective {
   if (!input.productionHasMachines) {
     return input.planHasMachines
       ? { text: `Commission the Plan for ${name}`, target: "pilot", actionLabel: "Plan" }
-      : { text: `Plan a line to ${name}`, target: "pilot", actionLabel: "Plan" };
+      : { text: `Plan a line to ${name}${onBase}`, target: "pilot", actionLabel: "Plan" };
   }
   if (input.producingOther) {
-    return { text: `Plan a line to ${name} · Production makes another cure`, target: "pilot", actionLabel: "Plan" };
+    return { text: `Plan a line to ${name}${onBase} · Production makes another cure`, target: "pilot", actionLabel: "Plan" };
   }
   return { text: `Run Production to make ${name}`, target: "production", actionLabel: "Production" };
 }
