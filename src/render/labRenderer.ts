@@ -562,7 +562,7 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
         else if (view.finish !== true) marks.circle(center.x, center.y, cell * 0.11).fill({ color: LAB_SCHEMATIC_STYLE.course });
       }
 
-      if (view.lineTrail !== undefined) {
+      if (view.lineTrail !== undefined && view.lineTrail.length > 1) {
         for (let index = 1; index < view.lineTrail.length; index++) {
           const fromPoint = view.lineTrail[index - 1];
           const toPoint = view.lineTrail[index];
