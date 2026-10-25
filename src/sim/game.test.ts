@@ -608,6 +608,14 @@ describe("whole-game deterministic state", () => {
     expect(game.research).toEqual(research);
   });
 
+  it("keeps a save valid after the last trial's machine is switched off", () => {
+    let game = applyGameIntent(createGameState(opts, 10_000), { kind: "setPatent", id: "zigzag-unlock", enabled: true });
+    const { typeId, path, turn } = availableCatalog(game.patents).find((entry) => entry.typeId === "zigzag")!;
+    game = applyGameIntent(game, { kind: "runResearchTrial", program: { steps: [{ typeId, path, turn }] }, base: 0 });
+    game = applyGameIntent(game, { kind: "setPatent", id: "zigzag-unlock", enabled: false });
+    expect(deserializeGame(serializeGame(game))).toEqual(game);
+  });
+
   it("replays and serializes the three-facility trace deterministically", () => {
     const initial = createGameState(opts, 500);
     const template = recipe();

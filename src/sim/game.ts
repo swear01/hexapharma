@@ -419,7 +419,11 @@ function requireAvailableBase(game: Pick<GameState, "patents" | "genOptions">, b
 }
 
 function requireAllowedMachine(game: Pick<GameState, "patents">, machine: Machine): MachineCatalogEntry {
-  const entry = availableCatalog(game.patents).find((candidate) => candidate.typeId === machine.typeId);
+  return requireCatalogMachine(availableCatalog(game.patents), machine);
+}
+
+function requireCatalogMachine(catalog: readonly MachineCatalogEntry[], machine: Machine): MachineCatalogEntry {
+  const entry = catalog.find((candidate) => candidate.typeId === machine.typeId);
   if (entry === undefined) throw new Error(`game intent: machine "${machine.typeId}" is locked`);
   if (canonical(machine.path) !== canonical(entry.path) || machine.turn !== entry.turn) {
     throw new Error(`game intent: machine "${machine.typeId}" path does not match catalog`);
@@ -1371,7 +1375,8 @@ export function validateGameState(game: GameState): GameState {
     ) {
       throw new Error(`game state: Research trial requires 1..${MAX_TEMPLATE_STEPS} machines`);
     }
-    requireAllowedTemplate(game, trial.program);
+    // The last trial is a record: its machines may since have been switched off in Technology.
+    for (const machine of trial.program.steps) requireCatalogMachine(DEFAULT_CATALOG, machine);
     requireSafeInteger(trial.cost, "game state: Research trial cost", 0);
     if (trial.cost !== researchTrialCost(trial.program)) {
       throw new Error("game state: Research trial cost does not match its program");
