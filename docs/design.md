@@ -78,7 +78,7 @@ Research 不使用 FactoryLayout、source／belt／sink、線性 route descripto
 - **規劃**：玩家在 UI 本地編排整條路線（hotbar／數字鍵接到末端；Backspace、Ctrl+Z 或點最後一個控制點回退；Clear 清空）。預覽（虛線）以 pure traversal 在 fog-masked planning map 上走完整條路線：未知格當平地，只保留 Wall 輪廓；不洩漏霧下內容。規劃不花錢、不改 authority。
 - **試驗**：`runResearchTrial { program, base }` 在指定 base 的 Atlas 上進行（base 必須已開啟），接受 1..`MAX_TEMPLATE_STEPS` 台目前 catalog／patents 允許且 path／turn 與 catalog 一致的 machine；`cost = Σ catalog cost`（safe-integer 檢查），cash < cost 時原子拒絕。authority 一次扣款，從關卡起點在**真實**地圖上跑完整條 program，以 radius 1（加 Technology 的 revealAid）揭露實際 trail 與終點，只更新該 base 的 fog，存 `research.lastTrial = {base, program, cost, outcome}`，可由 replay 重畫實際路線。Atlas 一次只顯示一個 base（右下 base 選擇器，鎖住的 base 顯示原因）；切換時改顯示該 base 的圖、fog 與最近試驗（只在試驗就在該 base 時），規劃路線保留（它只是機器序列），Run 在目前選的 base 付費。失敗於 Abyss 時路線在該格中止。
 - 試驗不產生配方、不建立 formula、不自動建造；同一路線可重跑（每次都付費）。UI 保留規劃，讓玩家依新揭露的地圖修改。
-- 實際路線（實線）由 `lastTrial.program` 在真實地圖重播。Run 當下的預估保留為淡虛線，直到玩家改動規劃；第一個偏離點以紅圈標在地圖上並標出原因（Wall／Swamp／Abyss，取該處真實地形，該處必在本次揭露範圍內）。兩者都以 pure traversal 計算，renderer 不自行近似、auto-route、修路或呼叫 solver。Swamp 半格以半格點繪製。
+- 實際路線（實線）由 `lastTrial.program` 在真實地圖重播，連同試驗結果只顯示到玩家改動（含 Undo／Clear）規劃為止。規劃終點的圓圈帶箭頭標出目前 heading（下一台機器的前方），起點三角在沒有路線時也指向 heading。Run 當下的預估保留為淡虛線，直到玩家改動規劃；第一個偏離點以紅圈標在地圖上並標出原因（Wall／Swamp／Abyss，取該處真實地形，該處必在本次揭露範圍內）。兩者都以 pure traversal 計算，renderer 不自行近似、auto-route、修路或呼叫 solver。Swamp 半格以半格點繪製。
 - 結果同時顯示 cure 與已揭露的 side effects；不能只報 Cure 而隱藏同一終點的已知污染。Objective 在當前疾病任一 Cure 格已揭露前為「Find Disease N on <Base> · look <sector>」，之後為「Plan a line to Disease N on <Base>」（指向 Plan）；該 base 關閉時先指向 Technology（「Turn on <Base> in Technology to reach Disease N」）。單 base 的關卡省略「on <Base>」。
 
 ## 1.4 程序地圖
