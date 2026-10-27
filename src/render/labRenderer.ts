@@ -528,7 +528,7 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
         const center = labCellCenter(camera, start);
         const next = view.trail.find((point, index) => index > 0 && point !== null && coordKey(point) !== coordKey(start));
         const toward = next === undefined || next === null ? null : labCellCenter(camera, next);
-        const angle = toward === null ? -Math.PI / 2 : Math.atan2(toward.y - center.y, toward.x - center.x);
+        const angle = toward === null ? drug.heading * Math.PI / 3 : Math.atan2(toward.y - center.y, toward.x - center.x);
         const size = radius * 1.2;
         marks.moveTo(center.x + Math.cos(angle) * size, center.y + Math.sin(angle) * size);
         for (let corner = 1; corner < 3; corner++) {
@@ -594,6 +594,18 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
         else {
           marks.circle(center.x, center.y, radius)
             .stroke({ color: LAB_SCHEMATIC_STYLE.candidate, width: Math.max(2, cell * 0.05) });
+          // The next machine's forward direction (heading 0 = east, clockwise sixths).
+          const angle = view.previewDrug!.heading * Math.PI / 3;
+          const across = angle + Math.PI / 2;
+          const tipX = center.x + Math.cos(angle) * radius * 2;
+          const tipY = center.y + Math.sin(angle) * radius * 2;
+          const baseX = center.x + Math.cos(angle) * radius * 1.3;
+          const baseY = center.y + Math.sin(angle) * radius * 1.3;
+          marks.moveTo(tipX, tipY)
+            .lineTo(baseX + Math.cos(across) * radius * 0.5, baseY + Math.sin(across) * radius * 0.5)
+            .lineTo(baseX - Math.cos(across) * radius * 0.5, baseY - Math.sin(across) * radius * 0.5)
+            .closePath()
+            .fill({ color: LAB_SCHEMATIC_STYLE.candidate });
         }
       }
     }

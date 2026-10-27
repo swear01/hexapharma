@@ -59,6 +59,8 @@ import {
 
 const SAVE_SLOTS = 3;
 const LAB_WORLD_SIZE = 49;
+/** Shared empty plan: a loaded game shows its last trial until the plan is edited. */
+const NO_RESEARCH_PLAN: readonly Machine[] = [];
 
 /** The one-map level Research shows for `base`: a drug lives on one base. */
 export function researchBaseLevel(level: GeneratedLevel, base: number): GeneratedLevel {
@@ -557,7 +559,9 @@ export function Game() {
     const known = baseView(knownResearchMap, researchBase);
     return researchRoute(known, initialState(known), line.program).trails;
   }, [game.pilot.layout, knownResearchMap, researchBase]);
-  const [researchPlan, setResearchPlan] = useState<readonly Machine[]>([]);
+  const [researchPlan, setResearchPlan] = useState<readonly Machine[]>(NO_RESEARCH_PLAN);
+  /** The plan the shown trial belongs to; editing the plan hides the last trial. */
+  const [trialPlan, setTrialPlan] = useState<readonly Machine[]>(NO_RESEARCH_PLAN);
   const patentEffects = useMemo(
     () => activeEffects(DEFAULT_PATENTS, game.patents),
     [game.patents],
@@ -571,7 +575,8 @@ export function Game() {
   const replaceGame = useCallback((next: GameState) => {
     gameRef.current = next;
     setGame(next);
-    setResearchPlan([]);
+    setResearchPlan(NO_RESEARCH_PLAN);
+    setTrialPlan(NO_RESEARCH_PLAN);
     setResearchBase(next.research.lastTrial?.base ?? 0);
     setIntentError("");
   }, []);
@@ -624,7 +629,7 @@ export function Game() {
     () => researchPlanningPreview(researchLevel.mm, researchFog, researchLevel.start, researchProgram),
     [researchFog, researchLevel, researchProgram],
   );
-  const lastTrial = game.research.lastTrial?.base === researchBase ? game.research.lastTrial : null;
+  const lastTrial = game.research.lastTrial?.base === researchBase && researchPlan === trialPlan ? game.research.lastTrial : null;
   const actualRoute = useMemo(
     () => researchRoute(researchLevel.mm, researchLevel.start, lastTrial?.program ?? { steps: [] }),
     [lastTrial, researchLevel],
@@ -636,8 +641,8 @@ export function Game() {
       ? plan
       : [...plan, { typeId: entry.typeId, path: entry.path, turn: entry.turn }]);
   }, [catalog]);
-  const undoResearchStep = useCallback(() => setResearchPlan((plan) => plan.slice(0, -1)), []);
-  const clearResearchPlan = useCallback(() => setResearchPlan([]), []);
+  const undoResearchStep = useCallback(() => setResearchPlan((plan) => plan.length === 0 ? plan : plan.slice(0, -1)), []);
+  const clearResearchPlan = useCallback(() => setResearchPlan((plan) => plan.length === 0 ? plan : []), []);
   const researchBlockReason = researchRunBlockReason(game.economy.cash, researchProgram);
   /** The estimate the last Run was planned on; shown until the route is edited. */
   const [runEstimate, setRunEstimate] = useState<{
@@ -660,7 +665,10 @@ export function Game() {
       trails: researchRoute(known, researchLevel.start, researchProgram).trails,
       deviation: researchDeviation(researchLevel.mm, known, researchLevel.start, researchProgram),
     };
-    if (dispatch({ kind: "runResearchTrial", program: researchProgram, base: researchBase })) setRunEstimate(estimate);
+    if (dispatch({ kind: "runResearchTrial", program: researchProgram, base: researchBase })) {
+      setRunEstimate(estimate);
+      setTrialPlan(researchPlan);
+    }
   }, [dispatch, researchBase, researchLevel, researchPlan, researchProgram]);
   const buildPilotInProduction = useCallback((layout: FactoryLayout) => {
     if (gameRef.current.pilot.layout !== layout && !dispatch({ kind: "setPilotLayout", layout })) return;

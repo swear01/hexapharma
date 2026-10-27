@@ -234,8 +234,10 @@ test("number keys append, Backspace and Ctrl+Z remove, Clear empties, and Enter 
   await expect(page.getByTestId("cash")).toHaveText("200");
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("cash")).toHaveText(String(200 - available[1]!.cost));
+  await expect(page.getByTestId("research-atlas-outcome")).toBeVisible();
   await page.getByTestId("research-clear").click();
   await expect(page.getByTestId("research-program-strip").getByRole("listitem")).toHaveCount(0);
+  await expect(page.getByTestId("research-atlas-outcome")).toHaveCount(0);
   await expect(page.getByTestId("research-undo")).toBeDisabled();
   await page.keyboard.press("Digit1");
   await page.getByTestId("research-undo").click();
