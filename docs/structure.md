@@ -34,7 +34,7 @@
 | `src/render/labRenderer.ts` | vector-only minimal flat hex Atlas（只畫六角形內）、下一個full-path candidate、executed trail、terrain、relief contours（chunk cache）、overlap features與fog layer；event-driven單幀重繪。 |
 | `src/render/factoryTransportTopology.ts` | sim-derived accept/emit edges、cell shape classification、machine port connectivity。 |
 | `src/render/factoryRenderer.ts` | Production Plan／Production minimal flat hex schematic、connected transport與tick animation；event-driven單幀重繪。 |
-| `src/ui/ResearchWorkspace.tsx` | F1 Research 版面：羅盤、規劃step清單、試驗結果readout、依heading旋轉的machine legend hotbar與`Clear`／`Run · $N` command bar。 |
+| `src/ui/ResearchWorkspace.tsx` | F1 Research 版面：可點選置中的規劃step清單、試驗結果readout、依heading旋轉的machine legend hotbar與`Clear`／`Run · $N` command bar。 |
 | `src/ui/objective.ts` | 由contracts／已揭露Cure／stock／layout／patents推導Objective下一步與目標場域的純函式。 |
 | `src/ui/FieldGuide.tsx` | Guide與地圖／工廠符號圖例。 |
 | `src/ui/game.css`, `research.css`, `factory.css`, `panels.css`, `fonts/` | tokens＋shell與各區域樣式；自帶 Barlow Condensed 600（OFL）。 |

@@ -158,6 +158,19 @@ describe("Research course controls", () => {
     expect(route.drug).toEqual(applyTemplate(level.mm, level.start, program));
     expect(researchRoute(level.mm, level.start, { steps: [] }).controls).toEqual([]);
   });
+
+  it("ends one leg per executed step at that step's last trail point", () => {
+    const level = researchBaseLevel(generate(defaultGenOptions(14)), 0);
+    const program = level.diseases[0]!.reference;
+    const route = researchRoute(level.mm, level.start, program);
+    const trail = route.trails[0]!;
+    expect(route.legEnds).toHaveLength(program.steps.length);
+    expect(route.legEnds.at(-1)).toBe(trail.length - 1);
+    route.legEnds.forEach((end, index) => {
+      expect(end).toBeGreaterThanOrEqual(index === 0 ? 0 : route.legEnds[index - 1]!);
+      expect(trail[end]).toEqual(route.controls[index]);
+    });
+  });
 });
 
 describe("Research Cure fit", () => {

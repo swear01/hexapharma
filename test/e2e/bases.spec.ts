@@ -21,7 +21,6 @@ test("Oil stays locked until Technology turns it on; then Research and Sources c
   const saline = page.getByTestId("research-base-0");
   const oil = page.getByTestId("research-base-1");
   await expect(saline).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByTestId("objective-text")).toHaveText(/^Find Disease 1 on Saline · /);
   await oil.hover();
   await expect(page.getByText("Oil off · turn it on in Technology")).toBeVisible();
   await expect(oil).toHaveAttribute("aria-pressed", "false");

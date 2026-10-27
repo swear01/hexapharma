@@ -23,43 +23,6 @@ export function researchMachineCost(typeId: string): number {
   return entry.cost;
 }
 
-/** Compass sectors in screen degrees (y down), matching the Atlas hex directions. */
-export const COMPASS_SECTORS = ["east", "south-east", "south-west", "west", "north-west", "north-east"] as const;
-
-function wedgePath(index: number): string {
-  const point = (degrees: number, radius: number) => {
-    const radians = degrees * Math.PI / 180;
-    return `${(24 + Math.cos(radians) * radius).toFixed(2)} ${(24 + Math.sin(radians) * radius).toFixed(2)}`;
-  };
-  const from = index * 60 - 30;
-  const to = index * 60 + 30;
-  return `M${point(from, 7)} L${point(from, 21)} A21 21 0 0 1 ${point(to, 21)} L${point(to, 7)} A7 7 0 0 0 ${point(from, 7)} Z`;
-}
-
-/** Target sector wedge and the planned route's heading arrow. */
-export function TargetCompass({ sector, heading }: { readonly sector: string; readonly heading: number }) {
-  const local = sector === "local";
-  return (
-    <svg
-      className="research-compass-dial"
-      viewBox="0 0 48 48"
-      width="48"
-      height="48"
-      role="img"
-      aria-label={`Target ${local ? "near the start" : sector}, heading ${COMPASS_SECTORS[heading]}`}
-      data-testid="research-mission"
-      data-sector={sector}
-      data-heading={COMPASS_SECTORS[heading]}
-    >
-      {COMPASS_SECTORS.map((name, index) => (
-        <path key={name} d={wedgePath(index)} className={name === sector ? "is-target" : undefined} />
-      ))}
-      <circle cx="24" cy="24" r={local ? 4 : 2} className={local ? "is-target" : undefined} />
-      <path className="research-compass-heading" d="M24 24h15m-4-4 4 4-4 4" transform={`rotate(${heading * 60} 24 24)`} />
-    </svg>
-  );
-}
-
 function ResearchResult({ outcome }: { readonly outcome: Outcome }) {
   return (
     <div className={`research-result research-readout${outcome.failed ? " is-failed" : ""}`} role="status">
@@ -95,8 +58,10 @@ export interface ResearchWorkspaceProps {
   readonly drug: DrugState;
   /** Actual trail of the last trial on the true map. */
   readonly trails: readonly (readonly (Vec2 | null)[])[];
+  readonly legEnds: readonly number[];
   /** Planned route on the known map. */
   readonly previewTrails: readonly (readonly (Vec2 | null)[])[];
+  readonly previewLegEnds: readonly number[];
   /** The Production Plan line's route on the known map. */
   readonly lineTrails?: readonly (readonly (Vec2 | null)[])[];
   readonly previewDrug: DrugState;
@@ -113,6 +78,7 @@ export interface ResearchWorkspaceProps {
 export function ResearchWorkspace(props: ResearchWorkspaceProps) {
   const { plan } = props;
   const [baseHint, setBaseHint] = useState<string | null>(null);
+  const [focusRequest, setFocusRequest] = useState<{ readonly point: Vec2 } | null>(null);
   const stepListRef = useRef<HTMLOListElement | null>(null);
   useEffect(() => {
     const list = stepListRef.current;
@@ -146,13 +112,16 @@ export function ResearchWorkspace(props: ResearchWorkspaceProps) {
         fog={props.fog}
         drug={props.drug}
         trails={props.trails}
+        legEnds={props.legEnds}
         previewTrails={props.previewTrails}
+        previewLegEnds={props.previewLegEnds}
         lineTrails={props.lineTrails}
         previewDrug={props.previewDrug}
         estimate={props.estimate}
         deviation={props.deviation}
         controls={props.controls}
         lastOutcome={props.lastOutcome}
+        focusRequest={focusRequest}
         onWorldActivate={props.onUndo}
         onWorldErase={props.onUndo}
       />
@@ -162,10 +131,18 @@ export function ResearchWorkspace(props: ResearchWorkspaceProps) {
             <ol ref={stepListRef}>
               {plan.steps.map((step, index) => (
                 <li key={`${index}-${step.typeId}`}>
-                  <span className="research-step-number" aria-hidden="true">{index + 1}</span>
-                  <MachineIcon typeId={step.typeId} path={step.path} size={24} />
-                  <span className="research-step-name" title={machineName(step.typeId)}>{machineName(step.typeId)}</span>
-                  <span className="research-step-cost">${researchMachineCost(step.typeId)}</span>
+                  <button
+                    type="button"
+                    className="research-step"
+                    disabled={props.controls[index] === undefined}
+                    onClick={() => setFocusRequest({ point: props.controls[index]! })}
+                    title={`Center on step ${index + 1}`}
+                  >
+                    <span className="research-step-number" aria-hidden="true">{index + 1}</span>
+                    <MachineIcon typeId={step.typeId} path={step.path} size={24} />
+                    <span className="research-step-name" title={machineName(step.typeId)}>{machineName(step.typeId)}</span>
+                    <span className="research-step-cost">${researchMachineCost(step.typeId)}</span>
+                  </button>
                 </li>
               ))}
             </ol>
@@ -188,7 +165,7 @@ export function ResearchWorkspace(props: ResearchWorkspaceProps) {
             data-testid={`research-machine-${entry.typeId}`}
             title={`Add ${machineName(entry.typeId)} (${index + 1})`}
           >
-            <MachineIcon typeId={entry.typeId} path={researchHeadingPath(entry.path, heading)} size={36} variant="token" />
+            <MachineIcon typeId={entry.typeId} path={researchHeadingPath(entry.path, heading)} rotation={heading} size={36} variant="token" />
             <span className="research-legend-name">{machineName(entry.typeId)}</span>
             <span className="research-legend-cost">${entry.cost}</span>
             <kbd>{index + 1}</kbd>

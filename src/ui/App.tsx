@@ -210,6 +210,13 @@ export function validateLabFogAuthority(mm: MultiMap, fog: readonly Uint8Array[]
   return null;
 }
 
+const RESEARCH_PAN_BUTTONS = [
+  { side: "up", dx: 0, dy: -1, rotate: 0 },
+  { side: "left", dx: -1, dy: 0, rotate: -90 },
+  { side: "right", dx: 1, dy: 0, rotate: 90 },
+  { side: "down", dx: 0, dy: 1, rotate: 180 },
+] as const;
+
 interface AppProps {
   readonly active: boolean;
   readonly level: GeneratedLevel;
@@ -218,8 +225,11 @@ interface AppProps {
   readonly drug: DrugState;
   /** Actual trail of the last trial (solid). */
   readonly trails: readonly (readonly (Vec2 | null)[])[];
+  /** Map-0 trail index where each machine ends (a chevron per leg). */
+  readonly legEnds?: readonly number[];
   /** Planned route on the known map (dashed). */
   readonly previewTrails?: readonly (readonly (Vec2 | null)[])[];
+  readonly previewLegEnds?: readonly number[];
   readonly lineTrails?: readonly (readonly (Vec2 | null)[])[];
   readonly previewDrug?: DrugState;
   /** The preview is the estimate the last Run was planned on (faint). */
@@ -228,6 +238,8 @@ interface AppProps {
   /** Planned step endpoints: the numbered controls. */
   readonly controls: readonly Vec2[];
   readonly lastOutcome: Outcome | null;
+  /** Center the camera on this point whenever a new request arrives. */
+  readonly focusRequest?: { readonly point: Vec2 } | null;
   /** Click on the last control. */
   readonly onWorldActivate?: () => void;
   readonly onWorldErase?: () => void;
@@ -239,13 +251,16 @@ export function App({
   fog,
   drug,
   trails,
+  legEnds,
   previewTrails,
+  previewLegEnds,
   lineTrails,
   previewDrug,
   estimate = false,
   deviation = null,
   controls,
   lastOutcome,
+  focusRequest = null,
   onWorldActivate,
   onWorldErase,
 }: AppProps) {
@@ -271,14 +286,16 @@ export function App({
       activeMap,
       camera,
       trail: trails[activeMap] ?? [],
+      legEnds,
       previewTrail: planned === undefined ? undefined : previewTrails?.[activeMap],
+      previewLegEnds,
       lineTrail: lineTrails?.[activeMap],
       previewDrug: estimate ? undefined : planned,
       estimate,
       deviation: deviation ?? undefined,
       controls,
     }),
-    [activeMap, camera, controls, deviation, estimate, lineTrails, planned, previewTrails, trails],
+    [activeMap, camera, controls, deviation, estimate, legEnds, lineTrails, planned, previewLegEnds, previewTrails, trails],
   );
   const renderMapRef = useRef(renderMap);
   renderMapRef.current = renderMap;
@@ -418,9 +435,8 @@ export function App({
     cameraEaseRef.current = requestAnimationFrame(step);
   }, [activeMap, camera, cancelCameraEase, lastOutcome, mm.maps, trails]);
 
-  const focusResearch = useCallback(() => {
+  const centerOn = useCallback((position: Vec2 | undefined) => {
     cancelCameraEase();
-    const position = focusTarget.position;
     const map = mm.maps[activeMap];
     if (position === undefined || map === undefined) return;
     setCameras((current) => {
@@ -428,7 +444,26 @@ export function App({
       next[activeMap] = clampLabCamera(focusLabCamera(position), visibleViewportRef.current, map);
       return next;
     });
-  }, [activeMap, cancelCameraEase, focusTarget.position, mm.maps]);
+  }, [activeMap, cancelCameraEase, mm.maps]);
+  const focusResearch = useCallback(() => centerOn(focusTarget.position), [centerOn, focusTarget.position]);
+  // Only a new request moves the camera, not a changed callback.
+  const centerOnRef = useRef(centerOn);
+  centerOnRef.current = centerOn;
+  useEffect(() => {
+    if (focusRequest !== null) centerOnRef.current(focusRequest.point);
+  }, [focusRequest]);
+  /** Move the view a third of the visible map toward a side (dx, dy in -1..1). */
+  const panStep = useCallback((dx: number, dy: number) => {
+    cancelCameraEase();
+    const map = mm.maps[activeMap];
+    if (map === undefined) return;
+    const viewport = visibleViewportRef.current;
+    setCameras((current) => {
+      const next = [...current];
+      next[activeMap] = panLabCamera(current[activeMap] ?? camera, -dx * viewport.width / 3, -dy * viewport.height / 3, viewport, map);
+      return next;
+    });
+  }, [activeMap, camera, cancelCameraEase, mm.maps]);
 
   const panRef = useRef<{
     readonly pointerId: number;
@@ -586,19 +621,33 @@ export function App({
         >
           <div ref={mountRef} data-testid="lab-canvas" className="lab-canvas" />
         </div>
-        <div className="transport-bar research-atlas-status">
+        <div className="research-atlas-status research-dpad" role="group" aria-label="Pan map">
+          {RESEARCH_PAN_BUTTONS.map(({ side, dx, dy, rotate }) => (
+            <button
+              key={side}
+              type="button"
+              className={`research-dpad-${side}`}
+              onClick={() => panStep(dx, dy)}
+              data-testid={`lab-pan-${side}`}
+              aria-label={`Pan ${side}`}
+              title={`Pan ${side}`}
+            >
+              <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+                <path d="M4 10l4-4 4 4" transform={`rotate(${rotate} 8 8)`} />
+              </svg>
+            </button>
+          ))}
           <button
             type="button"
+            className="research-dpad-center"
             onClick={focusResearch}
             data-testid="lab-focus"
             aria-label={`Focus ${focusDescription}`}
-            title={`Focus ${focusDescription}`}
+            title={`Focus ${focusDescription} (F)`}
           >
-            <svg className="lab-focus-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-              <circle cx="8" cy="8" r="5" />
-              <path d="M8 0v4M8 12v4M0 8h4M12 8h4" />
+            <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+              <circle cx="8" cy="8" r="2.5" />
             </svg>
-            <span className="lab-focus-label">Center</span><kbd>F</kbd>
           </button>
         </div>
       </section>

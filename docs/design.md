@@ -78,7 +78,7 @@ Research 不使用 FactoryLayout、source／belt／sink、線性 route descripto
 - **規劃**：玩家在 UI 本地編排整條路線（hotbar／數字鍵接到末端；Backspace、Ctrl+Z 或點最後一個控制點回退；Clear 清空）。預覽（虛線）以 pure traversal 在 fog-masked planning map 上走完整條路線：未知格當平地，只保留 Wall 輪廓；不洩漏霧下內容。規劃不花錢、不改 authority。
 - **試驗**：`runResearchTrial { program, base }` 在指定 base 的 Atlas 上進行（base 必須已開啟），接受 1..`MAX_TEMPLATE_STEPS` 台目前 catalog／patents 允許且 path／turn 與 catalog 一致的 machine；`cost = Σ catalog cost`（safe-integer 檢查），cash < cost 時原子拒絕。authority 一次扣款，從關卡起點在**真實**地圖上跑完整條 program，以 radius 1（加 Technology 的 revealAid）揭露實際 trail 與終點，只更新該 base 的 fog，存 `research.lastTrial = {base, program, cost, outcome}`，可由 replay 重畫實際路線。Atlas 一次只顯示一個 base（右下 base 選擇器，鎖住的 base 顯示原因）；切換時改顯示該 base 的圖、fog 與最近試驗（只在試驗就在該 base 時），規劃路線保留（它只是機器序列），Run 在目前選的 base 付費。失敗於 Abyss 時路線在該格中止。
 - 試驗不產生配方、不建立 formula、不自動建造；同一路線可重跑（每次都付費）。UI 保留規劃，讓玩家依新揭露的地圖修改。
-- 實際路線（實線）由 `lastTrial.program` 在真實地圖重播，連同試驗結果只顯示到玩家改動（含 Undo／Clear）規劃為止。規劃終點的圓圈帶箭頭標出目前 heading（下一台機器的前方），起點三角在沒有路線時也指向 heading。Run 當下的預估保留為淡虛線，直到玩家改動規劃；第一個偏離點以紅圈標在地圖上並標出原因（Wall／Swamp／Abyss，取該處真實地形，該處必在本次揭露範圍內）。兩者都以 pure traversal 計算，renderer 不自行近似、auto-route、修路或呼叫 solver。Swamp 半格以半格點繪製。
+- 實際路線（實線）由 `lastTrial.program` 在真實地圖重播，連同試驗結果只顯示到玩家改動（含 Undo／Clear）規劃為止。規劃終點與實際終點都是指向目前 heading（下一台機器的前方）的實心尖頭；每台機器的終點是小實心節點，每段 leg 中央一個兩筆 chevron 標出前進方向（不編號）；起點三角在沒有路線時也指向 heading。Run 當下的預估保留為淡虛線，直到玩家改動規劃；第一個偏離點以紅圈標在地圖上並標出原因（Wall／Swamp／Abyss，取該處真實地形，該處必在本次揭露範圍內）。兩者都以 pure traversal 計算，renderer 不自行近似、auto-route、修路或呼叫 solver。Swamp 半格以半格點繪製。
 - 結果同時顯示 cure 與已揭露的 side effects；不能只報 Cure 而隱藏同一終點的已知污染。Objective 在當前疾病任一 Cure 格已揭露前為「Find Disease N on <Base> · look <sector>」，之後為「Plan a line to Disease N on <Base>」（指向 Plan）；該 base 關閉時先指向 Technology（「Turn on <Base> in Technology to reach Disease N」）。單 base 的關卡省略「on <Base>」。
 
 ## 1.4 程序地圖
@@ -208,12 +208,12 @@ Blueprint 與 save slot 完全分離，Library envelope version 是 4，使用 `
 整體是「邊跑邊印出來的定向越野地圖」；產品真相見 `PRODUCT.md`，方向契約見 `.impeccable/surfaces/src-ui-game-tsx.md`。
 
 - **紙與墨**：紙底 `#F6F3EC`、近黑墨 `#1E1F1C`；ISOM 色語——山是淡褐填色（`#CDB79A`，細褐邊）、水是藍色水平線、黑格（Abyss）是黑墨斷崖刻痕、治療區是綠色網點＋十字、副作用是琥珀網點、失敗是紅；Cure＋SideEffect 同格時兩種網點都要看得見。
-- **路線紫 `#7B2CBF` 只屬玩家自己的線**：研究路線（起點三角、編號控制點圓、實線＝最近試驗的實際路線、虛線＝規劃路線）、選取與 Plan overprint。Production 以黑墨實印；Plan 以紫色 overprint 區分免費草稿與付費實體。
-- **霧與等高線**：未揭露是未印的紙，山也不填色。等高線由 `EffectMap.elevation` 畫出：顯示場 `1 − exp(−k·|e|)`（k＝`CONTOUR_COMPRESSION`）加 seeded 低幅 decoys（`CONTOUR_DECOY_STRENGTH`），5 個 level、單一墨色、沒有計曲線色差；它穿霧可見（刻意的提示），也印在已揭露地面上，從不讀 fog、cell 或效果欄位。格線只畫在已揭露格；六角形外不畫。
+- **路線紫 `#7B2CBF` 只屬玩家自己的線**：研究路線（起點三角、節點、chevron、終點尖頭、實線＝最近試驗的實際路線、虛線＝規劃路線）、選取與 Plan overprint。Production 以黑墨實印；Plan 以紫色 overprint 區分免費草稿與付費實體。
+- **霧與等高線**：未揭露是未印的紙，山也不填色。等高線由 `EffectMap.elevation` 畫出：顯示場 `1 − exp(−k·|e|)`（k＝`CONTOUR_COMPRESSION`）加 seeded 低幅 decoys（`CONTOUR_DECOY_STRENGTH`），5 個 level、單一墨色、沒有計曲線色差；它穿霧可見（刻意的提示），也印在已揭露地面上，從不讀 fog、cell 或效果欄位。已揭露格畫 minor／major 格線，霧下只畫同樣淡的 minor 格線（格線是固定幾何，不洩漏地形）；六角形外不畫。
 - **字**：標題、數字、標籤用自帶 Barlow Condensed 600（`src/ui/fonts/`，OFL），內文系統字；所有數字 tabular。
 - **手繪感**：只來自 `src/render/ink.ts` 的確定性抖動，用於斷崖刻痕、陰影線與路線墨線；不得作用於 port、belt 接點、hit-test 幾何或文字，同一狀態必須逐幀一致。
 - **動態**：每個場域只有一個 authored moment（研究步驟的墨線描出 ≤250 ms），`prefers-reduced-motion` 時立即完成；Pixi auto-ticker 維持關閉。
-- **Shell**：只有一條頂列（場域分頁；Cash、Stock→Market、Market／Technology／Blueprints、Menu）；Objective 是 stage 左上的釘選目標卡（下一步、合約 n / 3、直接動作；Research 時帶羅盤）；Market／Technology／Blueprints 是右側 legend 式抽屜，Guide 從 Menu 開啟（沒有 Formulas）；Plan／Production 沒有角標，Play 旁只有 run-state 圖示（D44）。
+- **Shell**：只有一條頂列（場域分頁；Cash、Stock→Market、Market／Technology／Blueprints、Menu）；Objective 是 stage 左上的釘選目標卡（下一步、合約 n / 3、直接動作；目標本身是 Research 時在 Research 隱藏）；Market／Technology／Blueprints 是右側 legend 式抽屜，Guide 從 Menu 開啟（沒有 Formulas）；Plan／Production 沒有角標，Play 旁只有 run-state 圖示（D44）。
 
 ## 1.11 Save v15 — 開放、可編輯的 alpha 存檔
 

@@ -11,15 +11,15 @@
 /* Map-margin furniture: printed on paper, never glass. */
 .research-overlay { position: relative; z-index: 3; grid-row: 1; grid-column: 1 / -1; min-height: 0; pointer-events: none; }
 .research-program-strip, .research-result, .research-atlas-status { border: 1px solid var(--rule-strong); border-radius: 3px; background: var(--paper-raised); }
-.research-compass-dial path { fill: none; stroke: var(--rule-strong); stroke-width: 1; }
-.research-compass-dial circle { fill: var(--ink-3); }
-.research-compass-dial .is-target { fill: var(--course); stroke: var(--course-ink); }
-.research-compass-dial .research-compass-heading { stroke: var(--ink); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
-.research-program-strip { position: absolute; top: 80px; left: 12px; width: 232px; max-height: calc(100% - 80px - 76px); display: flex; pointer-events: auto; }
+.research-program-strip { --strip-top: 12px; position: absolute; top: var(--strip-top); left: 12px; width: 232px; max-height: calc(100% - var(--strip-top) - 136px); display: flex; pointer-events: auto; }
+.goal-card:not([hidden]) ~ .view-layer .research-program-strip { --strip-top: 80px; }
 .research-program-strip ol, .research-path-hotbar { scrollbar-width: thin; scrollbar-color: var(--rule-strong) transparent; }
 .research-program-strip ol { position: relative; flex: 1; min-height: 0; max-height: 100%; margin: 0; padding: 4px 0; overflow: auto; list-style: none; }
-.research-program-strip li { display: grid; grid-template-columns: 24px 24px minmax(0, 1fr) auto; align-items: center; gap: 8px; min-height: 34px; padding: 2px 12px 2px 8px; color: var(--ink-2); font-size: 13px; }
+.research-program-strip li { color: var(--ink-2); }
+.research-step { display: grid; grid-template-columns: 24px 24px minmax(0, 1fr) auto; align-items: center; gap: 8px; width: 100%; min-height: 34px; padding: 2px 12px 2px 8px; border: 0; border-radius: 0; background: transparent; color: inherit; font: inherit; font-size: 13px; letter-spacing: normal; text-align: left; text-transform: none; }
+.research-step:hover:not(:disabled) { background: var(--paper-sunk); }
+.research-step:disabled { background: transparent; }
 .research-program-strip li + li { border-top: 1px solid var(--rule); }
 .research-program-strip li:last-child { color: var(--ink); }
 .research-step-number { display: grid; place-items: center; width: 24px; height: 24px; border: 2px solid var(--course); border-radius: 50%; color: var(--course-ink); font: 600 13px/1 var(--font-display); font-variant-numeric: tabular-nums; }
@@ -33,9 +33,15 @@
 .research-readout.is-failed { border-color: var(--failure-border); background: var(--failure-surface); color: var(--failure-ink); }
 .research-readout.is-failed svg { stroke: var(--failure-border); stroke-width: 2.5; stroke-linecap: round; }
 
-.research-atlas-status { position: absolute; z-index: 3; bottom: 12px; left: 12px; display: flex; align-items: center; gap: 2px; padding: 0 4px; color: var(--ink-3); font-size: 12px; font-variant-numeric: tabular-nums; }
-.research-atlas-status button { display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; border-color: transparent; background: transparent; color: var(--ink-2); font-size: 13px; }
-.lab-focus-icon { fill: none; stroke: currentColor; stroke-width: 1.5; }
+.research-dpad { position: absolute; z-index: 3; bottom: 12px; left: 12px; display: grid; grid-template-areas: ". up ." "left center right" ". down ."; grid-template-columns: repeat(3, 36px); grid-template-rows: repeat(3, 36px); padding: 2px; }
+.research-dpad button { display: grid; place-items: center; min-height: 0; padding: 0; border-color: transparent; background: transparent; color: var(--ink-2); }
+.research-dpad svg { fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+.research-dpad-center svg { fill: currentColor; }
+.research-dpad-up { grid-area: up; }
+.research-dpad-left { grid-area: left; }
+.research-dpad-center { grid-area: center; }
+.research-dpad-right { grid-area: right; }
+.research-dpad-down { grid-area: down; }
 .research-bases { position: absolute; z-index: 3; bottom: 12px; right: 12px; display: flex; align-items: center; gap: 8px; pointer-events: auto; }
 .research-bases .base-picker { padding: 2px; border: 1px solid var(--rule-strong); border-radius: 3px; background: var(--paper-raised); }
 .research-bases .base-picker button { padding: 0 10px; border-color: transparent; background: transparent; color: var(--ink-2); font-size: 13px; }
@@ -72,15 +78,19 @@
   .research-commandbar { grid-row: 3; grid-column: 1; justify-content: space-between; gap: 8px; padding: 6px 8px; border-top: 1px solid var(--rule); }
   .research-run-readout { font-size: 13px; }
   .research-run { min-width: 104px; }
-  .research-program-strip { top: 60px; left: 8px; width: auto; max-width: calc(100% - 16px); max-height: 52px; }
+  .research-program-strip { --strip-top: 8px; left: 8px; width: auto; max-width: calc(100% - 16px); max-height: 52px; }
+  .goal-card:not([hidden]) ~ .view-layer .research-program-strip { --strip-top: 60px; }
   .research-program-strip ol { display: flex; width: var(--strip-width, auto); padding: 0 4px; overflow-y: hidden; scroll-snap-type: x mandatory; scroll-padding-inline: 4px; }
-  .research-program-strip li { display: flex; flex: none; gap: 4px; min-height: 44px; padding: 4px 6px; scroll-snap-align: start; }
+  .research-program-strip li { flex: none; scroll-snap-align: start; }
+  .research-step { display: flex; gap: 4px; min-height: 44px; padding: 4px 6px; }
   .research-program-strip li + li { border-top: 0; }
   .research-program-strip li:not(:last-child) { border-right: 1px solid var(--rule); }
   .research-step-name, .research-step-cost { display: none; }
   .research-program-strip li:last-child .research-step-name { display: block; max-width: 104px; color: var(--ink); }
   .research-result { top: auto; bottom: 68px; left: 8px; right: 8px; }
   .research-readout { max-width: none; }
-  .research-atlas-status { bottom: 8px; left: 8px; }
+  /* Touch drags the map; only the center control stays. */
+  .research-dpad { bottom: 8px; left: 8px; grid-template-areas: "center"; grid-template-columns: 44px; grid-template-rows: 44px; }
+  .research-dpad button:not(.research-dpad-center) { display: none; }
   .research-bases { bottom: 8px; right: 8px; flex-direction: column; align-items: flex-end; gap: 4px; }
 }

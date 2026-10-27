@@ -1,6 +1,6 @@
 import { DEFAULT_SHAPES } from "../sim/phase0_interfaces";
 import type { PathStamp } from "../sim/phase0_interfaces";
-import { HEX_DQ, HEX_DR } from "../sim/hex";
+import { HEX_DQ, HEX_DR, rotateHexCoord, type HexRotation } from "../sim/hex";
 import { hexPolygon, hexToPixel } from "../render/hexProjection";
 
 export interface MachineIconProps {
@@ -10,6 +10,8 @@ export interface MachineIconProps {
   readonly size?: number;
   /** path: the Atlas stamp; footprint: the factory cells and ports; token: both, one identity. */
   readonly variant?: "path" | "footprint" | "token";
+  /** Sixth-turns applied to the footprint (Research turns tokens to the heading with their path). */
+  readonly rotation?: HexRotation;
 }
 
 interface Point {
@@ -52,11 +54,20 @@ export function MachineIcon({
   title,
   size = 24,
   variant = "path",
+  rotation = 0,
 }: MachineIconProps) {
   const labelled = title !== undefined;
   const shape = variant === "path" ? undefined : DEFAULT_SHAPES[typeId];
   if (variant !== "path" && shape === undefined) throw new Error(`Missing footprint for ${typeId}`);
-  const centers = shape?.cells.map((cell) => hexToPixel(cell.q, cell.r, 8)) ?? [];
+  const cellPixel = (cell: { readonly q: number; readonly r: number }) => {
+    const turned = rotateHexCoord(cell, rotation);
+    return hexToPixel(turned.q, turned.r, 8);
+  };
+  const portOffset = (side: number) => {
+    const turned = (side + rotation) % 6;
+    return hexToPixel(HEX_DQ[turned]!, HEX_DR[turned]!, 4);
+  };
+  const centers = shape?.cells.map(cellPixel) ?? [];
   const centerX = centers.length === 0 ? 0 : (Math.min(...centers.map((p) => p.x)) + Math.max(...centers.map((p) => p.x))) / 2;
   const centerY = centers.length === 0 ? 0 : (Math.min(...centers.map((p) => p.y)) + Math.max(...centers.map((p) => p.y))) / 2;
   const footprintScale = centers.length === 0 ? 1 : 40 / Math.max(
@@ -86,13 +97,13 @@ export function MachineIcon({
       {shape !== undefined && <g data-icon-shape="footprint" className="machine-icon-footprint" strokeWidth="1" transform={`translate(24 24) scale(${footprintScale}) translate(-24 -24)`}>
         {centers.map((p, index) => <polygon key={index} points={pointList(hexPolygon(24 + p.x - centerX, 24 + p.y - centerY, 7.7))} fill="currentColor" fillOpacity=".12" />)}
         {shape.inPorts.map((port, index) => {
-          const p = hexToPixel(port.cell.q, port.cell.r, 8);
-          const offset = hexToPixel(HEX_DQ[port.side]!, HEX_DR[port.side]!, 4);
+          const p = cellPixel(port.cell);
+          const offset = portOffset(port.side);
           return <rect key={index} x={22 + p.x - centerX + offset.x} y={22 + p.y - centerY + offset.y} width="4" height="4" fill="currentColor" />;
         })}
         {shape.outPorts.map((port, index) => {
-          const p = hexToPixel(port.cell.q, port.cell.r, 8);
-          const offset = hexToPixel(HEX_DQ[port.side]!, HEX_DR[port.side]!, 4);
+          const p = cellPixel(port.cell);
+          const offset = portOffset(port.side);
           return <circle key={index} cx={24 + p.x - centerX + offset.x} cy={24 + p.y - centerY + offset.y} r="2" />;
         })}
       </g>}
