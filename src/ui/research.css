@@ -12,14 +12,14 @@
 .research-overlay { position: relative; z-index: 3; grid-row: 1; grid-column: 1 / -1; min-height: 0; pointer-events: none; }
 .research-program-strip, .research-result, .research-atlas-status { border: 1px solid var(--rule-strong); border-radius: 3px; background: var(--paper-raised); }
 
-.research-program-strip { --strip-top: 12px; position: absolute; top: var(--strip-top); left: 12px; width: 232px; max-height: calc(100% - var(--strip-top) - 76px); display: flex; pointer-events: auto; }
-.goal-card ~ .view-layer .research-program-strip { --strip-top: 80px; }
+.research-program-strip { --strip-top: 12px; position: absolute; top: var(--strip-top); left: 12px; width: 232px; max-height: calc(100% - var(--strip-top) - 136px); display: flex; pointer-events: auto; }
+.goal-card:not([hidden]) ~ .view-layer .research-program-strip { --strip-top: 80px; }
 .research-program-strip ol, .research-path-hotbar { scrollbar-width: thin; scrollbar-color: var(--rule-strong) transparent; }
 .research-program-strip ol { position: relative; flex: 1; min-height: 0; max-height: 100%; margin: 0; padding: 4px 0; overflow: auto; list-style: none; }
 .research-program-strip li { color: var(--ink-2); }
 .research-step { display: grid; grid-template-columns: 24px 24px minmax(0, 1fr) auto; align-items: center; gap: 8px; width: 100%; min-height: 34px; padding: 2px 12px 2px 8px; border: 0; border-radius: 0; background: transparent; color: inherit; font: inherit; font-size: 13px; letter-spacing: normal; text-align: left; text-transform: none; }
 .research-step:hover:not(:disabled) { background: var(--paper-sunk); }
-.research-step:disabled { color: inherit; background: transparent; }
+.research-step:disabled { background: transparent; }
 .research-program-strip li + li { border-top: 1px solid var(--rule); }
 .research-program-strip li:last-child { color: var(--ink); }
 .research-step-number { display: grid; place-items: center; width: 24px; height: 24px; border: 2px solid var(--course); border-radius: 50%; color: var(--course-ink); font: 600 13px/1 var(--font-display); font-variant-numeric: tabular-nums; }
@@ -79,7 +79,7 @@
   .research-run-readout { font-size: 13px; }
   .research-run { min-width: 104px; }
   .research-program-strip { --strip-top: 8px; left: 8px; width: auto; max-width: calc(100% - 16px); max-height: 52px; }
-  .goal-card ~ .view-layer .research-program-strip { --strip-top: 60px; }
+  .goal-card:not([hidden]) ~ .view-layer .research-program-strip { --strip-top: 60px; }
   .research-program-strip ol { display: flex; width: var(--strip-width, auto); padding: 0 4px; overflow-y: hidden; scroll-snap-type: x mandatory; scroll-padding-inline: 4px; }
   .research-program-strip li { flex: none; scroll-snap-align: start; }
   .research-step { display: flex; gap: 4px; min-height: 44px; padding: 4px 6px; }

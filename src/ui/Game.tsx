@@ -943,7 +943,7 @@ export function Game() {
 
       <main className="game-stage" data-testid="game-stage">
         {/* In Research the map itself is the search; the card returns once the objective points elsewhere. */}
-        {!(building === "research" && objective.target === "research") && <section className="goal-card" data-testid="objective" aria-label="Objective">
+        <section className="goal-card" data-testid="objective" aria-label="Objective" hidden={building === "research" && objective.target === "research"}>
           <p className="goal-step" aria-live="polite">
             <span className="objective-text" data-testid="objective-text">{objective.text}</span>
             <span className="goal-contract" data-testid="shipping-contract" aria-label={`Disease ${activeContract.disease + 1} contract ${activeContract.sold} of ${activeContract.quota}`}>
@@ -953,7 +953,7 @@ export function Game() {
           {!objectiveIsHere(objective.target, building, drawer) && (
             <button type="button" className="objective-action" data-testid="objective-action" onClick={() => followObjective(objective.target)}>{objective.actionLabel}</button>
           )}
-        </section>}
+        </section>
         <section className="view-layer" hidden={building !== "research"}>
           {visited.research && (
             <ResearchWorkspace

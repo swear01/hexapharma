@@ -446,9 +446,11 @@ export function App({
     });
   }, [activeMap, cancelCameraEase, mm.maps]);
   const focusResearch = useCallback(() => centerOn(focusTarget.position), [centerOn, focusTarget.position]);
+  // Only a new request moves the camera, not a changed callback.
+  const centerOnRef = useRef(centerOn);
+  centerOnRef.current = centerOn;
   useEffect(() => {
-    if (focusRequest !== null) centerOn(focusRequest.point);
-    // Only a new request moves the camera, not a changed callback.
+    if (focusRequest !== null) centerOnRef.current(focusRequest.point);
   }, [focusRequest]);
   /** Move the view a third of the visible map toward a side (dx, dy in -1..1). */
   const panStep = useCallback((dx: number, dy: number) => {
@@ -619,7 +621,7 @@ export function App({
         >
           <div ref={mountRef} data-testid="lab-canvas" className="lab-canvas" />
         </div>
-        <div className="research-atlas-status research-dpad" role="group" aria-label="Move map">
+        <div className="research-atlas-status research-dpad" role="group" aria-label="Pan map">
           {RESEARCH_PAN_BUTTONS.map(({ side, dx, dy, rotate }) => (
             <button
               key={side}
@@ -627,8 +629,8 @@ export function App({
               className={`research-dpad-${side}`}
               onClick={() => panStep(dx, dy)}
               data-testid={`lab-pan-${side}`}
-              aria-label={`Move map ${side}`}
-              title={`Move map ${side}`}
+              aria-label={`Pan ${side}`}
+              title={`Pan ${side}`}
             >
               <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
                 <path d="M4 10l4-4 4 4" transform={`rotate(${rotate} 8 8)`} />

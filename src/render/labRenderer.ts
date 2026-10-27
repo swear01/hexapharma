@@ -462,11 +462,13 @@ function drawLegChevrons(
 ): void {
   let legStart = 0;
   for (const legEnd of legEnds) {
+    // A step that never moved (walled in, failed) has no leg of its own.
+    if (legEnd <= legStart) continue;
     const index = legStart + Math.ceil((legEnd - legStart) / 2);
     const fromPoint = trail[index - 1];
     const toPoint = trail[index];
     legStart = legEnd;
-    if (index <= 0 || fromPoint === null || fromPoint === undefined || toPoint === null || toPoint === undefined) continue;
+    if (fromPoint === null || fromPoint === undefined || toPoint === null || toPoint === undefined) continue;
     const a = labCellCenter(camera, fromPoint);
     const b = labCellCenter(camera, toPoint);
     const length = Math.hypot(b.x - a.x, b.y - a.y);
@@ -592,10 +594,10 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
       const position = drugDrawPoint(drug, view.activeMap);
       if (head !== null) {
         marks.circle(head.x, head.y, cell * 0.11).fill({ color: LAB_SCHEMATIC_STYLE.course });
-      } else if (position !== undefined && view.trail.length > 1) {
+      } else if (position !== undefined) {
         const center = labCellCenter(camera, position);
         if (drug.failed) drawCross(marks, center, radius * 0.75, crossWidth);
-        else drawHeadingDart(marks, center, drug.heading, radius);
+        else if (view.trail.length > 1) drawHeadingDart(marks, center, drug.heading, radius);
       }
 
       if (view.lineTrail !== undefined && view.lineTrail.length > 1) {

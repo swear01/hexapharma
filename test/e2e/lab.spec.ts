@@ -106,7 +106,7 @@ test("Research is one large centered Atlas with no Route Floor or layer-transfer
 }) => {
   await page.goto("/");
   // The search objective is not repeated over the map it is about.
-  await expect(page.getByTestId("objective")).toHaveCount(0);
+  await expect(page.getByTestId("objective")).toBeHidden();
   const frame = page.getByTestId("lab-map-frame");
   await expect(frame).toBeVisible();
   const level = generate(defaultGenOptions(14));
@@ -377,7 +377,7 @@ test("a curing trial reports the Cure without a formula card and the objective p
   expect(game.research.lastTrial?.outcome.cured).toContain(0);
 
   await page.goto("/");
-  await expect(page.getByTestId("objective")).toHaveCount(0);
+  await expect(page.getByTestId("objective")).toBeHidden();
   await installSaveFixture(page, serializeGame(game));
   await page.reload();
   await confirmLoad(page);

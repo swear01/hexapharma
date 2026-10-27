@@ -165,7 +165,7 @@ export function ResearchWorkspace(props: ResearchWorkspaceProps) {
             data-testid={`research-machine-${entry.typeId}`}
             title={`Add ${machineName(entry.typeId)} (${index + 1})`}
           >
-            <MachineIcon typeId={entry.typeId} path={researchHeadingPath(entry.path, heading)} rotation={heading as HexDir} size={36} variant="token" />
+            <MachineIcon typeId={entry.typeId} path={researchHeadingPath(entry.path, heading)} rotation={heading} size={36} variant="token" />
             <span className="research-legend-name">{machineName(entry.typeId)}</span>
             <span className="research-legend-cost">${entry.cost}</span>
             <kbd>{index + 1}</kbd>
