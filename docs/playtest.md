@@ -45,7 +45,7 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 
 1. 按F1。只有一張大型pointy-top Atlas；正常新局同圖4種疾病，開局camera聚焦generator start，只揭露中心radius-two 19-cell disk，正常viewport只看到整圖一小部分。以六個相鄰cell核對E／SE／SW／W／NW／NE picking與polygon edge一致。
 2. mission readout桌面顯示疾病與Look local／六方向broad sector；accessible name為Active assay；fixtures須涵蓋east、south-east、south-west、west、north-west、north-east與local，不得出現target座標或距離。
-3. 點hotbar或數字鍵把machines接到規劃；虛線預估與編號控制點立即出現，cash與fog不變。hotbar icon顯示不同完整奇形path，並隨規劃終點的heading旋轉；不存在path長度或只走一部分的控制。
+3. 點hotbar或數字鍵把machines接到規劃；虛線預估、節點、chevron與heading尖頭立即出現，cash與fog不變。hotbar icon顯示不同完整奇形path，並隨規劃終點的heading旋轉（footprint一起轉）；不存在path長度或只走一部分的控制。
 4. 點blank map，規劃／cash／fog必須不變且cursor是grab；移到最後控制點必須變pointer並提示`Remove last step`，單擊移除最後一步。Backspace、Ctrl+Z也移除最後一步；Clear清空。
 5. `Run · $N`（或Enter）只扣規劃的catalog總價一次，實線顯示真實地圖上的實際路線（霧下Wall／Swamp／Abyss可讓它偏離虛線），只揭露實際走過的格；規劃保留。再按一次Run會再付費。
 6. 規劃經過已知Swamp時，確認每一步在沼澤內只走半格（路線點停在格邊中點），離開時對齊到格中心。

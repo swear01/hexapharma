@@ -62,3 +62,5 @@ Step 1 已完成（`feat/v2-sim-rules`）：Research 改為規劃後一次試驗
 - 擴充 transport feedback、selection tools 與大型藍圖工作流，但不得引入自動解。
 - release candidate 時才建立正式 save migration／deprecation matrix。
 - 雲端 Blueprint 分享、帳戶與社群 repository 屬 post-MVP。
+- 基底概念重做（2026-10-27 使用者）：Saline／Oil／Ethanol 這種「溶劑」命名不對；基底應是不同的起始化合物（例如某類化合物、蛋白質），藥在圖上移動代表它被一步步修飾。
+- 同一張更大的地圖放多個起始點（2026-10-27 使用者）：較難取得的化合物起點在特殊位置，從那裡比較容易做出某些藥。

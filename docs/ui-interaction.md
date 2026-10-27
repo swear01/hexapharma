@@ -26,7 +26,7 @@
 ## 3. Shell / navigation
 
 - 只有一條頂列（D44）：左邊 Research／Plan／Production 分頁；右邊 Cash、Stock（點開 Market）、Market／Technology／Blueprints（圖示＋名稱＋M／T／B，窄屏只留圖示）與 Menu。沒有第二條工具列。Menu 是 Menu 鈕下方的短控制表：seed、New game、slot、Save、Load、Rewind、Recover 與 Guide。New 仍有可見文字與可取消確認，save checkpoints 與跨局 Blueprint Library 保留。
-- Objective 是 stage 左上的釘選目標卡：一行下一步（Find Disease N · look … → Plan a line／Commission the Plan → Run Production → Ship → 下一種疾病）、`Contract n / 3` 與直接動作（已在目的地時隱藏）；Research 時卡片左側是羅盤。
+- Objective 是 stage 左上的釘選目標卡：一行下一步（Find Disease N · look … → Plan a line／Commission the Plan → Run Production → Ship → 下一種疾病）、`Contract n / 3` 與直接動作（已在目的地時隱藏）；目標是 Research（Find …）時，Research 不顯示此卡。
 - Market／Technology／Blueprints 是 M／T／B drawers；Guide 從 Menu 開啟；X 或 Escape 關閉。沒有 Formulas。
 - 已造訪建築 mounted 保存 camera/tool/history；hidden page 不接 gameplay keys/pointers。切換建築或一般 drawer 不停止 Production。
 - blocking alertdialog 開啟時 timer callback 與 productionTicks dispatch 都凍結；Cancel 保留先前 Play／Pause，確認 New／Load／Rewind／Reset／擴廠後停止舊 timer。Blueprint Delete 不換 Production authority，關閉後恢復原播放狀態。
@@ -49,13 +49,13 @@ F1 一次顯示一個 base 的大型 Atlas：
 
 - 多 base 關卡在地圖右下有 base 選擇器（`research-base`，每個 base 一個 `aria-pressed` 按鈕：Saline／Oil／Ethanol）。鎖住的 base 帶鎖頭、`aria-disabled`，點擊／hover／focus 只在選擇器旁顯示「Oil off · turn it on in Technology」，不切換。切換只改顯示的圖、fog 與最近試驗（試驗在該 base 時才顯示），規劃路線保留，Run 在選中的 base 付費；Load 顯示最近試驗的 base，New Game 回到 Saline。單 base 關卡不顯示選擇器。
 
-- Research拖曳任一滑鼠鍵都可pan，與Factory的Shift+LMB／MMB手勢分開；pointer cancel只取消gesture，不得commit或erase。camera開局聚焦世界中心的generator start；fresh fog只揭露中心radius-two 19-cell hex disk，平常只看見大地圖的一小部分。Center（`F`）在有規劃時聚焦規劃終點，否則聚焦最近試驗的實際終點；地圖左下只有這個控制，不顯示揭露格數、zoom或Cure計數。每次Run在單一intent中resolve，UI不顯示timed Dose phase或自動camera follow；唯一例外是剛resolve出Cure的試驗會以≤220 ms（reduced motion即時、任何pointer／wheel／focus可中斷）把camera fit到整條實際路線，避開結果readout與step清單；建築往返不因舊outcome重設手動camera。
-- mission readout是釘選目標卡左側的羅盤：以紫色扇區標出目標方向、箭頭標出規劃終點的heading；疾病與 Look sector 在目標文字中，heading 只在 accessible name（`Target …, heading …`）；sector只可為local或east／south-east／south-west／west／north-west／north-east，不顯示座標、距離、reference或region大小。
-- 霧是未印的紙：只有與seed／座標有關、與隱藏地形無關的淡等高線；Wall在霧下仍可讀，格線只畫在已揭露格。
+- Research拖曳任一滑鼠鍵都可pan，與Factory的Shift+LMB／MMB手勢分開；pointer cancel只取消gesture，不得commit或erase。camera開局聚焦世界中心的generator start；fresh fog只揭露中心radius-two 19-cell hex disk，平常只看見大地圖的一小部分。地圖左下是方向盤：上下左右各平移三分之一可見地圖（純滑鼠可操作），中央點（`F`）在有規劃時聚焦規劃終點，否則聚焦最近試驗的實際終點；窄螢幕（觸控拖曳）只留中央點。點左上 step 清單的一項把該 step 的終點置中。不顯示揭露格數、zoom或Cure計數。每次Run在單一intent中resolve，UI不顯示timed Dose phase或自動camera follow；唯一例外是剛resolve出Cure的試驗會以≤220 ms（reduced motion即時、任何pointer／wheel／focus可中斷）把camera fit到整條實際路線，避開結果readout與step清單；建築往返不因舊outcome重設手動camera。
+- Research 沒有羅盤：heading 由地圖上的終點尖頭表示；疾病與 Look sector 只在其他場域的目標文字中，sector只可為local或east／south-east／south-west／west／north-west／north-east，不顯示座標、距離、reference或region大小。
+- 霧是未印的紙：只有與seed／座標有關、與隱藏地形無關的淡等高線；Wall在霧下仍可讀，已揭露格與霧下都畫同樣淡的格線（霧下只有 minor）。
 - Abyss、Swamp、Portal A+B、Cure與SideEffect未揭露前不能有 motif、sprite、region edge、preview差異或 outcome洩漏。只揭露單一 Portal 端點時可顯示未配對端點，但配對標記、方向、目的座標與 preview jump 必須等兩端都揭露。
 - palette是map legend：每個machine以footprint＋完整path的token、全名、價格與hotkey辨識；沒有 path-length control。
-- 起點是紫色空心三角；**規劃路線**是虛線紫色leg與編號控制點圓，在 fog-masked planning map 上走完整條（霧當平地、Wall 照算）；**最近一次試驗的實際路線**是實線紫色leg，由 `lastTrial.program` 在真實地圖重播；實際終點是紫色實心點（Failure 為紅色X）。Run 後、改動規劃前，虛線改為該次 Run 當下的預估並淡化；第一個偏離點畫紅圈與原因標籤（Wall／Swamp／Abyss）。Swamp 半步畫在半格點。新試驗的實線以≤250 ms墨線描出（reduced motion時立即完成）。
-- hotbar／數字鍵把 machine 接到規劃末端；hotbar 圖示依規劃終點的 heading 旋轉。Backspace、Ctrl／⌘+Z、右鍵，或 LMB 單擊最後一個控制點（hover 時游標轉 pointer、tooltip `Remove last step`；其餘地圖 `Drag map`）或 `Undo` 移除最後一步；`Clear` 清空。blank map click 不改規劃。
+- 起點是紫色空心三角；**規劃路線**是虛線紫色leg、每台機器終點的小實心節點與每段 leg 中央的兩筆 chevron（不編號），在 fog-masked planning map 上走完整條（霧當平地、Wall 照算）；**最近一次試驗的實際路線**是實線紫色leg，由 `lastTrial.program` 在真實地圖重播；規劃終點與實際終點都是指向 heading 的紫色實心尖頭（Failure 為紅色X）。Run 後、改動規劃前，虛線改為該次 Run 當下的預估並淡化；第一個偏離點畫紅圈與原因標籤（Wall／Swamp／Abyss）。Swamp 半步畫在半格點。新試驗的實線以≤250 ms墨線描出（reduced motion時立即完成）。
+- hotbar／數字鍵把 machine 接到規劃末端；hotbar 圖示（path 與 footprint）依規劃終點的 heading 旋轉。Backspace、Ctrl／⌘+Z、右鍵，或 LMB 單擊最後一個控制點（hover 時游標轉 pointer、tooltip `Remove last step`；其餘地圖 `Drag map`）或 `Undo` 移除最後一步；`Clear` 清空。blank map click 不改規劃。
 - 指令列只有剩餘現金讀數（`$M left`＝現金−N）、`Undo`、`Clear` 與 `Run · $N`（Enter）；N 是規劃的 catalog 總價。規劃為空或現金不足時 Run disabled、隱藏讀數並以短句說明。Run 以單一 `runResearchTrial` 一次付款、跑完整條、揭露實際路徑並保留規劃。
 - planning／hover不改 fog；只有試驗實際走過的格被揭露。Portal jump trail斷開。
 - Cure使用綠色十字與區域邊界，SideEffect是琥珀色點網；兩者可在同一cell疊加，不能互相遮掉或用互斥terrain kind呈現。Failure以紅色X標記。

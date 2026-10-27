@@ -64,4 +64,11 @@ describe("MachineIcon", () => {
     expect(labelled).toContain('aria-label="Hook pump path"');
     expect(labelled).toContain("<title>Hook pump path</title>");
   });
+
+  it("turns the token footprint with its rotation", () => {
+    const footprint = (rotation: 0 | 1) => renderToStaticMarkup(
+      <MachineIcon typeId="elbow" path={[0]} variant="token" rotation={rotation} />,
+    ).match(/data-icon-shape="footprint".*<\/g>/)![0];
+    expect(footprint(1)).not.toBe(footprint(0));
+  });
 });

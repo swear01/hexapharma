@@ -43,7 +43,7 @@ import { blockingDialogOpen } from "./blockingDialog";
 import { hexToPixel } from "../render/hexProjection";
 import type { ResearchDeviation } from "../render/labRenderer";
 import { machineName } from "./machineLabels";
-import { ResearchWorkspace, TargetCompass, researchMachineCost } from "./ResearchWorkspace";
+import { ResearchWorkspace, researchMachineCost } from "./ResearchWorkspace";
 import { researchDrugPoint, researchKnownCureLocations } from "./App";
 import { FieldGuide } from "./FieldGuide";
 import { currentObjective, type ObjectiveTarget } from "./objective";
@@ -118,8 +118,10 @@ export interface ResearchRoute {
   readonly trails: readonly (readonly (Vec2 | null)[])[];
   /** Drug after the last executed step. */
   readonly drug: DrugState;
-  /** Map-0 point after each executed step: the numbered controls of the course. */
+  /** Map-0 point after each executed step: the controls of the course. */
   readonly controls: readonly Vec2[];
+  /** Map-0 trail index where each executed step ends. */
+  readonly legEnds: readonly number[];
 }
 
 /** Run `program` (up to `limit` steps) on `mm` and collect the drawn route. */
@@ -134,6 +136,7 @@ export function researchRoute(
     return point === undefined ? [] : [point];
   });
   const controls: Vec2[] = [];
+  const legEnds: number[] = [];
   let drug = start;
   for (let step = 0; step < Math.min(limit, program.steps.length); step++) {
     const machine = program.steps[step];
@@ -159,8 +162,9 @@ export function researchRoute(
     drug = preview.next;
     const control = researchDrugPoint(drug, 0);
     if (control !== undefined) controls.push(control);
+    legEnds.push((trails[0]?.length ?? 0) - 1);
   }
-  return { trails, drug, controls };
+  return { trails, drug, controls, legEnds };
 }
 
 /** The planned route traversed on the known (fog-masked) map. */
@@ -649,6 +653,7 @@ export function Game() {
     readonly plan: readonly Machine[];
     readonly base: number;
     readonly trails: readonly (readonly (Vec2 | null)[])[];
+    readonly legEnds: readonly number[];
     readonly deviation: ResearchDeviation | null;
   } | null>(null);
   const shownEstimate = runEstimate !== null && runEstimate.plan === researchPlan && runEstimate.base === researchBase ? runEstimate : null;
@@ -659,10 +664,12 @@ export function Game() {
       return;
     }
     const known = researchPlanningMap(researchLevel.mm, [gameRef.current.fog[researchBase]!]);
+    const estimateRoute = researchRoute(known, researchLevel.start, researchProgram);
     const estimate = {
       plan: researchPlan,
       base: researchBase,
-      trails: researchRoute(known, researchLevel.start, researchProgram).trails,
+      trails: estimateRoute.trails,
+      legEnds: estimateRoute.legEnds,
       deviation: researchDeviation(researchLevel.mm, known, researchLevel.start, researchProgram),
     };
     if (dispatch({ kind: "runResearchTrial", program: researchProgram, base: researchBase })) {
@@ -935,8 +942,8 @@ export function Game() {
       </header>
 
       <main className="game-stage" data-testid="game-stage">
-        <section className={`goal-card${building === "research" ? " has-compass" : ""}`} data-testid="objective" aria-label="Objective">
-          {building === "research" && <TargetCompass sector={researchMissionSector} heading={planningPreview.drug.heading} />}
+        {/* In Research the map itself is the search; the card returns once the objective points elsewhere. */}
+        {!(building === "research" && objective.target === "research") && <section className="goal-card" data-testid="objective" aria-label="Objective">
           <p className="goal-step" aria-live="polite">
             <span className="objective-text" data-testid="objective-text">{objective.text}</span>
             <span className="goal-contract" data-testid="shipping-contract" aria-label={`Disease ${activeContract.disease + 1} contract ${activeContract.sold} of ${activeContract.quota}`}>
@@ -946,7 +953,7 @@ export function Game() {
           {!objectiveIsHere(objective.target, building, drawer) && (
             <button type="button" className="objective-action" data-testid="objective-action" onClick={() => followObjective(objective.target)}>{objective.actionLabel}</button>
           )}
-        </section>
+        </section>}
         <section className="view-layer" hidden={building !== "research"}>
           {visited.research && (
             <ResearchWorkspace
@@ -964,7 +971,9 @@ export function Game() {
               blockReason={researchBlockReason}
               drug={actualRoute.drug}
               trails={actualRoute.trails}
+              legEnds={actualRoute.legEnds}
               previewTrails={shownEstimate?.trails ?? planningPreview.trails}
+              previewLegEnds={shownEstimate?.legEnds ?? planningPreview.legEnds}
               previewDrug={planningPreview.drug}
               estimate={shownEstimate !== null}
               deviation={shownEstimate?.deviation ?? null}

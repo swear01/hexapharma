@@ -51,10 +51,13 @@ test("the complete HUD stays reachable across narrow widths", async ({ page }) =
   for (const width of [390, 430, 560, 651]) {
     await page.setViewportSize({ width, height: 844 });
     await page.goto("/?cash=999712");
+    // Research hides the search objective; the pinned goal shows in the other facilities.
+    await page.getByTestId("view-pilot").click();
     await expect(page.getByTestId("shipping-contract")).toBeVisible();
     const goal = await page.getByTestId("objective").boundingBox();
     expect(goal, `the pinned goal should fit at ${width}px`).not.toBeNull();
     expect((goal?.x ?? width) + (goal?.width ?? 1)).toBeLessThanOrEqual(width);
+    await page.getByTestId("view-research").click();
     expect((await page.getByTestId("top-hud").boundingBox())?.height ?? 0).toBeLessThanOrEqual(92);
 
     for (const element of await page.locator(".top-hud .resource-chip, .top-hud button").all()) {

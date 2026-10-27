@@ -105,8 +105,8 @@ test("Research is one large centered Atlas with no Route Floor or layer-transfer
   page,
 }) => {
   await page.goto("/");
-  await expect(page.getByTestId("objective-text")).toHaveText("Find Disease 1 on Saline · look west");
-  await expect(page.getByTestId("research-mission")).toHaveAttribute("data-sector", "west");
+  // The search objective is not repeated over the map it is about.
+  await expect(page.getByTestId("objective")).toHaveCount(0);
   const frame = page.getByTestId("lab-map-frame");
   await expect(frame).toBeVisible();
   const level = generate(defaultGenOptions(14));
@@ -339,6 +339,21 @@ test("Next focus follows the end of the growing planned route", async ({ page })
   }
 });
 
+test("a planned step centers its endpoint and the pad moves the map", async ({ page }) => {
+  await page.goto("/");
+  const frame = page.getByTestId("lab-map-frame");
+  await expect(frame.locator("canvas")).toBeVisible({ timeout: 15_000 });
+  await planSteps(page, "wave", 2);
+  await page.getByTestId("research-program-strip").getByRole("button").first().click();
+  const first = focusLabCamera(plannedEndpoint("wave", 1));
+  await expect(frame).toHaveAttribute("data-camera-x", String(first.x));
+  await expect(frame).toHaveAttribute("data-camera-y", String(first.y));
+  await page.getByTestId("lab-pan-right").click();
+  await expect.poll(async () => Number(await frame.getAttribute("data-camera-x"))).toBeGreaterThan(first.x);
+  await page.getByTestId("lab-pan-up").click();
+  await expect.poll(async () => Number(await frame.getAttribute("data-camera-y"))).toBeLessThan(first.y);
+});
+
 test("a resolved outcome keeps its feedback while focus stays on the planned endpoint", async ({ page }) => {
   await page.goto("/?cash=200");
   await expect(page.getByTestId("lab-map-frame").locator("canvas")).toBeVisible({ timeout: 15_000 });
@@ -362,7 +377,7 @@ test("a curing trial reports the Cure without a formula card and the objective p
   expect(game.research.lastTrial?.outcome.cured).toContain(0);
 
   await page.goto("/");
-  await expect(page.getByTestId("objective-text")).toHaveText(/^Find Disease 1 on Saline · look /);
+  await expect(page.getByTestId("objective")).toHaveCount(0);
   await installSaveFixture(page, serializeGame(game));
   await page.reload();
   await confirmLoad(page);
@@ -437,7 +452,8 @@ test("compact Research keeps every command and path control reachable", async ({
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
   await expect(page.getByTestId("lab-map-frame").locator("canvas")).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByTestId("lab-focus").locator(".lab-focus-label")).toBeVisible();
+  await expect(page.getByTestId("lab-focus")).toBeVisible();
+  await expect(page.getByTestId("lab-pan-up")).toBeHidden();
   const stage = await page.getByTestId("game-stage").boundingBox();
   const nav = await page.getByTestId("nav-rail").boundingBox();
   if (stage === null || nav === null) throw new Error("compact Research chrome has no bounds");

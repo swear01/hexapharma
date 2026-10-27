@@ -41,18 +41,19 @@ export interface LabRenderView {
   readonly camera: LabCamera;
   /** Actual trail of the last trial (solid); points may sit half-way inside swamp. */
   readonly trail: readonly (Vec2 | null)[];
+  /** Trail index where each machine of the trial ends. */
+  readonly legEnds?: readonly number[];
   /** Planned route on the known map (dashed). */
   readonly previewTrail?: readonly (Vec2 | null)[];
+  readonly previewLegEnds?: readonly number[];
   readonly previewDrug?: DrugState;
   /** The preview is the estimate the last Run was planned on: drawn faint. */
   readonly estimate?: boolean;
   readonly deviation?: ResearchDeviation;
   /** The Production Plan line's route on the known map: a wide faint overprint band. */
   readonly lineTrail?: readonly (Vec2 | null)[];
-  /** Endpoint of each planned step, in order (numbered control circles). */
+  /** Endpoint of each planned step, in order (control dots). */
   readonly controls?: readonly Vec2[];
-  /** The last control is a Cure: draw it as the orienteering finish. */
-  readonly finish?: boolean;
 }
 
 
@@ -75,7 +76,7 @@ function cellSeed(q: number, r: number): number {
 
 function drawGridKind(
   grid: Graphics,
-  kind: LabGridLineKind,
+  kind: LabGridLineKind | "fog",
   map: EffectMap,
   camera: LabCamera,
   bounds: ReturnType<typeof visibleLabCells>,
@@ -83,20 +84,21 @@ function drawGridKind(
   let drewCell = false;
   for (let r = bounds.r0; r < bounds.r1; r++) {
     for (let q = bounds.q0; q < bounds.q1; q++) {
-      if (!isRevealed(map, q, r)) continue;
+      if (kind === "fog" ? isRevealed(map, q, r) || !atlasContains(map, q, r) : !isRevealed(map, q, r)) continue;
       const isMajor = labGridKindForBoundary(q, map.origin.q) === "major"
         || labGridKindForBoundary(r, map.origin.r) === "major";
-      if ((kind === "major") !== isMajor) continue;
+      if (kind !== "fog" && (kind === "major") !== isMajor) continue;
       grid.poly([...labCellPolygon(camera, { q, r })], true);
       drewCell = true;
     }
   }
-  if (drewCell) grid.stroke(labGridLineStyle(kind, camera.zoom));
+  if (drewCell) grid.stroke(labGridLineStyle(kind === "fog" ? "minor" : kind, camera.zoom));
 }
 
-/** A light grid only where the map is printed, so picking stays legible without gridding the fog. */
+/** A light grid where the map is printed and the same faint minor grid over the fog, so a route can be read cell by cell. */
 function drawRevealedGrid(map: EffectMap, camera: LabCamera, grid: Graphics): void {
   const bounds = visibleLabCells(camera, LAB_VIEWPORT, map);
+  drawGridKind(grid, "fog", map, camera, bounds);
   drawGridKind(grid, "minor", map, camera, bounds);
   drawGridKind(grid, "major", map, camera, bounds);
 }
@@ -450,6 +452,47 @@ function drawCross(target: Graphics, center: PixelPoint, size: number, width: nu
     .stroke({ color: LAB_SCHEMATIC_STYLE.failure, width, cap: "round" });
 }
 
+/** A two-stroke chevron on the middle segment of each machine's leg, pointing along travel. */
+function drawLegChevrons(
+  target: Graphics,
+  trail: readonly (Vec2 | null)[],
+  legEnds: readonly number[],
+  camera: LabCamera,
+  size: number,
+): void {
+  let legStart = 0;
+  for (const legEnd of legEnds) {
+    const index = legStart + Math.ceil((legEnd - legStart) / 2);
+    const fromPoint = trail[index - 1];
+    const toPoint = trail[index];
+    legStart = legEnd;
+    if (index <= 0 || fromPoint === null || fromPoint === undefined || toPoint === null || toPoint === undefined) continue;
+    const a = labCellCenter(camera, fromPoint);
+    const b = labCellCenter(camera, toPoint);
+    const length = Math.hypot(b.x - a.x, b.y - a.y);
+    if (length === 0) continue;
+    const ux = (b.x - a.x) / length;
+    const uy = (b.y - a.y) / length;
+    const tipX = (a.x + b.x) / 2 + ux * size / 2;
+    const tipY = (a.y + b.y) / 2 + uy * size / 2;
+    target.moveTo(tipX - ux * size - uy * size, tipY - uy * size + ux * size)
+      .lineTo(tipX, tipY)
+      .lineTo(tipX - ux * size + uy * size, tipY - uy * size - ux * size);
+  }
+}
+
+/** Filled dart at a drug's position, pointing along its heading (0 = east, clockwise sixths). */
+function drawHeadingDart(target: Graphics, center: PixelPoint, heading: number, size: number): void {
+  const angle = heading * Math.PI / 3;
+  const point = (theta: number, radius: number) => [center.x + Math.cos(angle + theta) * radius, center.y + Math.sin(angle + theta) * radius];
+  target.poly([
+    ...point(0, size * 1.3),
+    ...point(Math.PI * 0.8, size),
+    ...point(Math.PI, size * 0.35),
+    ...point(-Math.PI * 0.8, size),
+  ], true).fill({ color: LAB_SCHEMATIC_STYLE.course });
+}
+
 const LABEL_STYLE = {
   fontFamily: "\"Barlow Condensed\", \"Arial Narrow\", sans-serif",
   fontWeight: "600",
@@ -517,12 +560,13 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
       const crossWidth = Math.max(2.5, cell * 0.08);
       const controls = view.controls ?? [];
       const start = view.trail[0] ?? null;
-      const nodes = new Set<number>(controls.map(coordKey));
+      const nodes = new Set<number>();
       if (start !== null) nodes.add(coordKey(start));
       const animating = legFrom >= 0 && legProgress < 1;
 
       const head = drawLegs(course, view.trail, nodes, camera, radius, animating ? legFrom : -1, legProgress);
-      course.stroke({ color: LAB_SCHEMATIC_STYLE.course, width: lineWidth, cap: "round" });
+      if (!animating) drawLegChevrons(course, view.trail, view.legEnds ?? [], camera, radius * 0.45);
+      course.stroke({ color: LAB_SCHEMATIC_STYLE.course, width: lineWidth, cap: "round", join: "round" });
 
       if (start !== null) {
         const center = labCellCenter(camera, start);
@@ -539,27 +583,19 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
       }
 
       const fontSize = Math.round(Math.max(12, 16 * camera.zoom));
-      for (let index = 0; index < controls.length; index++) {
-        const center = labCellCenter(camera, controls[index]!);
-        marks.circle(center.x, center.y, radius);
-        if (view.finish === true && index === controls.length - 1) marks.circle(center.x, center.y, radius * 0.66);
-        const text = label(labelCount++);
-        const value = String(index + 1);
-        if (text.text !== value) text.text = value;
-        if (text.style.fontSize !== fontSize) text.style.fontSize = fontSize;
-        if (text.style.fill !== LAB_SCHEMATIC_STYLE.course) text.style.fill = LAB_SCHEMATIC_STYLE.course;
-        text.visible = true;
-        text.position.set(center.x + radius * 0.8, center.y - radius * 0.95 - fontSize);
+      for (const control of controls) {
+        const center = labCellCenter(camera, control);
+        marks.circle(center.x, center.y, cell * 0.09);
       }
-      marks.stroke({ color: LAB_SCHEMATIC_STYLE.course, width: lineWidth });
+      if (controls.length > 0) marks.fill({ color: LAB_SCHEMATIC_STYLE.course });
 
       const position = drugDrawPoint(drug, view.activeMap);
       if (head !== null) {
         marks.circle(head.x, head.y, cell * 0.11).fill({ color: LAB_SCHEMATIC_STYLE.course });
-      } else if (position !== undefined) {
+      } else if (position !== undefined && view.trail.length > 1) {
         const center = labCellCenter(camera, position);
         if (drug.failed) drawCross(marks, center, radius * 0.75, crossWidth);
-        else if (view.finish !== true) marks.circle(center.x, center.y, cell * 0.11).fill({ color: LAB_SCHEMATIC_STYLE.course });
+        else drawHeadingDart(marks, center, drug.heading, radius);
       }
 
       if (view.lineTrail !== undefined && view.lineTrail.length > 1) {
@@ -576,6 +612,8 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
       const previewPos = view.previewDrug === undefined ? undefined : drugDrawPoint(view.previewDrug, view.activeMap);
       if (!animating && view.previewTrail !== undefined) {
         drawDashedTrail(marks, view.previewTrail, nodes, camera, radius, view.estimate === true ? 0.4 : 1);
+        drawLegChevrons(marks, view.previewTrail, view.previewLegEnds ?? [], camera, radius * 0.45);
+        marks.stroke({ color: LAB_SCHEMATIC_STYLE.candidate, width: lineWidth, cap: "round", join: "round", alpha: view.estimate === true ? 0.4 : 1 });
       }
       if (!animating && view.deviation !== undefined) {
         const center = labCellCenter(camera, view.deviation.pos);
@@ -590,23 +628,8 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
       }
       if (!animating && previewPos !== undefined) {
         const center = labCellCenter(camera, previewPos);
-        if (view.previewDrug?.failed === true) drawCross(marks, center, radius * 0.75, crossWidth);
-        else {
-          marks.circle(center.x, center.y, radius)
-            .stroke({ color: LAB_SCHEMATIC_STYLE.candidate, width: Math.max(2, cell * 0.05) });
-          // The next machine's forward direction (heading 0 = east, clockwise sixths).
-          const angle = view.previewDrug!.heading * Math.PI / 3;
-          const across = angle + Math.PI / 2;
-          const tipX = center.x + Math.cos(angle) * radius * 2;
-          const tipY = center.y + Math.sin(angle) * radius * 2;
-          const baseX = center.x + Math.cos(angle) * radius * 1.3;
-          const baseY = center.y + Math.sin(angle) * radius * 1.3;
-          marks.moveTo(tipX, tipY)
-            .lineTo(baseX + Math.cos(across) * radius * 0.5, baseY + Math.sin(across) * radius * 0.5)
-            .lineTo(baseX - Math.cos(across) * radius * 0.5, baseY - Math.sin(across) * radius * 0.5)
-            .closePath()
-            .fill({ color: LAB_SCHEMATIC_STYLE.candidate });
-        }
+        if (view.previewDrug!.failed) drawCross(marks, center, radius * 0.75, crossWidth);
+        else drawHeadingDart(marks, center, view.previewDrug!.heading, radius);
       }
     }
     for (let index = labelCount; index < labelPool.length; index++) labelPool[index]!.visible = false;
@@ -633,7 +656,7 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
     app.render();
   });
   densityObserver.observe(app.canvas);
-  // Control numbers use the display face; rebuild them once it has loaded.
+  // Labels use the display face; rebuild them once it has loaded.
   document.fonts.load("600 16px \"Barlow Condensed\"").then(() => {
     if (destroyed) return;
     for (const text of labelPool) text.destroy();

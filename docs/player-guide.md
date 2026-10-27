@@ -46,8 +46,8 @@ Blueprint Library 與 save slot 分離；New Game、Load、Rewind、換 slot 都
 ### 看地圖
 
 - Atlas 遠大於 viewport；開局 camera 聚焦世界中心的 generator start，只有以起點為中心、hex distance radius 2 的19-cell disk已揭露，畫面只顯示整張圖的一小部分。地圖是pointy-top hex，六個相鄰方向為E／SE／SW／W／NW／NE。
-- 地圖左上角的羅盤以紫色扇區顯示目前疾病與Look的寬廣sector：local，或east／south-east／south-west／west／north-west／north-east；箭頭與Heading是規劃終點的藥物朝向。它不是精確座標、距離或reference route。
-- 拖曳任一滑鼠鍵可平移；滾輪以游標位置縮放。`F`或Center會聚焦規劃路線的終點（沒有規劃時聚焦最近試驗的實際終點），方便接續離屏路線。每次 Run 立即resolve，沒有等待動畫結束的Dose階段或自動camera跟隨（唯一例外：剛找到Cure的試驗會把鏡頭拉到能看見整條實際路線，可隨時拖曳中斷）；切到其他建築再回來不會重設手動camera。
+- 路線終點的紫色尖頭指向藥物目前的朝向，也就是下一台機器「往前」的方向；路線上的小箭頭標出每台機器的前進方向。目前疾病的大概方位（Look local，或east／south-east／south-west／west／north-west／north-east）寫在其他場域的目標卡上，不是精確座標、距離或reference route。
+- 拖曳任一滑鼠鍵可平移；滾輪以游標位置縮放。左下方向盤的上下左右會平移地圖，中間的點（或`F`）會聚焦規劃路線的終點（沒有規劃時聚焦最近試驗的實際終點）；點左上清單的一台機器會把它的終點置中。每次 Run 立即resolve，沒有等待動畫結束的Dose階段或自動camera跟隨（唯一例外：剛找到Cure的試驗會把鏡頭拉到能看見整條實際路線，可隨時拖曳中斷）；切到其他建築再回來不會重設手動camera。
 - Atlas 是一張六角形大地圖，外緣一圈山。中央起點被一圈厚山（內環）圍住，只能經由 2–3 條彎曲隘口出去；隘口兩端較寬、中段是一格寬的窄道。外圈還有山弧、環形盆地（各只有一條 S 形入口）與湖。
 - 霧是還沒印出的紙。霧下唯一看得到的是**等高線**：哪裡有起伏就有一圈圈線，但山和水畫得一模一樣，線也包含一些假的小起伏——它只告訴你「那裡有東西」。
 - 地形揭露後才印出來：
