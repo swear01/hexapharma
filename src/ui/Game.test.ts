@@ -380,9 +380,9 @@ describe("researchDeviation", () => {
   };
 
   it("marks the hidden terrain where the Run first left its estimate", () => {
-    expect(deviation(CellKind.Wall)).toEqual({ pos: { q: 5, r: 3 }, reason: "Wall" });
-    expect(deviation(CellKind.Abyss)).toEqual({ pos: { q: 5, r: 3 }, reason: "Abyss" });
-    expect(deviation(CellKind.Swamp)).toEqual({ pos: { q: 4, r: 3 }, reason: "Swamp" });
+    expect(deviation(CellKind.Wall)).toEqual({ step: 0, pos: { q: 5, r: 3 }, reason: "Wall" });
+    expect(deviation(CellKind.Abyss)).toEqual({ step: 0, pos: { q: 5, r: 3 }, reason: "Abyss" });
+    expect(deviation(CellKind.Swamp)).toEqual({ step: 0, pos: { q: 4, r: 3 }, reason: "Swamp" });
   });
 
   it("reports nothing when known terrain already shaped the estimate", () => {

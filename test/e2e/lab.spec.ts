@@ -9,7 +9,14 @@ import { generate } from "../../src/sim/mapgen";
 import { serializeGame } from "../../src/sim/save";
 import { DEFAULT_CATALOG } from "../../src/sim/phase0_interfaces";
 import { researchDrugPoint } from "../../src/ui/App";
-import { defaultGenOptions, researchBaseLevel, researchPlanningPreview, type ResearchRoute } from "../../src/ui/Game";
+import {
+  defaultGenOptions,
+  researchBaseLevel,
+  researchDeviation,
+  researchPlanningMap,
+  researchPlanningPreview,
+  type ResearchRoute,
+} from "../../src/ui/Game";
 
 test.setTimeout(60_000);
 
@@ -247,6 +254,30 @@ test("number keys append, Backspace and Ctrl+Z remove, Clear empties, and Enter 
   await expect(page.getByTestId("research-program-strip").getByRole("listitem")).toHaveCount(0);
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("cash")).toHaveText(String(200 - available[1]!.cost));
+});
+
+test("the first edit after a Run that hit hidden terrain drops the steps from the deviation on", async ({ page }) => {
+  const options = defaultGenOptions(14);
+  const level = researchBaseLevel(generate(options), 0);
+  const wave = DEFAULT_CATALOG.find((entry) => entry.typeId === "wave")!;
+  const steps = 3;
+  const deviation = researchDeviation(
+    level.mm,
+    researchPlanningMap(level.mm, [createGameState(options, 200).fog[0]!]),
+    level.start,
+    { steps: Array.from({ length: steps }, () => wave) },
+  );
+  if (deviation === null || deviation.step >= steps - 1) throw new Error("seed 14 wave route no longer hits hidden terrain early");
+  const planned = page.getByTestId("research-program-strip").getByRole("listitem");
+  for (const [edit, kept] of [["research-machine-wave", deviation.step + 1], ["research-undo", deviation.step]] as const) {
+    await page.goto("/?seed=14&cash=200");
+    await planSteps(page, "wave", steps);
+    await page.getByTestId("research-command").click();
+    await expect(page.getByTestId("lab-map-frame")).not.toHaveAttribute("data-trail", "1");
+    await expect(planned).toHaveCount(steps);
+    await page.getByTestId(edit).click();
+    await expect(planned).toHaveCount(kept);
+  }
 });
 
 test("hotbar glyphs rotate to the heading at the end of the planned route", async ({ page }) => {
