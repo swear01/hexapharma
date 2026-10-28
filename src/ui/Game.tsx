@@ -231,6 +231,11 @@ export function researchDeviation(
   return null;
 }
 
+/** Steps a deviated plan keeps: the blind tail goes; the deviating step stays unless Abyss ended the drug there. */
+export function researchKeptSteps(deviation: ResearchPlanDeviation): number {
+  return deviation.step + (deviation.reason === "Abyss" ? 0 : 1);
+}
+
 export type ResearchKeyAction = "run" | "undo";
 
 export function researchKeyboardAction(key: string, modifier = false): ResearchKeyAction | null {
@@ -654,10 +659,10 @@ export function Game() {
     readonly deviation: ResearchPlanDeviation | null;
   } | null>(null);
   const shownEstimate = runEstimate !== null && runEstimate.plan === researchPlan && runEstimate.base === researchBase ? runEstimate : null;
-  /** The first edit after a Run that left its estimate drops the steps after the deviation (and the deviating step itself on Abyss, which ends the drug): they were planned blind. */
+  /** The first edit after a Run that left its estimate trims the plan to `researchKeptSteps`. */
   const editablePlan = useCallback((plan: readonly Machine[]) => (
     shownEstimate?.plan === plan && shownEstimate.deviation !== null
-      ? plan.slice(0, shownEstimate.deviation.step + (shownEstimate.deviation.reason === "Abyss" ? 0 : 1))
+      ? plan.slice(0, researchKeptSteps(shownEstimate.deviation))
       : plan
   ), [shownEstimate]);
   const appendResearchStep = useCallback((typeId: string) => {

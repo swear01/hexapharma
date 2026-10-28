@@ -6,6 +6,7 @@ import {
   playerFacingIntentError,
   researchAssaySector,
   researchDeviation,
+  researchKeptSteps,
   researchKeyboardAction,
   researchPlanningMap,
   researchPlanningPreview,
@@ -383,6 +384,13 @@ describe("researchDeviation", () => {
     expect(deviation(CellKind.Wall)).toEqual({ step: 0, pos: { q: 5, r: 3 }, reason: "Wall" });
     expect(deviation(CellKind.Abyss)).toEqual({ step: 0, pos: { q: 5, r: 3 }, reason: "Abyss" });
     expect(deviation(CellKind.Swamp)).toEqual({ step: 0, pos: { q: 4, r: 3 }, reason: "Swamp" });
+  });
+
+  it("keeps the Wall or Swamp step but drops the Abyss step", () => {
+    const pos = { q: 0, r: 0 };
+    expect(researchKeptSteps({ step: 1, pos, reason: "Wall" })).toBe(2);
+    expect(researchKeptSteps({ step: 1, pos, reason: "Swamp" })).toBe(2);
+    expect(researchKeptSteps({ step: 1, pos, reason: "Abyss" })).toBe(1);
   });
 
   it("reports nothing when known terrain already shaped the estimate", () => {
