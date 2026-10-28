@@ -57,21 +57,22 @@ test("reveal aid is a free switch that expands the next Research trial sensor", 
   await expect.poll(async () => revealedOf(await revealed.getAttribute("data-revealed"))).toBeGreaterThan(before);
 });
 
-test("a machine switch adds and removes the same path in Research and Production Plan", async ({ page }) => {
+test("a machine switch starts on and removes then restores the same path in Research and Production Plan", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByTestId("research-machine-crane")).toHaveCount(0);
+  await expect(page.getByTestId("research-machine-crane")).toBeVisible();
   await expect(page.locator("[data-testid^='lab-layer-']")).toHaveCount(0);
+  await page.getByTestId("view-technology").click();
+  await expect(page.getByTestId("patent-switch-crane-unlock")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("patent-switch-crane-unlock").click();
+  await expect(page.getByTestId("patent-switch-crane-unlock")).toHaveAttribute("aria-checked", "false");
+  await page.getByTestId("view-research").click();
+  await expect(page.getByTestId("research-machine-crane")).toHaveCount(0);
   await page.getByTestId("view-technology").click();
   await page.getByTestId("patent-switch-crane-unlock").click();
   await page.getByTestId("view-research").click();
   await expect(page.getByTestId("research-machine-crane")).toBeVisible();
   await page.getByTestId("view-pilot").click();
   await expect(page.getByTestId("brush-machine-crane")).not.toHaveAttribute("aria-disabled", "true");
-  await page.getByTestId("view-technology").click();
-  await page.getByTestId("patent-switch-crane-unlock").click();
-  await expect(page.getByTestId("patent-switch-crane-unlock")).toHaveAttribute("aria-checked", "false");
-  await page.getByTestId("view-research").click();
-  await expect(page.getByTestId("research-machine-crane")).toHaveCount(0);
 });
 
 test("factory expansion confirms before resetting built Production", async ({ page }) => {
@@ -103,7 +104,7 @@ test("Technology lists every node as a free switch with only its effect", async 
   await page.goto("/?cash=0");
   await page.getByTestId("view-technology").click();
 
-  await expect(page.getByTestId("patents-effects")).toHaveCount(0);
+  await expect(page.getByTestId("patents-effects")).toHaveText("Splitter and Merger on4 machines on");
   await expect(page.getByTestId("patents-table")).not.toContainText(/\$|knowledge|requires|contract|\blocked\b/i);
   await expect(page.getByTestId("patent-switch-loop-unlock")).toBeEnabled();
   await expect(page.getByTestId("patent-row-bench-2")).toContainText("Add 2 factory columns");

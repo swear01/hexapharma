@@ -25,11 +25,11 @@
 
 ## 3. Shell / navigation
 
-- 只有一條頂列（D44）：左邊 Research／Plan／Production 分頁；右邊 Cash、Stock（點開 Market）、Market／Technology／Blueprints（圖示＋名稱＋M／T／B，窄屏只留圖示）與 Menu。沒有第二條工具列。Menu 是 Menu 鈕下方的短控制表：seed、New game、slot、Save、Load、Rewind、Recover 與 Guide。New 仍有可見文字與可取消確認，save checkpoints 與跨局 Blueprint Library 保留。
-- Objective 是 stage 左上的釘選目標卡：一行下一步（Find Disease N · look … → Plan a line／Commission the Plan → Run Production → Ship → 下一種疾病）、`Contract n / 3` 與直接動作（已在目的地時隱藏）；目標是 Research（Find …）時，Research 不顯示此卡。
+- 只有一條頂列（D44、D50）：左邊 HexaPharma 標誌與 Research（羅盤）／Plan（藍圖格＋筆）／Production（工廠）圖示分頁，選中者底線標示；右邊 Cash、Market（貨箱圖示＋庫存件數，0 時淡色）、Technology、Blueprints 與 Menu，全部只有圖示，名稱與 F1–F3／M／T／B 在 tooltip 與 aria-label。沒有第二條工具列。Menu 是 Menu 鈕下方的短控制表：seed、New game、slot、Save、Load、Rewind、Recover 與 Guide。New 仍有可見文字與可取消確認，save checkpoints 與跨局 Blueprint Library 保留。
+- 開放世界（D50）：沒有目標卡、下一步提示或合約進度。
 - Market／Technology／Blueprints 是 M／T／B drawers；Guide 從 Menu 開啟；X 或 Escape 關閉。沒有 Formulas。
 - 已造訪建築 mounted 保存 camera/tool/history；hidden page 不接 gameplay keys/pointers。切換建築或一般 drawer 不停止 Production。
-- blocking alertdialog 開啟時 timer callback 與 productionTicks dispatch 都凍結；Cancel 保留先前 Play／Pause，確認 New／Load／Rewind／Reset／擴廠後停止舊 timer。Blueprint Delete 不換 Production authority，關閉後恢復原播放狀態。
+- blocking alertdialog 開啟時 timer callback 與 productionTicks dispatch 都凍結；Cancel 保留先前 Play／Pause，確認 New／Load／Rewind／擴廠後停止舊 timer。Blueprint Delete 不換 Production authority，關閉後恢復原播放狀態。
 - drawer 開啟時 world 不接 gameplay hotkeys；input/contenteditable 保留文字鍵，focused button 保留原生 Enter／Space。
 - message layer 不攔 pointer；error 有 `role=alert`，短狀態進 live region。
 
@@ -50,7 +50,7 @@ F1 一次顯示一個 base 的大型 Atlas：
 - 正常新局只有一個 base，不顯示選擇器（D48）。多 base 關卡（`nMaps > 1`）在地圖右下有 base 選擇器（`research-base`，每個 base 一個 `aria-pressed` 按鈕：Saline／Oil／Ethanol）。鎖住的 base 帶鎖頭、`aria-disabled`，點擊／hover／focus 只在選擇器旁顯示「Oil off · turn it on in Technology」，不切換。切換只改顯示的圖、fog 與最近試驗（試驗在該 base 時才顯示），規劃路線保留，Run 在選中的 base 付費；Load 顯示最近試驗的 base，New Game 回到 Saline。單 base 關卡不顯示選擇器。
 
 - Research拖曳任一滑鼠鍵都可pan，與Factory的Shift+LMB／MMB手勢分開；pointer cancel只取消gesture，不得commit或erase。camera開局聚焦世界中心的generator start；fresh fog只揭露中心radius-two 19-cell hex disk，平常只看見大地圖的一小部分。地圖左下直接印著四個實心三角與中央定位圈，沒有底板（墨色＋紙色暈邊，focus 只在鍵盤操作時畫圓環）：三角各平移三分之一可見地圖（純滑鼠可操作），定位圈（`F`）在有規劃時聚焦規劃終點，否則聚焦最近試驗的實際終點；窄螢幕（觸控拖曳）只留中央點。點左上 step 清單的一項把該 step 的終點置中。不顯示揭露格數、zoom或Cure計數。每次Run在單一intent中resolve，UI不顯示timed Dose phase或自動camera follow；唯一例外是剛resolve出Cure的試驗會以≤220 ms（reduced motion即時、任何pointer／wheel／focus可中斷）把camera fit到整條實際路線，避開結果readout與step清單；建築往返不因舊outcome重設手動camera。
-- Research 沒有羅盤：heading 由地圖上的終點尖頭表示；疾病與 Look sector 只在其他場域的目標文字中，sector只可為local或east／south-east／south-west／west／north-west／north-east，不顯示座標、距離、reference或region大小。
+- Research 沒有羅盤：heading 由地圖上的終點尖頭表示；不顯示疾病方位、座標、距離、reference或region大小。
 - 霧是未印的紙：只有與seed／座標有關、與隱藏地形無關的淡等高線；Wall在霧下仍可讀，已揭露格與霧下都畫同樣淡的格線（霧下只有 minor）。
 - Abyss、Swamp、Portal A+B、Cure與SideEffect未揭露前不能有 motif、sprite、region edge、preview差異或 outcome洩漏。只揭露單一 Portal 端點時可顯示未配對端點，但配對標記、方向、目的座標與 preview jump 必須等兩端都揭露。
 - palette是map legend：每個machine以footprint＋完整path的token、全名、價格與hotkey辨識；沒有 path-length control。
@@ -59,28 +59,27 @@ F1 一次顯示一個 base 的大型 Atlas：
 - 指令列只有剩餘現金讀數（`$M left`＝現金−N）、`Undo`、`Clear` 與 `Run · $N`（Enter）；N 是規劃的 catalog 總價。規劃為空或現金不足時 Run disabled、隱藏讀數並以短句說明。Run 以單一 `runResearchTrial` 一次付款、跑完整條、揭露實際路徑並保留規劃。
 - planning／hover不改 fog；只有試驗實際走過的格被揭露。Portal jump trail斷開。
 - Cure使用綠色十字與區域邊界，SideEffect是琥珀色點網；兩者可在同一cell疊加，不能互相遮掉或用互斥terrain kind呈現。Failure以紅色X標記。
-- 試驗結果在地圖右上（mobile為下方）以單行readout呈現（`Cure Disease N · …` 或 `Failed · …`，或碰到副作用時 `No cure · N side effects`）；什麼都沒碰到的試驗不顯示readout。左鍵單擊（不拖曳）已揭露的 Cure／★ Cure／Side effect／Mountain／Water／Black ground 格，在該格上方顯示它的作用（文字與 Guide legend 同源），下一次按下時消失；霧下、空地與 Portal 不顯示。地圖本身沒有 `Drag map` tooltip。不暴露 raw effect IDs、權威座標或工廠流程提示。沒有配方卡或 Formulas 面板；Objective 為 `Find Disease N on <Base> · look <sector>`，目前疾病任一 Cure 格揭露後改為 `Plan a line to Disease N on <Base>`；該 base 關閉時為 `Turn on <Base> in Technology to reach Disease N`（指向 Technology）。
+- 試驗結果在地圖右上（mobile為下方）以單行readout呈現（`Cure Disease N · …` 或 `Failed · …`，或碰到副作用時 `No cure · N side effects`）；什麼都沒碰到的試驗不顯示readout。左鍵單擊（不拖曳）已揭露的 Cure／★ Cure／Side effect／Mountain／Water／Black ground 格，在該格上方顯示它的作用（文字與 Guide legend 同源），下一次按下時消失；霧下、空地與 Portal 不顯示。地圖本身沒有 `Drag map` tooltip。不暴露 raw effect IDs、權威座標或工廠流程提示。沒有配方卡或 Formulas 面板。
 
 ## 6. Production Plan
 
 - 獨立 F2 page；完整 FactoryLayout editor，空地合法。
 - 沒有 clock、build cost、inventory 或 waste；layout edit與undo/redo都免費。
 - inspector 可顯示 throughput、bottleneck與analysis error；sample outcome 必須由 Research fog 遮罩後的 planning map 計算，不能顯示未揭露 cure／side effect／portal 或權威終點，也沒有通關判斷。
-- Splitter／Merger 在 `Split / Merge` 關閉時顯示鎖頭；點擊、hover 或按 `2`／`3` 只顯示「到 Technology 打開」提示，不切換 brush。
+- Splitter／Merger 新局即可用；`Split / Merge` 關閉時顯示鎖頭；點擊、hover 或按 `2`／`3` 只顯示「到 Technology 打開」提示，不切換 brush。
 - Plan 產線（第一個 Source → Sink，Splitter 走第一個接得上的 output）的路徑在 Research 地圖上以淡紫寬帶預估，fog 當平地，只在 Atlas 顯示該 Source 的 base 時畫；`lab-map-frame` 的 `data-plan-line` 是該路徑點數。
 - `Commission $N` 是可選快捷：以 Production 目前 layout為基準報價，成功後開啟 Production。
 - 關閉或從未使用 Production Plan，不影響玩家直接在 Production 建造。
 
 ## 7. Production
 
-- F3 新局即顯示空白 24×12 editor與Play/Pause/Step/Reset；沒有封鎖狀態。
+- F3 新局即顯示空白 24×12 editor與Play／Pause、1×／2×／10×、Step；沒有封鎖狀態，也沒有 Reset。
 - 每個 place／move／rotate／paste／undo／redo都提交 paid layout diff。ghost在操作前顯示cost；現金不足明示拒絕且world不改。
 - 非Erase tile gesture不得刪除或覆蓋既有machine；hover ghost與click／move authority一致。Touch Erase可刪machine。
 - Factory clipboard精確保存tile payload；Source period與base、Splitter outputs與Merger inputs不可在paste時重設。
 - 多 base 關卡選 Source 工具時，底部狀態列在 Direction 後顯示 base 選擇器（`source-base`），鎖住的 base 用與鎖住機器相同的提示列說明；已放置的 Source 上方印 base 名稱（`source-base-mark`），Cursor 讀數為 `source · <Base>`。
 - tile與machine移除不退款；只有接受的edit才停止播放並令runtime歸零，累積waste保留。no-op、invalid與insufficient-cash rejection不暫停也不改history。
-- 有runtime進度時Reset先以可取消確認列出「清runtime／保留inventory與waste」；initial runtime不需要可用Reset。
-- Details 按需顯示 tick、sink outcomes、waste、十進位 units/tick 與 bottleneck；空 inspector 預設關閉。建造工具、報價、Rotate、Undo／Redo 與 Play／Pause 在底部操作區；Play 左側的圖示是唯一的 run state（Blocked 才加字），沒有 Plan／Production 角標或 zoom 百分比。選取機器顯示名稱、input/output 數量、ticks/unit、processing cost、rotation；blocked 狀態仍直接顯示在 world。
+- Details 按需顯示 tick、sink outcomes、waste、十進位 units/tick 與 bottleneck；空 inspector 預設關閉。底部操作區：左邊是目前工具圖示＋方向箭頭（機器為 footprint 旋轉；Erase 無箭頭）與報價，Rotate／Undo／Redo；右邊 Play／Pause（同一顆，圖示即 run state，Blocked 才加字）、1×／2×／10× 速度（每 80 ms 前進 8／16／80 tick）、Step、Center、Details。全部是圖示鈕，名稱與熱鍵在 tooltip。沒有 Plan／Production 角標或 zoom 百分比。選取機器顯示名稱、input/output 數量、ticks/unit、processing cost、rotation；blocked 狀態仍直接顯示在 world。
 - machine hotbar tooltip同時顯示ticks/unit與每件processing cost；不要把一次性建造費和持續生產成本混成同一數字。
 - no-cure／failed產品進waste；side effects跟實體產品進市場計價，UI不先過濾成「合法配方」。
 - 正常new game顯示$1000；fresh Research後的有效first line必須可支付，insufficient-cash錯誤不能是正常bootstrap必經狀態。
@@ -109,11 +108,11 @@ F1 一次顯示一個 base 的大型 Atlas：
 
 ## 10. Other drawers / responsive acceptance
 
-- Market／Technology cards可用buttons，因它們是離散管理決策。Technology只摘要開啟中且非零的Factory columns／rows、Research scan、Split／Merge、開啟的 base 與machine數量；節點排成樹狀圖：六條分支（擴廠、探索輔助、Split／Merge、Zigzag→Straight、Loop→Crane；多 base 關卡另有 Oil base→Ethanol base，關卡沒有的 base 不列出）由左到右，連線表示下一階；每個節點只有名稱、效果與一個 On／Off 開關（`role="switch"`），不顯示成本、前置或合約。測試期連線只是排版，不擋開關。Market公開需求板每疾病標題標出所在 base（`Disease 2 · Oil`，單 base 關卡省略），顯示Base、Sold、Next gross、Clean stock與Tainted stock；最佳可售庫存另列production cost、`$25 × effect count`與net，但不表示Atlas Cure已揭露或提供位置。
+- Market／Technology cards可用buttons，因它們是離散管理決策。Technology只摘要開啟中且非零的Factory columns／rows、Research scan、Split／Merge、開啟的 base 與machine數量；節點排成樹狀圖：六條分支（擴廠、探索輔助、Split／Merge、Zigzag→Straight、Loop→Crane；多 base 關卡另有 Oil base→Ethanol base，關卡沒有的 base 不列出）由左到右，連線表示下一階；每個節點只有名稱、效果與一個 On／Off 開關（`role="switch"`），不顯示成本、前置或合約。測試期連線只是排版，不擋開關。Market每疾病一列：名稱（多 base 關卡加 `· Oil`）；有庫存時顯示 clean／tainted／★ 件數、下一件 net（tooltip 列 price − cost − side effects）與 Ship；沒有庫存時只顯示下一件價格。不顯示合約、Sold、價格階梯或說明句，也不表示Atlas Cure已揭露或提供位置。
 - 關閉仍被 Plan 或 Production 使用的節點時，sim 拒絕並顯示「Still in use · remove it from Plan and Production first.」。
-- `Ship best`依side-effect count、production cost、inventory ID掃描第一個positive-net產品；`Ship profitable`用同一順序略過non-positive候選，只出售逐件計入demand後仍positive-net的產品。沒有治療庫存或沒有可賺產品時，兩個action disabled並各自顯示原因；只有authority接受出售後才可顯示`Shipped`，rejected intent不得假報成功。
+- `Ship best`依side-effect count、production cost、inventory ID掃描第一個positive-net產品；`Ship profitable`用同一順序略過non-positive候選，只出售逐件計入demand後仍positive-net的產品。有庫存但沒有可賺產品時，兩個action disabled並顯示原因；只有authority接受出售後才可顯示`Shipped`，rejected intent不得假報成功。
 - 探索輔助只能放大actual executed segment的sensor radius；打開開關本身不能揭霧。
-- 擴廠開關若清Production runtime／waste，開或關前必須有可取消確認；不改 Research 的 lastTrial 或本地規劃。
+- 新局所有機器與 Split／Merge 開關預設開（D50）；擴廠、探索輔助與 base 開關預設關。擴廠開關若清Production runtime／waste，開或關前必須有可取消確認；不改 Research 的 lastTrial 或本地規劃。
 - Load若會覆蓋不同的current game、Rewind若會永久丟棄最新checkpoint，都必須先列出影響並可取消。
 - desktop 與 mobile 皆讓 world 佔主體；Details 預設關閉，桌面展開在 world 旁、窄屏在下方。工具與主要動作獨立排版，不蓋住 canvas；touch controls 至少 44px、focus 可見、錯誤 aria-live。窄屏 HUD 兩列（分頁＋Menu；資源＋drawer 圖示），system controls 收 Menu，工具列保留可見 scroll 提示。
 - machine以silhouette、footprint、full-path glyph、ports辨識；terrain/portal不能用raw debug text冒充美術。
@@ -128,8 +127,6 @@ F1 一次顯示一個 base 的大型 Atlas：
 - 文件只使用本專案 screenshots；外部研究只連官方來源。
 
 The build readout quotes the pointed placement or move through the construction authority; it does not promise a generic replacement price.
-
-Market states how much the currently profitable stock can still net, and how many units that covers, with demand declining after every selected shipment. This is not a lifetime estimate for the line. Unprofitable stock suggests improving cost or quality, or another disease. With no cash left, it points to Market and cheaper routes, with Menu → New Game as an optional fresh start after saving; it does not declare the run irrecoverable.
 
 Research retains its logical camera coordinates while matching the canvas backing resolution to the displayed size and device pixel ratio. Responsive enlargement must not introduce a low-resolution blur; resizing redraws once and does not start a permanent animation loop.
 

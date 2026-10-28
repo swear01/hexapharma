@@ -4,9 +4,7 @@ import {
   bestMarketQuote,
   marketDisabledReason,
   marketProducts,
-  marketLineReadout,
-  marketPenaltyLabel,
-  marketPriceLadder,
+  marketQuoteBreakdown,
   marketSaleFeedback,
   formatMoney,
   profitableMarketProducts,
@@ -153,28 +151,11 @@ describe("Market product choice", () => {
 
 });
 
-it("stock readout sums only profitable units at their successive demand prices", () => {
-  const inventory = [product(1, [0], [], 60), product(2, [0], [9], 0), product(3, [0], [9], 19)];
-  const selected = profitableMarketProducts(inventory, disease(0, 50), 0);
-  const quotes = selected.map((item, index) => bestMarketQuote([item], disease(0, 50), index)!);
-  expect(marketLineReadout(inventory, disease(0, 50), 0)).toEqual({
-    units: selected.length,
-    gross: quotes.reduce((sum, quote) => sum + quote.gross, 0),
-    net: quotes.reduce((sum, quote) => sum + quote.net, 0),
-  });
-  expect(marketLineReadout([], disease(0, 50), 0)).toEqual({ units: 0, gross: 0, net: 0 });
-});
-
-it("shows the side-effect penalty only when the best unit carries side effects", () => {
-  expect(marketPenaltyLabel(null)).toBeNull();
-  expect(marketPenaltyLabel(bestMarketQuote([product(1, [0], [], 5)], disease(0, 50), 0))).toBeNull();
-  expect(marketPenaltyLabel(bestMarketQuote([product(1, [0], [9, 10], 0)], disease(0, 80), 0)))
-    .toBe("$25 × 2 = $50");
-});
-
-it("price ladder lists the sim's next unit prices from the current sold count", () => {
-  expect(marketPriceLadder(96, 3)).toEqual([3, 4, 5, 6, 7].map((sold) => nextUnitPrice(96, sold)));
-  expect(marketPriceLadder(96, 0, 2)).toEqual([96, nextUnitPrice(96, 1)]);
+it("puts the next unit's sum in the net tooltip, naming side effects only when present", () => {
+  expect(marketQuoteBreakdown(bestMarketQuote([product(1, [0], [], 5)], disease(0, 50), 0)!))
+    .toBe("$50 price − $5 cost. Each unit shipped lowers the next price.");
+  expect(marketQuoteBreakdown(bestMarketQuote([product(1, [0], [9, 10], 0)], disease(0, 80), 0)!))
+    .toBe("$80 price − $0 cost − $50 side effects. Each unit shipped lowers the next price.");
 });
 
 it("formats negative money with a leading minus sign", () => {

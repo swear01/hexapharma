@@ -193,8 +193,8 @@ describe("serializeGame / deserializeGame", () => {
     expect(deserializeGame(serializeGame(game))).toEqual(game);
   });
 
-  it("rejects Splitter and Merger tiles until Split / Merge is unlocked", () => {
-    const game = reachProduction();
+  it("rejects Splitter and Merger tiles while Split / Merge is off", () => {
+    const game = applyGameIntent(reachProduction(), { kind: "setPatent", id: "split-merge", enabled: false });
     expect(() => applyGameIntent(game, {
       kind: "buildProductionLayout",
       layout: splitterFactory(game.production.layout),
@@ -202,7 +202,7 @@ describe("serializeGame / deserializeGame", () => {
   });
 
   it("round-trips behavior-affecting Production splitter cursors", () => {
-    let game = applyGameIntent(reachProduction(), { kind: "setPatent", id: "split-merge", enabled: true });
+    let game = reachProduction();
     game = applyGameIntent(game, {
       kind: "buildProductionLayout",
       layout: splitterFactory(game.production.layout),
@@ -599,7 +599,7 @@ describe("deserializeGame executable-state validation", () => {
   });
 
   it("accepts edited in-range splitter cursors and rejects out-of-range cursors", () => {
-    let game = applyGameIntent(reachProduction(), { kind: "setPatent", id: "split-merge", enabled: true });
+    let game = reachProduction();
     game = applyGameIntent(game, {
       kind: "buildProductionLayout",
       layout: splitterFactory(game.production.layout),

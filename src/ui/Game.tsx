@@ -30,7 +30,6 @@ import {
   baseAvailable,
   createGameState,
   DEFAULT_STARTING_CASH,
-  shippingContracts,
   type GameIntent,
 } from "../sim/game";
 import { activeEffects, DEFAULT_PATENTS } from "../sim/patent";
@@ -40,14 +39,11 @@ import { Factory, factoryLineProgram } from "./Factory";
 import { Patents } from "./Patents";
 import { Shop } from "./Shop";
 import { blockingDialogOpen } from "./blockingDialog";
-import { hexToPixel } from "../render/hexProjection";
 import type { ResearchDeviation } from "../render/labRenderer";
 import { machineName } from "./machineLabels";
 import { ResearchWorkspace, researchMachineCost } from "./ResearchWorkspace";
-import { researchDrugPoint, researchKnownCureLocations } from "./App";
+import { researchDrugPoint } from "./App";
 import { FieldGuide } from "./FieldGuide";
-import { currentObjective, type ObjectiveTarget } from "./objective";
-import { profitableMarketProducts } from "./Shop";
 import {
   readSlot,
   recoverSlot,
@@ -245,15 +241,6 @@ export function researchKeyboardAction(key: string, modifier = false): ResearchK
   return null;
 }
 
-export function researchAssaySector(start: Vec2, target: Vec2): string {
-  const q = target.q - start.q;
-  const r = target.r - start.r;
-  if (q === 0 && r === 0) return "local";
-  const projected = hexToPixel(q, r, 1);
-  const direction = ((Math.round(Math.atan2(projected.y, projected.x) / (Math.PI / 3)) % 6) + 6) % 6;
-  return ["east", "south-east", "south-west", "west", "north-west", "north-east"][direction]!;
-}
-
 export function researchProgramCost(program: Template): number {
   let total = 0;
   for (const step of program.steps) total += researchMachineCost(step.typeId);
@@ -368,10 +355,24 @@ export function parseNewGameSeed(value: string): number | null {
 
 type Building = "research" | "pilot" | "production";
 
-/** Top-bar drawer icons, drawn as legend ink: a shipping crate, a branch, a ruled sheet, a menu. */
-function HudGlyph({ kind }: { readonly kind: "market" | "technology" | "blueprints" | "menu" }) {
+/** The HexaPharma mark: a pointy-top hex around a sawtooth pharma works with a chimney and a cross. */
+function LogoMark() {
+  return (
+    <svg className="logo-mark" viewBox="0 0 32 32" width="32" height="32" aria-hidden="true" focusable="false">
+      <path d="M16 2.5 27.7 9.25v13.5L16 29.5 4.3 22.75V9.25z" fill="var(--paper-raised)" stroke="var(--course)" strokeWidth="2.5" strokeLinejoin="round" />
+      <path d="M8.5 23V15l3.5-2.5V15l3.5-2.5V15l3-2V8h3v15z" fill="var(--ink)" />
+      <path d="M11 18.3h3.6v1.4H11zM12.1 17.2h1.4v3.6h-1.4z" fill="var(--paper-raised)" />
+    </svg>
+  );
+}
+
+/** Top-bar icons, drawn as legend ink: compass, drafting grid, works; crate, branch, ruled sheet, menu. */
+function HudGlyph({ kind }: { readonly kind: Building | "market" | "technology" | "blueprints" | "menu" }) {
   return (
     <svg className="hud-glyph" viewBox="0 0 18 18" width="18" height="18" aria-hidden="true" focusable="false">
+      {kind === "research" && <><circle cx="9" cy="9" r="7" /><path d="M11.8 6.2 10.1 10.1 6.2 11.8 7.9 7.9z" /></>}
+      {kind === "pilot" && <path d="M2 2h10v10H2zM2 7h10M7 2v10M16.5 9.5l1 1-6 6H10v-1.5z" />}
+      {kind === "production" && <path d="M1.5 16.5V10l4-3v3l4-3v3l3.5-2.6V2.5h3v14zM5 13.5h2M9.5 13.5h2" />}
       {kind === "market" && <path d="M2.5 6.5h13v9h-13zM1.5 3h15v3.5h-15zM7 9.5h4" />}
       {kind === "technology" && <><path d="M4.8 9h2.7m0 0 4-4.5h1.7M7.5 9l4 4.5h1.7" /><circle cx="3" cy="9" r="1.8" /><circle cx="15" cy="4.5" r="1.8" /><circle cx="15" cy="13.5" r="1.8" /></>}
       {kind === "blueprints" && <path d="M3 2.5h12v13H3zM3 7h12M3 11h12M7.5 2.5v13" />}
@@ -380,9 +381,6 @@ function HudGlyph({ kind }: { readonly kind: "market" | "technology" | "blueprin
   );
 }
 
-function objectiveIsHere(target: ObjectiveTarget, building: Building, drawer: string | null): boolean {
-  return target === "market" || target === "technology" ? drawer === target : drawer === null && building === target;
-}
 type Drawer = "market" | "technology" | "blueprints" | "menu" | "help" | null;
 type PendingSaveAction =
   | {
@@ -525,18 +523,6 @@ export function Game() {
 
 
   const level = useMemo(() => generate(game.genOptions), [game.genOptions]);
-  const contracts = useMemo(
-    () => shippingContracts(game),
-    [game.economy.sold, game.genOptions],
-  );
-  const activeContract = contracts.find((contract) => !contract.completed) ?? contracts[contracts.length - 1]!;
-  const knownCureDiseases = useMemo(
-    () => researchKnownCureLocations(level.mm, game.fog).map((location) => location.cureId),
-    [game.fog, level.mm],
-  );
-  const researchMission = level.diseases.find((disease) => disease.id === activeContract.disease)!;
-  const researchMissionStart = level.start.pos[researchMission.map]!;
-  const researchMissionSector = researchAssaySector(researchMissionStart, researchMission.node);
   const [researchBase, setResearchBase] = useState(0);
   const researchLevel = useMemo(() => researchBaseLevel(level, researchBase), [level, researchBase]);
   const researchFog = useMemo(() => [game.fog[researchBase]!], [game.fog, researchBase]);
@@ -544,24 +530,6 @@ export function Game() {
     () => level.mm.maps.map((_map, base) => baseAvailable(game, base) ? null : `${BASE_NAMES[base]} off · turn it on in Technology`),
     [game.genOptions, game.patents, level.mm],
   );
-  const objective = useMemo(() => currentObjective({
-    contracts,
-    knownCureDiseases,
-    profitableUnits: (disease) => {
-      const spec = level.diseases.find((candidate) => candidate.id === disease);
-      if (spec === undefined) return 0;
-      const sold = game.economy.sold.find((entry) => entry.disease === disease)?.count ?? 0;
-      return profitableMarketProducts(game.inventory, spec, sold).length;
-    },
-    stockFor: (disease) => game.inventory.filter((product) => product.outcome.cured.includes(disease)).length,
-    planHasMachines: (game.pilot.layout?.machines.length ?? 0) > 0,
-    productionHasMachines: game.production.layout.machines.length > 0,
-    producingOther: game.inventory.some((product) => product.outcome.cured.length > 0)
-      && !game.inventory.some((product) => product.outcome.cured.includes(activeContract.disease)),
-    sector: researchMissionSector,
-    base: level.mm.maps.length > 1 ? BASE_NAMES[researchMission.map]! : null,
-    baseLocked: baseLocks[researchMission.map] !== null,
-  }), [activeContract.disease, baseLocks, contracts, knownCureDiseases, game.economy.sold, game.inventory, game.pilot.layout, game.production.layout.machines.length, level.diseases, level.mm.maps.length, researchMission.map, researchMissionSector]);
   const knownResearchMap = useMemo(
     () => researchPlanningMap(level.mm, game.fog),
     [game.fog, level.mm],
@@ -632,7 +600,6 @@ export function Game() {
   const advanceProduction = useCallback((ticks: number) => {
     return dispatch({ kind: "productionTicks", ticks });
   }, [dispatch]);
-  const resetProduction = useCallback(() => dispatch({ kind: "resetProduction" }), [dispatch]);
   const sellProducts = useCallback((productIds: readonly number[], disease: DiseaseId) => {
     return dispatch({ kind: "sellProducts", productIds, disease });
   }, [dispatch]);
@@ -914,15 +881,13 @@ export function Game() {
     worldInputActive,
   ]);
 
-  const followObjective = (target: ObjectiveTarget) => {
-    if (target === "market" || target === "technology") setDrawer(target);
-    else openBuilding(target);
-  };
   const toggleDrawer = (next: Exclude<Drawer, null>) => setDrawer((current) => current === next ? null : next);
+  const stock = game.inventory.length;
   const drawerButton = (id: "market" | "technology" | "blueprints", label: string, hotkey: string) => (
     <button type="button" data-testid={`view-${id}`} aria-pressed={drawer === id} onClick={() => toggleDrawer(id)}
-      aria-label={`${label} (${hotkey})`} title={`${label} (${hotkey})`}>
-      <HudGlyph kind={id} /><span className="hud-link-label">{label}</span><kbd>{hotkey}</kbd>
+      aria-label={`${label}${id === "market" ? `, ${stock} in stock` : ""} (${hotkey})`} title={`${label} (${hotkey})`}>
+      <HudGlyph kind={id} />
+      {id === "market" && <strong className={`stock-badge${stock === 0 ? " is-empty" : ""}`} data-testid="stock" aria-hidden="true">{stock}</strong>}
     </button>
   );
 
@@ -930,29 +895,24 @@ export function Game() {
     <button type="button" onClick={() => openBuilding(id)}
       className={`nav-button${building === id ? " is-active" : ""}`}
       data-testid={`view-${id}`} aria-current={building === id ? "page" : undefined}
-      aria-label={`${label === "Plan" ? "Production Plan" : label} (${hotkey})`} title={`${label} (${hotkey})`}>
-      {label}<kbd>{hotkey}</kbd>
+      aria-label={`${label} (${hotkey})`} title={`${label} (${hotkey})`}>
+      <HudGlyph kind={id} />
     </button>
   );
 
   return (
     <div className="game-shell" data-testid="game-shell">
       <header className="top-hud" data-testid="top-hud">
-        <span className="wordmark" aria-hidden="true">HexaPharma</span>
+        <span className="wordmark" role="img" aria-label="HexaPharma" title="HexaPharma"><LogoMark /></span>
         <nav className="nav-rail" data-testid="nav-rail" aria-label="Facilities">
           {buildingButton("research", "Research", "F1")}
-          {buildingButton("pilot", "Plan", "F2")}
+          {buildingButton("pilot", "Production Plan", "F2")}
           {buildingButton("production", "Production", "F3")}
         </nav>
         <div className="resource-strip" aria-label="Company resources">
           <span className="resource-chip" aria-label={`Cash ${game.economy.cash}`} title={`Cash ${game.economy.cash}`}>
-            <span className="resource-label" aria-hidden="true">Cash</span>
             <strong><span className="resource-unit" aria-hidden="true">$</span><span data-testid="cash">{game.economy.cash}</span></strong>
           </span>
-          <button type="button" className="resource-chip stock-chip" onClick={() => toggleDrawer("market")} aria-label={`Stock ${game.inventory.length}, open Market`} title="Stock · open Market (M)">
-            <span className="resource-label" aria-hidden="true">Stock</span>
-            <strong data-testid="stock">{game.inventory.length}</strong>
-          </button>
         </div>
         <nav className="hud-links" aria-label="Management">
           {drawerButton("market", "Market", "M")}
@@ -960,23 +920,11 @@ export function Game() {
           {drawerButton("blueprints", "Blueprints", "B")}
         </nav>
         <button type="button" className="menu-trigger" data-testid="view-menu" aria-expanded={drawer === "menu" || drawer === "help"} onClick={() => setDrawer((current) => current === "menu" || current === "help" ? null : "menu")} aria-label="Menu" title="Menu">
-          <HudGlyph kind="menu" /><span className="hud-link-label">Menu</span>
+          <HudGlyph kind="menu" />
         </button>
       </header>
 
       <main className="game-stage" data-testid="game-stage">
-        {/* In Research the map itself is the search; the card returns once the objective points elsewhere. */}
-        <section className="goal-card" data-testid="objective" aria-label="Objective" hidden={building === "research" && objective.target === "research"}>
-          <p className="goal-step" aria-live="polite">
-            <span className="objective-text" data-testid="objective-text">{objective.text}</span>
-            <span className="goal-contract" data-testid="shipping-contract" aria-label={`Disease ${activeContract.disease + 1} contract ${activeContract.sold} of ${activeContract.quota}`}>
-              <span aria-hidden="true">Contract</span> <strong aria-hidden="true">{activeContract.sold} / {activeContract.quota}</strong>
-            </span>
-          </p>
-          {!objectiveIsHere(objective.target, building, drawer) && (
-            <button type="button" className="objective-action" data-testid="objective-action" onClick={() => followObjective(objective.target)}>{objective.actionLabel}</button>
-          )}
-        </section>
         <section className="view-layer" hidden={building !== "research"}>
           {visited.research && (
             <ResearchWorkspace
@@ -1048,7 +996,6 @@ export function Game() {
               routing={patentEffects.routing}
               onLayoutChange={changeProduction}
               onAdvance={advanceProduction}
-              onReset={resetProduction}
             />
           )}
         </section>

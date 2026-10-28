@@ -43,16 +43,15 @@ async function loadPrepared(page: import("@playwright/test").Page, seed = 14): P
   await confirmLoad(page);
 }
 
-test("full loop: paid Research trial → Production Plan → Production → shipping contract", async ({
+test("full loop: paid Research trial → Production Plan → Production → Market sale", async ({
   page,
 }) => {
   await loadPrepared(page);
   await expect(page.getByTestId("research-atlas-outcome")).toContainText("Cure Disease 1");
   await expect(page.getByTestId("view-formulas")).toHaveCount(0);
-  await expect(page.getByTestId("shipping-contract")).toContainText("0 / 3");
-  await expect(page.getByTestId("objective-text")).toHaveText("Commission the Plan for Disease 1");
+  await expect(page.getByTestId("shipping-contract")).toHaveCount(0);
 
-  await page.getByTestId("objective-action").click();
+  await page.getByTestId("view-pilot").click();
   await expect(page.getByTestId("pilot-facility-workspace")).toBeVisible();
   await page.getByTestId("pilot-command").click();
   await expect(page.getByTestId("production-facility-workspace")).toBeVisible();
@@ -63,10 +62,11 @@ test("full loop: paid Research trial → Production Plan → Production → ship
   const sell = page.getByRole("button", { name: /ship best/i }).first();
   await expect(sell).toBeEnabled();
   const cashBeforeSale = Number(await page.getByTestId("cash").textContent());
+  const stockBeforeSale = Number(await page.getByTestId("stock").textContent());
   await sell.click();
   await expect.poll(async () => Number(await page.getByTestId("cash").textContent()))
     .toBeGreaterThan(cashBeforeSale);
-  await expect(page.getByTestId("shipping-contract")).toContainText("1 / 3");
+  await expect(page.getByTestId("stock")).toHaveText(String(stockBeforeSale - 1));
   await page.getByTestId("view-technology").click();
   await expect(page.getByTestId("technology-drawer")).toBeVisible();
 });

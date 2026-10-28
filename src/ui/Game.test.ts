@@ -4,7 +4,6 @@ import {
   researchBaseLevel,
   parseNewGameSeed,
   playerFacingIntentError,
-  researchAssaySector,
   researchDeviation,
   researchKeptSteps,
   researchKeyboardAction,
@@ -33,17 +32,6 @@ import { MAX_GAME_MAP_CELLS, MAX_GAME_MAP_DIMENSION } from "../sim/phase0_interf
 import { generate } from "../sim/mapgen";
 
 describe("default Lab world options", () => {
-  it("gives Research one broad target sector without leaking a coordinate or distance", () => {
-    const start = { q: 10, r: 10 };
-    expect(researchAssaySector(start, { q: 17, r: 10 })).toBe("east");
-    expect(researchAssaySector(start, { q: 10, r: 17 })).toBe("south-east");
-    expect(researchAssaySector(start, { q: 3, r: 17 })).toBe("south-west");
-    expect(researchAssaySector(start, { q: 3, r: 10 })).toBe("west");
-    expect(researchAssaySector(start, { q: 10, r: 3 })).toBe("north-west");
-    expect(researchAssaySector(start, { q: 17, r: 3 })).toBe("north-east");
-    expect(researchAssaySector(start, start)).toBe("local");
-  });
-
   it("starts a new run on one large odd-sized map", () => {
     expect(defaultGenOptions(14)).toMatchObject({
       seed: 14,

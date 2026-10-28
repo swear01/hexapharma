@@ -66,7 +66,6 @@ const clipboardPayloads = [
 
 function clipboardPayloadSave(): string {
   let game = createGameState(defaultGenOptions(14), 10_000);
-  game = applyGameIntent(game, { kind: "setPatent", id: "split-merge", enabled: true });
   const tiles: FactoryTile[] = Array.from(
     { length: BASE_GAME_FACTORY_WIDTH * BASE_GAME_FACTORY_HEIGHT },
     () => ({ kind: "empty" as const }),
@@ -92,11 +91,7 @@ function machineGallerySave(): string {
   game = applyGameIntent(game, { kind: "setPatent", id: "reveal-aid", enabled: true });
   game = applyGameIntent(game, { kind: "setPatent", id: "oil-base", enabled: true });
   game = applyGameIntent(game, { kind: "setPatent", id: "ethanol-base", enabled: true });
-  for (const [disease, id] of [
-    [0, "zigzag-unlock"],
-    [1, "loop-unlock"],
-    [2, "crane-unlock"],
-  ] as const) {
+  for (const disease of [0, 1, 2]) {
     const layout = withSourceBase(compileEntitledPrototype(
       level.diseases[disease]!.reference,
       game.production.layout.width,
@@ -110,9 +105,7 @@ function machineGallerySave(): string {
       .map((product) => product.inventoryId);
     if (productIds.length !== 3) throw new Error(`machine gallery could not complete Disease ${disease + 1}`);
     game = applyGameIntent(game, { kind: "sellProducts", productIds, disease });
-    game = applyGameIntent(game, { kind: "setPatent", id, enabled: true });
   }
-  game = applyGameIntent(game, { kind: "setPatent", id: "straight-unlock", enabled: true });
   const anchors = [
     { q: 1, r: 1 },
     { q: 5, r: 1 },
@@ -223,7 +216,7 @@ async function expectPilotMachineAboveToolbelt(page: import("@playwright/test").
 
 test("the shell exposes exactly three facility pages and drawer utilities", async ({ page }) => {
   await page.goto("/");
-  await expect(page).toHaveTitle("HexaPharma — Research · Plan · Production");
+  await expect(page).toHaveTitle("HexaPharma");
   await expect(page.getByTestId("view-research")).toBeVisible();
   await expect(page.getByTestId("view-pilot")).toBeVisible();
   await expect(page.getByTestId("view-production")).toBeVisible();
@@ -237,7 +230,7 @@ test("the shell exposes exactly three facility pages and drawer utilities", asyn
   await expect(page.getByTestId("market-drawer")).toHaveCount(0);
 });
 
-test("Production runs continuous time, produces sink outcomes, and resets", async ({ page }) => {
+test("Production runs continuous time, produces sink outcomes, and scales its speed", async ({ page }) => {
   await loadProduction(page);
   await expect(page.getByTestId("production-facility-workspace")).toBeVisible();
   await expect(page.getByTestId("production-facility-workspace").locator("canvas")).toBeVisible();
@@ -248,10 +241,17 @@ test("Production runs continuous time, produces sink outcomes, and resets", asyn
   await page.getByTestId("factory-play").click();
   await expect(page.getByTestId("factory-produced")).not.toHaveText("0", { timeout: 10_000 });
   await page.getByTestId("factory-pause").click();
-  await page.getByTestId("factory-reset").click();
-  await page.getByRole("alertdialog", { name: "Reset Production?" })
-    .getByRole("button", { name: "Reset runtime" }).click();
-  await expect(tick).toHaveText("0");
+  await expect(page.getByTestId("factory-pause")).toHaveCount(0);
+
+  // 10× advances ten 1× batches (80 ticks) per interval.
+  const paused = Number(await tick.textContent());
+  await page.getByTestId("factory-speed-10").click();
+  await expect(page.getByTestId("factory-speed-10")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("factory-speed-1")).toHaveAttribute("aria-pressed", "false");
+  await page.getByTestId("factory-play").click();
+  await expect.poll(async () => Number(await tick.textContent())).toBeGreaterThan(paused);
+  await page.getByTestId("factory-pause").click();
+  expect((Number(await tick.textContent()) - paused) % 80).toBe(0);
 });
 
 test("focused Factory controls consume Space without toggling Production playback", async ({ page }) => {
@@ -265,68 +265,11 @@ test("focused Factory controls consume Space without toggling Production playbac
   await page.keyboard.press("Space");
 
   await expect(play).toBeEnabled();
-  await expect(pause).toBeDisabled();
+  await expect(pause).toHaveCount(0);
   await expect(page.getByTestId("factory-tick")).toHaveText("1");
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("factory-tick")).toHaveText("2");
-  await expect(pause).toBeDisabled();
-});
-
-test("Production Reset is disabled initially and requires explicit confirmation", async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  await loadProduction(page);
-  const reset = page.getByTestId("factory-reset");
-  const tick = page.getByTestId("factory-tick");
-  await expect(reset).toBeDisabled();
-  await page.getByTestId("factory-step").click();
-  await expect(tick).toHaveText("1");
-  await expect(reset).toBeEnabled();
-
-  await reset.click();
-  const dialog = page.getByRole("alertdialog", { name: "Reset Production?" });
-  await expect(dialog).toBeVisible();
-  await expect(dialog.getByRole("button", { name: "Reset runtime" })).toBeFocused();
-  await page.keyboard.press(".");
-  await page.keyboard.press("r");
-  await page.keyboard.press("F2");
-  await page.keyboard.press("m");
-  await expect(dialog).toBeVisible();
-  await expect(page.getByTestId("view-production")).toHaveAttribute("aria-current", "page");
-  await expect(page.getByTestId("market-drawer")).toHaveCount(0);
-  await expect(tick).toHaveText("1");
-  await page.keyboard.press("Tab");
-  await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
-  await expect(dialog).toContainText("Runtime and in-flight units will be cleared.");
-  await expect(dialog).toContainText("Inventory and waste will stay.");
-  await expect(tick).toHaveText("1");
-  await dialog.getByRole("button", { name: "Cancel" }).click();
-  await expect(dialog).toHaveCount(0);
-  await expect(reset).toBeFocused();
-  await expect(tick).toHaveText("1");
-
-  await reset.click();
-  await page.getByRole("alertdialog", { name: "Reset Production?" })
-    .getByRole("button", { name: "Reset runtime" }).click();
-  await expect(tick).toHaveText("0");
-  await expect(reset).toBeDisabled();
-});
-
-test("opening Reset freezes live Production and Cancel resumes it", async ({ page }) => {
-  await loadProduction(page);
-  const tick = page.getByTestId("factory-tick");
-  await page.getByTestId("factory-play").click();
-  await expect.poll(async () => Number(await tick.textContent())).toBeGreaterThan(0);
-
-  await page.getByTestId("factory-reset").click();
-  const dialog = page.getByRole("alertdialog", { name: "Reset Production?" });
-  await expect(dialog).toBeVisible();
-  const frozenTick = Number(await tick.textContent());
-  await page.waitForTimeout(250);
-  await expect(tick).toHaveText(String(frozenTick));
-
-  await dialog.getByRole("button", { name: "Cancel" }).click();
-  await expect(page.getByTestId("factory-pause")).toBeEnabled();
-  await expect.poll(async () => Number(await tick.textContent())).toBeGreaterThan(frozenTick);
+  await expect(pause).toHaveCount(0);
 });
 
 test("hovering an installed machine previews direct manipulation and a no-op keeps Production playing", async ({ page }) => {
@@ -582,7 +525,7 @@ test("focused Factory tool controls still allow R, number, and Q world hotkeys",
 
   await workspace.getByTestId("brush-belt").click();
   await page.keyboard.press("Digit2");
-  await expect(workspace.getByTestId("brush-selected")).toHaveText("splitter");
+  await expect(workspace.getByTestId("brush-selected")).toHaveAccessibleName("splitter");
 
   const source = clipboardPayloads[0]!;
   const point = await factoryCellPoint(frame, layout, source.cell);
@@ -590,8 +533,8 @@ test("focused Factory tool controls still allow R, number, and Q world hotkeys",
   await expect(workspace.getByTestId("factory-hover-kind")).toHaveText("source");
   await workspace.getByTestId("brush-merger").click();
   await page.keyboard.press("q");
-  await expect(workspace.getByTestId("brush-selected")).toHaveText("source");
-  await expect(workspace.getByTestId("brush-direction")).toHaveText("Direction SW");
+  await expect(workspace.getByTestId("brush-selected")).toHaveAccessibleName("source");
+  await expect(workspace.getByTestId("brush-direction")).toHaveAccessibleName("Direction SW");
 });
 
 test("Pilot builds without a Research contract and Production is an exact copy", async ({ page }) => {
@@ -616,17 +559,22 @@ test("Pilot builds without a Research contract and Production is an exact copy",
   expect(saved.production.layout).toEqual(saved.pilot.layout);
 });
 
-test("Splitter and Merger stay locked until Split / Merge is unlocked", async ({ page }) => {
+test("Splitter and Merger start on and lock when Split / Merge is switched off", async ({ page }) => {
   await loadSaveFixture(page, pilotSave());
   await expect(page.getByTestId("lab-map-frame")).toBeVisible();
   await page.getByTestId("view-pilot").click();
   const workspace = page.getByTestId("pilot-facility-workspace");
+  await expect(workspace.getByTestId("brush-splitter")).not.toHaveAttribute("aria-disabled", "true");
+  await page.getByTestId("view-technology").click();
+  await page.getByTestId("patent-switch-split-merge").click();
+  await expect(page.getByTestId("patent-switch-split-merge")).toHaveAttribute("aria-checked", "false");
+  await page.keyboard.press("Escape");
   await expect(workspace.getByTestId("brush-splitter")).toHaveAttribute("aria-disabled", "true");
   await expect(workspace.getByTestId("brush-merger")).toHaveAttribute("aria-disabled", "true");
   await workspace.getByTestId("brush-belt").click();
   await workspace.getByTestId("factory-canvas").hover();
   await page.keyboard.press("Digit2");
-  await expect(workspace.getByTestId("brush-selected")).toHaveText("belt");
+  await expect(workspace.getByTestId("brush-selected")).toHaveAccessibleName("belt");
   await expect(workspace.getByRole("status").filter({ hasText: "Split / Merge" })).toBeVisible();
 });
 
@@ -682,7 +630,7 @@ test("physical footprint rotation leaves the selected chemical path unchanged", 
   const iconPath = page.getByTestId("research-machine-hook").locator("[data-icon-shape='path']");
   const before = await iconPath.getAttribute("points");
   await page.keyboard.press("r");
-  await expect(pilot.getByTestId("brush-direction")).toHaveText("Footprint 60°");
+  await expect(pilot.getByTestId("brush-direction")).toHaveAccessibleName("Footprint 60°");
   await expect(iconPath).toHaveAttribute("points", before ?? "");
 });
 

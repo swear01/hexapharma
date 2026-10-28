@@ -112,8 +112,8 @@ test("Research is one large centered Atlas with no Route Floor or layer-transfer
   page,
 }) => {
   await page.goto("/");
-  // The search objective is not repeated over the map it is about.
-  await expect(page.getByTestId("objective")).toBeHidden();
+  // Open world: no objective card over the map.
+  await expect(page.getByTestId("objective")).toHaveCount(0);
   const frame = page.getByTestId("lab-map-frame");
   await expect(frame).toBeVisible();
   const level = generate(defaultGenOptions(14));
@@ -222,7 +222,7 @@ test("hovering and clicking the last control removes the last planned step", asy
 
 test("number keys append, Backspace and Ctrl+Z remove, Clear empties, and Enter runs", async ({ page }) => {
   await page.goto("/?cash=200");
-  const available = DEFAULT_CATALOG.slice(0, 4);
+  const available = DEFAULT_CATALOG;
   await expect(page.getByTestId(`research-machine-${available[0]!.typeId}`))
     .toHaveAttribute("title", "Add Hook pump (1)");
   const fullPaths = await page.getByTestId("research-path-hotbar").locator("[data-icon-shape='path']")
@@ -403,7 +403,7 @@ test("a resolved outcome keeps its feedback while focus stays on the planned end
   await expect(frame).toHaveAttribute("data-camera-y", String(endpointCamera.y));
 });
 
-test("a curing trial reports the Cure without a formula card and the objective points to Plan", async ({ page }) => {
+test("a curing trial reports the Cure without a formula card or a next-step prompt", async ({ page }) => {
   const options = defaultGenOptions(14);
   const level = generate(options);
   let game = createGameState(options, 1_000);
@@ -411,16 +411,13 @@ test("a curing trial reports the Cure without a formula card and the objective p
   expect(game.research.lastTrial?.outcome.cured).toContain(0);
 
   await page.goto("/");
-  await expect(page.getByTestId("objective")).toBeHidden();
   await installSaveFixture(page, serializeGame(game));
   await page.reload();
   await confirmLoad(page);
   await expect(page.getByTestId("research-atlas-outcome")).toContainText("Cure Disease 1");
   await expect(page.getByRole("status", { name: /Cure found/ })).toHaveCount(0);
   await expect(page.getByTestId("research-open-plan")).toHaveCount(0);
-  await expect(page.getByTestId("objective-text")).toHaveText("Plan a line to Disease 1");
-  await page.getByTestId("objective-action").click();
-  await expect(page.getByTestId("pilot-facility-workspace")).toBeVisible();
+  await expect(page.getByTestId("objective")).toHaveCount(0);
 });
 
 for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {

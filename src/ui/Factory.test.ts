@@ -13,7 +13,6 @@ import {
   directGestureMachineAt,
   factoryErasePreviewCells,
   factoryHotkeyTargetConsumesKey,
-  factoryResetPlaybackAfterClose,
   facilityMayAnalyzeOutcome,
   facilityOutcomeMap,
   factoryLineProgram,
@@ -210,14 +209,6 @@ describe("Factory layout commit acceptance", () => {
 
     expect(requestFactoryLayoutChange(current, proposed, () => false)).toBe(false);
     expect(requestFactoryLayoutChange(current, proposed, () => true)).toBe(true);
-  });
-
-  it("resumes prior playback after cancel or rejection, but not after an accepted reset", () => {
-    expect(factoryResetPlaybackAfterClose(true, "cancel", false)).toBe(true);
-    expect(factoryResetPlaybackAfterClose(true, "rejected", false)).toBe(true);
-    expect(factoryResetPlaybackAfterClose(true, "accepted", false)).toBe(false);
-    expect(factoryResetPlaybackAfterClose(true, "cancel", true)).toBe(false);
-    expect(factoryResetPlaybackAfterClose(false, "rejected", false)).toBe(false);
   });
 });
 

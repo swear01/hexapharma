@@ -23,7 +23,7 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 3. 畫面不得出現設計註解、形容詞式副標、常駐教學段落或流程解釋；詳細操作放按需 Help 與玩家指南。
 4. hidden page不吃keys/pointers；切回已造訪頁保留camera與tool。
 5. 觸發intent/storage/renderer error時必須可見，且不以空白world冒充成功。
-6. 在Reset、Delete、Unlock、Load、Rewind或New Game確認開啟時按`.`、`R`、F1–F3、M／T／B；先 Play 再開 modal，跨至少 700ms 確認 tick、inventory、cash、waste 不變；Cancel 恢復先前播放，原本 paused 不會啟動。確認 Load／New／Rewind／Reset／擴廠後舊 timer 停止。
+6. 在Delete、Unlock、Load、Rewind或New Game確認開啟時按`.`、`R`、F1–F3、M／T／B；先 Play 再開 modal，跨至少 700ms 確認 tick、inventory、cash、waste 不變；Cancel 恢復先前播放，原本 paused 不會啟動。確認 Load／New／Rewind／擴廠後舊 timer 停止。
 7. 用Menu → New從seed 14建立seed 15；確認Cash回預設、原save仍可Load、Blueprint Library不變。超出unsigned 32-bit的seed必須明示拒絕。
 
 ## 3. Mandatory fresh-save core loop
@@ -32,10 +32,10 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 
 1. 清除本origin的Save slots與Blueprint Library後建立正常新局；確認Cash=`$1000`、單一pointy-top axial Atlas有4種疾病，起點位於世界中央且只揭露hex distance radius 2的19-cell disk。
 2. 不查看source/test/reference，僅靠broad assay sector、world feedback與可用initial machines人工規劃路線並Run。記錄blank click是否誤改規劃、每次Run的cash變化、實際路線偏離預估時是否看得懂原因、Run次數與剩餘cash。
-3. 找到第一個Cure後，確認結果同時報告已知Side effects，Objective改為`Plan a line to Disease N`；若命中污染Cure，可修改路線再Run尋找同區乾淨endpoint，但不能以hidden reference代替探索。
+3. 找到第一個Cure後，確認結果同時報告已知Side effects；若命中污染Cure，可修改路線再Run尋找同區乾淨endpoint，但不能以hidden reference代替探索。
 4. 自行選擇直接Production或optional Production Plan，人工放source、完整machine sequence、belt與sink；不得呼叫layout compiler。若使用Plan，按`Commission $N`送入正式產線。確認Research支出後仍付得起有效Production build。
 5. Play直到產生實體cure，在Market以`Ship best`出售第一件仍有正net的產品；確認stock減1、cash增加、該疾病Sold／Next更新。
-6. 對同一疾病完成3次accepted shipping，確認contract chip依序為1/3、2/3、3/3；繼續觀察下一種疾病是否形成新目標。
+6. 對同一疾病完成3次accepted shipping，確認Market圖示的庫存數逐次減少、net依demand下降；畫面不出現合約或目標。
 7. 另記錄是否曾動用預留的$100 retry／小改建預算；若目前庫存沒有正net出貨，確認Market提示改善成本／品質或嘗試另一種疾病，不把current stock不賺錢誤報成整局無法恢復。
 8. 保存：首次理解candidate操作所需時間、Research嘗試數、first cure時間、first sale時間、最低cash、重做layout次數、三個最大困惑點，以及「是否願意再解下一種疾病／原因」。這些是human fun evidence，不得用green gate取代。
 
@@ -50,7 +50,7 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 5. `Run · $N`（或Enter）只扣規劃的catalog總價一次，實線顯示真實地圖上的實際路線（霧下Wall／Swamp／Abyss可讓它偏離虛線），只揭露實際走過的格；規劃保留。再按一次Run會再付費。
 6. 規劃經過已知Swamp時，確認每一步在沼澤內只走半格（路線點停在格邊中點），離開時對齊到格中心。
 7. 以Abyss測Failure：實際路線在Abyss格中止並顯示Failure。
-8. Outcome只在有Cure、Failure或副作用時出現；什麼都沒碰到的試驗沒有readout。點已揭露的效果格會顯示它的作用。沒有Formulas按鈕、F-01卡或`Open in Plan`；Cure格揭露後Objective指向Plan。
+8. Outcome只在有Cure、Failure或副作用時出現；什麼都沒碰到的試驗沒有readout。點已揭露的效果格會顯示它的作用。沒有Formulas按鈕、F-01卡、`Open in Plan`或目標卡。
 9. Blueprint drawer不得提供`Save Research program`或`Load in Research`。匯入現行`research-program`後只可Download／Delete，不能直接改規劃、cash、fog或outcome。
 
 ## 5. Terrain / fog / effects
@@ -94,7 +94,7 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 6. Play累積tick、unit或waste後修改layout；播放停止、runtime/tick歸零，在途unit清除，累積waste與inventory保留。
 7. 直接Production與Plan的`Commission $N`都走相同報價。後者成功後開F3，失敗時Plan不變。
 8. 有進度時解鎖擴廠；確認modal列出runtime/waste影響。Cancel原子不變，Confirm不打斷active Research shot。
-9. Production有tick／在途unit時按Reset；確認modal列出清除runtime但保留inventory/waste。Cancel不變，Confirm才重建；initial runtime的Reset disabled。
+9. Production播放時切1×／2×／10×，確認tick每80 ms各前進8／16／80；畫面沒有Reset。
 
 ## 9. Connected belts
 
@@ -113,7 +113,7 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 5. 每張卡核對Next gross、最佳庫存production cost、`$25 × effect count` penalty與net；Clean stock／Tainted stock是產品件數，不是effect總數。
 6. 無治療庫存時顯示`No curative stock.`；有庫存但都不賺錢時顯示`No profitable stock at next price.`，兩個Ship action都disabled。
 7. 單賣後可見status顯示`Shipped 1`；bulk顯示`Shipped N`。同一render內重複觸發已出售product時，第二個rejected intent不得寫入新的`Shipped`回饋。
-8. 新局contract chip先顯示Disease 1 `0 / 3`；只讓accepted sales推進。Disease 1售滿3件後active chip移到Disease 2，全部完成後顯示最後一份completed contract。
+8. 新局Technology的機器與Split / Merge開關皆為On，Plan／Production palette沒有鎖頭；擴廠開關為Off。
 9. Technology每個開關都可免費開關；關掉Plan或Production正在用的機器、Splitter／Merger或擴廠時必須被拒絕並提示先移除。
 
 ## 11. Blueprint v4 / cross-save

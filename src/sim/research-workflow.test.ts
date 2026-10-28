@@ -139,7 +139,7 @@ describe("Run-based Research trials", () => {
       .toThrow(/path does not match/i);
     expect(() => dispatch(poor, { kind: "runResearchTrial", program: { steps: [turned] }, base: 0 }))
       .toThrow(/path does not match/i);
-    expect(() => dispatch(poor, { kind: "runResearchTrial", program: { steps: [locked] }, base: 0 }))
+    expect(() => dispatch({ ...poor, patents: { unlocked: [] } }, { kind: "runResearchTrial", program: { steps: [locked] }, base: 0 }))
       .toThrow(/locked/i);
     for (const kind of ["beginResearchShot", "advanceResearchShot", "abortResearchShot"]) {
       expect(() => dispatch(poor, { kind, machine })).toThrow(/unknown|removed/i);

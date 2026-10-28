@@ -62,7 +62,7 @@ import { DEFAULT_CATALOG, DEFAULT_SHAPES } from "../phase0_interfaces";
 
 export const SAVE_VERSION = 16;
 export const SAVE_CONTENT_BUILD = fnv1a32Hex(canonical({
-  rules: 6,
+  rules: 7,
   catalog: DEFAULT_CATALOG,
   shapes: DEFAULT_SHAPES,
   patents: DEFAULT_PATENTS,

@@ -26,7 +26,7 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 | 選存檔 | Menu slot selector；每個 slot 有獨立 rewind history |
 | Load / Rewind / Recover | Menu 對應文字按鈕；覆蓋目前遊戲或丟棄checkpoint前會確認，錯誤不會靜默換成新局 |
 
-畫面左上的目標卡會依遊戲狀態寫出下一步（找到某疾病的 Cure 格 → 在 Plan 規劃產線並 Commission → 開 Production → 出貨 → 下一種疾病）與目前合約進度，旁邊的按鈕直接帶你去該處；Stock 數字也可點開 Market。完整符號圖例在 Menu → Guide。
+沒有指定順序或目標：自己探索、建產線、出貨。頂列全是圖示，滑過可看名稱與熱鍵；Market 圖示旁的數字是庫存件數。完整符號圖例在 Menu → Guide。
 
 Blueprint Library 與 save slot 分離；New Game、Load、Rewind、換 slot 都不會移除藍圖。New Game 只取代目前未保存狀態，既有 save checkpoints 仍可 Load 回來。
 
@@ -62,17 +62,17 @@ Blueprint Library 與 save slot 分離；New Game、Load、Rewind、換 slot 都
    | 前 | Elbow press | L L F | 左 60° | $3 | 開局 |
    | 前 | Return coil | B B BL | 掉頭 | $2 | 開局 |
    | 前 | Wave reactor | F L F R F R F | 不轉 | $7 | 開局 |
-   | 中 | Zigzag still | R F R F | 右 120° | $6 | Disease 1 合約後 |
-   | 中 | Loop vat | F R BR B BL L F（繞一圈只前進 1 格） | 不轉 | $5 | Disease 2 合約後 |
-   | 後 | Straight drive | F F F F | 不轉 | $12 | Disease 3 合約後 |
-   | 後 | Crane arm | F F F L L | 左 120° | $11 | Disease 3 合約後 |
+   | 中 | Zigzag still | R F R F | 右 120° | $6 | 開局 |
+   | 中 | Loop vat | F R BR B BL L F（繞一圈只前進 1 格） | 不轉 | $5 | 開局 |
+   | 後 | Straight drive | F F F F | 不轉 | $12 | 開局 |
+   | 後 | Crane arm | F F F L L | 左 120° | $11 | 開局 |
 hotbar 圖示會轉到規劃路線終點的朝向。
 2. **規劃（免費）**：點 hotbar 或按數字鍵`1`–`9`把機器接到路線末端。紫色虛線是**只用已知地圖**算出的預估：霧下當成平地，只有山（Wall）照算——霧下看不到的山也會擋住預估路線。`Undo`、Backspace、`Ctrl+Z`／`⌘Z`，或點地圖上最後一個編號控制點（游標提示`Remove last step`）移除最後一步；`Clear`清空。Run 若撞到霧下的山、水或黑格而偏離預估，下一次接機器或 Undo 會先刪掉偏離那一步之後的步驟（撞牆、踩進沼澤那步留著；掉進 Abyss 那步也刪）。Run 左邊顯示跑完後剩下的現金。規劃不花錢、不揭霧、不存檔。
 3. **Run · $N**（Enter）：一次付整條路線的機器費用總和，從起點在**真實**地圖跑完整條。霧下的 Wall、沼澤、Abyss、Portal 可能讓實際路線（紫色實線）偏離預估；Run 前的預估留成淡虛線，第一個偏離處以紅圈標出；點那一格可看是什麼地形擋住。點已揭露的治療格顯示疾病、等級（Tier 2 ★ 售價 1.5×）與是否帶副作用；點地形格或副作用格顯示它的作用。只揭露實際走過的格與其周圍。Run 後規劃保留，可依新地圖修改再跑；同一路線重跑也要再付費。
 4. 結果同時列出Cure與已知Side effects；不能只看`Cure`而忽略同一endpoint的污染。掉進 Abyss 時路線在那一格中止並顯示 Failure。
-5. Research 不會產生配方。目前疾病的任一 Cure 格揭露後，Objective 改成`Plan a line to Disease N`，到 Plan 用同樣的機器順序自己排產線；Plan 的 Sample 只依已揭露地圖預估。Plan 產線的路徑也以淡紫寬帶畫在 Research 地圖上（同樣只用已知地圖預估），方便對照規劃路線。
+5. Research 不會產生配方。找到 Cure 格後，到 Plan 用同樣的機器順序自己排產線；Plan 的 Sample 只依已揭露地圖預估。Plan 產線的路徑也以淡紫寬帶畫在 Research 地圖上（同樣只用已知地圖預估），方便對照規劃路線。
 
-正常新局預設6種疾病：第一種reference只需要初始machine；後續疾病可能需要在Technology打開Zigzag still、Loop vat、Straight drive或Crane arm。地圖的hidden reference不會在遊戲中顯示，玩家要以sector與每次試驗揭露的結果自行修改路線。
+正常新局預設6種疾病，所有機器開局即可用。地圖的hidden reference不會在遊戲中顯示，玩家要以每次試驗揭露的結果自行修改路線。
 
 ## Factory共同操作
 
@@ -136,7 +136,7 @@ Production Plan與Production使用相同editor，但一眼可分：Plan 以紫�
 - machine按鈕tooltip會分別列出處理速度`ticks/unit`與持續發生的`Processing $N/unit`；ghost `$N`仍是這次layout edit的一次性建造費。
 - 拆除免費但沒有退款；之後重建仍要再次付費。
 - 接受layout變更會停止播放並重建runtime：在途unit、tick與runtime counters清除；已累積waste保留。no-op、invalid或現金不足的變更不改layout，也不會暫停正在運作的Production。
-- `Space`切換Play/Pause；`.`在Pause時前進一tick。底部buttons也可Play、Pause、Step、Reset。
+- `Space`切換Play/Pause；`.`在Pause時前進一tick。底部圖示鈕也可Play／Pause、選1×／2×／10×速度與Step。
 - Sink送出的cure進Stock；failed/no-cure增加Waste；side effects跟著實體產品影響售價。
 - Market的疾病需求卡是公開資訊，但只有Production產生且仍在Stock的實體cure可以販售；需求卡不代表Atlas Cure已揭露，也不提供位置。同一產品只能賣一次。正常新局$1000必須足以在Research支出後建出第一條有效產線並到達第一次出售。
 
@@ -154,16 +154,14 @@ Production Plan與Production使用相同editor，但一眼可分：Plan 以紫�
 
 ## Technology、Market與重置
 
-- Technology是一張樹狀圖，每個節點都是免費開關（測試期，連線只表示下一階、不擋開關）：machine、Split / Merge、場地與Research輔助都可隨時開或關，沒有成本、前置或合約條件。打開探索輔助本身不揭霧，只增加之後Research試驗實際路徑的感測半徑。
+- Technology是一張樹狀圖，每個節點都是免費開關（測試期，連線只表示下一階、不擋開關）：machine、Split / Merge、場地與Research輔助都可隨時開或關，沒有成本、前置或合約條件。新局所有machine與Split / Merge已開，場地與Research輔助關著。打開探索輔助本身不揭霧，只增加之後Research試驗實際路徑的感測半徑。
 - 關掉仍在Plan或Production使用的項目（該機器、Splitter／Merger、擴出來的格子上有東西）會被拒絕；先移除再關。擴廠開或關都會重置Production runtime與waste，會先確認。
-- HUD contract chip顯示首個未完成疾病的`sold / 3`。
 - 若目前庫存沒有正net出貨，先改善成本／品質或嘗試另一種疾病。只有整局確實沒有可行改善時才以New Game重開。
 - 同一疾病的每塊治療區各有價格：越難到（最便宜路線越貴、要穿過窄段、旁邊有黑格）越貴，深入盆地的大區比近處小區值錢。產品依終點所在的區計價；第一次出售取得該區價格，之後同疾病的價格逐次乘`19/20`（取整）直到0。不同疾病各算自己的Sold與Next。
-- 每張需求卡以Clean stock／Tainted stock計數庫存件數，有 ★ 產品時另列`★ pay ×1.5`件數（★ 售價＝價格＋價格的一半，取整）；最佳可售庫存會列Next gross（★ 產品顯示加成後的`★ price`）、production cost、每個effect `$25`的penalty算式與net。無治療庫存或沒有正net庫存時，Ship disabled並直接顯示原因。
+- 有庫存的需求卡列clean／tainted／★件數（★ 售價＝價格＋價格的一半，取整）與下一件的net；滑過net看算式（價格 − production cost − 每個effect `$25`）。沒有正net庫存時，Ship disabled並直接顯示原因。沒有庫存的疾病只列下一件價格。
 - Market的`Ship best`按side effects最少、production cost最低、inventory ID最早的順序，略過不賺錢的候選後出售第一件正net產品。`Ship profitable`掃描相同順序，只出售在當下demand仍為正net的項目；略過的庫存不消耗demand，也不會被自動丟棄。畫面會顯示本次出售回饋。
 - 擴廠若會清除Production runtime／waste，確認視窗會先列出影響；Cancel不改任何authority。
-- blocking confirmation 開啟期間 Production timer 不增加 tick、inventory、cash 或 waste；Cancel 恢復原播放狀態，原本 Pause 不會自動 Play。確認 New／Load／Rewind／Reset／擴廠後舊 timer 停止。一般 drawer 與場域切換不暂停生產。
-- Reset Production有進度時先確認；確認後只重建目前layout的runtime，不把建造費退回，也不清inventory／累積waste。
+- blocking confirmation 開啟期間 Production timer 不增加 tick、inventory、cash 或 waste；Cancel 恢復原播放狀態，原本 Pause 不會自動 Play。確認 New／Load／Rewind／擴廠後舊 timer 停止。一般 drawer 與場域切換不暂停生產。
 
 ## 回報問題
 
@@ -179,4 +177,4 @@ Production Plan與Production使用相同editor，但一眼可分：Plan 以紫�
 
 World hotkeys are disabled while any drawer is open, but Production keeps running. The build readout quotes the pointed placement or move through the construction authority; it does not promise a generic replacement price.
 
-Market states how much the currently profitable stock can still net, and how many units that covers, with demand declining after every selected shipment. This is not a lifetime estimate for the line. Unprofitable stock suggests improving cost or quality, or another disease. With no cash left, it points to Market and cheaper routes, with Menu → New Game as an optional fresh start after saving; it does not declare the run irrecoverable.
+Unprofitable stock suggests improving cost or quality, or another disease. With no cash left, use Market and cheaper routes, or Menu → New Game after saving.

@@ -22,7 +22,6 @@ function fixture(): GameState {
   game = applyGameIntent(game, { kind: "buildProductionLayout", layout });
   game = applyGameIntent(game, { kind: "productionTicks", ticks: 400 });
   game = applyGameIntent(game, { kind: "sellProducts", disease: 0, productIds: game.inventory.slice(0, 3).map((product) => product.inventoryId) });
-  game = applyGameIntent(game, { kind: "setPatent", id: "zigzag-unlock", enabled: true });
   return discover(game, 1);
 }
 
@@ -63,13 +62,13 @@ test("an open drawer suppresses factory input across resize without pausing Prod
   await page.getByTestId("view-help").click();
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole("heading", { name: "Guide" }).click();
-  const direction = await page.getByTestId("brush-direction").textContent();
+  const direction = await page.getByTestId("brush-direction").getAttribute("aria-label");
   const tick = Number(await page.getByTestId("factory-tick").textContent());
   await page.keyboard.press("2");
   await page.keyboard.press("r");
   await page.keyboard.press("Control+z");
-  await expect(page.getByTestId("brush-selected")).toHaveText("belt");
-  await expect(page.getByTestId("brush-direction")).toHaveText(direction!);
+  await expect(page.getByTestId("brush-selected")).toHaveAccessibleName("belt");
+  await expect(page.getByTestId("brush-direction")).toHaveAccessibleName(direction!);
   await expect(page.getByTestId("factory-undo")).toBeEnabled();
   await expect.poll(async () => Number(await page.getByTestId("factory-tick").textContent())).toBeGreaterThan(tick);
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -117,7 +116,7 @@ test("Research hotkeys work only while the world is visible", async ({ page }) =
   await expect(page.getByTestId("research-program-strip").getByRole("listitem")).toHaveCount(1);
 });
 
-for (const action of ["new", "load", "rewind", "reset", "unlock", "delete"] as const) {
+for (const action of ["new", "load", "rewind", "unlock", "delete"] as const) {
   test(`running Production freezes behind ${action} confirmation and Cancel resumes`, async ({ page }) => {
     await loadFixture(page);
     await page.getByTestId("view-production").click();
@@ -129,8 +128,6 @@ for (const action of ["new", "load", "rewind", "reset", "unlock", "delete"] as c
     if (action === "new" || action === "load" || action === "rewind") {
       await openMenu(page);
       await page.getByTestId(action === "new" ? "new-game" : action).click();
-    } else if (action === "reset") {
-      await page.getByTestId("factory-reset").click();
     } else if (action === "unlock") {
       await page.getByTestId("view-technology").click();
       await page.getByTestId("patent-switch-bench-2").click();
@@ -190,7 +187,7 @@ test("Cancel does not start a paused factory; confirmed Load and New stop the pr
   await expect(page.getByTestId("factory-play")).toBeEnabled();
 });
 
-for (const action of ["reset", "unlock", "rewind"] as const) {
+for (const action of ["unlock", "rewind"] as const) {
   test(`confirmed ${action} replaces the runtime and leaves Production paused`, async ({ page }) => {
     await loadFixture(page);
     await page.getByTestId("view-production").click();
@@ -198,10 +195,7 @@ for (const action of ["reset", "unlock", "rewind"] as const) {
     await page.getByTestId("factory-step").click();
     await page.keyboard.press("Control+s");
     await page.getByTestId("factory-play").click();
-    if (action === "reset") {
-      await page.getByTestId("factory-reset").click();
-      await page.getByRole("button", { name: "Reset runtime", exact: true }).click();
-    } else if (action === "unlock") {
+    if (action === "unlock") {
       await page.getByTestId("view-technology").click();
       await page.getByTestId("patent-switch-bench-2").click();
       await page.getByTestId("patent-confirm-switch").click();

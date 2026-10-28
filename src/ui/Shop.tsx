@@ -16,8 +16,8 @@ import type {
 } from "../sim/phase0_interfaces";
 import { BASE_NAMES } from "../sim/phase0_interfaces";
 import { nextUnitPrice, premiumGross } from "../sim/economy";
-import { SHIPPING_CONTRACT_QUOTA, SIDE_EFFECT_PENALTY, cureRegionPrice } from "../sim/game";
-import { diseaseEmblem, diseaseName } from "./effectLabels";
+import { SIDE_EFFECT_PENALTY, cureRegionPrice } from "../sim/game";
+import { diseaseName } from "./effectLabels";
 
 interface ShopProps {
   readonly level: GeneratedLevel;
@@ -55,22 +55,6 @@ export function profitableMarketProducts(
     profitable.push(product);
   }
   return profitable;
-}
-
-export function marketLineReadout(
-  inventory: readonly InventoryProduct[],
-  disease: DiseaseSpec,
-  alreadySold: number,
-): { readonly units: number; readonly gross: number; readonly net: number } {
-  const products = profitableMarketProducts(inventory, disease, alreadySold);
-  let gross = 0;
-  let net = 0;
-  for (const [index, product] of products.entries()) {
-    const quote = quoteMarketProduct(product, disease, alreadySold + index);
-    gross += quote.gross;
-    net += quote.net;
-  }
-  return { units: products.length, gross, net };
 }
 
 export interface MarketQuote {
@@ -130,21 +114,14 @@ export function marketDisabledReason(
   return null;
 }
 
-export const MARKET_LADDER_UNITS = 5;
-
 export function formatMoney(amount: number): string {
   return amount < 0 ? `−$${-amount}` : `$${amount}`;
 }
 
-/** The side-effect term of a quote, or null when the best unit is clean. */
-export function marketPenaltyLabel(quote: MarketQuote | null): string | null {
-  if (quote === null || quote.sideEffectCount === 0) return null;
-  return `$${quote.sideEffectPenaltyEach} × ${quote.sideEffectCount} = $${quote.sideEffectPenalty}`;
-}
-
-/** Gross price of each of the next `count` units: finite demand made concrete. */
-export function marketPriceLadder(basePrice: number, alreadySold: number, count = MARKET_LADDER_UNITS): number[] {
-  return Array.from({ length: count }, (_, index) => nextUnitPrice(basePrice, alreadySold + index));
+/** The next unit's sum, for the net figure's tooltip. */
+export function marketQuoteBreakdown(quote: MarketQuote): string {
+  const penalty = quote.sideEffectCount === 0 ? "" : ` − $${quote.sideEffectPenalty} side effects`;
+  return `${formatMoney(quote.gross)}${quote.premium ? " ★" : ""} price − $${quote.productionCost} cost${penalty}. Each unit shipped lowers the next price.`;
 }
 
 function soldSoFar(economy: EconomyState, disease: DiseaseId): number {
@@ -175,7 +152,6 @@ export function Shop({ level, economy, inventory, onSell }: ShopProps) {
     <div className="game-view management-view market-view">
       <header className="management-header">
         <h1>Market</h1>
-        <p>Every unit shipped lowers that disease’s next price.</p>
         {saleFeedback.text !== "" && (
           <p key={saleFeedback.serial} className="market-feedback" role="status" data-testid="market-sale-feedback">{saleFeedback.text}</p>
         )}
@@ -188,26 +164,19 @@ export function Shop({ level, economy, inventory, onSell }: ShopProps) {
             const premium = eligible.filter((product) => product.outcome.premium.includes(disease.id)).length;
             const tainted = have - clean;
             const sold = soldSoFar(economy, disease.id);
-            const next = nextUnitPrice(disease.basePrice, sold);
             const quote = bestMarketQuote(inventory, disease, sold);
-            const remaining = marketLineReadout(inventory, disease, sold);
             const disabledReason = marketDisabledReason(have, quote);
             const disabledReasonId = `shop-disabled-reason-${disease.id}`;
-            const penalty = marketPenaltyLabel(quote);
-            const contract = (
-              <span className="market-contract">
-                Sold <strong data-testid={`shop-sold-${disease.id}`}>{sold}</strong>
-                {" · "}Contract <strong>{Math.min(sold, SHIPPING_CONTRACT_QUOTA)}/{SHIPPING_CONTRACT_QUOTA}</strong>
-              </span>
+            const title = (
+              <>
+                <h2>{diseaseName(disease.id)}{level.mm.maps.length > 1 && ` · ${BASE_NAMES[disease.map]}`}</h2>
+              </>
             );
-            if (have === 0) {
+            if (have === 0 || quote === null) {
               return (
                 <article key={disease.id} className="market-card is-quiet" data-testid={`shop-row-${disease.id}`}>
-                  <span className="disease-emblem">{diseaseEmblem(disease.id)}</span>
-                  <h2>{diseaseName(disease.id)}{level.mm.maps.length > 1 && ` · ${BASE_NAMES[disease.map]}`}</h2>
-                  <span className="market-quiet-price">Next <strong data-testid={`shop-next-${disease.id}`}>{formatMoney(next)}</strong></span>
-                  {contract}
-                  <span id={disabledReasonId} className="market-reason" data-testid={disabledReasonId}>{disabledReason}</span>
+                  {title}
+                  <span className="market-quiet-price" title="Next unit price">Next <strong data-testid={`shop-next-${disease.id}`}>{formatMoney(nextUnitPrice(disease.basePrice, sold))}</strong></span>
                 </article>
               );
             }
@@ -215,68 +184,43 @@ export function Shop({ level, economy, inventory, onSell }: ShopProps) {
             return (
               <article key={disease.id} className="market-card is-active" data-testid={`shop-row-${disease.id}`}>
                 <div className="market-card-heading">
-                  <span className="disease-emblem">{diseaseEmblem(disease.id)}</span>
-                  <h2>{diseaseName(disease.id)}{level.mm.maps.length > 1 && ` · ${BASE_NAMES[disease.map]}`}</h2>
-                  {contract}
+                  {title}
+                  <span className="market-net" title={marketQuoteBreakdown(quote)}>
+                    Net <strong data-testid={`shop-net-${disease.id}`}>{formatMoney(quote.net)}</strong>
+                  </span>
                 </div>
-                <dl className="market-sheet">
-                  <dt>Stock</dt>
-                  <dd>
-                    <span className="market-stock is-clean"><strong className="market-value-clean" data-testid={`shop-clean-${disease.id}`}>{clean}</strong> Clean</span>
-                    <span className="market-stock is-tainted"><strong className="market-value-tainted" data-testid={`shop-tainted-${disease.id}`}>{tainted}</strong> Tainted</span>
-                    {premium > 0 && (
-                      <span className="market-stock is-premium"><strong className="market-value-premium" data-testid={`shop-premium-${disease.id}`}>{premium}</strong> ★ pay ×1.5</span>
-                    )}
-                  </dd>
-                  <dt>Next unit</dt>
-                  <dd className="market-equation">
-                    <span><strong data-testid={`shop-next-${disease.id}`}>{formatMoney(quote?.gross ?? next)}</strong> {quote?.premium === true ? "★ price" : "price"}</span>
-                    <span>− <strong data-testid={`shop-production-cost-${disease.id}`}>{formatMoney(quote?.productionCost ?? 0)}</strong> cost</span>
-                    {penalty !== null && (
-                      <span className="market-value-tainted">− <strong data-testid={`shop-side-effect-penalty-${disease.id}`}>{penalty}</strong> side effects</span>
-                    )}
-                    <span className="market-net">= <strong data-testid={`shop-net-${disease.id}`}>{formatMoney(quote?.net ?? 0)}</strong> net</span>
-                  </dd>
-                  <dt>Demand</dt>
-                  <dd>
-                    <ol className="price-ladder" aria-label={`Next ${MARKET_LADDER_UNITS} unit prices`} data-testid={`shop-ladder-${disease.id}`}>
-                      {marketPriceLadder(quote?.regionPrice ?? disease.basePrice, sold).map((price, index) => (
-                        <li key={index} className={index < remaining.units ? "is-covered" : undefined}>{formatMoney(price)}</li>
-                      ))}
-                    </ol>
-                  </dd>
-                </dl>
-                <p className="market-readout" data-testid={`shop-stock-net-${disease.id}`}>
-                  This stock can still net <strong>{formatMoney(remaining.net)}</strong> across <strong>{remaining.units}</strong> {remaining.units === 1 ? "unit" : "units"}.
-                </p>
-                <div className="market-actions">
-                  <button
-                    type="button"
-                    onClick={() => ship(disease.id, false)}
-                    disabled={remaining.units === 0}
-                    aria-describedby={describedBy}
-                    className="primary-action"
-                    data-testid={`shop-sell-${disease.id}`}
-                  >
-                    Ship best
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => ship(disease.id, true)}
-                    disabled={remaining.units === 0}
-                    aria-describedby={describedBy}
-                    className="game-control"
-                    data-testid={`shop-sell-all-${disease.id}`}
-                  >
-                    Ship profitable
-                  </button>
-                  {disabledReason !== null && (
-                    <p className="market-reason">
-                      <span id={disabledReasonId} data-testid={disabledReasonId}>{disabledReason}</span>
-                      {" "}Lower processing cost or side effects, or ship another disease.
-                    </p>
-                  )}
+                <div className="market-card-body">
+                  <span className="market-stock" title="Units in stock">
+                    <span className="is-clean"><strong data-testid={`shop-clean-${disease.id}`}>{clean}</strong> clean</span>
+                    {tainted > 0 && <span className="is-tainted"><strong data-testid={`shop-tainted-${disease.id}`}>{tainted}</strong> tainted</span>}
+                    {premium > 0 && <span className="is-premium" title="★ pays ×1.5"><strong data-testid={`shop-premium-${disease.id}`}>{premium}</strong> ★</span>}
+                  </span>
+                  <div className="market-actions">
+                    <button
+                      type="button"
+                      onClick={() => ship(disease.id, false)}
+                      disabled={disabledReason !== null}
+                      aria-describedby={describedBy}
+                      className="primary-action"
+                      data-testid={`shop-sell-${disease.id}`}
+                    >
+                      Ship best
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => ship(disease.id, true)}
+                      disabled={disabledReason !== null}
+                      aria-describedby={describedBy}
+                      className="game-control"
+                      data-testid={`shop-sell-all-${disease.id}`}
+                    >
+                      Ship profitable
+                    </button>
+                  </div>
                 </div>
+                {disabledReason !== null && (
+                  <p id={disabledReasonId} className="market-reason" data-testid={disabledReasonId} title="Lower processing cost or side effects, or ship another disease.">{disabledReason}</p>
+                )}
               </article>
             );
           })}

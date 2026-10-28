@@ -51,13 +51,6 @@ test("the complete HUD stays reachable across narrow widths", async ({ page }) =
   for (const width of [390, 430, 560, 651]) {
     await page.setViewportSize({ width, height: 844 });
     await page.goto("/?cash=999712");
-    // Research hides the search objective; the pinned goal shows in the other facilities.
-    await page.getByTestId("view-pilot").click();
-    await expect(page.getByTestId("shipping-contract")).toBeVisible();
-    const goal = await page.getByTestId("objective").boundingBox();
-    expect(goal, `the pinned goal should fit at ${width}px`).not.toBeNull();
-    expect((goal?.x ?? width) + (goal?.width ?? 1)).toBeLessThanOrEqual(width);
-    await page.getByTestId("view-research").click();
     expect((await page.getByTestId("top-hud").boundingBox())?.height ?? 0).toBeLessThanOrEqual(92);
 
     for (const element of await page.locator(".top-hud .resource-chip, .top-hud button").all()) {
@@ -78,7 +71,7 @@ test("the complete HUD stays reachable across narrow widths", async ({ page }) =
         .map((chip) => chip.textContent),
     );
     expect(overflowingResources, `resource text must stay inside its chip at ${width}px`).toEqual([]);
-    const clippedResourceParts = await page.locator(".top-hud .resource-label, .top-hud .resource-chip strong")
+    const clippedResourceParts = await page.locator(".top-hud .resource-chip strong, .top-hud .stock-badge")
       .evaluateAll((parts) => parts
         .filter((part) => part.scrollWidth > part.clientWidth)
         .map((part) => part.textContent));
@@ -174,7 +167,7 @@ test("Pilot spatial editing supports palette, rotate, drag paint, erase, undo, r
   expect(clippedTools).toEqual([]);
   await pilot.getByTestId("brush-belt").click();
   await page.keyboard.press("r");
-  await expect(pilot.getByTestId("brush-direction")).toContainText("S");
+  await expect(pilot.getByTestId("brush-direction")).toHaveAccessibleName("Direction SE");
   const beltStart = await factoryCellPoint(canvas, 10, 6);
   const beltEnd = await factoryCellPoint(canvas, 12, 6);
   const x = beltStart.x;
@@ -208,7 +201,7 @@ test("Pilot spatial editing supports palette, rotate, drag paint, erase, undo, r
   await page.mouse.click(machineX, machineY);
   await expect(pilot.getByTestId("factory-hover-kind")).toHaveText(machineName("hook"));
   await page.keyboard.press("r");
-  await expect(pilot.getByTestId("brush-direction")).toHaveText("Footprint 0°");
+  await expect(pilot.getByTestId("brush-direction")).toHaveAccessibleName("Footprint 0°");
   await page.mouse.move(machineX, machineY);
   await page.mouse.down();
   await page.mouse.move(movedX, machineY, { steps: 5 });
