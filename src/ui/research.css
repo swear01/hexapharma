@@ -51,6 +51,7 @@
 .research-dpad-center { grid-area: center; }
 .research-dpad-right { grid-area: right; }
 .research-dpad-down { grid-area: down; }
+@media (pointer: coarse) { .research-dpad { grid-template-columns: repeat(3, 44px); grid-template-rows: repeat(3, 44px); } }
 .research-bases { position: absolute; z-index: 3; bottom: 12px; right: 12px; display: flex; align-items: center; gap: 8px; pointer-events: auto; }
 .research-bases .base-picker { padding: 2px; border: 1px solid var(--rule-strong); border-radius: 3px; background: var(--paper-raised); }
 .research-bases .base-picker button { padding: 0 10px; border-color: transparent; background: transparent; color: var(--ink-2); font-size: 13px; }

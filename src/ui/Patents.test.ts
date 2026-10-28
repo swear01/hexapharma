@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_PATENTS } from "../sim/patent";
-import { PATENT_TREE, patentEffectSummary, patentSwitchWarning, patentTitle } from "./Patents";
+import { PATENT_TREE, patentEffectSummary, patentSwitchWarning, patentTitle, visiblePatentTree } from "./Patents";
 
 describe("Patent destructive confirmation", () => {
   it("warns only when a factory expansion will reset commissioned Production", () => {
@@ -16,6 +16,14 @@ describe("Patent destructive confirmation", () => {
 describe("Technology tree", () => {
   it("places every node exactly once", () => {
     expect([...PATENT_TREE.flat()].sort()).toEqual(DEFAULT_PATENTS.map((node) => node.id).sort());
+  });
+
+  it("offers base switches only for bases the level has", () => {
+    const ids = (baseCount: number) => visiblePatentTree(baseCount).map((branch) => branch.map((node) => node.id));
+    expect(ids(1)).not.toContainEqual(expect.arrayContaining(["oil-base"]));
+    expect(ids(1)).toHaveLength(PATENT_TREE.length - 1);
+    expect(ids(2).at(-1)).toEqual(["oil-base"]);
+    expect(ids(3)).toEqual(PATENT_TREE);
   });
 });
 
