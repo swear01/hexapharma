@@ -105,7 +105,7 @@
 .legend-keys kbd { display: inline-block; min-width: 20px; padding: 3px 5px; border: 1px solid var(--rule-strong); border-radius: 2px; color: var(--ink); font-size: 12px; text-align: center; }
 .map-symbol { flex: 0 0 auto; }
 .map-symbol .ink-course { stroke: var(--course); }
-.map-symbol .map-symbol-number { fill: var(--course-ink); font: 600 12px var(--font-display); text-anchor: middle; }
+.map-symbol .solid-course { fill: var(--course); }
 .map-symbol .fill-cure { fill: color-mix(in srgb, var(--cure) 14%, var(--paper-raised)); stroke: var(--cure); stroke-width: 1.5; }
 .map-symbol .solid-cure { fill: var(--cure); }
 .map-symbol .fill-effect { fill: color-mix(in srgb, var(--effect) 22%, var(--paper-raised)); stroke: var(--effect); stroke-width: 1.5; }

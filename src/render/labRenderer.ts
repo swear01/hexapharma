@@ -1,4 +1,4 @@
-import { Application, Container, Graphics, Text } from "pixi.js";
+import { Application, Container, Graphics } from "pixi.js";
 import type { DrugState, EffectMap, MultiMap, Vec2 } from "../sim/phase0_interfaces";
 import { hexInBounds, hexIndex } from "../sim/hex";
 import {
@@ -27,8 +27,9 @@ export const LAB_SCHEMATIC_STYLE = Object.freeze({
   oliveInk: 0x6f7d34,
 });
 
-/** Ink-draw time for a committed leg (exponential ease-out); instant under reduced motion. */
-export const LAB_LEG_DRAW_MS = 220;
+/** A new trial's course is walked at this pace per trail segment, up to a total cap; instant under reduced motion. */
+export const LAB_LEG_STEP_MS = 90;
+export const LAB_RUN_MAX_MS = 4_000;
 
 /** Where the last Run first left its estimate, and the terrain that moved it. */
 export interface ResearchDeviation {
@@ -39,6 +40,8 @@ export interface ResearchDeviation {
 export interface LabRenderView {
   readonly activeMap: number;
   readonly camera: LabCamera;
+  /** The level's starting heading: the start marker points along it. */
+  readonly startHeading: number;
   /** Actual trail of the last trial (solid); points may sit half-way inside swamp. */
   readonly trail: readonly (Vec2 | null)[];
   /** Trail index where each machine of the trial ends. */
@@ -483,8 +486,11 @@ function drawLegChevrons(
   }
 }
 
-/** Filled dart at a drug's position, pointing along its heading (0 = east, clockwise sixths). */
-function drawHeadingDart(target: Graphics, center: PixelPoint, heading: number, size: number): void {
+/**
+ * Dart at a drug's position, pointing along its heading (0 = east, clockwise sixths): filled for
+ * where the drug is now, outlined (stroke `width`) for the start.
+ */
+function drawHeadingDart(target: Graphics, center: PixelPoint, heading: number, size: number, outlineWidth = 0): void {
   const angle = heading * Math.PI / 3;
   const point = (theta: number, radius: number) => [center.x + Math.cos(angle + theta) * radius, center.y + Math.sin(angle + theta) * radius];
   target.poly([
@@ -492,16 +498,10 @@ function drawHeadingDart(target: Graphics, center: PixelPoint, heading: number, 
     ...point(Math.PI * 0.8, size),
     ...point(Math.PI, size * 0.35),
     ...point(-Math.PI * 0.8, size),
-  ], true).fill({ color: LAB_SCHEMATIC_STYLE.course });
+  ], true);
+  if (outlineWidth > 0) target.stroke({ color: LAB_SCHEMATIC_STYLE.course, width: outlineWidth, join: "round" });
+  else target.fill({ color: LAB_SCHEMATIC_STYLE.course });
 }
-
-const LABEL_STYLE = {
-  fontFamily: "\"Barlow Condensed\", \"Arial Narrow\", sans-serif",
-  fontWeight: "600",
-  fill: SHARED_SCHEMATIC_STYLE.course,
-  // Paper knockout under overprinted numerals, as on a printed course.
-  stroke: { color: SHARED_SCHEMATIC_STYLE.deck, width: 3, join: "round" },
-} as const;
 
 export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
   const app = new Application();
@@ -526,32 +526,21 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
   const contourChunks = new Map<number, Graphics>();
   let contourRelief: Int16Array | null = null;
   const mapLayers = [paper, terrain, grid, cliffs, features] as const;
-  const labels = new Container();
-  const labelPool: Text[] = [];
-  app.stage.addChild(paper, terrain, contours, grid, cliffs, features, course, marks, labels);
+  // Contours sit under the printed ground: they read through fog only.
+  app.stage.addChild(paper, contours, terrain, grid, cliffs, features, course, marks);
 
   let last: { readonly mm: MultiMap; readonly drug: DrugState; readonly view: LabRenderView } | null = null;
   let lastTrail: readonly (Vec2 | null)[] | null = null;
   let legFrom = -1;
   let legProgress = 1;
   let legStartTime = -1;
+  let legDuration = 0;
   let frame = 0;
   let destroyed = false;
-
-  const label = (index: number): Text => {
-    let text = labelPool[index];
-    if (text === undefined) {
-      text = new Text({ text: "", style: { ...LABEL_STYLE, fontSize: 16 } });
-      labels.addChild(text);
-      labelPool[index] = text;
-    }
-    return text;
-  };
 
   const paintCourse = (): void => {
     course.clear();
     marks.clear();
-    let labelCount = 0;
     const map = last?.mm.maps[last.view.activeMap];
     if (last !== null && map !== undefined) {
       const { drug, view } = last;
@@ -566,25 +555,20 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
       if (start !== null) nodes.add(coordKey(start));
       const animating = legFrom >= 0 && legProgress < 1;
 
+      // The plan is inked first on the course layer, so it stays under the walking line.
+      if (view.previewTrail !== undefined) {
+        drawDashedTrail(course, view.previewTrail, nodes, camera, radius, view.estimate === true ? 0.4 : 1);
+        drawLegChevrons(course, view.previewTrail, view.previewLegEnds ?? [], camera, radius * 0.45);
+        course.stroke({ color: LAB_SCHEMATIC_STYLE.candidate, width: lineWidth, cap: "round", join: "round", alpha: view.estimate === true ? 0.4 : 1 });
+      }
       const head = drawLegs(course, view.trail, nodes, camera, radius, animating ? legFrom : -1, legProgress);
       if (!animating) drawLegChevrons(course, view.trail, view.legEnds ?? [], camera, radius * 0.45);
       course.stroke({ color: LAB_SCHEMATIC_STYLE.course, width: lineWidth, cap: "round", join: "round" });
 
       if (start !== null) {
-        const center = labCellCenter(camera, start);
-        const next = view.trail.find((point, index) => index > 0 && point !== null && coordKey(point) !== coordKey(start));
-        const toward = next === undefined || next === null ? null : labCellCenter(camera, next);
-        const angle = toward === null ? drug.heading * Math.PI / 3 : Math.atan2(toward.y - center.y, toward.x - center.x);
-        const size = radius * 1.2;
-        marks.moveTo(center.x + Math.cos(angle) * size, center.y + Math.sin(angle) * size);
-        for (let corner = 1; corner < 3; corner++) {
-          const theta = angle + corner * Math.PI * 2 / 3;
-          marks.lineTo(center.x + Math.cos(theta) * size, center.y + Math.sin(theta) * size);
-        }
-        marks.closePath().stroke({ color: LAB_SCHEMATIC_STYLE.course, width: lineWidth, join: "round" });
+        drawHeadingDart(marks, labCellCenter(camera, start), view.startHeading, radius, lineWidth);
       }
 
-      const fontSize = Math.round(Math.max(12, 16 * camera.zoom));
       for (const control of controls) {
         const center = labCellCenter(camera, control);
         marks.circle(center.x, center.y, cell * 0.09);
@@ -612,21 +596,10 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
         marks.stroke({ color: LAB_SCHEMATIC_STYLE.course, width: cell * 0.3, cap: "round", join: "round", alpha: 0.18 });
       }
       const previewPos = view.previewDrug === undefined ? undefined : drugDrawPoint(view.previewDrug, view.activeMap);
-      if (!animating && view.previewTrail !== undefined) {
-        drawDashedTrail(marks, view.previewTrail, nodes, camera, radius, view.estimate === true ? 0.4 : 1);
-        drawLegChevrons(marks, view.previewTrail, view.previewLegEnds ?? [], camera, radius * 0.45);
-        marks.stroke({ color: LAB_SCHEMATIC_STYLE.candidate, width: lineWidth, cap: "round", join: "round", alpha: view.estimate === true ? 0.4 : 1 });
-      }
       if (!animating && view.deviation !== undefined) {
         const center = labCellCenter(camera, view.deviation.pos);
         marks.circle(center.x, center.y, radius * 0.5)
           .stroke({ color: LAB_SCHEMATIC_STYLE.failure, width: Math.max(2, cell * 0.05) });
-        const text = label(labelCount++);
-        if (text.text !== view.deviation.reason) text.text = view.deviation.reason;
-        if (text.style.fontSize !== fontSize) text.style.fontSize = fontSize;
-        if (text.style.fill !== LAB_SCHEMATIC_STYLE.failure) text.style.fill = LAB_SCHEMATIC_STYLE.failure;
-        text.visible = true;
-        text.position.set(center.x + radius * 0.8, center.y + radius * 0.2);
       }
       if (!animating && previewPos !== undefined) {
         const center = labCellCenter(camera, previewPos);
@@ -634,15 +607,13 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
         else drawHeadingDart(marks, center, view.previewDrug!.heading, radius);
       }
     }
-    for (let index = labelCount; index < labelPool.length; index++) labelPool[index]!.visible = false;
   };
 
   const tick = (now: number): void => {
     frame = 0;
     if (destroyed) return;
     if (legStartTime < 0) legStartTime = now;
-    const t = Math.min(1, (now - legStartTime) / LAB_LEG_DRAW_MS);
-    legProgress = t >= 1 ? 1 : 1 - 2 ** (-10 * t);
+    legProgress = Math.min(1, (now - legStartTime) / legDuration);
     paintCourse();
     app.render();
     if (legProgress < 1) frame = requestAnimationFrame(tick);
@@ -658,14 +629,6 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
     app.render();
   });
   densityObserver.observe(app.canvas);
-  // Labels use the display face; rebuild them once it has loaded.
-  document.fonts.load("600 16px \"Barlow Condensed\"").then(() => {
-    if (destroyed) return;
-    for (const text of labelPool) text.destroy();
-    labelPool.length = 0;
-    paintCourse();
-    app.render();
-  }).catch(() => undefined);
 
   return {
     canvas: app.canvas,
@@ -677,6 +640,7 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
         legFrom = 0;
         legProgress = 0;
         legStartTime = -1;
+        legDuration = Math.min(LAB_RUN_MAX_MS, (view.trail.length - 1) * LAB_LEG_STEP_MS);
         if (frame === 0) frame = requestAnimationFrame(tick);
       }
       lastTrail = view.trail;
@@ -730,7 +694,6 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
       app.stage.removeChildren();
       for (const layer of [...mapLayers, course, marks]) layer.destroy();
       contours.destroy({ children: true });
-      labels.destroy({ children: true });
       app.destroy({ removeView: true });
     },
   };

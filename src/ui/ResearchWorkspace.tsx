@@ -12,7 +12,7 @@ import type {
 } from "../sim/phase0_interfaces";
 import { DEFAULT_CATALOG } from "../sim/phase0_interfaces";
 import type { ResearchDeviation } from "../render/labRenderer";
-import { App, researchOutcomeText } from "./App";
+import { App, researchOutcomeNoteworthy, researchOutcomeText } from "./App";
 import { BasePicker } from "./BasePicker";
 import { MachineIcon } from "./MachineIcon";
 import { machineName } from "./machineLabels";
@@ -148,7 +148,10 @@ export function ResearchWorkspace(props: ResearchWorkspaceProps) {
             </ol>
           </div>
         )}
-        {props.lastOutcome !== null && <ResearchResult outcome={props.lastOutcome} />}
+        {/* A run that found nothing needs no readout (the map shows where it went); screen readers still hear it. */}
+        {props.lastOutcome !== null && (researchOutcomeNoteworthy(props.lastOutcome)
+          ? <ResearchResult outcome={props.lastOutcome} />
+          : <p className="sr-only" role="status">{researchOutcomeText(props.lastOutcome)}</p>)}
         {props.baseLocks.length > 1 && (
           <div className="research-bases">
             {baseHint !== null && <span className="research-base-hint" role="status">{baseHint}</span>}

@@ -1,10 +1,10 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import type { EffectMap, MultiMap } from "../sim/phase0_interfaces";
+import { CellKind, type EffectMap, type MultiMap } from "../sim/phase0_interfaces";
 import { applyTemplate } from "../sim/drug-graph";
 import { generate } from "../sim/mapgen";
 import { defaultGenOptions, researchBaseLevel, researchRoute } from "./Game";
-import { focusLabCamera } from "../render/labCamera";
+import { LAB_VIEWPORT, focusLabCamera } from "../render/labCamera";
 import {
   labPointerToViewport,
   researchDrugPoint,
@@ -13,6 +13,9 @@ import {
   researchFocusTarget,
   researchKnownCureLocations,
   researchPointerMoved,
+  researchCellNote,
+  researchNotePlacement,
+  researchOutcomeNoteworthy,
   researchPointerAction,
   researchPreviewEndpointHit,
   validateLabFogAuthority,
@@ -98,7 +101,7 @@ describe("Lab pointer projection", () => {
 
   it("commits only on the candidate endpoint while preserving right-click erase", () => {
     expect(researchPointerAction(0, false, true, "commit")).toBe("place");
-    expect(researchPointerAction(0, false, false, "commit")).toBeNull();
+    expect(researchPointerAction(0, false, false, "commit")).toBe("inspect");
     expect(researchPointerAction(2, false, false, "commit")).toBe("erase");
     expect(researchPointerAction(0, true, true, "commit")).toBeNull();
     expect(researchPointerAction(1, false, true, "commit")).toBeNull();
@@ -202,5 +205,47 @@ describe("Research Cure fit", () => {
       expect(y).toBeGreaterThanOrEqual(insets.top);
       expect(y).toBeLessThanOrEqual(viewport.height - insets.bottom);
     }
+  });
+});
+
+describe("Research cell notes", () => {
+  it("explains revealed effect and terrain cells and stays silent on fog or plain ground", () => {
+    const atlas = map(3);
+    atlas.cell[0] = CellKind.Cure;
+    atlas.cureId[0] = 1;
+    atlas.cureTier[0] = 2;
+    atlas.sideEffectId[0] = 0;
+    atlas.cell[1] = CellKind.Wall;
+    atlas.cell[2] = CellKind.SideEffect;
+    atlas.fog.fill(1);
+    atlas.fog[2] = 0;
+    const cure = researchCellNote(atlas, { q: 0, r: 0 });
+    expect(cure).toMatch(/^★ Disease 2 cure: /);
+    expect(cure).toMatch(/1\.5×/);
+    expect(cure).toMatch(/side effect/);
+    expect(researchCellNote(atlas, { q: 1, r: 0 })).toMatch(/^Mountain: /);
+    expect(researchCellNote(atlas, { q: 2, r: 0 })).toBeNull();
+    expect(researchCellNote(atlas, { q: 1, r: 1 })).toBeNull();
+    expect(researchCellNote(atlas, { q: -1, r: 0 })).toBeNull();
+  });
+});
+
+describe("Research readout and note placement", () => {
+  it("shows a readout only for a run that failed, cured or picked up a side effect", () => {
+    const base = { failed: false, final: [], cured: [], sideEffects: [], premium: [], regions: [] };
+    expect(researchOutcomeNoteworthy(base)).toBe(false);
+    expect(researchOutcomeNoteworthy({ ...base, failed: true })).toBe(true);
+    expect(researchOutcomeNoteworthy({ ...base, cured: [0], regions: [1] })).toBe(true);
+    expect(researchOutcomeNoteworthy({ ...base, sideEffects: [0] })).toBe(true);
+  });
+
+  it("hangs a note below near the top and on its near side by the left and right edges", () => {
+    const visible = LAB_VIEWPORT;
+    const desktop = { width: 1400, height: 770 };
+    expect(researchNotePlacement({ x: visible.width / 2, y: visible.height / 2 }, visible, desktop)).toBe("is-above is-center");
+    expect(researchNotePlacement({ x: 10, y: 10 }, visible, desktop)).toBe("is-below is-left");
+    expect(researchNotePlacement({ x: visible.width - 10, y: visible.height - 10 }, visible, desktop)).toBe("is-above is-right");
+    // On a phone a cell 30% across is still too close to the edge for a centred note.
+    expect(researchNotePlacement({ x: visible.width * 0.3, y: visible.height / 2 }, visible, { width: 390, height: 600 })).toBe("is-above is-left");
   });
 });
