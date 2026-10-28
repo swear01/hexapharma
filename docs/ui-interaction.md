@@ -55,7 +55,7 @@ F1 一次顯示一個 base 的大型 Atlas：
 - Abyss、Swamp、Portal A+B、Cure與SideEffect未揭露前不能有 motif、sprite、region edge、preview差異或 outcome洩漏。只揭露單一 Portal 端點時可顯示未配對端點，但配對標記、方向、目的座標與 preview jump 必須等兩端都揭露。
 - palette是map legend：每個machine以footprint＋完整path的token、全名、價格與hotkey辨識；沒有 path-length control。
 - 起點是指向關卡起始 heading 的紫色空心尖頭；**規劃路線**是虛線紫色leg、每台機器終點的小實心節點與每段 leg 中央的兩筆 chevron（不編號），在 fog-masked planning map 上走完整條（霧當平地、Wall 照算）；**最近一次試驗的實際路線**是實線紫色leg，由 `lastTrial.program` 在真實地圖重播；規劃終點與實際終點都是指向 heading 的紫色實心尖頭（Failure 為紅色X）。Run 後、改動規劃前，虛線改為該次 Run 當下的預估並淡化；第一個偏離點只畫紅圈（地圖上不寫字；點該格可看原因）。Swamp 半步畫在半格點。新試驗的實線以每段 90 ms 等速走出（總長上限 4 s，reduced motion時立即完成）。
-- hotbar／數字鍵把 machine 接到規劃末端；hotbar 圖示（path 與 footprint）依規劃終點的 heading 旋轉。Backspace、Ctrl／⌘+Z、右鍵，或 LMB 單擊最後一個控制點（hover 時游標轉 pointer、tooltip `Remove last step`；其餘地圖 `Drag map`）或 `Undo` 移除最後一步；`Clear` 清空。blank map click 不改規劃。
+- hotbar／數字鍵把 machine 接到規劃末端；hotbar 圖示（path 與 footprint）依規劃終點的 heading 旋轉。Backspace、Ctrl／⌘+Z、右鍵，或 LMB 單擊最後一個控制點（hover 時游標轉 pointer、tooltip `Remove last step`；其餘地圖 `Drag map`）或 `Undo` 移除最後一步；`Clear` 清空。Run 偏離預估（紅圈）後，第一次接機器或 Undo 先刪掉偏離那步與其後各步（Undo 只做這件事）。blank map click 不改規劃。
 - 指令列只有剩餘現金讀數（`$M left`＝現金−N）、`Undo`、`Clear` 與 `Run · $N`（Enter）；N 是規劃的 catalog 總價。規劃為空或現金不足時 Run disabled、隱藏讀數並以短句說明。Run 以單一 `runResearchTrial` 一次付款、跑完整條、揭露實際路徑並保留規劃。
 - planning／hover不改 fog；只有試驗實際走過的格被揭露。Portal jump trail斷開。
 - Cure使用綠色十字與區域邊界，SideEffect是琥珀色點網；兩者可在同一cell疊加，不能互相遮掉或用互斥terrain kind呈現。Failure以紅色X標記。

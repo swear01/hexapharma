@@ -192,13 +192,13 @@ export function researchDeviation(
   known: MultiMap,
   start: DrugState,
   program: Template,
-): ResearchDeviation | null {
+): (ResearchDeviation & { readonly step: number }) | null {
   const map = mm.maps[0]!;
   const knownMap = known.maps[0]!;
   const kind = (target: EffectMap, cell: Vec2) => target.cell[hexIndex(target.width, cell.q, cell.r)];
   let actual = start;
   let estimate = start;
-  for (const machine of program.steps) {
+  for (const [step, machine] of program.steps.entries()) {
     if (actual.failed || estimate.failed) return null;
     const from = actual.pos[0]!;
     const real = previewStep(mm, actual, machine);
@@ -211,15 +211,15 @@ export function researchDeviation(
       const e = plannedPoints[index];
       if (a !== undefined && e !== undefined && a.q === e.q && a.r === e.r) continue;
       const before = index === 0 ? from : realCells[index - 1]!;
-      if (a === undefined && real.next.failed) return { pos: before, reason: "Abyss" };
+      if (a === undefined && real.next.failed) return { step, pos: before, reason: "Abyss" };
       if (kind(map, before) === CellKind.Swamp && kind(knownMap, before) !== CellKind.Swamp) {
-        return { pos: before, reason: "Swamp" };
+        return { step, pos: before, reason: "Swamp" };
       }
       const blocked = planned.trails[0]![index];
-      if (blocked !== undefined && kind(map, blocked) === CellKind.Wall) return { pos: blocked, reason: "Wall" };
+      if (blocked !== undefined && kind(map, blocked) === CellKind.Wall) return { step, pos: blocked, reason: "Wall" };
       return null;
     }
-    if (real.next.failed && !planned.next.failed) return { pos: realCells.at(-1) ?? from, reason: "Abyss" };
+    if (real.next.failed && !planned.next.failed) return { step, pos: realCells.at(-1) ?? from, reason: "Abyss" };
     actual = real.next;
     estimate = planned.next;
   }
@@ -638,14 +638,6 @@ export function Game() {
     () => researchRoute(researchLevel.mm, researchLevel.start, lastTrial?.program ?? { steps: [] }),
     [lastTrial, researchLevel],
   );
-  const appendResearchStep = useCallback((typeId: string) => {
-    const entry = catalog.find((candidate) => candidate.typeId === typeId);
-    if (entry === undefined) return;
-    setResearchPlan((plan) => plan.length >= MAX_TEMPLATE_STEPS
-      ? plan
-      : [...plan, { typeId: entry.typeId, path: entry.path, turn: entry.turn }]);
-  }, [catalog]);
-  const undoResearchStep = useCallback(() => setResearchPlan((plan) => plan.length === 0 ? plan : plan.slice(0, -1)), []);
   const clearResearchPlan = useCallback(() => setResearchPlan((plan) => plan.length === 0 ? plan : []), []);
   const researchBlockReason = researchRunBlockReason(game.economy.cash, researchProgram);
   /** The estimate the last Run was planned on; shown until the route is edited. */
@@ -654,9 +646,30 @@ export function Game() {
     readonly base: number;
     readonly trails: readonly (readonly (Vec2 | null)[])[];
     readonly legEnds: readonly number[];
-    readonly deviation: ResearchDeviation | null;
+    readonly deviation: ReturnType<typeof researchDeviation>;
   } | null>(null);
   const shownEstimate = runEstimate !== null && runEstimate.plan === researchPlan && runEstimate.base === researchBase ? runEstimate : null;
+  /** The first edit after a Run that left its estimate drops the deviating step and the rest: they were planned blind. */
+  const editablePlan = useCallback((plan: readonly Machine[]) => (
+    runEstimate?.plan === plan && runEstimate.base === researchBase && runEstimate.deviation !== null
+      ? plan.slice(0, runEstimate.deviation.step)
+      : plan
+  ), [researchBase, runEstimate]);
+  const appendResearchStep = useCallback((typeId: string) => {
+    const entry = catalog.find((candidate) => candidate.typeId === typeId);
+    if (entry === undefined) return;
+    setResearchPlan((plan) => {
+      const kept = editablePlan(plan);
+      return kept.length >= MAX_TEMPLATE_STEPS
+        ? kept
+        : [...kept, { typeId: entry.typeId, path: entry.path, turn: entry.turn }];
+    });
+  }, [catalog, editablePlan]);
+  const undoResearchStep = useCallback(() => setResearchPlan((plan) => {
+    const kept = editablePlan(plan);
+    if (kept.length < plan.length) return kept;
+    return plan.length === 0 ? plan : plan.slice(0, -1);
+  }), [editablePlan]);
   const runResearch = useCallback(() => {
     const blockReason = researchRunBlockReason(gameRef.current.economy.cash, researchProgram);
     if (blockReason !== null) {
