@@ -47,9 +47,9 @@
 
 F1 一次顯示一個 base 的大型 Atlas：
 
-- 多 base 關卡在地圖右下有 base 選擇器（`research-base`，每個 base 一個 `aria-pressed` 按鈕：Saline／Oil／Ethanol）。鎖住的 base 帶鎖頭、`aria-disabled`，點擊／hover／focus 只在選擇器旁顯示「Oil off · turn it on in Technology」，不切換。切換只改顯示的圖、fog 與最近試驗（試驗在該 base 時才顯示），規劃路線保留，Run 在選中的 base 付費；Load 顯示最近試驗的 base，New Game 回到 Saline。單 base 關卡不顯示選擇器。
+- 正常新局只有一個 base，不顯示選擇器（D48）。多 base 關卡（`nMaps > 1`）在地圖右下有 base 選擇器（`research-base`，每個 base 一個 `aria-pressed` 按鈕：Saline／Oil／Ethanol）。鎖住的 base 帶鎖頭、`aria-disabled`，點擊／hover／focus 只在選擇器旁顯示「Oil off · turn it on in Technology」，不切換。切換只改顯示的圖、fog 與最近試驗（試驗在該 base 時才顯示），規劃路線保留，Run 在選中的 base 付費；Load 顯示最近試驗的 base，New Game 回到 Saline。單 base 關卡不顯示選擇器。
 
-- Research拖曳任一滑鼠鍵都可pan，與Factory的Shift+LMB／MMB手勢分開；pointer cancel只取消gesture，不得commit或erase。camera開局聚焦世界中心的generator start；fresh fog只揭露中心radius-two 19-cell hex disk，平常只看見大地圖的一小部分。地圖左下是方向盤：上下左右各平移三分之一可見地圖（純滑鼠可操作），中央點（`F`）在有規劃時聚焦規劃終點，否則聚焦最近試驗的實際終點；窄螢幕（觸控拖曳）只留中央點。點左上 step 清單的一項把該 step 的終點置中。不顯示揭露格數、zoom或Cure計數。每次Run在單一intent中resolve，UI不顯示timed Dose phase或自動camera follow；唯一例外是剛resolve出Cure的試驗會以≤220 ms（reduced motion即時、任何pointer／wheel／focus可中斷）把camera fit到整條實際路線，避開結果readout與step清單；建築往返不因舊outcome重設手動camera。
+- Research拖曳任一滑鼠鍵都可pan，與Factory的Shift+LMB／MMB手勢分開；pointer cancel只取消gesture，不得commit或erase。camera開局聚焦世界中心的generator start；fresh fog只揭露中心radius-two 19-cell hex disk，平常只看見大地圖的一小部分。地圖左下直接印著四個實心三角與中央定位圈，沒有底板（墨色＋紙色暈邊，focus 只在鍵盤操作時畫圓環）：三角各平移三分之一可見地圖（純滑鼠可操作），定位圈（`F`）在有規劃時聚焦規劃終點，否則聚焦最近試驗的實際終點；窄螢幕（觸控拖曳）只留中央點。點左上 step 清單的一項把該 step 的終點置中。不顯示揭露格數、zoom或Cure計數。每次Run在單一intent中resolve，UI不顯示timed Dose phase或自動camera follow；唯一例外是剛resolve出Cure的試驗會以≤220 ms（reduced motion即時、任何pointer／wheel／focus可中斷）把camera fit到整條實際路線，避開結果readout與step清單；建築往返不因舊outcome重設手動camera。
 - Research 沒有羅盤：heading 由地圖上的終點尖頭表示；疾病與 Look sector 只在其他場域的目標文字中，sector只可為local或east／south-east／south-west／west／north-west／north-east，不顯示座標、距離、reference或region大小。
 - 霧是未印的紙：只有與seed／座標有關、與隱藏地形無關的淡等高線；Wall在霧下仍可讀，已揭露格與霧下都畫同樣淡的格線（霧下只有 minor）。
 - Abyss、Swamp、Portal A+B、Cure與SideEffect未揭露前不能有 motif、sprite、region edge、preview差異或 outcome洩漏。只揭露單一 Portal 端點時可顯示未配對端點，但配對標記、方向、目的座標與 preview jump 必須等兩端都揭露。
@@ -109,7 +109,7 @@ F1 一次顯示一個 base 的大型 Atlas：
 
 ## 10. Other drawers / responsive acceptance
 
-- Market／Technology cards可用buttons，因它們是離散管理決策。Technology只摘要開啟中且非零的Factory columns／rows、Research scan、Split／Merge、開啟的 base 與machine數量；節點排成樹狀圖：六條分支（擴廠、探索輔助、Split／Merge、Zigzag→Straight、Loop→Crane、Oil base→Ethanol base）由左到右，連線表示下一階；每個節點只有名稱、效果與一個 On／Off 開關（`role="switch"`），不顯示成本、前置或合約。測試期連線只是排版，不擋開關。Market公開需求板每疾病標題標出所在 base（`Disease 2 · Oil`，單 base 關卡省略），顯示Base、Sold、Next gross、Clean stock與Tainted stock；最佳可售庫存另列production cost、`$25 × effect count`與net，但不表示Atlas Cure已揭露或提供位置。
+- Market／Technology cards可用buttons，因它們是離散管理決策。Technology只摘要開啟中且非零的Factory columns／rows、Research scan、Split／Merge、開啟的 base 與machine數量；節點排成樹狀圖：六條分支（擴廠、探索輔助、Split／Merge、Zigzag→Straight、Loop→Crane；多 base 關卡另有 Oil base→Ethanol base，關卡沒有的 base 不列出）由左到右，連線表示下一階；每個節點只有名稱、效果與一個 On／Off 開關（`role="switch"`），不顯示成本、前置或合約。測試期連線只是排版，不擋開關。Market公開需求板每疾病標題標出所在 base（`Disease 2 · Oil`，單 base 關卡省略），顯示Base、Sold、Next gross、Clean stock與Tainted stock；最佳可售庫存另列production cost、`$25 × effect count`與net，但不表示Atlas Cure已揭露或提供位置。
 - 關閉仍被 Plan 或 Production 使用的節點時，sim 拒絕並顯示「Still in use · remove it from Plan and Production first.」。
 - `Ship best`依side-effect count、production cost、inventory ID掃描第一個positive-net產品；`Ship profitable`用同一順序略過non-positive候選，只出售逐件計入demand後仍positive-net的產品。沒有治療庫存或沒有可賺產品時，兩個action disabled並各自顯示原因；只有authority接受出售後才可顯示`Shipped`，rejected intent不得假報成功。
 - 探索輔助只能放大actual executed segment的sensor radius；打開開關本身不能揭霧。

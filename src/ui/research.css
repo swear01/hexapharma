@@ -15,7 +15,7 @@
 
 /* Map-margin furniture: printed on paper, never glass. */
 .research-overlay { position: relative; z-index: 3; grid-row: 1; grid-column: 1 / -1; min-height: 0; pointer-events: none; }
-.research-program-strip, .research-result, .research-atlas-status, .research-cell-note { border: 1px solid var(--rule-strong); border-radius: 3px; background: var(--paper-raised); }
+.research-program-strip, .research-result, .research-cell-note { border: 1px solid var(--rule-strong); border-radius: 3px; background: var(--paper-raised); }
 
 .research-program-strip { --strip-top: 12px; position: absolute; top: var(--strip-top); left: 12px; width: 232px; max-height: calc(100% - var(--strip-top) - 136px); display: flex; pointer-events: auto; }
 .goal-card:not([hidden]) ~ .view-layer .research-program-strip { --strip-top: 80px; }
@@ -38,10 +38,14 @@
 .research-readout.is-failed { border-color: var(--failure-border); background: var(--failure-surface); color: var(--failure-ink); }
 .research-readout.is-failed svg { stroke: var(--failure-border); stroke-width: 2.5; stroke-linecap: round; }
 
-.research-dpad { position: absolute; z-index: 3; bottom: 12px; left: 12px; display: grid; grid-template-areas: ". up ." "left center right" ". down ."; grid-template-columns: repeat(3, 36px); grid-template-rows: repeat(3, 36px); padding: 2px; }
-.research-dpad button { display: grid; place-items: center; min-height: 0; padding: 0; border-color: transparent; background: transparent; color: var(--ink-2); }
-.research-dpad svg { fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
-.research-dpad-center svg { fill: currentColor; }
+/* Map pan pad: bare glyphs on the map, a paper halo for legibility, no panel. */
+.research-dpad { position: absolute; z-index: 3; bottom: 12px; left: 12px; display: grid; grid-template-areas: ". up ." "left center right" ". down ."; grid-template-columns: repeat(3, 28px); grid-template-rows: repeat(3, 28px); filter: drop-shadow(0 0 1px var(--paper)) drop-shadow(0 0 2px var(--paper)); }
+.research-dpad button { display: grid; place-items: center; min-height: 0; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--ink-2); }
+.research-dpad button:hover:not(:disabled) { color: var(--ink); }
+.research-dpad button:focus-visible { outline: 1.5px solid var(--ink-2); outline-offset: -1px; }
+.research-dpad svg { width: 18px; height: 18px; fill: currentColor; }
+.research-dpad-center svg { fill: none; stroke: currentColor; stroke-width: 1.75; }
+.research-dpad-center .research-dpad-dot { fill: currentColor; stroke: none; }
 .research-dpad-up { grid-area: up; }
 .research-dpad-left { grid-area: left; }
 .research-dpad-center { grid-area: center; }

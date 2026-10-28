@@ -6,6 +6,8 @@ import { createPortal } from "react-dom";
 
 interface PatentsProps {
   readonly patents: PatentState;
+  /** Bases of this level; a base switch for a base the level lacks is not offered. */
+  readonly baseCount: number;
   readonly expansionResetsProduction: boolean;
   readonly onSwitch: (id: string, enabled: boolean) => void;
 }
@@ -91,6 +93,7 @@ export function patentEffectSummary(effects: ReturnType<typeof activeEffects>): 
 
 export function Patents({
   patents,
+  baseCount,
   expansionResetsProduction,
   onSwitch,
 }: PatentsProps) {
@@ -135,7 +138,10 @@ export function Patents({
 
       <div className="patent-grid" data-testid="patent-grid">
         <ol className="patent-tree" data-testid="patents-table" aria-label="Technology tree">
-          {PATENT_TREE.map((branch) => (
+          {PATENT_TREE.map((branch) => branch.filter((id) => {
+            const effect = DEFAULT_PATENTS.find((candidate) => candidate.id === id)!.effect;
+            return effect.kind !== "unlockBase" || effect.base < baseCount;
+          })).filter((branch) => branch.length > 0).map((branch) => (
             <li key={branch[0]} className="patent-branch">
               {branch.map((id) => {
                 const node = DEFAULT_PATENTS.find((candidate) => candidate.id === id)!;

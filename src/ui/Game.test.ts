@@ -46,7 +46,7 @@ describe("default Lab world options", () => {
   it("starts a new run on one large odd-sized map", () => {
     expect(defaultGenOptions(14)).toMatchObject({
       seed: 14,
-      nMaps: 3,
+      nMaps: 1,
       width: 49,
       height: 49,
       diseaseCount: 6,

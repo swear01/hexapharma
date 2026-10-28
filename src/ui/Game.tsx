@@ -273,7 +273,7 @@ export function researchTrailsForProgram(
 export function defaultGenOptions(seed: number): GenOptions {
   return {
     seed,
-    nMaps: 3,
+    nMaps: 1,
     width: LAB_WORLD_SIZE,
     height: LAB_WORLD_SIZE,
     catalog: DEFAULT_CATALOG,
@@ -1090,6 +1090,7 @@ export function Game() {
             ) : drawer === "technology" ? (
               <Patents
                 patents={game.patents}
+                baseCount={level.mm.maps.length}
                 expansionResetsProduction={game.production.runtime.tick > 0 || game.production.runtime.unitCount > 0 || game.production.waste > 0}
                 onSwitch={switchPatent}
               />
