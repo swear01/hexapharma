@@ -187,12 +187,17 @@ export function researchPlanningTrails(
 }
 
 /** First place a Run left the estimate planned on `known`, and the true terrain that moved it. */
+/** Where a Run first left its estimate, and the index of the step it happened in. */
+export interface ResearchPlanDeviation extends ResearchDeviation {
+  readonly step: number;
+}
+
 export function researchDeviation(
   mm: MultiMap,
   known: MultiMap,
   start: DrugState,
   program: Template,
-): (ResearchDeviation & { readonly step: number }) | null {
+): ResearchPlanDeviation | null {
   const map = mm.maps[0]!;
   const knownMap = known.maps[0]!;
   const kind = (target: EffectMap, cell: Vec2) => target.cell[hexIndex(target.width, cell.q, cell.r)];
@@ -646,15 +651,15 @@ export function Game() {
     readonly base: number;
     readonly trails: readonly (readonly (Vec2 | null)[])[];
     readonly legEnds: readonly number[];
-    readonly deviation: ReturnType<typeof researchDeviation>;
+    readonly deviation: ResearchPlanDeviation | null;
   } | null>(null);
   const shownEstimate = runEstimate !== null && runEstimate.plan === researchPlan && runEstimate.base === researchBase ? runEstimate : null;
   /** The first edit after a Run that left its estimate drops the deviating step and the rest: they were planned blind. */
   const editablePlan = useCallback((plan: readonly Machine[]) => (
-    runEstimate?.plan === plan && runEstimate.base === researchBase && runEstimate.deviation !== null
-      ? plan.slice(0, runEstimate.deviation.step)
+    shownEstimate?.plan === plan && shownEstimate.deviation !== null
+      ? plan.slice(0, shownEstimate.deviation.step)
       : plan
-  ), [researchBase, runEstimate]);
+  ), [shownEstimate]);
   const appendResearchStep = useCallback((typeId: string) => {
     const entry = catalog.find((candidate) => candidate.typeId === typeId);
     if (entry === undefined) return;
