@@ -4,7 +4,7 @@ import { CellKind, type EffectMap, type MultiMap } from "../sim/phase0_interface
 import { applyTemplate } from "../sim/drug-graph";
 import { generate } from "../sim/mapgen";
 import { defaultGenOptions, researchBaseLevel, researchRoute } from "./Game";
-import { focusLabCamera } from "../render/labCamera";
+import { LAB_VIEWPORT, focusLabCamera } from "../render/labCamera";
 import {
   labPointerToViewport,
   researchDrugPoint,
@@ -14,6 +14,8 @@ import {
   researchKnownCureLocations,
   researchPointerMoved,
   researchCellNote,
+  researchNotePlacement,
+  researchOutcomeNoteworthy,
   researchPointerAction,
   researchPreviewEndpointHit,
   validateLabFogAuthority,
@@ -225,5 +227,22 @@ describe("Research cell notes", () => {
     expect(researchCellNote(atlas, { q: 2, r: 0 })).toBeNull();
     expect(researchCellNote(atlas, { q: 1, r: 1 })).toBeNull();
     expect(researchCellNote(atlas, { q: -1, r: 0 })).toBeNull();
+  });
+});
+
+describe("Research readout and note placement", () => {
+  it("shows a readout only for a run that failed, cured or picked up a side effect", () => {
+    const base = { failed: false, final: [], cured: [], sideEffects: [], premium: [], regions: [] };
+    expect(researchOutcomeNoteworthy(base)).toBe(false);
+    expect(researchOutcomeNoteworthy({ ...base, failed: true })).toBe(true);
+    expect(researchOutcomeNoteworthy({ ...base, cured: [0], regions: [1] })).toBe(true);
+    expect(researchOutcomeNoteworthy({ ...base, sideEffects: [0] })).toBe(true);
+  });
+
+  it("hangs a note below near the top and on its near side by the left and right edges", () => {
+    const visible = LAB_VIEWPORT;
+    expect(researchNotePlacement({ x: visible.width / 2, y: visible.height / 2 }, visible)).toBe("is-above is-center");
+    expect(researchNotePlacement({ x: 10, y: 10 }, visible)).toBe("is-below is-left");
+    expect(researchNotePlacement({ x: visible.width - 10, y: visible.height - 10 }, visible)).toBe("is-above is-right");
   });
 });

@@ -5,14 +5,17 @@
 .lab-map-frame { position: absolute; inset: 0; overflow: hidden; cursor: grab; touch-action: none; }
 .lab-map-frame:active { cursor: grabbing; }
 .lab-map-frame[data-placement-target="true"] { cursor: pointer; }
-.lab-canvas { position: absolute; width: max(100cqw, calc(100cqh * 13 / 8)); height: max(100cqh, calc(100cqw * 8 / 13)); left: 50%; top: 50%; transform: translate(-50%, -50%); }
+.lab-canvas, .lab-canvas-notes { position: absolute; width: max(100cqw, calc(100cqh * 13 / 8)); height: max(100cqh, calc(100cqw * 8 / 13)); left: 50%; top: 50%; transform: translate(-50%, -50%); }
 .lab-canvas canvas { display: block; width: 100% !important; height: 100% !important; }
 .lab-canvas-notes { pointer-events: none; }
-.research-cell-note { position: absolute; width: max-content; max-width: 260px; margin: 0; padding: 6px 10px; transform: translate(-50%, calc(-100% - 20px)); border: 1px solid var(--rule-strong); border-radius: 3px; background: var(--paper-raised); color: var(--ink); font-size: 13px; line-height: 1.35; }
+.research-cell-note { --note-x: -50%; --note-y: calc(-100% - 20px); position: absolute; width: max-content; max-width: 260px; margin: 0; padding: 6px 10px; transform: translate(var(--note-x), var(--note-y)); color: var(--ink); font-size: 13px; line-height: 1.35; }
+.research-cell-note.is-below { --note-y: 20px; }
+.research-cell-note.is-left { --note-x: -16px; }
+.research-cell-note.is-right { --note-x: calc(-100% + 16px); }
 
 /* Map-margin furniture: printed on paper, never glass. */
 .research-overlay { position: relative; z-index: 3; grid-row: 1; grid-column: 1 / -1; min-height: 0; pointer-events: none; }
-.research-program-strip, .research-result, .research-atlas-status { border: 1px solid var(--rule-strong); border-radius: 3px; background: var(--paper-raised); }
+.research-program-strip, .research-result, .research-atlas-status, .research-cell-note { border: 1px solid var(--rule-strong); border-radius: 3px; background: var(--paper-raised); }
 
 .research-program-strip { --strip-top: 12px; position: absolute; top: var(--strip-top); left: 12px; width: 232px; max-height: calc(100% - var(--strip-top) - 136px); display: flex; pointer-events: auto; }
 .goal-card:not([hidden]) ~ .view-layer .research-program-strip { --strip-top: 80px; }

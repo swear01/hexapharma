@@ -41,7 +41,7 @@ export interface LabRenderView {
   readonly activeMap: number;
   readonly camera: LabCamera;
   /** The level's starting heading: the start marker points along it. */
-  readonly startHeading?: number;
+  readonly startHeading: number;
   /** Actual trail of the last trial (solid); points may sit half-way inside swamp. */
   readonly trail: readonly (Vec2 | null)[];
   /** Trail index where each machine of the trial ends. */
@@ -560,7 +560,7 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
       course.stroke({ color: LAB_SCHEMATIC_STYLE.course, width: lineWidth, cap: "round", join: "round" });
 
       if (start !== null) {
-        drawHeadingDart(marks, labCellCenter(camera, start), view.startHeading ?? drug.heading, radius, lineWidth);
+        drawHeadingDart(marks, labCellCenter(camera, start), view.startHeading, radius, lineWidth);
       }
 
       for (const control of controls) {
@@ -590,7 +590,8 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
         marks.stroke({ color: LAB_SCHEMATIC_STYLE.course, width: cell * 0.3, cap: "round", join: "round", alpha: 0.18 });
       }
       const previewPos = view.previewDrug === undefined ? undefined : drugDrawPoint(view.previewDrug, view.activeMap);
-      if (!animating && view.previewTrail !== undefined) {
+      // The plan stays under the walking line; only the result marks wait for it to arrive.
+      if (view.previewTrail !== undefined) {
         drawDashedTrail(marks, view.previewTrail, nodes, camera, radius, view.estimate === true ? 0.4 : 1);
         drawLegChevrons(marks, view.previewTrail, view.previewLegEnds ?? [], camera, radius * 0.45);
         marks.stroke({ color: LAB_SCHEMATIC_STYLE.candidate, width: lineWidth, cap: "round", join: "round", alpha: view.estimate === true ? 0.4 : 1 });

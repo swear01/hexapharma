@@ -58,6 +58,18 @@ export function researchPointerAction(
   return null;
 }
 
+/**
+ * Which way a cell note hangs so the clipped map frame keeps it in view: below the cell near the
+ * top, and anchored on its near side close to the left or right edge (viewport-pixel point).
+ */
+export function researchNotePlacement(point: PixelPoint, visible: { readonly width: number; readonly height: number }): string {
+  const x = (point.x - (LAB_VIEWPORT.width - visible.width) / 2) / visible.width;
+  const y = (point.y - (LAB_VIEWPORT.height - visible.height) / 2) / visible.height;
+  const vertical = y < 0.25 ? "is-below" : "is-above";
+  const horizontal = x < 0.25 ? "is-left" : x > 0.75 ? "is-right" : "is-center";
+  return `${vertical} ${horizontal}`;
+}
+
 /** What a clicked Atlas cell does, once revealed; null for plain ground, portals, fog or outside the map. */
 export function researchCellNote(map: EffectMap, cell: Vec2): string | null {
   if (!hexInBounds(map.width, map.height, cell.q, cell.r)) return null;
@@ -70,8 +82,10 @@ export function researchCellNote(map: EffectMap, cell: Vec2): string | null {
     case CellKind.Abyss: return note(TERRAIN_NOTES.abyss);
     case CellKind.SideEffect: return note(TERRAIN_NOTES.sideEffect);
     case CellKind.Cure: {
+      const cureId = map.cureId[index];
+      if (cureId === undefined || cureId < 0) return null;
       const premium = map.cureTier[index] === 2;
-      const parts = [`${premium ? "★ " : ""}${diseaseName(map.cureId[index]!)} cure: ${TERRAIN_NOTES.cure[1]}`];
+      const parts = [`${premium ? "★ " : ""}${diseaseName(cureId)} cure: ${TERRAIN_NOTES.cure[1]}`];
       if (premium) parts.push(TERRAIN_NOTES.premium[1]);
       if ((map.sideEffectId[index] ?? -1) >= 0) parts.push(TERRAIN_NOTES.sideEffect[1]);
       return parts.join(" ");
@@ -92,6 +106,11 @@ export function researchPreviewEndpointHit(
   const dq = pointerWorld.q - endpoint.q;
   const dr = pointerWorld.r - endpoint.r;
   return Math.max(Math.abs(dq), Math.abs(dr), Math.abs(dq + dr)) <= 0.5;
+}
+
+/** A run worth a readout: it failed, cured something or picked up a side effect. */
+export function researchOutcomeNoteworthy(outcome: Outcome): boolean {
+  return outcome.failed || outcome.cured.length > 0 || outcome.sideEffects.length > 0;
 }
 
 export function researchOutcomeText(lastOutcome: Outcome | null): string | null {
@@ -658,9 +677,9 @@ export function App({
         >
           <div ref={mountRef} data-testid="lab-canvas" className="lab-canvas" />
           {cellNote !== null && (
-            <div className="lab-canvas lab-canvas-notes">
+            <div className="lab-canvas-notes">
               <p
-                className="research-cell-note"
+                className={`research-cell-note ${researchNotePlacement(labCellCenter(camera, cellNote.cell), visibleViewportRef.current)}`}
                 role="status"
                 data-testid="research-cell-note"
                 style={{

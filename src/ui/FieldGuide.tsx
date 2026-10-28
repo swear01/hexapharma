@@ -1,6 +1,8 @@
 import { TERRAIN_NOTES } from "./effectLabels";
 
 const HEX = "16,3 27.3,9.5 27.3,22.5 16,29 4.7,22.5 4.7,9.5";
+/** The heading dart: outlined at the start, filled where the drug is now. */
+const HEADING_DART = "M27.7 16 8.7 21.3 12.9 16 8.7 10.7z";
 
 export type MapSymbolKind =
   | "start" | "control" | "end" | "candidate" | "cure" | "sideEffect"
@@ -10,9 +12,9 @@ export type MapSymbolKind =
 export function MapSymbol({ kind, size = 32 }: { readonly kind: MapSymbolKind; readonly size?: number }) {
   return (
     <svg className={`map-symbol is-${kind}`} viewBox="0 0 32 32" width={size} height={size} aria-hidden="true" focusable="false" fill="none" strokeLinecap="round" strokeLinejoin="round">
-      {kind === "start" && <path d="M27.7 16 8.7 21.3 12.9 16 8.7 10.7z" className="ink-course" strokeWidth="2.5" />}
+      {kind === "start" && <path d={HEADING_DART} className="ink-course" strokeWidth="2.5" />}
       {kind === "control" && <><path d="M3 16h26M7 12l4 4-4 4" className="ink-course" strokeWidth="2.5" /><circle cx="20" cy="16" r="3.5" className="solid-course" /></>}
-      {kind === "end" && <path d="M27.7 16 8.7 21.3 12.9 16 8.7 10.7z" className="solid-course" />}
+      {kind === "end" && <path d={HEADING_DART} className="solid-course" />}
       {kind === "candidate" && <path d="M4 27 23 8" className="ink-course" strokeWidth="2.5" strokeDasharray="3 4" />}
       {kind === "cure" && <><polygon points={HEX} className="fill-cure" /><path d="M14 9h4v5h5v4h-5v5h-4v-5H9v-4h5z" className="solid-cure" /></>}
       {kind === "sideEffect" && <><polygon points={HEX} className="fill-effect" /><g className="solid-effect"><circle cx="16" cy="16" r="1.8" /><circle cx="16" cy="9.5" r="1.8" /><circle cx="21.6" cy="12.8" r="1.8" /><circle cx="21.6" cy="19.2" r="1.8" /><circle cx="16" cy="22.5" r="1.8" /><circle cx="10.4" cy="19.2" r="1.8" /><circle cx="10.4" cy="12.8" r="1.8" /></g></>}

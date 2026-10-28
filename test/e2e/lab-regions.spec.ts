@@ -195,6 +195,7 @@ async function syntheticRendererScreenshot(
     renderer.render(mm, { pos: [{ q: 0, r: 0 }], offset: [{ q: 0, r: 0 }], heading: 0, failed: false }, {
       activeMap: 0,
       camera,
+      startHeading: 0,
       trail: [],
     });
     await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
