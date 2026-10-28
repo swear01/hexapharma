@@ -51,7 +51,7 @@ import { hexInBounds, hexIndex } from "../sim/hex";
 import { buildFactoryTransportTopology, type FactoryTransportEdge } from "../render/factoryTransportTopology";
 import { inkJitter } from "../render/ink";
 import { hexBoardBounds, hexPolygon, hexToPixel } from "../render/hexProjection";
-import type { FactoryGhost, FactoryRenderer } from "../render/factoryRenderer";
+import type { FactoryGhost, FactoryGhostTile, FactoryRenderer } from "../render/factoryRenderer";
 import { BasePicker, LockGlyph } from "./BasePicker";
 import {
   appendUniqueCells,
@@ -167,6 +167,9 @@ export function machineLockReason(typeId: MachineTypeId): string {
 }
 
 export const ROUTING_LOCK_REASON = "Splitter and Merger off · turn on Split / Merge in Technology";
+
+/** Id of a rejected machine ghost: it is in no layout, so no real machine (ids ≥ 0) can share it. */
+const UNPLACED_MACHINE_ID = -1;
 
 function machineDef(typeId: MachineTypeId): FactoryMachineDef {
   const entry = entryOf(typeId);
@@ -606,17 +609,19 @@ function paint(
   return placeFactoryTile(layout, q, r, tile);
 }
 
+/** The belts a drag along `cells` places; commit and the ghost both use this orientation. */
+export function beltRouteTiles(cells: readonly GridCell[], fallbackDirection: Dir): readonly FactoryGhostTile[] {
+  const directions = orientBeltGesture(cells, fallbackDirection);
+  return cells.map((cell, index) => ({ q: cell.q, r: cell.r, tile: { kind: "belt", dir: directions[index] ?? fallbackDirection } }));
+}
+
 export function paintBeltRoute(
   layout: FactoryLayout,
   cells: readonly GridCell[],
   fallbackDirection: Dir,
 ): FactoryLayout {
-  const directions = orientBeltGesture(cells, fallbackDirection);
   let next = layout;
-  for (let index = 0; index < cells.length; index++) {
-    const cell = cells[index]!;
-    next = paint(next, cell.q, cell.r, { kind: "belt" }, directions[index] ?? fallbackDirection, 0);
-  }
+  for (const { q, r, tile } of beltRouteTiles(cells, fallbackDirection)) next = placeFactoryTile(next, q, r, tile);
   return next;
 }
 
@@ -775,6 +780,8 @@ export function Factory({
   const mountRef = useRef<HTMLDivElement | null>(null);
   const frameRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<FactoryRenderer | null>(null);
+  /** The live renderer as state, so the ghost repaints when a renderer is (re)created. */
+  const [liveRenderer, setLiveRenderer] = useState<FactoryRenderer | null>(null);
   const [rendererError, setRendererError] = useState<string | null>(null);
 
   const { mm, start } = level;
@@ -976,6 +983,7 @@ export function Factory({
         }
         local = r;
         rendererRef.current = r;
+        setLiveRenderer(r);
         if (mountRef.current) mountRef.current.appendChild(r.canvas);
         r.render(layoutRef.current, stateRef.current, bottleneckRef.current);
         focusRequest = window.requestAnimationFrame(() => {
@@ -997,6 +1005,7 @@ export function Factory({
       disposed = true;
       if (focusRequest !== 0) window.cancelAnimationFrame(focusRequest);
       rendererRef.current = null;
+      setLiveRenderer(null);
       if (local) local.destroy();
     };
   }, [focusLayoutInViewport, layout.width, layout.height, mode]);
@@ -1492,32 +1501,21 @@ export function Factory({
     (brush.kind === "erase" || activeGesture?.mode === "erase")
     ? factoryErasePreviewCells(layout, hoverCell.q, hoverCell.r)
     : null;
-  // Erase and "drag this machine" stay outlines; a placement previews the real thing in Pixi.
-  const ghostCells = erasePreviewCells !== null
-    ? erasePreviewCells
-    : idleDirectMachine !== undefined
-    ? worldCells(idleDirectMachine)
-    : [];
-  const placementGhost = ((): FactoryGhost | null => {
+  // The SVG outline layer only carries the erase preview and the grabbed-machine outline.
+  let ghostCells: readonly HexCoord[] = [];
+  if (erasePreviewCells !== null) ghostCells = erasePreviewCells;
+  else if (idleDirectMachine !== undefined) ghostCells = worldCells(idleDirectMachine);
+  // Any other placement previews the real thing in Pixi. Memoized on its inputs so a Production
+  // tick re-render keeps the same ghost and does not repaint it.
+  const placementGhost = useMemo((): FactoryGhost | null => {
     if (ghostCells.length > 0) return null;
     const invalid = !hoverPlacementValid;
     const ghostLayout = invalid ? layout : hoverCandidate;
     if (moveMachine !== undefined && moveAnchor !== null) {
-      return {
-        layout: invalid ? layout : moveCandidate ?? layout,
-        invalid,
-        tiles: [],
-        machine: { ...moveMachine, anchor: moveAnchor },
-      };
+      return { layout: ghostLayout, invalid, tiles: [], machine: { ...moveMachine, anchor: moveAnchor } };
     }
     if (beltGestureCandidate !== null && activeGesture !== null) {
-      const directions = orientBeltGesture(activeGesture.cells, brushDir);
-      return {
-        layout: ghostLayout,
-        invalid,
-        tiles: activeGesture.cells.map((cell, index) => ({ q: cell.q, r: cell.r, tile: { kind: "belt", dir: directions[index]! } })),
-        machine: null,
-      };
+      return { layout: ghostLayout, invalid, tiles: beltRouteTiles(activeGesture.cells, brushDir), machine: null };
     }
     if (hoverCell === null) return null;
     if (brush.kind === "machine") {
@@ -1527,26 +1525,19 @@ export function Factory({
         invalid,
         tiles: [],
         machine: invalid
-          ? { id: -1, def: machineDef(brush.typeId), anchor: hoverCell, footRot, shape }
+          ? { id: UNPLACED_MACHINE_ID, def: machineDef(brush.typeId), anchor: hoverCell, footRot, shape }
           : hoverCandidate.machines.at(-1) ?? null,
       };
     }
     const tile = makeTile(brush, brushDir, sourceBase);
     return tile === null ? null : { layout: ghostLayout, invalid, tiles: [{ q: hoverCell.q, r: hoverCell.r, tile }], machine: null };
-  })();
-  // Repaint the Pixi ghost only when the previewed placement changes, not on every Production tick.
-  const ghostKey = placementGhost === null
-    ? ""
-    : JSON.stringify([placementGhost.invalid, placementGhost.tiles, placementGhost.machine?.def.typeId, placementGhost.machine?.anchor, placementGhost.machine?.footRot]);
-  const drawnGhostRef = useRef<{ readonly renderer: FactoryRenderer; readonly layout: FactoryLayout; readonly key: string } | null>(null);
+  // Every value read above derives from these inputs.
+  }, [layout, hoverCell, brush, brushDir, footRot, sourceBase, activeGesture]);
   useEffect(() => {
-    const renderer = rendererRef.current;
-    if (renderer === null) return;
-    const drawn = drawnGhostRef.current;
-    if (drawn !== null && drawn.renderer === renderer && drawn.layout === layout && drawn.key === ghostKey) return;
-    drawnGhostRef.current = { renderer, layout, key: ghostKey };
-    renderer.renderGhost(placementGhost);
-  });
+    liveRenderer?.renderGhost(placementGhost);
+  }, [liveRenderer, placementGhost]);
+  let ghostState: "valid" | "invalid" | undefined;
+  if (placementGhost !== null) ghostState = placementGhost.invalid ? "invalid" : "valid";
 
   const tileBrushBtn = (kind: TileBrushKind, label: string, hotkey: string) => {
     const locked = !routing && (kind === "splitter" || kind === "merger");
@@ -1669,7 +1660,7 @@ export function Factory({
             ref={frameRef}
             data-testid="factory-canvas"
             data-camera-zoom={camera.zoom}
-            data-ghost={placementGhost === null ? undefined : placementGhost.invalid ? "invalid" : "valid"}
+            data-ghost={ghostState}
             onPointerDown={onCanvasPointerDown}
             onPointerMove={onCanvasPointerMove}
             onPointerUp={finishCanvasGesture}
