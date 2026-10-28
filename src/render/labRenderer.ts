@@ -555,6 +555,12 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
       if (start !== null) nodes.add(coordKey(start));
       const animating = legFrom >= 0 && legProgress < 1;
 
+      // The plan is inked first on the course layer, so it stays under the walking line.
+      if (view.previewTrail !== undefined) {
+        drawDashedTrail(course, view.previewTrail, nodes, camera, radius, view.estimate === true ? 0.4 : 1);
+        drawLegChevrons(course, view.previewTrail, view.previewLegEnds ?? [], camera, radius * 0.45);
+        course.stroke({ color: LAB_SCHEMATIC_STYLE.candidate, width: lineWidth, cap: "round", join: "round", alpha: view.estimate === true ? 0.4 : 1 });
+      }
       const head = drawLegs(course, view.trail, nodes, camera, radius, animating ? legFrom : -1, legProgress);
       if (!animating) drawLegChevrons(course, view.trail, view.legEnds ?? [], camera, radius * 0.45);
       course.stroke({ color: LAB_SCHEMATIC_STYLE.course, width: lineWidth, cap: "round", join: "round" });
@@ -590,12 +596,6 @@ export async function createLabRenderer(_mm: MultiMap): Promise<LabRenderer> {
         marks.stroke({ color: LAB_SCHEMATIC_STYLE.course, width: cell * 0.3, cap: "round", join: "round", alpha: 0.18 });
       }
       const previewPos = view.previewDrug === undefined ? undefined : drugDrawPoint(view.previewDrug, view.activeMap);
-      // The plan stays under the walking line; only the result marks wait for it to arrive.
-      if (view.previewTrail !== undefined) {
-        drawDashedTrail(marks, view.previewTrail, nodes, camera, radius, view.estimate === true ? 0.4 : 1);
-        drawLegChevrons(marks, view.previewTrail, view.previewLegEnds ?? [], camera, radius * 0.45);
-        marks.stroke({ color: LAB_SCHEMATIC_STYLE.candidate, width: lineWidth, cap: "round", join: "round", alpha: view.estimate === true ? 0.4 : 1 });
-      }
       if (!animating && view.deviation !== undefined) {
         const center = labCellCenter(camera, view.deviation.pos);
         marks.circle(center.x, center.y, radius * 0.5)

@@ -58,15 +58,26 @@ export function researchPointerAction(
   return null;
 }
 
+/** Room (CSS px) a cell note needs beside and above its cell before it would leave the frame. */
+const NOTE_HALF_WIDTH = 140;
+const NOTE_HEIGHT = 90;
+
 /**
  * Which way a cell note hangs so the clipped map frame keeps it in view: below the cell near the
- * top, and anchored on its near side close to the left or right edge (viewport-pixel point).
+ * top, and anchored on its near side close to the left or right edge. `point` is in viewport
+ * pixels, `visible` the visible viewport, `frame` the frame's CSS size.
  */
-export function researchNotePlacement(point: PixelPoint, visible: { readonly width: number; readonly height: number }): string {
-  const x = (point.x - (LAB_VIEWPORT.width - visible.width) / 2) / visible.width;
-  const y = (point.y - (LAB_VIEWPORT.height - visible.height) / 2) / visible.height;
-  const vertical = y < 0.25 ? "is-below" : "is-above";
-  const horizontal = x < 0.25 ? "is-left" : x > 0.75 ? "is-right" : "is-center";
+export function researchNotePlacement(
+  point: PixelPoint,
+  visible: { readonly width: number; readonly height: number },
+  frame: { readonly width: number; readonly height: number },
+): string {
+  const x = (point.x - (LAB_VIEWPORT.width - visible.width) / 2) / visible.width * frame.width;
+  const y = (point.y - (LAB_VIEWPORT.height - visible.height) / 2) / visible.height * frame.height;
+  const vertical = y < NOTE_HEIGHT ? "is-below" : "is-above";
+  let horizontal = "is-center";
+  if (x < NOTE_HALF_WIDTH) horizontal = "is-left";
+  else if (x > frame.width - NOTE_HALF_WIDTH) horizontal = "is-right";
   return `${vertical} ${horizontal}`;
 }
 
@@ -524,6 +535,7 @@ export function App({
   const [cellNote, setCellNote] = useState<{ readonly cell: Vec2; readonly text: string } | null>(null);
   // A note belongs to the map it was read on: another base or a new reveal drops it.
   useEffect(() => setCellNote(null), [renderMap]);
+  const notePoint = cellNote === null ? null : labCellCenter(camera, cellNote.cell);
   useEffect(() => {
     setEndpointHovered(false);
   }, [activeMap, camera.x, camera.y, camera.zoom, planned?.pos]);
@@ -676,15 +688,18 @@ export function App({
           onWheel={onWheel}
         >
           <div ref={mountRef} data-testid="lab-canvas" className="lab-canvas" />
-          {cellNote !== null && (
+          {cellNote !== null && notePoint !== null && (
             <div className="lab-canvas-notes">
               <p
-                className={`research-cell-note ${researchNotePlacement(labCellCenter(camera, cellNote.cell), visibleViewportRef.current)}`}
+                className={`research-cell-note ${researchNotePlacement(notePoint, visibleViewportRef.current, {
+                  width: mountRef.current?.parentElement?.clientWidth ?? LAB_VIEWPORT.width,
+                  height: mountRef.current?.parentElement?.clientHeight ?? LAB_VIEWPORT.height,
+                })}`}
                 role="status"
                 data-testid="research-cell-note"
                 style={{
-                  left: `${labCellCenter(camera, cellNote.cell).x / LAB_VIEWPORT.width * 100}%`,
-                  top: `${labCellCenter(camera, cellNote.cell).y / LAB_VIEWPORT.height * 100}%`,
+                  left: `${notePoint.x / LAB_VIEWPORT.width * 100}%`,
+                  top: `${notePoint.y / LAB_VIEWPORT.height * 100}%`,
                 }}
               >
                 {cellNote.text}

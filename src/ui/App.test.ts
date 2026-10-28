@@ -241,8 +241,11 @@ describe("Research readout and note placement", () => {
 
   it("hangs a note below near the top and on its near side by the left and right edges", () => {
     const visible = LAB_VIEWPORT;
-    expect(researchNotePlacement({ x: visible.width / 2, y: visible.height / 2 }, visible)).toBe("is-above is-center");
-    expect(researchNotePlacement({ x: 10, y: 10 }, visible)).toBe("is-below is-left");
-    expect(researchNotePlacement({ x: visible.width - 10, y: visible.height - 10 }, visible)).toBe("is-above is-right");
+    const desktop = { width: 1400, height: 770 };
+    expect(researchNotePlacement({ x: visible.width / 2, y: visible.height / 2 }, visible, desktop)).toBe("is-above is-center");
+    expect(researchNotePlacement({ x: 10, y: 10 }, visible, desktop)).toBe("is-below is-left");
+    expect(researchNotePlacement({ x: visible.width - 10, y: visible.height - 10 }, visible, desktop)).toBe("is-above is-right");
+    // On a phone a cell 30% across is still too close to the edge for a centred note.
+    expect(researchNotePlacement({ x: visible.width * 0.3, y: visible.height / 2 }, visible, { width: 390, height: 600 })).toBe("is-above is-left");
   });
 });
