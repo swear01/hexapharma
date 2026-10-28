@@ -256,7 +256,7 @@ test("number keys append, Backspace and Ctrl+Z remove, Clear empties, and Enter 
   await expect(page.getByTestId("cash")).toHaveText(String(200 - available[1]!.cost));
 });
 
-test("the first edit after a Run that hit hidden terrain drops the steps from the deviation on", async ({ page }) => {
+test("the first edit after a Run that hit a hidden Wall keeps the Wall step and drops the rest", async ({ page }) => {
   const options = defaultGenOptions(14);
   const level = researchBaseLevel(generate(options), 0);
   const wave = DEFAULT_CATALOG.find((entry) => entry.typeId === "wave")!;
@@ -267,9 +267,9 @@ test("the first edit after a Run that hit hidden terrain drops the steps from th
     level.start,
     { steps: Array.from({ length: steps }, () => wave) },
   );
-  if (deviation === null || deviation.step >= steps - 1) throw new Error("seed 14 wave route no longer hits hidden terrain early");
+  if (deviation?.reason !== "Wall" || deviation.step >= steps - 1) throw new Error("seed 14 wave route no longer hits a hidden Wall early");
   const planned = page.getByTestId("research-program-strip").getByRole("listitem");
-  for (const [edit, kept] of [["research-machine-wave", deviation.step + 1], ["research-undo", deviation.step]] as const) {
+  for (const [edit, kept] of [["research-machine-wave", deviation.step + 2], ["research-undo", deviation.step + 1]] as const) {
     await page.goto("/?seed=14&cash=200");
     await planSteps(page, "wave", steps);
     await page.getByTestId("research-command").click();

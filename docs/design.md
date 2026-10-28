@@ -75,7 +75,7 @@ Cure 與 SideEffect 是同一格上的獨立效果欄位，不是互斥 cell kin
 Research 不使用 FactoryLayout、source／belt／sink、線性 route descriptor 或 DOM recipe timeline。
 
 - 每種 Research machine 由 catalog 定義一條**完整**、可凹折、回繞或不規則的 `PathStamp`（相對 heading）與固定 `turn`；每一步都是 canonical 六方向之一，不保存 pixel delta。
-- **規劃**：玩家在 UI 本地編排整條路線（hotbar／數字鍵接到末端；Backspace、Ctrl+Z 或點最後一個控制點回退；Clear 清空；Run 偏離預估後的第一次編輯先刪掉偏離那步與其後各步，因為它們是在錯的地圖上排的）。預覽（虛線）以 pure traversal 在 fog-masked planning map 上走完整條路線：未知格當平地，只保留 Wall 輪廓；不洩漏霧下內容。規劃不花錢、不改 authority。
+- **規劃**：玩家在 UI 本地編排整條路線（hotbar／數字鍵接到末端；Backspace、Ctrl+Z 或點最後一個控制點回退；Clear 清空；Run 偏離預估後的第一次編輯先刪掉偏離那步之後的各步（Abyss 連偏離那步也刪），因為它們是在錯的地圖上排的）。預覽（虛線）以 pure traversal 在 fog-masked planning map 上走完整條路線：未知格當平地，只保留 Wall 輪廓；不洩漏霧下內容。規劃不花錢、不改 authority。
 - **試驗**：`runResearchTrial { program, base }` 在指定 base 的 Atlas 上進行（base 必須已開啟），接受 1..`MAX_TEMPLATE_STEPS` 台目前 catalog／patents 允許且 path／turn 與 catalog 一致的 machine；`cost = Σ catalog cost`（safe-integer 檢查），cash < cost 時原子拒絕。authority 一次扣款，從關卡起點在**真實**地圖上跑完整條 program，以 radius 1（加 Technology 的 revealAid）揭露實際 trail 與終點，只更新該 base 的 fog，存 `research.lastTrial = {base, program, cost, outcome}`，可由 replay 重畫實際路線。Atlas 一次只顯示一個 base（右下 base 選擇器，鎖住的 base 顯示原因）；切換時改顯示該 base 的圖、fog 與最近試驗（只在試驗就在該 base 時），規劃路線保留（它只是機器序列），Run 在目前選的 base 付費。失敗於 Abyss 時路線在該格中止。
 - 試驗不產生配方、不建立 formula、不自動建造；同一路線可重跑（每次都付費）。UI 保留規劃，讓玩家依新揭露的地圖修改。
 - 實際路線（實線）由 `lastTrial.program` 在真實地圖重播，連同試驗結果只顯示到玩家改動（含 Undo／Clear）規劃為止。規劃終點與實際終點都是指向目前 heading（下一台機器的前方）的實心尖頭；每台機器的終點是小實心節點，每段 leg 中央一個兩筆 chevron 標出前進方向（不編號）；起點是指向關卡起始 heading 的空心尖頭。Run 當下的預估保留為淡虛線，直到玩家改動規劃；第一個偏離點以紅圈標在地圖上（不寫字；原因 Wall／Swamp／Abyss 取該處真實地形，該處必在本次揭露範圍內，點該格可讀）。兩者都以 pure traversal 計算，renderer 不自行近似、auto-route、修路或呼叫 solver。Swamp 半格以半格點繪製。
