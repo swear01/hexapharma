@@ -1,17 +1,19 @@
+import { TERRAIN_NOTES } from "./effectLabels";
+
 const HEX = "16,3 27.3,9.5 27.3,22.5 16,29 4.7,22.5 4.7,9.5";
 
 export type MapSymbolKind =
-  | "start" | "control" | "finish" | "candidate" | "cure" | "sideEffect"
+  | "start" | "control" | "end" | "candidate" | "cure" | "sideEffect"
   | "premium" | "contour" | "wall" | "marsh" | "abyss" | "belt" | "inPort" | "outPort" | "source" | "sink";
 
 /** Legend glyphs; they echo the map and factory renderers' shapes so meaning never rests on colour alone. */
 export function MapSymbol({ kind, size = 32 }: { readonly kind: MapSymbolKind; readonly size?: number }) {
   return (
     <svg className={`map-symbol is-${kind}`} viewBox="0 0 32 32" width={size} height={size} aria-hidden="true" focusable="false" fill="none" strokeLinecap="round" strokeLinejoin="round">
-      {kind === "start" && <path d="M16 5 27 24H5z" className="ink-course" strokeWidth="2.5" />}
-      {kind === "control" && <><circle cx="14" cy="18" r="9" className="ink-course" strokeWidth="2.5" /><text x="26" y="11" className="map-symbol-number">3</text></>}
-      {kind === "finish" && <><circle cx="16" cy="16" r="11" className="ink-course" strokeWidth="2.5" /><circle cx="16" cy="16" r="6.5" className="ink-course" strokeWidth="2.5" /></>}
-      {kind === "candidate" && <><path d="M4 27 19 12" className="ink-course" strokeWidth="2.5" strokeDasharray="3 4" /><circle cx="23" cy="8" r="5" className="ink-course" strokeWidth="2.5" /></>}
+      {kind === "start" && <path d="M27.7 16 8.7 21.3 12.9 16 8.7 10.7z" className="ink-course" strokeWidth="2.5" />}
+      {kind === "control" && <><path d="M3 16h26M7 12l4 4-4 4" className="ink-course" strokeWidth="2.5" /><circle cx="20" cy="16" r="3.5" className="solid-course" /></>}
+      {kind === "end" && <path d="M27.7 16 8.7 21.3 12.9 16 8.7 10.7z" className="solid-course" />}
+      {kind === "candidate" && <path d="M4 27 23 8" className="ink-course" strokeWidth="2.5" strokeDasharray="3 4" />}
       {kind === "cure" && <><polygon points={HEX} className="fill-cure" /><path d="M14 9h4v5h5v4h-5v5h-4v-5H9v-4h5z" className="solid-cure" /></>}
       {kind === "sideEffect" && <><polygon points={HEX} className="fill-effect" /><g className="solid-effect"><circle cx="16" cy="16" r="1.8" /><circle cx="16" cy="9.5" r="1.8" /><circle cx="21.6" cy="12.8" r="1.8" /><circle cx="21.6" cy="19.2" r="1.8" /><circle cx="16" cy="22.5" r="1.8" /><circle cx="10.4" cy="19.2" r="1.8" /><circle cx="10.4" cy="12.8" r="1.8" /></g></>}
       {kind === "premium" && <><polygon points={HEX} className="fill-cure" /><path d="M16 8.5l2.2 4.6 5 .6-3.7 3.4 1 5-4.5-2.5-4.5 2.5 1-5-3.7-3.4 5-.6z" className="solid-cure" /></>}
@@ -30,19 +32,19 @@ export function MapSymbol({ kind, size = 32 }: { readonly kind: MapSymbolKind; r
 
 const LEGEND: readonly { readonly group: string; readonly items: readonly (readonly [MapSymbolKind, string, string])[] }[] = [
   { group: "Your course", items: [
-    ["start", "Start", "Every run begins here."],
-    ["control", "Step", "A planned machine, numbered in order. Click the last one to remove it."],
+    ["start", "Start", "Every run begins here, pointing the way the first machine goes forward."],
+    ["control", "Step", "Where a machine ends; the chevron shows its direction. Click the last one to remove it."],
     ["candidate", "Planned route", "Predicted on the known map; fog counts as flat ground."],
-    ["finish", "Finish", "The run reached a Cure."],
+    ["end", "End", "Where the drug is now. It points the way the next machine goes forward."],
   ] },
   { group: "Terrain", items: [
-    ["cure", "Cure", "A step that ends here cures that disease."],
-    ["premium", "★ Cure", "Ending here sells for 1.5× the price."],
-    ["sideEffect", "Side effect", "Ending here adds a side effect: −$25 per unit sold."],
+    ["cure", ...TERRAIN_NOTES.cure],
+    ["premium", ...TERRAIN_NOTES.premium],
+    ["sideEffect", ...TERRAIN_NOTES.sideEffect],
     ["contour", "Contours", "Seen through fog: something rises or sinks there. Mountain and water look alike."],
-    ["wall", "Mountain", "Skips that move. Hidden under fog: your plan may cross it until a Run hits it."],
-    ["marsh", "Water", "Each move inside goes only half a cell."],
-    ["abyss", "Black ground", "A step that enters it fails the run."],
+    ["wall", TERRAIN_NOTES.wall[0], `${TERRAIN_NOTES.wall[1]} Hidden under fog: your plan may cross it until a Run hits it.`],
+    ["marsh", ...TERRAIN_NOTES.marsh],
+    ["abyss", ...TERRAIN_NOTES.abyss],
   ] },
   { group: "Factory", items: [
     ["source", "Source", "Starts units into the line."],
@@ -59,7 +61,7 @@ export function FieldGuide() {
       <h1>Guide</h1>
       <h2>Research</h2>
       <p>Click machines (or press 1–9) to plan a route; each machine turns the drug, so later paths rotate. <strong>Run · $N</strong> (Enter) pays once and runs the whole route on the real map, which can differ under fog. The solid line is what happened; only that land is revealed.</p>
-      <p>Backspace or <kbd>Ctrl</kbd>+<kbd>Z</kbd> removes the last step; <strong>Clear</strong> empties the plan.</p>
+      <p>Backspace or <kbd>Ctrl</kbd>+<kbd>Z</kbd> removes the last step; <strong>Clear</strong> empties the plan. Click a revealed cell to see what it does.</p>
       <h2>Build and ship</h2>
       <p><strong>Plan</strong> is free and has no clock. <strong>Production</strong> is paid and runs; <strong>Commission $N</strong> builds your Plan there. Lay Source → your route’s machines in order → Sink, with belts from each output port to the next input port.</p>
       <p>Ship stock in Market for cash; each unit lowers that disease’s next price. Ship 3 of a disease to fill its contract.</p>
@@ -82,7 +84,7 @@ export function FieldGuide() {
         <div><dt><kbd>F1</kbd>–<kbd>F3</kbd></dt><dd>Research · Plan · Production</dd></div>
         <div><dt><kbd>M</kbd> <kbd>T</kbd> <kbd>B</kbd></dt><dd>Market · Technology · Blueprints</dd></div>
         <div><dt><kbd>Enter</kbd></dt><dd>Run the planned route</dd></div>
-        <div><dt><kbd>F</kbd></dt><dd>Find the next control</dd></div>
+        <div><dt><kbd>F</kbd></dt><dd>Center the route’s end</dd></div>
         <div><dt><kbd>R</kbd> <kbd>Q</kbd></dt><dd>Rotate · pick a tool</dd></div>
         <div><dt><kbd>Space</kbd> <kbd>.</kbd></dt><dd>Play/pause · single tick</dd></div>
         <div><dt><kbd>Ctrl</kbd>+<kbd>Z</kbd>/<kbd>Y</kbd></dt><dd>Undo · redo</dd></div>

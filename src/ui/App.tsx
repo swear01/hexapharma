@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from "react";
+import { CellKind } from "../sim/phase0_interfaces";
 import type {
   DrugState,
   EffectMap,
@@ -10,11 +11,13 @@ import type {
 } from "../sim/phase0_interfaces";
 import type { LabRenderer, ResearchDeviation } from "../render/labRenderer";
 import { drugDrawPoint, type PixelPoint } from "../render/hexProjection";
+import { hexInBounds, hexIndex } from "../sim/hex";
 import {
   LAB_CELL_PIXELS,
   LAB_MIN_ZOOM,
   LAB_VIEWPORT,
   clampLabCamera,
+  labCellCenter,
   focusLabCamera,
   labScreenToWorld,
   panLabCamera,
@@ -22,7 +25,7 @@ import {
   type LabCamera,
 } from "../render/labCamera";
 import { blockingDialogOpen } from "./blockingDialog";
-import { outcomeEffectText } from "./effectLabels";
+import { TERRAIN_NOTES, diseaseName, outcomeEffectText } from "./effectLabels";
 
 interface LabSurfaceRect {
   readonly left: number;
@@ -47,12 +50,34 @@ export function researchPointerAction(
   moved: boolean,
   candidateEndpointHit: boolean,
   completion: "commit" | "cancel",
-): "place" | "erase" | null {
+): "place" | "erase" | "inspect" | null {
   if (completion === "cancel") return null;
   if (moved) return null;
-  if (button === 0 && candidateEndpointHit) return "place";
+  if (button === 0) return candidateEndpointHit ? "place" : "inspect";
   if (button === 2) return "erase";
   return null;
+}
+
+/** What a clicked Atlas cell does, once revealed; null for plain ground, portals, fog or outside the map. */
+export function researchCellNote(map: EffectMap, cell: Vec2): string | null {
+  if (!hexInBounds(map.width, map.height, cell.q, cell.r)) return null;
+  const index = hexIndex(map.width, cell.q, cell.r);
+  if (map.fog[index] !== 1) return null;
+  const note = ([name, meaning]: readonly [string, string]) => `${name}: ${meaning}`;
+  switch (map.cell[index]) {
+    case CellKind.Wall: return note(TERRAIN_NOTES.wall);
+    case CellKind.Swamp: return note(TERRAIN_NOTES.marsh);
+    case CellKind.Abyss: return note(TERRAIN_NOTES.abyss);
+    case CellKind.SideEffect: return note(TERRAIN_NOTES.sideEffect);
+    case CellKind.Cure: {
+      const premium = map.cureTier[index] === 2;
+      const parts = [`${premium ? "★ " : ""}${diseaseName(map.cureId[index]!)} cure: ${TERRAIN_NOTES.cure[1]}`];
+      if (premium) parts.push(TERRAIN_NOTES.premium[1]);
+      if ((map.sideEffectId[index] ?? -1) >= 0) parts.push(TERRAIN_NOTES.sideEffect[1]);
+      return parts.join(" ");
+    }
+    default: return null;
+  }
 }
 
 /**
@@ -285,6 +310,7 @@ export function App({
     () => ({
       activeMap,
       camera,
+      startHeading: start.heading,
       trail: trails[activeMap] ?? [],
       legEnds,
       previewTrail: planned === undefined ? undefined : previewTrails?.[activeMap],
@@ -295,7 +321,7 @@ export function App({
       deviation: deviation ?? undefined,
       controls,
     }),
-    [activeMap, camera, controls, deviation, estimate, legEnds, lineTrails, planned, previewLegEnds, previewTrails, trails],
+    [activeMap, camera, controls, deviation, estimate, legEnds, lineTrails, planned, previewLegEnds, previewTrails, start.heading, trails],
   );
   const renderMapRef = useRef(renderMap);
   renderMapRef.current = renderMap;
@@ -475,12 +501,15 @@ export function App({
     readonly moved: boolean;
   } | null>(null);
   const [endpointHovered, setEndpointHovered] = useState(false);
+  /** The revealed cell the player clicked and what it does. */
+  const [cellNote, setCellNote] = useState<{ readonly cell: Vec2; readonly text: string } | null>(null);
   useEffect(() => {
     setEndpointHovered(false);
   }, [activeMap, camera.x, camera.y, camera.zoom, planned?.pos]);
   const onPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0 && event.button !== 1 && event.button !== 2) return;
     cancelCameraEase();
+    setCellNote(null);
     event.preventDefault();
     event.currentTarget.focus();
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -547,8 +576,13 @@ export function App({
     );
     if (action === "place") onWorldActivate?.();
     else if (action === "erase") onWorldErase?.();
+    else if (action === "inspect") {
+      const map = renderMap.maps[activeMap];
+      const text = map === undefined ? null : researchCellNote(map, pointerWorld);
+      if (text !== null) setCellNote({ cell: pointerWorld, text });
+    }
     setEndpointHovered(false);
-  }, [activeMap, camera, onWorldActivate, onWorldErase, planned]);
+  }, [activeMap, camera, onWorldActivate, onWorldErase, planned, renderMap]);
   const onWheel = useCallback((event: ReactWheelEvent<HTMLDivElement>) => {
     const map = mm.maps[activeMap];
     if (map === undefined) return;
@@ -606,9 +640,10 @@ export function App({
           data-camera-zoom={camera.zoom}
           data-revealed={revealed}
           data-plan-line={lineTrails?.[activeMap]?.length ?? 0}
+          data-trail={view.trail.length}
           data-placement-target={endpointHovered}
           tabIndex={-1}
-          title={endpointHovered ? "Remove last step" : "Drag map"}
+          title={endpointHovered ? "Remove last step" : undefined}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerLeave={() => {
@@ -620,6 +655,21 @@ export function App({
           onWheel={onWheel}
         >
           <div ref={mountRef} data-testid="lab-canvas" className="lab-canvas" />
+          {cellNote !== null && (
+            <div className="lab-canvas lab-canvas-notes">
+              <p
+                className="research-cell-note"
+                role="status"
+                data-testid="research-cell-note"
+                style={{
+                  left: `${labCellCenter(camera, cellNote.cell).x / LAB_VIEWPORT.width * 100}%`,
+                  top: `${labCellCenter(camera, cellNote.cell).y / LAB_VIEWPORT.height * 100}%`,
+                }}
+              >
+                {cellNote.text}
+              </p>
+            </div>
+          )}
         </div>
         <div className="research-atlas-status research-dpad" role="group" aria-label="Pan map">
           {RESEARCH_PAN_BUTTONS.map(({ side, dx, dy, rotate }) => (

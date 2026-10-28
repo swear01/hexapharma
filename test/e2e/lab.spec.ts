@@ -183,7 +183,9 @@ test("planning is free; Run pays the whole route once and reveals only its actua
   await page.getByTestId("research-command").click();
   await expect(cash).toHaveText(String(cashBefore - 6));
   expect(known(await revealed.getAttribute("data-revealed"))).toBeGreaterThan(revealedBefore);
-  await expect(page.getByTestId("research-atlas-outcome")).toContainText(/side effects/i);
+  // A run that found nothing shows no readout; its trail is on the map.
+  await expect(revealed).not.toHaveAttribute("data-trail", "1");
+  await expect(page.getByTestId("research-atlas-outcome")).toHaveCount(0);
   await expect(page.getByTestId("research-program-strip").getByRole("listitem")).toHaveCount(2);
 
   await page.keyboard.press("Enter");
@@ -203,7 +205,7 @@ test("hovering and clicking the last control removes the last planned step", asy
   const box = (await frame.boundingBox())!;
   await page.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.2);
   await expect(frame).toHaveCSS("cursor", "grab");
-  await expect(frame).toHaveAttribute("title", "Drag map");
+  await expect(frame).not.toHaveAttribute("title");
   await page.mouse.click(box.x + box.width * 0.2, box.y + box.height * 0.2);
   await expect(page.getByTestId("research-program-strip").getByRole("listitem")).toHaveCount(2);
   await page.mouse.click(target.x, target.y);
@@ -234,10 +236,11 @@ test("number keys append, Backspace and Ctrl+Z remove, Clear empties, and Enter 
   await expect(page.getByTestId("cash")).toHaveText("200");
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("cash")).toHaveText(String(200 - available[1]!.cost));
-  await expect(page.getByTestId("research-atlas-outcome")).toBeVisible();
+  const frame = page.getByTestId("lab-map-frame");
+  await expect(frame).not.toHaveAttribute("data-trail", "1");
   await page.getByTestId("research-clear").click();
   await expect(page.getByTestId("research-program-strip").getByRole("listitem")).toHaveCount(0);
-  await expect(page.getByTestId("research-atlas-outcome")).toHaveCount(0);
+  await expect(frame).toHaveAttribute("data-trail", "1");
   await expect(page.getByTestId("research-undo")).toBeDisabled();
   await page.keyboard.press("Digit1");
   await page.getByTestId("research-undo").click();
@@ -293,7 +296,7 @@ test("a non-curing Run preserves the player's camera", async ({ page }) => {
   const cameraX = await frame.getAttribute("data-camera-x");
   const cameraY = await frame.getAttribute("data-camera-y");
   await page.getByTestId("research-command").click();
-  await expect(page.getByTestId("research-atlas-outcome")).toContainText(/side effects/i);
+  await expect(frame).not.toHaveAttribute("data-trail", "1");
   await expect(frame).toHaveAttribute("data-camera-x", cameraX!);
   await expect(frame).toHaveAttribute("data-camera-y", cameraY!);
   await expect(page.getByTestId("lab-focus")).toHaveAttribute("aria-label", "Focus next endpoint");
@@ -359,7 +362,7 @@ test("a resolved outcome keeps its feedback while focus stays on the planned end
   await expect(page.getByTestId("lab-map-frame").locator("canvas")).toBeVisible({ timeout: 15_000 });
   await page.getByTestId("research-machine-hook").click();
   await page.getByTestId("research-command").click();
-  await expect(page.getByTestId("research-atlas-outcome")).toBeVisible();
+  await expect(page.getByTestId("lab-map-frame")).not.toHaveAttribute("data-trail", "1");
   const focus = page.getByTestId("lab-focus");
   await expect(focus).toHaveAttribute("aria-label", "Focus next endpoint");
   await focus.click();
@@ -474,11 +477,15 @@ test("compact Research keeps every command and path control reachable", async ({
 });
 
 test("compact Research keeps resolved feedback separate from its path controls", async ({ page }) => {
+  const options = defaultGenOptions(14);
+  const level = generate(options);
+  const game = applyGameIntent(createGameState(options, 1_000), { kind: "runResearchTrial", program: level.diseases[0]!.reference, base: 0 });
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/?cash=200");
+  await page.goto("/");
+  await installSaveFixture(page, serializeGame(game));
+  await page.reload();
+  await confirmLoad(page);
   await expect(page.getByTestId("lab-map-frame").locator("canvas")).toBeVisible({ timeout: 15_000 });
-  await page.getByTestId("research-machine-hook").click();
-  await page.getByTestId("research-command").click();
   const outcome = page.getByTestId("research-atlas-outcome");
   await expect(outcome).toBeVisible();
   expect(await outcome.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);

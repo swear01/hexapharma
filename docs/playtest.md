@@ -50,7 +50,7 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 5. `Run · $N`（或Enter）只扣規劃的catalog總價一次，實線顯示真實地圖上的實際路線（霧下Wall／Swamp／Abyss可讓它偏離虛線），只揭露實際走過的格；規劃保留。再按一次Run會再付費。
 6. 規劃經過已知Swamp時，確認每一步在沼澤內只走半格（路線點停在格邊中點），離開時對齊到格中心。
 7. 以Abyss測Failure：實際路線在Abyss格中止並顯示Failure。
-8. Outcome同時列Cure／No cure與已知Side effects／No side effects。沒有Formulas按鈕、F-01卡或`Open in Plan`；Cure格揭露後Objective指向Plan。
+8. Outcome只在有Cure、Failure或副作用時出現；什麼都沒碰到的試驗沒有readout。點已揭露的效果格會顯示它的作用。沒有Formulas按鈕、F-01卡或`Open in Plan`；Cure格揭露後Objective指向Plan。
 9. Blueprint drawer不得提供`Save Research program`或`Load in Research`。匯入現行`research-program`後只可Download／Delete，不能直接改規劃、cash、fog或outcome。
 
 ## 5. Terrain / fog / effects

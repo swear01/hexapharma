@@ -148,7 +148,9 @@ export function ResearchWorkspace(props: ResearchWorkspaceProps) {
             </ol>
           </div>
         )}
-        {props.lastOutcome !== null && <ResearchResult outcome={props.lastOutcome} />}
+        {/* A run that found nothing needs no readout: the map shows where it went. */}
+        {props.lastOutcome !== null && (props.lastOutcome.failed || props.lastOutcome.cured.length > 0 || props.lastOutcome.sideEffects.length > 0)
+          && <ResearchResult outcome={props.lastOutcome} />}
         {props.baseLocks.length > 1 && (
           <div className="research-bases">
             {baseHint !== null && <span className="research-base-hint" role="status">{baseHint}</span>}

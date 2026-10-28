@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import type { EffectMap, MultiMap } from "../sim/phase0_interfaces";
+import { CellKind, type EffectMap, type MultiMap } from "../sim/phase0_interfaces";
 import { applyTemplate } from "../sim/drug-graph";
 import { generate } from "../sim/mapgen";
 import { defaultGenOptions, researchBaseLevel, researchRoute } from "./Game";
@@ -13,6 +13,7 @@ import {
   researchFocusTarget,
   researchKnownCureLocations,
   researchPointerMoved,
+  researchCellNote,
   researchPointerAction,
   researchPreviewEndpointHit,
   validateLabFogAuthority,
@@ -98,7 +99,7 @@ describe("Lab pointer projection", () => {
 
   it("commits only on the candidate endpoint while preserving right-click erase", () => {
     expect(researchPointerAction(0, false, true, "commit")).toBe("place");
-    expect(researchPointerAction(0, false, false, "commit")).toBeNull();
+    expect(researchPointerAction(0, false, false, "commit")).toBe("inspect");
     expect(researchPointerAction(2, false, false, "commit")).toBe("erase");
     expect(researchPointerAction(0, true, true, "commit")).toBeNull();
     expect(researchPointerAction(1, false, true, "commit")).toBeNull();
@@ -202,5 +203,27 @@ describe("Research Cure fit", () => {
       expect(y).toBeGreaterThanOrEqual(insets.top);
       expect(y).toBeLessThanOrEqual(viewport.height - insets.bottom);
     }
+  });
+});
+
+describe("Research cell notes", () => {
+  it("explains revealed effect and terrain cells and stays silent on fog or plain ground", () => {
+    const atlas = map(3);
+    atlas.cell[0] = CellKind.Cure;
+    atlas.cureId[0] = 1;
+    atlas.cureTier[0] = 2;
+    atlas.sideEffectId[0] = 0;
+    atlas.cell[1] = CellKind.Wall;
+    atlas.cell[2] = CellKind.SideEffect;
+    atlas.fog.fill(1);
+    atlas.fog[2] = 0;
+    const cure = researchCellNote(atlas, { q: 0, r: 0 });
+    expect(cure).toMatch(/^★ Disease 2 cure: /);
+    expect(cure).toMatch(/1\.5×/);
+    expect(cure).toMatch(/side effect/);
+    expect(researchCellNote(atlas, { q: 1, r: 0 })).toMatch(/^Mountain: /);
+    expect(researchCellNote(atlas, { q: 2, r: 0 })).toBeNull();
+    expect(researchCellNote(atlas, { q: 1, r: 1 })).toBeNull();
+    expect(researchCellNote(atlas, { q: -1, r: 0 })).toBeNull();
   });
 });

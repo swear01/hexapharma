@@ -7,6 +7,8 @@
 .lab-map-frame[data-placement-target="true"] { cursor: pointer; }
 .lab-canvas { position: absolute; width: max(100cqw, calc(100cqh * 13 / 8)); height: max(100cqh, calc(100cqw * 8 / 13)); left: 50%; top: 50%; transform: translate(-50%, -50%); }
 .lab-canvas canvas { display: block; width: 100% !important; height: 100% !important; }
+.lab-canvas-notes { pointer-events: none; }
+.research-cell-note { position: absolute; width: max-content; max-width: 260px; margin: 0; padding: 6px 10px; transform: translate(-50%, calc(-100% - 20px)); border: 1px solid var(--rule-strong); border-radius: 3px; background: var(--paper-raised); color: var(--ink); font-size: 13px; line-height: 1.35; }
 
 /* Map-margin furniture: printed on paper, never glass. */
 .research-overlay { position: relative; z-index: 3; grid-row: 1; grid-column: 1 / -1; min-height: 0; pointer-events: none; }
