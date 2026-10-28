@@ -220,9 +220,7 @@ describe("Research cell notes", () => {
     atlas.fog.fill(1);
     atlas.fog[2] = 0;
     const cure = researchCellNote(atlas, { q: 0, r: 0 });
-    expect(cure).toMatch(/^★ Disease 2 cure: /);
-    expect(cure).toMatch(/1\.5×/);
-    expect(cure).toMatch(/side effect/);
+    expect(cure).toBe("Disease 2 · Tier 2 ★ · Side effect");
     expect(researchCellNote(atlas, { q: 1, r: 0 })).toMatch(/^Mountain: /);
     expect(researchCellNote(atlas, { q: 2, r: 0 })).toBeNull();
     expect(researchCellNote(atlas, { q: 1, r: 1 })).toBeNull();

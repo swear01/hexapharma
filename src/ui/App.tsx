@@ -98,11 +98,9 @@ export function researchCellNote(map: EffectMap, cell: Vec2): string | null {
     case CellKind.Cure: {
       const cureId = map.cureId[index];
       if (cureId === undefined || cureId < 0) return null;
-      const premium = map.cureTier[index] === 2;
-      const parts = [`${premium ? "★ " : ""}${diseaseName(cureId)} cure: ${TERRAIN_NOTES.cure[1]}`];
-      if (premium) parts.push(TERRAIN_NOTES.premium[1]);
-      if ((map.sideEffectId[index] ?? -1) >= 0) parts.push(TERRAIN_NOTES.sideEffect[1]);
-      return parts.join(" ");
+      const parts = [diseaseName(cureId), `Tier ${map.cureTier[index] === 2 ? "2 ★" : "1"}`];
+      if ((map.sideEffectId[index] ?? -1) >= 0) parts.push(TERRAIN_NOTES.sideEffect[0]);
+      return parts.join(" · ");
     }
     default: return null;
   }
