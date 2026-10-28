@@ -587,7 +587,7 @@ test("focused Factory tool controls still allow R, number, and Q world hotkeys",
   const source = clipboardPayloads[0]!;
   const point = await factoryCellPoint(frame, layout, source.cell);
   await page.mouse.move(point.x, point.y);
-  await expect(workspace.getByTestId("factory-hover-kind")).toHaveText("source · Saline");
+  await expect(workspace.getByTestId("factory-hover-kind")).toHaveText("source");
   await workspace.getByTestId("brush-merger").click();
   await page.keyboard.press("q");
   await expect(workspace.getByTestId("brush-selected")).toHaveText("source");

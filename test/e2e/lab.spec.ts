@@ -418,7 +418,7 @@ test("a curing trial reports the Cure without a formula card and the objective p
   await expect(page.getByTestId("research-atlas-outcome")).toContainText("Cure Disease 1");
   await expect(page.getByRole("status", { name: /Cure found/ })).toHaveCount(0);
   await expect(page.getByTestId("research-open-plan")).toHaveCount(0);
-  await expect(page.getByTestId("objective-text")).toHaveText("Plan a line to Disease 1 on Saline");
+  await expect(page.getByTestId("objective-text")).toHaveText("Plan a line to Disease 1");
   await page.getByTestId("objective-action").click();
   await expect(page.getByTestId("pilot-facility-workspace")).toBeVisible();
 });

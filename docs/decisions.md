@@ -51,13 +51,14 @@
 | D45 | 規格未明處的 D43 選擇：（a）切換 Research base 時保留規劃路線（只是機器序列，預覽在新 base 重算），Run 當下的預估只在同 base 顯示；（b）存檔中 `lastTrial` 的 base 之後被關閉仍可讀（只驗 base 在範圍內），但新試驗會被拒絕；（c）Objective 的「Turn on <Base>」只在該 base 關閉且尚無可出售庫存時出現；（d）base 選擇器只在關卡有多個 base 時出現，單 base 測試關卡的 UI 與文案不變；（e）白箱 progression 每病額外打開該病的 base 開關；（f）`researchTrialWork` 的 replay work 估算保留舊的 ×nMaps 上界（保守）；（g）Load 後 Research 顯示最近試驗所在的 base，New Game 回到 Saline；（h）Source 的 base 標記是 DOM 疊字（與機器編號同層），不進 Pixi renderer；用全名而非首字母，因為 O 在 Barlow 字型裡像 0。 | 都選最簡單、確定且可測的選項。 |
 | D46 | （2026-10-27 使用者 playtest）Research 地圖可讀性：（a）改動規劃（新增／Undo／Clear）就隱藏最近試驗的實線與結果，讀檔後未改動前仍顯示；（b）終點不再是圓圈，改為指向 heading 的實心尖頭（規劃與實際終點相同），每台機器終點是小節點、每段 leg 一個兩筆 chevron，拿掉地圖上的編號；（c）霧下也畫同樣淡的 minor 格線；（d）hotbar token 的 footprint 隨 heading 與 path 一起旋轉；（e）拿掉羅盤，目標是 Research 時 Research 不顯示目標卡（目標卡仍在其他場域導引）；（f）左下 Center 改為方向盤（上下左右＋中央置中，窄螢幕只留中央）；（g）點 step 清單把該 step 終點置中。base 概念重做與多起始點列入 roadmap Later。 | 朝向已直接畫在地圖上，羅盤與編號變成重複資訊；純滑鼠玩家需要不用拖曳的平移。 |
 | D47 | （2026-10-28 使用者 playtest）（a）新試驗的實線以每段 90 ms 等速走出（上限 4 s），讓 Run 有「走」的感覺；（b）等高線改在已揭露地面之下，只在霧裡看得到；（c）偏離點只畫紅圈、不寫 Wall／Swamp／Abyss 字；（d）起點改為與終點同形的空心尖頭，指向關卡起始 heading；（e）什麼都沒碰到的試驗不顯示右上 readout；（f）左鍵單擊已揭露的效果／地形格顯示其作用，文字與 Guide legend 共用 `TERRAIN_NOTES`；（g）拿掉地圖的 `Drag map` tooltip。 | 地圖自己說明自己：方向、作用都在格子上，readout 與文字標籤只在有事發生時出現。 |
+| D48 | （2026-10-28 使用者 playtest）（a）正常新局只有一個 base（`nMaps: 1`）：6 種疾病都在同一張 Atlas，Research 沒有 base 選擇器，Technology 不列出該關卡沒有的 base 開關；多 base 的 sim、mapgen 與 save 支援保留，等基底概念重做（roadmap Later）；（b）地圖平移鍵改為直接印在地圖上的四個實心三角與中央定位圈，沒有底板，focus 只在鍵盤操作時畫圓環；（c）Run 偏離預估後的第一次編輯先刪掉偏離那步與其後各步；（d）點治療格只寫疾病與等級（`Disease 1 · Tier 2 ★`，帶副作用時加 `· Side effect`）。 | Saline／Oil／Ethanol 的溶劑概念不對（D43 被取代為暫不使用）；保留 base 選擇器會把錯的概念放在每個畫面上，且疾病分散在鎖住的圖上。 |
 
 ## Current authority summary
 
 - F1 Research、F2 Production Plan、F3 Production；M／T／B drawers；Plan 以 Commission 送入正式產線。
 - Research：中心radius-two 19-cell hex disk起始視野、寬廣 assay sector；本地規劃整條 heading-relative 路線，Run 付一次費在真實地圖試驗並只揭露實際路徑；Swamp 半格；霧下只見由地勢畫出的等高線（山與水同樣是線），所有地表與互動物揭露後才印出；不產生配方。
-- Bases（D43）：Saline／Oil／Ethanol 三張同地形 Atlas，各自的效果區與黑格；一劑藥只在一個 base；Oil／Ethanol 由 Technology 開關。
-- Atlas：49×49 六角 Atlas（R＝24）；骨架＋BFS 驗證隘口；正常 6 種獨立疾病（每 base 兩種），各有 easy 與含 ★ 的 hard 區、void filling、黑格；terrain-first diverse references、clean/contaminated Cure cells、最多 8 種。
+- Bases（D43→D48）：正常新局只有一張 Atlas；多 base（同地形、各自效果區）只留在 sim／mapgen／save，等基底概念重做。
+- Atlas：49×49 六角 Atlas（R＝24）；骨架＋BFS 驗證隘口；正常 6 種獨立疾病（同一張圖），各有 easy 與含 ★ 的 hard 區、void filling、黑格；terrain-first diverse references、clean/contaminated Cure cells、最多 8 種。
 - Production Plan：free/no-clock optional sandbox；內部仍可稱 pilot。
 - Production：direct paid construction、live runtime、actual inventory/waste/economy。
 - Economy：$1000 bootstrap、依到達難度的分區價格（D38）、per-disease demand decay to zero、profitable clean-first shipping、quota-3 contracts與machine patent gates（D37）。

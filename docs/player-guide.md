@@ -32,22 +32,15 @@ Blueprint Library 與 save slot 分離；New Game、Load、Rewind、換 slot 都
 
 目前 [Save v15](save.md) 是開放、可編輯的 plain JSON。獨立 checkpoint/history 外層仍是 v2，內層使用 Save v15；舊開發版（含 v14）不會自動升級。
 
-正常新局從 $1000 cash開始，有三種基礎藥（Saline、Oil、Ethanol），各一張 Atlas，共6種疾病。全新 origin 的 Blueprint Library 為空；之後換 seed 會保留既有藍圖。URL query注入的cash／research只供開發驗證，不是正常玩法。
+正常新局從 $1000 cash開始，只有一張 Atlas，上面共6種疾病。全新 origin 的 Blueprint Library 為空；之後換 seed 會保留既有藍圖。URL query注入的cash／research只供開發驗證，不是正常玩法。
 
 ## Research
-
-### 基礎藥
-
-- 三種基礎藥各有一張 Atlas：**地形完全一樣**（同樣的山、水、隘口），但治療區、副作用與黑格不同，每張圖的霧也分開。在一張圖學到的地形可以帶到另一張。
-- 每種疾病只在一種基礎藥上找得到：Saline 是 Disease 1 與 4、Oil 是 Disease 2 與 5、Ethanol 是 Disease 3 與 6。Market 卡片與 Objective 都會寫出 base（例如 `Disease 2 · Oil`、`Find Disease 2 on Oil · look west`）。
-- 地圖右下的 base 選擇器切換顯示哪一張圖；Run 在目前選的 base 上付費試驗。切換時規劃路線保留，最近一次試驗只在它所在的 base 上顯示。
-- Saline 開局可用；Oil 與 Ethanol 要先在 Technology 打開（免費）。鎖住的 base 顯示鎖頭與「Oil off · turn it on in Technology」。
 
 ### 看地圖
 
 - Atlas 遠大於 viewport；開局 camera 聚焦世界中心的 generator start，只有以起點為中心、hex distance radius 2 的19-cell disk已揭露，畫面只顯示整張圖的一小部分。地圖是pointy-top hex，六個相鄰方向為E／SE／SW／W／NW／NE。
 - 路線終點的紫色尖頭指向藥物目前的朝向，也就是下一台機器「往前」的方向；路線上的小箭頭標出每台機器的前進方向。目前疾病的大概方位（Look local，或east／south-east／south-west／west／north-west／north-east）寫在其他場域的目標卡上，不是精確座標、距離或reference route。
-- 拖曳任一滑鼠鍵可平移；滾輪以游標位置縮放。左下方向盤的上下左右會平移地圖，中間的點（或`F`）會聚焦規劃路線的終點（沒有規劃時聚焦最近試驗的實際終點）；點左上清單的一台機器會把它的終點置中。每次 Run 立即resolve，沒有等待動畫結束的Dose階段或自動camera跟隨（唯一例外：剛找到Cure的試驗會把鏡頭拉到能看見整條實際路線，可隨時拖曳中斷）；切到其他建築再回來不會重設手動camera。
+- 拖曳任一滑鼠鍵可平移；滾輪以游標位置縮放。左下四個三角形會平移地圖，中間的定位圈（或`F`）會聚焦規劃路線的終點（沒有規劃時聚焦最近試驗的實際終點）；點左上清單的一台機器會把它的終點置中。每次 Run 立即resolve，沒有等待動畫結束的Dose階段或自動camera跟隨（唯一例外：剛找到Cure的試驗會把鏡頭拉到能看見整條實際路線，可隨時拖曳中斷）；切到其他建築再回來不會重設手動camera。
 - Atlas 是一張六角形大地圖，外緣一圈山。中央起點被一圈厚山（內環）圍住，只能經由 2–3 條彎曲隘口出去；隘口兩端較寬、中段是一格寬的窄道。外圈還有山弧、環形盆地（各只有一條 S 形入口）與湖。
 - 霧是還沒印出的紙。霧下唯一看得到的是**等高線**：哪裡有起伏就有一圈圈線，但山和水畫得一模一樣，線也包含一些假的小起伏——它只告訴你「那裡有東西」。
 - 地形揭露後才印出來：
@@ -83,7 +76,7 @@ hotbar 圖示會轉到規劃路線終點的朝向。
 
 ## Factory共同操作
 
-Production Plan與Production使用相同editor，但一眼可分：Plan 以紫色虛線 overprint 繪製，底部是 `Commission $N`；Production 以黑墨實印，底部有報價與 Play，Play 左側圖示表示執行中／暫停，卡住時顯示 Blocked。Details 預設收起，按下才顯示診斷；底部提供工具、報價、旋轉與播放。工具列是圖例：機器以「footprint＋path」token 與全名顯示（與 Research 相同），未解鎖機器顯示鎖頭與解鎖條件。起步只有 Belt、Source、Sink、Erase 與機器；Splitter／Merger 要先在 Technology 解鎖 `Split / Merge`。Source 是空心三角、上方印 base 名稱；選 Source 工具時，底部狀態列可選 base（鎖住的 base 會說明要到 Technology 打開）。Source 產出的藥只在該 base 的圖上走，產線要對應疾病所在的 base。Sink 是雙圈；input port 是方形、output port 是圓形，空心代表尚未連接；belt 是藍色帶狀線，箭頭表方向。
+Production Plan與Production使用相同editor，但一眼可分：Plan 以紫色虛線 overprint 繪製，底部是 `Commission $N`；Production 以黑墨實印，底部有報價與 Play，Play 左側圖示表示執行中／暫停，卡住時顯示 Blocked。Details 預設收起，按下才顯示診斷；底部提供工具、報價、旋轉與播放。工具列是圖例：機器以「footprint＋path」token 與全名顯示（與 Research 相同），未解鎖機器顯示鎖頭與解鎖條件。起步只有 Belt、Source、Sink、Erase 與機器；Splitter／Merger 要先在 Technology 解鎖 `Split / Merge`。Source 是空心三角。Sink 是雙圈；input port 是方形、output port 是圓形，空心代表尚未連接；belt 是藍色帶狀線，箭頭表方向。
 
 ### Camera與工具
 
@@ -106,7 +99,7 @@ Production Plan與Production使用相同editor，但一眼可分：Plan 以紫�
 - machine的`R`每次只把footprint與ports順時針旋轉60°；六次回到原向，不改其chemical path。
 - 從既有machine上直接拖曳即可搬動整台machine；越界或碰撞時不會破壞原layout。Touch單指在格內使用目前工具，因此可連續畫Belt、直接拖動machine，或用Erase刪除；兩指drag負責camera。Touch點一下既有machine後再按`R · Rotate`可直接旋轉它。
 - 非Erase工具畫過machine footprint會略過該格，不會暗中拆機。hover既有machine時預覽其現有footprint，不顯示不存在的建造或刪除費。
-- Copy／Cut／Paste保留tile的完整方向與參數，包括Source period與base及Splitter／Merger branches；`Q`只把游標內容選成目前brush（Source 也帶上它的 base）。
+- Copy／Cut／Paste保留tile的完整方向與參數，包括Source period及Splitter／Merger branches；`Q`只把游標內容選成目前brush。
 - invalid ghost代表碰撞、越界或其他geometry錯誤；放開滑鼠不會偷偷修正。
 
 ### Transport方向

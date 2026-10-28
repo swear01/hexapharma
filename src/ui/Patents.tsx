@@ -6,6 +6,8 @@ import { createPortal } from "react-dom";
 
 interface PatentsProps {
   readonly patents: PatentState;
+  /** Bases of this level; a base switch for a base the level lacks is not offered. */
+  readonly baseCount: number;
   readonly expansionResetsProduction: boolean;
   readonly onSwitch: (id: string, enabled: boolean) => void;
 }
@@ -19,6 +21,19 @@ export const PATENT_TREE: readonly (readonly string[])[] = [
   ["loop-unlock", "crane-unlock"],
   ["oil-base", "ethanol-base"],
 ];
+
+/** The tree as shown: base switches only for bases the level has. */
+export function visiblePatentTree(baseCount: number): readonly (readonly (typeof DEFAULT_PATENTS)[number][])[] {
+  return PATENT_TREE
+    .map((branch) => branch
+      .map((id) => {
+        const node = DEFAULT_PATENTS.find((candidate) => candidate.id === id);
+        if (node === undefined) throw new Error(`Technology tree lists unknown node "${id}"`);
+        return node;
+      })
+      .filter((node) => node.effect.kind !== "unlockBase" || node.effect.base < baseCount))
+    .filter((branch) => branch.length > 0);
+}
 
 export function patentSwitchWarning(
   node: (typeof DEFAULT_PATENTS)[number],
@@ -91,6 +106,7 @@ export function patentEffectSummary(effects: ReturnType<typeof activeEffects>): 
 
 export function Patents({
   patents,
+  baseCount,
   expansionResetsProduction,
   onSwitch,
 }: PatentsProps) {
@@ -135,10 +151,10 @@ export function Patents({
 
       <div className="patent-grid" data-testid="patent-grid">
         <ol className="patent-tree" data-testid="patents-table" aria-label="Technology tree">
-          {PATENT_TREE.map((branch) => (
-            <li key={branch[0]} className="patent-branch">
-              {branch.map((id) => {
-                const node = DEFAULT_PATENTS.find((candidate) => candidate.id === id)!;
+          {visiblePatentTree(baseCount).map((branch) => (
+            <li key={branch[0]!.id} className="patent-branch">
+              {branch.map((node) => {
+                const id = node.id;
                 const on = patents.unlocked.includes(id);
                 return (
                   <article key={id} className={`patent-card${on ? " is-on" : ""}`} data-testid={`patent-row-${id}`}>

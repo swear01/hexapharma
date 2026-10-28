@@ -4,7 +4,7 @@
 
 ## 摘要
 
-HexaPharma 是單人 2D 工廠解謎遊戲。玩家在遠大於 viewport 的程序化 **Research Atlas** 上用 catalog 定義的完整奇形 Machine `PathStamp` 規劃整條路線（只用已知地圖預估，霧當平地），按 **Run** 才付一次費從起點跑完整試驗，只揭露實際走過的路徑；也可在免費的 **Production Plan** 設計工廠，最後 **Commission** 到 **Production**，承擔持續生產、庫存、廢料與經濟結果。正常新局有三種基礎藥（Saline／Oil／Ethanol），各一張同地形、不同藥效分布的 Atlas，共 6 種獨立疾病（每個 base 兩種），讓探索、路線設計、產品品質、出貨合約與有限需求形成反覆循環，而不是一條藍圖永久通殺。
+HexaPharma 是單人 2D 工廠解謎遊戲。玩家在遠大於 viewport 的程序化 **Research Atlas** 上用 catalog 定義的完整奇形 Machine `PathStamp` 規劃整條路線（只用已知地圖預估，霧當平地），按 **Run** 才付一次費從起點跑完整試驗，只揭露實際走過的路徑；也可在免費的 **Production Plan** 設計工廠，最後 **Commission** 到 **Production**，承擔持續生產、庫存、廢料與經濟結果。正常新局只有一張 Atlas，上面有 6 種獨立疾病，讓探索、路線設計、產品品質、出貨合約與有限需求形成反覆循環，而不是一條藍圖永久通殺。
 
 三個場域彼此解耦：Research 只提供地圖知識（不產生配方），Production Plan 提供免費設計空間，Production 提供有成本與時間的正式工廠。任一場域都不是另一場域的強制前置。內部 `pilot` state／intent 名稱可暫時保留，但不是玩家文案。
 
@@ -27,7 +27,7 @@ Market／Technology：Technology 目前是免費開關（測試期，D42）→ �
 
 ## 1.2 基礎藥、Atlas、霧與地形
 
-每局有三種基礎藥（base）：Saline、Oil、Ethanol（`BASE_NAMES`，base index＝map index）。每個 base 有自己的一張 Atlas：三張圖的地形（山、水、elevation、隘口）完全相同，但治療區、副作用區與黑格各不相同；fog 每張圖分開，開局各揭露起點 radius-2 disk。一劑藥永遠只在一個 base 上：Research 試驗與 Production Source 都指定 base，traversal、Abyss、Swamp 與評估只讀該 base 的圖，沒有多圖疊加。Saline 永遠可用；Oil／Ethanol 是 Technology 開關（`oil-base`／`ethanol-base`），關閉時 sim 拒絕用它跑 Research 或建 Source（`game intent:` 訊息），UI 像鎖住的機器一樣顯示「Oil off · turn it on in Technology」。不提供跨圖座標、跨圖傳送或換 base 的機器。
+正常新局只有一個 base（`nMaps: 1`，D48）；以下多 base 規則只在 `nMaps > 1` 的關卡生效，等基底概念重做。多 base 關卡的基礎藥是 Saline、Oil、Ethanol（`BASE_NAMES`，base index＝map index）。每個 base 有自己的一張 Atlas：三張圖的地形（山、水、elevation、隘口）完全相同，但治療區、副作用區與黑格各不相同；fog 每張圖分開，開局各揭露起點 radius-2 disk。一劑藥永遠只在一個 base 上：Research 試驗與 Production Source 都指定 base，traversal、Abyss、Swamp 與評估只讀該 base 的圖，沒有多圖疊加。Saline 永遠可用；Oil／Ethanol 是 Technology 開關（`oil-base`／`ethanol-base`），關閉時 sim 拒絕用它跑 Research 或建 Source（`game intent:` 訊息），UI 像鎖住的機器一樣顯示「Oil off · turn it on in Technology」。不提供跨圖座標、跨圖傳送或換 base 的機器。
 
 Atlas 採 pointy-top axial true hex。離散位置是整數 `{q,r}`；六鄰接方向固定按 E／SE／SW／W／NW／NE 編號 0–5，dense map fields 一律以 `r * width + q` 索引。screen pixels 只存在 camera／renderer projection，不能回流成第二套 sim 座標 authority。
 
@@ -87,7 +87,7 @@ Research 不使用 FactoryLayout、source／belt／sink、線性 route descripto
 - **骨架（依 seed）**：整數 elevation 場（Int16，1024＝1.0，存在 `EffectMap.elevation`）＝內環山（≈0.375R，厚 2–3 格）、2–3 條外圈部分弧（≈0.77R）、至多一條徑向支脈、1–3 個環形盆地（環狀山緣＋下沉底）、2–4 個湖、1–2 個內區小丘／池，再加 domain-warped fBm／ridged gradient noise。全部只用整數雜湊、多項式 fade／kernel、整數平方根與常數角度表；`src/sim/mapgen` 禁用 `Math.sin/cos/exp/sqrt/pow/random`。≥ mountain level → Wall、≤ water level → Swamp。
 - **隘口**：內環 2–3 條、每條外弧 1 條、每個盆地恰 1 條（S 形入口）；以帶雜訊成本的最短路徑經過側向轉折點挖出，兩端 2–3 格寬、中段約 40–60% 長的 1 格窄道。隘口格強制可走，elevation 壓到鞍部讓等高線出現缺口。每條隘口在生成時以 bounded local BFS 驗證：狀態（cell、半格 offset、heading），用 initial catalog 與真實 drug-graph traversal，只能走走廊加兩端 2 格 pocket，≤10 步；失敗就依序換角度／salt 重挖（有上限、確定性）。這只是生成期檢查，不 import solver、不給玩家。
 - **清理**：不連到起點的可走格改成山；單格湖移除。全圖可走格（含黑格放置後）永遠連通。
-- **多 base**：地形骨架只建一次，複製到每個 base 的圖；每個 base 用自己的衍生 seed 放效果區與黑格，hard 區的盆地順序依 base 輪轉，讓同一地形上的區位置不同。疾病 d 在 base `d mod nMaps`（正常新局 Saline＝D1＋D4、Oil＝D2＋D5、Ethanol＝D3＋D6）；reference、效果區、黑格保護、區價搜尋都只看該疾病的 base。生成期的 BFS 樹（每個 catalog tier 一棵）與區價搜尋的 transition 表在地形相同的格上跨 base 共用，只在各 base 不同的格（Abyss、效果差異）重新走。
+- **多 base**：地形骨架只建一次，複製到每個 base 的圖；每個 base 用自己的衍生 seed 放效果區與黑格，hard 區的盆地順序依 base 輪轉，讓同一地形上的區位置不同。疾病 d 在 base `d mod nMaps`（三 base 時 Saline＝D1＋D4、Oil＝D2＋D5、Ethanol＝D3＋D6）；reference、效果區、黑格保護、區價搜尋都只看該疾病的 base。生成期的 BFS 樹（每個 catalog tier 一棵）與區價搜尋的 transition 表在地形相同的格上跨 base 共用，只在各 base 不同的格（Abyss、效果差異）重新走。
 - **references**：在 base 的 skeleton 上以 BFS 樹（cell、offset、heading；疾病的 catalog tier，後續 tier 以新機器作最後一步）取得每個狀態的最短 program，依 seeded 目標 difficulty（寬 band 時 ≥ 8）、半徑、方向與「不貼牆」評分；Disease 0 的終點在內環內，其他疾病在內環外（需要穿過隘口）。找不到時退回 sampled construction；若某疾病仍無法構造，從衍生 stream 重畫地形（≤4 次，確定性）。reference 必須實際受到 terrain traversal 影響，而不是等同空白地圖的路線；不保護安全走廊。
 - **效果區**：每疾病至少一個 easy 區（reference 終點所在的 3–5 格、全 tier 1）與一個 hard 區（先放盆地底，其餘放在離起點步行最遠、內環外的開闊處；9–12 格，含 2–3 格 ★）。hard 區與 void-fill 區和其他疾病的效果保持 1 格間隔，任何區都不重疊。**void filling**：只要還有平地（起點 disk 外）離所有特徵（效果、Wall、Swamp、Abyss、隘口）≥4 格，就在最遠處長一個 3–5 格 tier-1 區。副作用：easy 區非終點格約一半、hard 區外緣約 1/3（不含 ★）、fill 區一格；reference 終點永遠乾淨。
 - **黑格（Abyss）**：每個 ★ 核心周圍 3–4 格、每條窄道出口後方側一格陷阱（直衝會掉、小心可避）、8–12 個平地偷坑單格、2–3 條約 5 格的黑帶（不同方位）。不放在隘口走廊、效果、起點 radius 3 內或任何 reference 實際經過的格；每次放置都必須保持全圖連通，否則拒絕。放完後若某隘口的 BFS 驗證失敗，清掉其兩端 pocket 內的黑格。

@@ -1,4 +1,9 @@
-import { expect, test, type Locator } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
+import { installSaveFixture } from "./checkpoint";
+import { openMenu } from "./menu";
+import { createGameState } from "../../src/sim/game";
+import { serializeGame } from "../../src/sim/save";
+import { defaultGenOptions } from "../../src/ui/Game";
 import { BASE_GAME_FACTORY_HEIGHT, BASE_GAME_FACTORY_WIDTH } from "../../src/sim/phase0_interfaces";
 import { hexBoardBounds, hexToPixel } from "../../src/render/hexProjection";
 
@@ -15,9 +20,34 @@ async function factoryCellPoint(frame: Locator, q: number, r: number): Promise<{
   };
 }
 
-test("Oil stays locked until Technology turns it on; then Research and Sources can use it", async ({ page }) => {
+async function loadThreeBaseGame(page: Page): Promise<void> {
   await page.goto("/");
   await expect(page.getByTestId("lab-map-frame").locator("canvas")).toBeVisible({ timeout: 15_000 });
+  await installSaveFixture(page, serializeGame(createGameState({ ...defaultGenOptions(14), nMaps: 3 }, 1000)));
+  await page.reload();
+  await openMenu(page);
+  await page.getByTestId("load").click();
+  await page.getByRole("alertdialog", { name: "Load saved game?" }).getByRole("button", { name: "Load saved game" }).click();
+  await expect(page.getByTestId("research-base-0")).toBeVisible();
+}
+
+test("a new game has one base: no base picker in Research, Sources or Technology", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByTestId("lab-map-frame").locator("canvas")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId("research-base-0")).toHaveCount(0);
+  await page.getByTestId("view-technology").click();
+  await expect(page.getByTestId("patent-switch-split-merge")).toBeVisible();
+  await expect(page.getByTestId("patent-switch-oil-base")).toHaveCount(0);
+  await expect(page.getByTestId("patent-switch-ethanol-base")).toHaveCount(0);
+  await page.getByRole("button", { name: "Close technology" }).click();
+  await page.getByTestId("view-pilot").click();
+  const workspace = page.getByTestId("pilot-facility-workspace");
+  await workspace.getByTestId("brush-source").click();
+  await expect(workspace.getByTestId("source-base-0")).toHaveCount(0);
+});
+
+test("in a three-base game Oil stays locked until Technology turns it on; then Research and Sources can use it", async ({ page }) => {
+  await loadThreeBaseGame(page);
   const saline = page.getByTestId("research-base-0");
   const oil = page.getByTestId("research-base-1");
   await expect(saline).toHaveAttribute("aria-pressed", "true");

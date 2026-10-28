@@ -708,7 +708,7 @@ export function App({
             </div>
           )}
         </div>
-        <div className="research-atlas-status research-dpad" role="group" aria-label="Pan map">
+        <div className="research-dpad" role="group" aria-label="Pan map">
           {RESEARCH_PAN_BUTTONS.map(({ side, dx, dy, rotate }) => (
             <button
               key={side}
@@ -720,7 +720,7 @@ export function App({
               title={`Pan ${side}`}
             >
               <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-                <path d="M4 10l4-4 4 4" transform={`rotate(${rotate} 8 8)`} />
+                <path d="M8 3.5 13 10.5H3z" transform={`rotate(${rotate} 8 8)`} />
               </svg>
             </button>
           ))}
@@ -733,7 +733,8 @@ export function App({
             title={`Focus ${focusDescription} (F)`}
           >
             <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-              <circle cx="8" cy="8" r="2.5" />
+              <circle cx="8" cy="8" r="5" />
+              <circle cx="8" cy="8" r="1.75" className="research-dpad-dot" />
             </svg>
           </button>
         </div>
