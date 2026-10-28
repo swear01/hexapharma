@@ -58,9 +58,12 @@ export function researchPointerAction(
   return null;
 }
 
-/** Room (CSS px) a cell note needs beside and above its cell before it would leave the frame. */
+/**
+ * Room (CSS px) a cell note needs beside and above its cell before it would leave the frame; follows
+ * `.research-cell-note` (260px wide, up to five 13px lines, padding, border, 20px offset).
+ */
 const NOTE_HALF_WIDTH = 140;
-const NOTE_HEIGHT = 90;
+const NOTE_HEIGHT = 120;
 
 /**
  * Which way a cell note hangs so the clipped map frame keeps it in view: below the cell near the
@@ -322,6 +325,8 @@ export function App({
   const mountRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<LabRenderer | null>(null);
   const visibleViewportRef = useRef<{ width: number; height: number }>(LAB_VIEWPORT);
+  /** The map frame's CSS size, measured with the visible viewport. */
+  const frameSizeRef = useRef<{ width: number; height: number }>(LAB_VIEWPORT);
   const [rendererError, setRendererError] = useState<string | null>(null);
   const activeMap = 0;
   const { mm, start } = level;
@@ -393,6 +398,7 @@ export function App({
         height: LAB_VIEWPORT.height * Math.min(1, visible.height / canvas.height),
       };
       visibleViewportRef.current = viewport;
+      frameSizeRef.current = { width: visible.width, height: visible.height };
       setCameras((current) => current.map((camera, index) => clampLabCamera(camera, viewport, mm.maps[index]!)));
     });
     observer.observe(mount);
@@ -691,10 +697,7 @@ export function App({
           {cellNote !== null && notePoint !== null && (
             <div className="lab-canvas-notes">
               <p
-                className={`research-cell-note ${researchNotePlacement(notePoint, visibleViewportRef.current, {
-                  width: mountRef.current?.parentElement?.clientWidth ?? LAB_VIEWPORT.width,
-                  height: mountRef.current?.parentElement?.clientHeight ?? LAB_VIEWPORT.height,
-                })}`}
+                className={`research-cell-note ${researchNotePlacement(notePoint, visibleViewportRef.current, frameSizeRef.current)}`}
                 role="status"
                 data-testid="research-cell-note"
                 style={{
