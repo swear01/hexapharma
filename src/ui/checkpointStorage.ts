@@ -36,6 +36,17 @@ function checkpointKey(slot: number): string {
   return `hexapharma.save.v${SAVE_VERSION}.checkpoint.${slot}`;
 }
 
+/** Deletes saves written by other save versions; alpha saves are never migrated. */
+export function deleteObsoleteSaves(storage: Storage): void {
+  const current = `hexapharma.save.v${SAVE_VERSION}.`;
+  const obsolete: string[] = [];
+  for (let index = 0; index < storage.length; index++) {
+    const key = storage.key(index);
+    if (key !== null && key.startsWith("hexapharma.save.") && !key.startsWith(current)) obsolete.push(key);
+  }
+  for (const key of obsolete) storage.removeItem(key);
+}
+
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }

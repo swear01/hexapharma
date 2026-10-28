@@ -53,7 +53,7 @@ HexaPharma 是「程序化藥效 Atlas + 實體工廠」的確定性單人遊戲
 
 - Blueprint v4 codec 識別只存 ordered `{typeId}` 的 `research-program`，但 UI 對它只提供import／download／delete，不提供capture／apply；`factory-layout` 存 routing 與 `{id,typeId,anchor,footRot}`，可正常建立與套用。Library envelope／namespace 是 v4／`hexapharma.blueprint-library.v4`。
 - Factory Blueprint 不綁來源場域，可免費開到 Production Plan，或付費 Commission 到 Production。Library 與 save slots 分離並跨存檔。
-- Save v15 保存 non-null Production layout/runtime（Source、unit 帶 base）、結算後 cash、Research `lastTrial`（含 base）、drug heading／offset、帶 `premium`／`regions` 的 outcome、內部 pilot、economy 與每 base 的 fog；舊開發版（含 v14）顯式拒絕。Blueprint ruleset 6（Source 帶 base）。
+- Save v16 保存 non-null Production layout/runtime（Source、unit 帶 base）、結算後 cash、Research `lastTrial`（含 base）、drug heading／offset、帶 `premium`／`regions` 的 outcome、內部 pilot、economy 與每 base 的 fog；舊開發版（含 v15）啟動時刪除。Blueprint ruleset 6（Source 帶 base）。
 - 正式 release candidate 前不維護跨 build 相容。
 
 ## 技術界線

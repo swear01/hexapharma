@@ -13,7 +13,7 @@
 
 ## Terrain、portal 與 fog
 
-- 每個 base 一張 pointy-top axial `{q,r}` Atlas（map index＝base）；一劑藥（Research 試驗、factory unit、產品）恰在一個 base 上，traversal、Abyss、Swamp 與 evaluate 只讀該 base 的圖。跨圖位置或換 base 操作不得出現在 Research program、palette、mapgen、Blueprint 或 Save v15 authority。
+- 每個 base 一張 pointy-top axial `{q,r}` Atlas（map index＝base）；一劑藥（Research 試驗、factory unit、產品）恰在一個 base 上，traversal、Abyss、Swamp 與 evaluate 只讀該 base 的圖。跨圖位置或換 base 操作不得出現在 Research program、palette、mapgen、Blueprint 或 Save v16 authority。
 - 鎖住的 base（`oil-base`／`ethanol-base` 未開）不得用於新的 Research 試驗或 Source；Plan／Production 有 Source 使用某 base 時，關閉該 base 原子拒絕。
 - Wall／OOB、Abyss、Swamp 與 Portal 各有 pure、deterministic、共享於 preview／execution 的語意。
 - 每個 portal entry 恰有一個同層 destination；每個 destination 最多一個 entry。B 不可反向作 A；trail 在 jump 處斷開。
@@ -113,7 +113,7 @@
 - strict decoder 必須拒絕 unknown／missing fields、wrong kind/version/content/checksum、unknown type、duplicate IDs/tiles、collision、越界與 quota violation。
 - Library envelope version 固定為 4，namespace 是 `hexapharma.blueprint-library.v4`；lifecycle 與 save slots 分離，Load／Rewind／換 slot 不改 Library。舊 v3 document／Library 不得 silent reinterpret，reader 拒絕時不得覆寫原 blob／legacy key。
 
-## Save v15 與 checkpoints
+## Save v16 與 checkpoints
 
 - full／compact／slots／rewind 都是開放、可攜、可編輯的 plain JSON 冷快照；合法 Cash／sold／fog 編輯不要求操作或收入證明，不加密、簽章或驗資源 checksum。
 - loader 不 replay；`origin`／`intentTrace`／`replayTicks`／`stateHash` 不是存檔欄位。`replayGame(initial, intents)` 的逐欄位／hash determinism 是獨立除錯契約。
@@ -122,7 +122,7 @@
 - 版本與 `contentBuild` 不合即拒絕。content identifier 只包含 catalog／shapes／patents 與手動 rules revision；所有 sim／mapgen 邏輯變動都須提升 revision，它不是來源真實性證明。
 - 生產預算只限制單一 batch，不能累計到整局。history 最多 20 snapshots，full/slots 上限 7,000,000 characters、browser checkpoint 上限 1,250,000 characters；compact inventory 展開不得超過 24,500 products。
 - 正常 Load 嚴格驗 envelope；明確 Recover 可從同版本、可解析且字元／history array 數量有界的部分損壞 envelope 取已知欄位的字串候選，獨立驗 snapshot 並保留最新有效同地圖 suffix。讀取不覆寫；storage access 失敗須顯示原始原因並停用 Recovery。
-- checkpoint 外層 version 2、內層 Save v15；key 為 `hexapharma.save.v15.checkpoint.${slot}`。v14 以前一律拒絕。舊 alpha key 不讀取、不 migration、不自動覆寫；沒有 legacy reader 分支。
+- checkpoint 外層 version 2、內層 Save v16；key 為 `hexapharma.save.v16.checkpoint.${slot}`。v15 以前一律拒絕。遊戲啟動時刪除其他版本的 `hexapharma.save.*` key（D49），不讀取、不 migration；沒有 legacy reader 分支。
 - corrupt blob 不得被 default game 冒充；讀取不寫 storage，Recover 前保留 raw data，寫入失敗原 blob 不變。
 - Load不同saved state與Rewind丟棄最新checkpoint都先取得可取消確認；Cancel不得改GameState、slot history或Library。
 

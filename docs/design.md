@@ -215,16 +215,16 @@ Blueprint 與 save slot 完全分離，Library envelope version 是 4，使用 `
 - **動態**：每個場域只有一個 authored moment（新試驗的實線以每段 90 ms 等速走出，總長上限 4 s），`prefers-reduced-motion` 時立即完成；Pixi auto-ticker 維持關閉。
 - **Shell**：只有一條頂列（場域分頁；Cash、Stock→Market、Market／Technology／Blueprints、Menu）；Objective 是 stage 左上的釘選目標卡（下一步、合約 n / 3、直接動作；目標本身是 Research 時在 Research 隱藏）；Market／Technology／Blueprints 是右側 legend 式抽屜，Guide 從 Menu 開啟（沒有 Formulas）；Plan／Production 沒有角標，Play 旁只有 run-state 圖示（D44）。
 
-## 1.11 Save v15 — 開放、可編輯的 alpha 存檔
+## 1.11 Save v16 — 開放、可編輯的 alpha 存檔
 
 - 存檔是 plain JSON、可攜且可由玩家修改；不加密、不簽章、不持有 browser key，也不要求 Cash 的收入 trace 或 checksum。合法資源修改必須能載入。
-- full envelope 是 `{version:15, contentBuild, game}`；直接保存完整冷狀態。compact envelope 是 `{version:15, contentBuild, snapshot}`，只有 inventory 將連續相同的產品資料分組、列出各件 ID，以便滿倉 24,500 件仍可放入原有 slot 預算。兩者都不重播歷史。
+- full envelope 是 `{version:16, contentBuild, game}`；直接保存完整冷狀態。compact envelope 是 `{version:16, contentBuild, snapshot}`，只有 inventory 將連續相同的產品資料分組、列出各件 ID，以便滿倉 24,500 件仍可放入原有 slot 預算。兩者都不重播歷史。
 - GameState 不保存 `origin`、`intentTrace` 或 `replayTicks`。Research `lastTrial`（含 `base`）／每 base 的 fog、Plan、Production layout／cold runtime／waste、economy／sold、patents、inventory／nextInventoryId／rng 都必須完整還原；在途 unit、加工進度、分流游標與 counters 不重設。
 - replay 只供以明確 initial state + intents 重現行為；同一輸入仍須逐欄位／hash 相同。生產的 tick／work 限制只約束單次 API batch，不累積成遊戲壽命。存檔不接受或執行附帶的 trace。
 - decoder 驗 exact fields、整數與 typed-array 可表示範圍、bounded collections、canonical machine content、合法 layout／runtime、heading 0–5、offset 只在 Swamp 內非零、`lastTrial` 重播後 cost／outcome 一致、inventory 結果（含 `Outcome.regions`：每個 cured 一個 1..65535 的 region id，重新 evaluate 必須相同）等可執行狀態不變式；不驗證資源或揭霧的歷史來源。
 - `contentBuild` 是 catalog／shapes／patents 加手動 rules revision 的確定性相容性識別，不是存檔驗真。sim／mapgen／經濟邏輯改動須明確提升 rules revision；它不自動掃描所有原始碼。不同版本／content build 顯式拒絕。
-- checkpoint 外層仍為 `{version:2, head, history}`；head/history 是 compact snapshot 字串，key 為 `hexapharma.save.v15.checkpoint.${slot}`。history 是最多 20 個獨立快照，按數量／characters（`string.length` 的 UTF-16 code units） 刪去最舊項並回報；不驗證 trace-prefix 或資源來源。同設定同 seed 的編輯狀態可保留在同一 history；不同地圖保存時替換 history。
-- Load／Rewind 維持可取消的覆蓋確認；Rewind 成功後截斷後續快照。正常 Load 嚴格驗 envelope；明確 Recover 可另從同版本、可解析且字元／history array 數量有界的部分損壞 envelope，獨立驗證已知欄位的字串快照並取最新有效同地圖 suffix。讀取／復原檢查不寫入 storage，寫入失敗保留原 blob；storage 讀取失敗顯示原始原因且停用 Recovery。舊 alpha namespace 不讀取、不 migration、不自動刪除；新版存檔不可 silent reinterpret。
+- checkpoint 外層仍為 `{version:2, head, history}`；head/history 是 compact snapshot 字串，key 為 `hexapharma.save.v16.checkpoint.${slot}`。history 是最多 20 個獨立快照，按數量／characters（`string.length` 的 UTF-16 code units） 刪去最舊項並回報；不驗證 trace-prefix 或資源來源。同設定同 seed 的編輯狀態可保留在同一 history；不同地圖保存時替換 history。
+- Load／Rewind 維持可取消的覆蓋確認；Rewind 成功後截斷後續快照。正常 Load 嚴格驗 envelope；明確 Recover 可另從同版本、可解析且字元／history array 數量有界的部分損壞 envelope，獨立驗證已知欄位的字串快照並取最新有效同地圖 suffix。讀取／復原檢查不寫入 storage，寫入失敗保留原 blob；storage 讀取失敗顯示原始原因且停用 Recovery。其他版本的 `hexapharma.save.*` key 在遊戲啟動時刪除（D49），不讀取、不 migration；新版存檔不可 silent reinterpret。
 - 明確容量、數值上限及編輯方式見 [save.md](save.md)；alpha 不承諾跨 build migration，見 [development-policy.md](development-policy.md)。
 
 # 2. 技術架構
@@ -250,7 +250,7 @@ Pure TS sim core  → authoritative deterministic transitions
 - `factory-geom`／`factory-sim`：footprint、ports、routing、tick、throughput、cold snapshot。
 - `game`：三場域、Run-based Research 試驗、shipping contracts、paid Production build、inventory／economy。
 - `blueprint`：Blueprint v4 strict codec 與跨存檔 Library。
-- `save`：Save v15 開放冷快照與結構驗證；`replay-work`：單次 Production batch 的 work 估算。
+- `save`：Save v16 開放冷快照與結構驗證；`replay-work`：單次 Production batch 的 work 估算。
 - `render`：vector-only minimal flat hex Atlas 與 connected factory topology。
 - `ui`：world-first shell、shared Factory editor、drawers/checkpoints。
 
