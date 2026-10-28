@@ -359,7 +359,7 @@ const lockedByPatent = new Set(
     node.effect.kind === "unlockMachine" ? [node.effect.typeId] : [],
   ),
 );
-/** Open world: a new game starts with every machine and Split / Merge switched on. */
+/** Open world: a new game starts with every machine and Split / Merge switched on; expansion, reveal aid and bases stay opt-in. */
 const NEW_GAME_PATENTS: readonly string[] = DEFAULT_PATENTS
   .filter((node) => node.effect.kind === "unlockMachine" || node.effect.kind === "unlockRouting")
   .map((node) => node.id);

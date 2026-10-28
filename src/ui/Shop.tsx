@@ -167,15 +167,13 @@ export function Shop({ level, economy, inventory, onSell }: ShopProps) {
             const quote = bestMarketQuote(inventory, disease, sold);
             const disabledReason = marketDisabledReason(have, quote);
             const disabledReasonId = `shop-disabled-reason-${disease.id}`;
-            const title = (
-              <>
-                <h2>{diseaseName(disease.id)}{level.mm.maps.length > 1 && ` · ${BASE_NAMES[disease.map]}`}</h2>
-              </>
+            const cardTitle = (
+              <h2>{diseaseName(disease.id)}{level.mm.maps.length > 1 && ` · ${BASE_NAMES[disease.map]}`}</h2>
             );
             if (have === 0 || quote === null) {
               return (
                 <article key={disease.id} className="market-card is-quiet" data-testid={`shop-row-${disease.id}`}>
-                  {title}
+                  {cardTitle}
                   <span className="market-quiet-price" title="Next unit price">Next <strong data-testid={`shop-next-${disease.id}`}>{formatMoney(nextUnitPrice(disease.basePrice, sold))}</strong></span>
                 </article>
               );
@@ -184,7 +182,7 @@ export function Shop({ level, economy, inventory, onSell }: ShopProps) {
             return (
               <article key={disease.id} className="market-card is-active" data-testid={`shop-row-${disease.id}`}>
                 <div className="market-card-heading">
-                  {title}
+                  {cardTitle}
                   <span className="market-net" title={marketQuoteBreakdown(quote)}>
                     Net <strong data-testid={`shop-net-${disease.id}`}>{formatMoney(quote.net)}</strong>
                   </span>

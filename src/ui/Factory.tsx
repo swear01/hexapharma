@@ -506,7 +506,7 @@ function CommandGlyph({ kind }: { readonly kind: CommandKind }) {
   );
 }
 
-/** Production playback rates: multiples of the 1× batch. */
+/** Production playback rates: each interval advances `TICKS_PER_INTERVAL × speed` ticks (1× = 8 ticks per 80 ms). */
 const PLAY_SPEEDS = [1, 2, 10] as const;
 type PlaySpeed = (typeof PLAY_SPEEDS)[number];
 
@@ -1622,7 +1622,7 @@ export function Factory({
           <div className="transport-bar factory-controls" aria-label={`${facilityName} controls`}>
             {mode === "production" && (
               <div className="control-group">
-                {state.deadlocked && <span className="run-state is-blocked" data-testid="factory-run-state" role="status">Blocked</span>}
+                {state.deadlocked && <span className="run-state" data-testid="factory-run-state" role="status">Blocked</span>}
                 {playing
                   ? <button type="button" onClick={() => setPlaying(false)} className="is-active" data-testid="factory-pause" aria-label="Pause Production" title="Pause (Space)"><CommandGlyph kind="pause" /></button>
                   : <button type="button" onClick={() => setPlaying(true)} disabled={state.deadlocked} data-testid="factory-play" aria-label="Play Production" title="Play (Space)"><CommandGlyph kind="play" /></button>}

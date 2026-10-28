@@ -93,7 +93,7 @@ kbd, .hotkey { color: var(--ink-3); font: 600 11px/1 var(--font-display); letter
 .resource-chip { display: inline-flex; align-items: baseline; gap: 6px; white-space: nowrap; font-size: 12px; }
 .resource-chip strong { font: 600 22px/1 var(--font-display); color: var(--ink); }
 .resource-unit { margin-right: 1px; color: var(--ink-3); }
-.hud-links { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; padding-left: 12px; border-left: 1px solid var(--rule); margin: 10px 0; }
+.hud-links { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; padding-left: 12px; border-left: 1px solid var(--rule); margin: 6px 0; }
 .hud-links button, .menu-trigger { display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-width: 44px; min-height: 44px; padding: 0 10px; border-color: transparent; background: transparent; color: var(--ink-2); }
 .hud-links button:hover:not(:disabled), .hud-links button[aria-pressed="true"], .menu-trigger[aria-expanded="true"] { color: var(--course-ink); background: var(--course-tint); border-color: transparent; }
 /* Stock rides on the Market icon; muted when empty. */
