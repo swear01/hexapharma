@@ -47,11 +47,11 @@ import { initFactory, analyzeThroughput } from "../sim/factory-sim";
 import { factoryOutcome } from "../sim/recipe";
 import { quoteProductionBuild } from "../sim/construction";
 import { worldCells } from "../sim/factory-geom";
-import { hexInBounds, hexIndex, rotateHexCoord } from "../sim/hex";
+import { hexInBounds, hexIndex } from "../sim/hex";
 import { buildFactoryTransportTopology, type FactoryTransportEdge } from "../render/factoryTransportTopology";
 import { inkJitter } from "../render/ink";
 import { hexBoardBounds, hexPolygon, hexToPixel } from "../render/hexProjection";
-import type { FactoryRenderer } from "../render/factoryRenderer";
+import type { FactoryGhost, FactoryRenderer } from "../render/factoryRenderer";
 import { BasePicker, LockGlyph } from "./BasePicker";
 import {
   appendUniqueCells,
@@ -233,54 +233,6 @@ export function factoryStartPoint(layout: FactoryLayout): { readonly x: number; 
 function factoryFloorBounds(layout: FactoryLayout): PixelBounds {
   const bounds = hexBoardBounds(layout.width, layout.height, FACTORY_HEX_SIZE);
   return { minX: PAD, minY: PAD, maxX: PAD + bounds.maxX - bounds.minX, maxY: PAD + bounds.maxY - bounds.minY };
-}
-
-/** Control numbers: machines in the order flow reaches them from the Sources (matches a formula's step order on a straight line). */
-export function factoryMachineFlowOrder(layout: FactoryLayout): ReadonlyMap<number, number> {
-  const topology = buildFactoryTransportTopology(layout);
-  const area = layout.width * layout.height;
-  const owner = new Int32Array(area).fill(-1);
-  const byId = new Map<number, PlacedMachine>();
-  for (const machine of layout.machines) {
-    byId.set(machine.id, machine);
-    for (const cell of worldCells(machine)) owner[hexIndex(layout.width, cell.q, cell.r)] = machine.id;
-  }
-  const next: number[][] = Array.from({ length: area }, () => []);
-  for (const edge of topology.edges) {
-    next[hexIndex(layout.width, edge.from.q, edge.from.r)]!.push(hexIndex(layout.width, edge.to.q, edge.to.r));
-  }
-  const order = new Map<number, number>();
-  const seen = new Uint8Array(area);
-  const queue: number[] = [];
-  for (let index = 0; index < area; index++) {
-    if (layout.tiles[index]?.kind === "source") {
-      seen[index] = 1;
-      queue.push(index);
-    }
-  }
-  for (let head = 0; head < queue.length; head++) {
-    for (const to of next[queue[head]!]!) {
-      if (seen[to] === 1) continue;
-      const id = owner[to]!;
-      const machine = id >= 0 ? byId.get(id) : undefined;
-      if (machine === undefined) {
-        seen[to] = 1;
-        queue.push(to);
-        continue;
-      }
-      if (!order.has(id)) order.set(id, order.size + 1);
-      for (const cell of worldCells(machine)) {
-        const index = hexIndex(layout.width, cell.q, cell.r);
-        if (seen[index] === 1) continue;
-        seen[index] = 1;
-        queue.push(index);
-      }
-    }
-  }
-  for (const machine of layout.machines) {
-    if (!order.has(machine.id)) order.set(machine.id, order.size + 1);
-  }
-  return order;
 }
 
 /** Machines the first unit from the first Source passes through on its way to a Sink (a Splitter sends it out its first connected output, as the sim does), and that Source's base. */
@@ -673,7 +625,7 @@ const FACTORY_HEX_SIZE = CELL / 2;
 const FACTORY_HEX_WIDTH = Math.sqrt(3) * FACTORY_HEX_SIZE;
 const PAD = 12;
 const MIN_ZOOM = 0.35;
-/** On a phone a built line opens no smaller than this, so ports and step numbers stay legible. */
+/** On a phone a built line opens no smaller than this, so ports and icons stay legible. */
 const MIN_PHONE_FIT_ZOOM = 0.6;
 const MAX_ZOOM = 2.25;
 const MARK_BAND = 36;
@@ -894,21 +846,6 @@ export function Factory({
     }
   }, [authoritativeLayout, layout, mm]);
   const throughput = throughputAnalysis.report;
-  const machineOrder = useMemo(() => factoryMachineFlowOrder(layout), [layout]);
-  const machineControls = useMemo(() => layout.machines.map((machine) => {
-    let minX = Infinity;
-    let minY = Infinity;
-    let maxX = -Infinity;
-    let maxY = -Infinity;
-    for (const cell of worldCells(machine)) {
-      const center = factoryCellCenter(cell);
-      minX = Math.min(minX, center.x);
-      minY = Math.min(minY, center.y);
-      maxX = Math.max(maxX, center.x);
-      maxY = Math.max(maxY, center.y);
-    }
-    return { id: machine.id, number: machineOrder.get(machine.id) ?? 0, x: (minX + maxX) / 2 - 16, y: (minY + maxY) / 2 - 14 };
-  }), [layout, machineOrder]);
   const sourceMarks = useMemo(() => baseLocks.length < 2 ? [] : layout.tiles.flatMap((tile, index) => {
     if (tile.kind !== "source") return [];
     const center = factoryCellCenter({ q: index % layout.width, r: Math.floor(index / layout.width) });
@@ -1511,7 +1448,6 @@ export function Factory({
     ? "not runnable"
     : formatFacilityOutcome(sampleAnalysis.outcome);
   const hoveredMachine = hoverCell === null ? undefined : machineAt(layout, hoverCell.q, hoverCell.r);
-  const hoveredControl = hoveredMachine === undefined ? undefined : machineOrder.get(hoveredMachine.id);
   const hoveredTile = hoverCell === null
     ? undefined
     : layout.tiles[hexIndex(layout.width, hoverCell.q, hoverCell.r)];
@@ -1556,22 +1492,61 @@ export function Factory({
     (brush.kind === "erase" || activeGesture?.mode === "erase")
     ? factoryErasePreviewCells(layout, hoverCell.q, hoverCell.r)
     : null;
-  const ghostCells = moveMachine !== undefined && moveAnchor !== null
-    ? worldCells({ ...moveMachine, anchor: moveAnchor })
-    : beltGestureCandidate !== null && activeGesture !== null
-    ? activeGesture.cells
-    : erasePreviewCells !== null
+  // Erase and "drag this machine" stay outlines; a placement previews the real thing in Pixi.
+  const ghostCells = erasePreviewCells !== null
     ? erasePreviewCells
     : idleDirectMachine !== undefined
     ? worldCells(idleDirectMachine)
-    : hoverCell === null
-    ? []
-    : brush.kind === "machine"
-      ? DEFAULT_SHAPES[brush.typeId]!.cells.map((cell) => {
-          const rotated = rotateHexCoord(cell, footRot);
-          return { q: hoverCell.q + rotated.q, r: hoverCell.r + rotated.r };
-        })
-      : [hoverCell];
+    : [];
+  const placementGhost = ((): FactoryGhost | null => {
+    if (ghostCells.length > 0) return null;
+    const invalid = !hoverPlacementValid;
+    const ghostLayout = invalid ? layout : hoverCandidate;
+    if (moveMachine !== undefined && moveAnchor !== null) {
+      return {
+        layout: invalid ? layout : moveCandidate ?? layout,
+        invalid,
+        tiles: [],
+        machine: { ...moveMachine, anchor: moveAnchor },
+      };
+    }
+    if (beltGestureCandidate !== null && activeGesture !== null) {
+      const directions = orientBeltGesture(activeGesture.cells, brushDir);
+      return {
+        layout: ghostLayout,
+        invalid,
+        tiles: activeGesture.cells.map((cell, index) => ({ q: cell.q, r: cell.r, tile: { kind: "belt", dir: directions[index]! } })),
+        machine: null,
+      };
+    }
+    if (hoverCell === null) return null;
+    if (brush.kind === "machine") {
+      const shape = DEFAULT_SHAPES[brush.typeId]!;
+      return {
+        layout: ghostLayout,
+        invalid,
+        tiles: [],
+        machine: invalid
+          ? { id: -1, def: machineDef(brush.typeId), anchor: hoverCell, footRot, shape }
+          : hoverCandidate.machines.at(-1) ?? null,
+      };
+    }
+    const tile = makeTile(brush, brushDir, sourceBase);
+    return tile === null ? null : { layout: ghostLayout, invalid, tiles: [{ q: hoverCell.q, r: hoverCell.r, tile }], machine: null };
+  })();
+  // Repaint the Pixi ghost only when the previewed placement changes, not on every Production tick.
+  const ghostKey = placementGhost === null
+    ? ""
+    : JSON.stringify([placementGhost.invalid, placementGhost.tiles, placementGhost.machine?.def.typeId, placementGhost.machine?.anchor, placementGhost.machine?.footRot]);
+  const drawnGhostRef = useRef<{ readonly renderer: FactoryRenderer; readonly layout: FactoryLayout; readonly key: string } | null>(null);
+  useEffect(() => {
+    const renderer = rendererRef.current;
+    if (renderer === null) return;
+    const drawn = drawnGhostRef.current;
+    if (drawn !== null && drawn.renderer === renderer && drawn.layout === layout && drawn.key === ghostKey) return;
+    drawnGhostRef.current = { renderer, layout, key: ghostKey };
+    renderer.renderGhost(placementGhost);
+  });
 
   const tileBrushBtn = (kind: TileBrushKind, label: string, hotkey: string) => {
     const locked = !routing && (kind === "splitter" || kind === "merger");
@@ -1612,7 +1587,7 @@ export function Factory({
   const overlayHeight = Math.ceil(PAD * 2 + canvasBounds.maxY - canvasBounds.minY);
   const ghostErase = gestureRef.current?.mode === "erase" || brush.kind === "erase";
   const controlScale = Math.max(1, 0.75 / camera.zoom);
-  const ghostClass = `factory-ghost${ghostErase ? " is-erase" : ""}${hoverPlacementValid ? "" : " is-invalid"}`;
+  const ghostClass = `factory-ghost${ghostErase ? " is-erase" : ""}`;
 
   return (
     <div className={`game-view factory-workspace facility-${mode}`} data-testid={`${mode}-facility-workspace`}>
@@ -1679,7 +1654,7 @@ export function Factory({
           {hoveredMachine !== undefined && <div className="machine-selection" data-testid="machine-selection">
             <MachineIcon typeId={hoveredMachine.def.typeId} path={hoveredMachine.def.path} size={40} variant="token" />
             <div>
-              <strong>{hoveredControl !== undefined && <span className="machine-control is-inline">{hoveredControl}</span>}{machineName(hoveredMachine.def.typeId)}</strong>
+              <strong>{machineName(hoveredMachine.def.typeId)}</strong>
               <dl>
                 <dt>Ports</dt><dd>{hoveredMachine.shape.inPorts.length} in · {hoveredMachine.shape.outPorts.length} out</dd>
                 <dt>Process</dt><dd>{hoveredMachine.def.speed} ticks · ${hoveredMachine.def.cost}/unit</dd>
@@ -1694,6 +1669,7 @@ export function Factory({
             ref={frameRef}
             data-testid="factory-canvas"
             data-camera-zoom={camera.zoom}
+            data-ghost={placementGhost === null ? undefined : placementGhost.invalid ? "invalid" : "valid"}
             onPointerDown={onCanvasPointerDown}
             onPointerMove={onCanvasPointerMove}
             onPointerUp={finishCanvasGesture}
@@ -1708,15 +1684,6 @@ export function Factory({
             <div className="factory-canvas-transform" style={{ transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})` }}>
               <div className="factory-paper" style={{ backgroundImage: factoryPaperTexture() }} aria-hidden="true" />
               <div ref={mountRef} className="factory-canvas-mount" />
-              {machineControls.map((control) => (
-                <span
-                  key={control.id}
-                  className="machine-control"
-                  data-testid="machine-control"
-                  aria-hidden="true"
-                  style={{ left: control.x, top: control.y, transform: `translate(-50%, -50%) scale(${controlScale})` }}
-                >{control.number}</span>
-              ))}
               {sourceMarks.map((mark) => (
                 <span
                   key={mark.index}

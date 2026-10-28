@@ -141,6 +141,8 @@ Production 是唯一持續推進 factory tick 的場域。source、transport、m
 - renderer 從 sim 的 accept／emit sides 與旋轉後 machine ports 建立唯一 topology。
 - 每格依六邊的實際 incident mask 顯示 isolated、endpoint、對向 straight、60°／120° turn或multi-way junction；方向錯誤的相鄰格不能假裝連上。
 - belt、splitter、merger、source、sink 與 machine input/output 都使用同一 topology；port 必須顯示 connected／disconnected 狀態。
+- machine 畫成一塊實心 footprint（單一外框），path icon 隨 `footRot` 旋轉、畫在最接近形心的 footprint 格內，不會落在機身外；port 是跨在 footprint 邊上的箭頭（input 向內、output 向外，實心＝已連接），沒有流程編號。
+- placement ghost 由同一 renderer 半透明地畫出將建成的 machine／tile（invalid 為紅色），Belt drag 預覽與 commit 共用 `orientBeltGesture`。
 - transport 線延伸到格邊界，grid 畫在 transport 下方；runtime arrow animation 只由 deterministic tick phase 驅動。
 - 拖曳 Belt 形成六鄰接連續的 hex route；每格朝下一格的 E／SE／SW／W／NW／NE 方向，末格沿最後切線。一個 gesture 只產生一筆 editor history。
 

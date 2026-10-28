@@ -16,7 +16,6 @@ import {
   facilityMayAnalyzeOutcome,
   facilityOutcomeMap,
   factoryLineProgram,
-  factoryMachineFlowOrder,
   factoryPaperTexture,
   fitFactoryCamera,
   formatFacilityOutcome,
@@ -287,17 +286,6 @@ describe("factory framing and legend copy", () => {
     const whole = fitFactoryCamera({ width: 390, height: 440 }, floor, short);
     expect(whole.x + whole.zoom * short.minX).toBeGreaterThanOrEqual(0);
     expect(whole.x + whole.zoom * short.maxX).toBeLessThanOrEqual(390);
-  });
-
-  it("numbers a compiled formula line in its step order, Source to Sink", () => {
-    const program = generate(defaultGenOptions(14)).diseases[0]!.reference;
-    const layout = compileEntitledPrototype(program, 24, 12).layout;
-    const order = factoryMachineFlowOrder(layout);
-    const steps = program.steps.map((step) => step.typeId);
-    const byNumber = [...layout.machines]
-      .sort((a, b) => order.get(a.id)! - order.get(b.id)!)
-      .map((machine) => machine.def.typeId);
-    expect(byNumber).toEqual(steps);
   });
 
   it("reads a compiled line back as its program, and nothing without a Sink", () => {

@@ -60,14 +60,6 @@
 .machine-selection dt { color: var(--ink-3); font: 600 12px/1.25 var(--font-display); letter-spacing: .05em; text-transform: uppercase; }
 .machine-selection dd { margin: 0; color: var(--ink); font-variant-numeric: tabular-nums; }
 
-/* Control number: flow order from the Sources, printed like an orienteering control. */
-.machine-control {
-  position: absolute; z-index: 4; display: grid; place-items: center; width: 18px; height: 18px; border: 1.5px solid var(--ink); border-radius: 50%;
-  background: var(--paper-raised); color: var(--ink); font: 600 12px/1 var(--font-display); font-variant-numeric: tabular-nums; pointer-events: none;
-}
-.facility-pilot .machine-control { border-color: var(--course); color: var(--course-ink); }
-.machine-control.is-inline { position: static; display: inline-grid; margin-right: 6px; vertical-align: 1px; transform: none; }
-
 /* Toolbelt = map legend. */
 .toolbelt { grid-area: tools; display: flex; align-items: center; justify-content: center; gap: 4px; overflow-x: auto; padding: 6px 20px; min-width: 0; border-top: 1px solid var(--rule); scrollbar-width: thin; }
 .tool-slot {
@@ -85,12 +77,11 @@
 .toolbelt-divider { flex: 0 0 1px; height: 40px; background: var(--rule-strong); margin: 0 8px; }
 .toolbelt-more, .inspector-more { display: none; }
 
-/* Placement preview, in the sheet's ink. */
+/* Erase and move-target outlines (placement ghosts are drawn by the Factory renderer). */
 .factory-ghost-layer { position: absolute; z-index: 5; top: 0; left: 0; overflow: visible; pointer-events: none; }
 .factory-ghost { fill: var(--ink); fill-opacity: .08; stroke: var(--ink); stroke-width: 2; stroke-linejoin: round; }
 .facility-pilot .factory-ghost { fill: var(--course); fill-opacity: .12; stroke: var(--course); }
 .factory-ghost.is-erase { fill: var(--failure-border); fill-opacity: .14; stroke: var(--failure-border); }
-.factory-ghost.is-invalid { fill: var(--failure-border); fill-opacity: .06; stroke: var(--failure-border); stroke-dasharray: 4 3; }
 .factory-ghost-cost {
   position: absolute; z-index: 6; transform-origin: 0 0; padding: 4px 7px; border: 1.5px solid var(--ink); background: var(--paper-raised);
   font: 600 16px/1 var(--font-display); letter-spacing: .03em; pointer-events: none; white-space: nowrap;

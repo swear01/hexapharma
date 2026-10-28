@@ -284,7 +284,7 @@ test("hovering an installed machine previews direct manipulation and a no-op kee
 
   await page.mouse.move(point.x, point.y);
   await expect(frame.locator(".factory-ghost")).toHaveCount(machine.shape.cells.length);
-  await expect(frame.locator(".factory-ghost.is-invalid")).toHaveCount(0);
+  await expect(frame).not.toHaveAttribute("data-ghost");
   await expect(workspace.getByTestId("factory-ghost-cost")).toHaveCount(0);
 
   await workspace.getByTestId("factory-play").click();

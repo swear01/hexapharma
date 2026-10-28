@@ -76,7 +76,7 @@ hotbar 圖示會轉到規劃路線終點的朝向。
 
 ## Factory共同操作
 
-Production Plan與Production使用相同editor，但一眼可分：Plan 以紫色虛線 overprint 繪製，底部是 `Commission $N`；Production 以黑墨實印，底部有報價與 Play，Play 左側圖示表示執行中／暫停，卡住時顯示 Blocked，任何編輯會重新開始產線。Details 預設收起，按下才顯示診斷；底部提供工具、報價、旋轉與播放。工具列是圖例：機器以「footprint＋path」token 與全名顯示（與 Research 相同），未解鎖機器顯示鎖頭與解鎖條件。起步只有 Belt、Source、Sink、Erase 與機器；Splitter／Merger 要先在 Technology 解鎖 `Split / Merge`。Source 是空心三角。Sink 是雙圈；input port 是方形、output port 是圓形，空心代表尚未連接；belt 是藍色帶狀線，箭頭表方向。
+Production Plan與Production使用相同editor，但一眼可分：Plan 以紫色虛線 overprint 繪製，底部是 `Commission $N`；Production 以黑墨實印，底部有報價與 Play，Play 左側圖示表示執行中／暫停，卡住時顯示 Blocked，任何編輯會重新開始產線。Details 預設收起，按下才顯示診斷；底部提供工具、報價、旋轉與播放。工具列是圖例：機器以「footprint＋path」token 與全名顯示（與 Research 相同），未解鎖機器顯示鎖頭與解鎖條件。起步只有 Belt、Source、Sink、Erase 與機器；Splitter／Merger 要先在 Technology 解鎖 `Split / Merge`。Source 是空心三角。Sink 是雙圈；機器的 port 是邊上的箭頭，指向機內是 input、指向機外是 output，空心代表尚未連接；belt 是藍色帶狀線，箭頭表方向。放置前的半透明 ghost 就是建好後的樣子，紅色表示放不下。
 
 ### Camera與工具
 
@@ -96,7 +96,7 @@ Production Plan與Production使用相同editor，但一眼可分：Plan 以紫�
 
 - Belt一次drag會從起點到游標形成六鄰接連續hex route。每格方向跟著下一格，轉折會用connected texture顯示。
 - connected transport只在方向與接收面真的相容時接上。斷口或unconnected machine port代表sim也不會通過。
-- machine的`R`每次只把footprint與ports順時針旋轉60°；六次回到原向，不改其chemical path。
+- machine的`R`每次只把footprint、ports與icon順時針旋轉60°；六次回到原向，不改其chemical path。
 - 從既有machine上直接拖曳即可搬動整台machine；越界或碰撞時不會破壞原layout。Touch單指在格內使用目前工具，因此可連續畫Belt、直接拖動machine，或用Erase刪除；兩指drag負責camera。Touch點一下既有machine後再按`R · Rotate`可直接旋轉它。
 - 非Erase工具畫過machine footprint會略過該格，不會暗中拆機。hover既有machine時預覽其現有footprint，不顯示不存在的建造或刪除費。
 - Copy／Cut／Paste保留tile的完整方向與參數，包括Source period及Splitter／Merger branches；`Q`只把游標內容選成目前brush。

@@ -40,7 +40,7 @@
 - touch 單指在格內 click／drag 使用目前工具，從既有 machine 開始則搬動整台；兩指 drag 或從格外開始才 pan。點既有 machine 後，畫面 Rotate control 必須旋轉該 machine，不能要求實體鍵盤。
 - `R` 在游標覆蓋既有machine時直接將該footprint／ports順時針旋轉60°；否則旋轉目前Factory brush。六次rotation回到原向，Research path geometry不受通用 rotate 操作影響。
 - `Q` pipette、copy／cut／paste、undo／redo只處理 Factory domain payload。
-- held placement 顯示 valid／invalid world ghost；Production ghost同時顯示該次新增 cost。
+- held placement 的 ghost 半透明地畫出將建成的實物（machine body、icon、port 箭頭；belt／splitter／merger／source／sink 的 tile），invalid 改為紅色；Belt drag 每格依 commit 相同的方向規則顯示 belt 與方向箭頭（含轉折）。Erase 與「拖曳此 machine」維持外框。Production ghost同時顯示該次新增 cost。
 - bottom hotbar 是 cursor tool belt，不是表單。
 
 ## 5. Research
@@ -89,7 +89,7 @@ F1 一次顯示一個 base 的大型 Atlas：
 - belt不是每格獨立箭頭或按鈕；連線延伸到格邊，grid在其下方。
 - isolated、endpoint、對向straight、60°／120°turn與multi-way junction由sim-derived六邊incident mask決定。
 - splitter／merger branch、source／sink與machine input/output ports使用同一edge authority。
-- 錯向相鄰格保留斷口；machine port明確顯示connected／disconnected。
+- 錯向相鄰格保留斷口；machine port 是跨在 footprint 邊上的箭頭：input 指向機內、output 指向機外，實心＝已連接、空心＝未連接。
 - Belt drag保持E／SE／SW／W／NW／NE六鄰接連續並在轉折格改方向；末格方向沿最後切線。
 - LMB／touch從既有machine上拖曳會直接搬動整台machine，保留machine identity；被占用或越界的落點以invalid ghost顯示且不提交。
 - moving markers僅在Production依runtime tick動畫；Production Plan可以顯示靜態topology，不假裝時間流動。
@@ -115,7 +115,7 @@ F1 一次顯示一個 base 的大型 Atlas：
 - 新局所有機器與 Split／Merge 開關預設開（D50）；擴廠、探索輔助與 base 開關預設關。擴廠開關若清Production runtime／waste，開或關前必須有可取消確認；不改 Research 的 lastTrial 或本地規劃。
 - Load若會覆蓋不同的current game、Rewind若會永久丟棄最新checkpoint，都必須先列出影響並可取消。
 - desktop 與 mobile 皆讓 world 佔主體；Details 預設關閉，桌面展開在 world 旁、窄屏在下方。工具與主要動作獨立排版，不蓋住 canvas；touch controls 至少 44px、focus 可見、錯誤 aria-live。窄屏 HUD 兩列（分頁＋Menu；資源＋drawer 圖示），system controls 收 Menu，工具列保留可見 scroll 提示。
-- machine以silhouette、footprint、full-path glyph、ports辨識；terrain/portal不能用raw debug text冒充美術。
+- machine是一塊實心 footprint（單一外框），以silhouette、隨 footprint 旋轉的 path icon（畫在最接近形心的 footprint 格內）與 port 箭頭辨識，不編號；terrain/portal不能用raw debug text冒充美術。
 - Atlas與Factory都顯示pointy-top axial hex；cell authority是`{q,r}`，六方向依序為E／SE／SW／W／NW／NE，dense arrays以`r * width + q`索引。hit-test、ghost、region edge、transport與renderer必須一致；兩個domain的payload／validator仍分離。
 - 定向越野地圖語言的嚴格俯視 2D：紙底＋近黑墨印；ISOM 色語（山＝淡褐、水＝藍色水平線、黑格＝黑墨、治療＝綠、副作用＝琥珀、失敗＝紅、流動＝藍；霧下只有單一墨色等高線）；路線紫只屬玩家自己的線（研究實際路線、規劃虛線、選取、Plan overprint）。Production 為黑墨實印、Plan 為紫色 overprint。手繪感只來自確定性墨線抖動，不用於 port、belt 接點、hit-test 幾何或文字；Pixi vector runtime 保留 canonical true hex。完整規格見 [design.md](design.md#visual-language)。
 - 禁止3D透視、glass blur、giant pill、gradient／glow halo與常駐tutorial遮world。
