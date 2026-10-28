@@ -49,7 +49,6 @@ import { FieldGuide } from "./FieldGuide";
 import { currentObjective, type ObjectiveTarget } from "./objective";
 import { profitableMarketProducts } from "./Shop";
 import {
-  deleteObsoleteSaves,
   readSlot,
   recoverSlot,
   rewindSlot,
@@ -422,14 +421,7 @@ export function Game() {
   const gameRef = useRef(game);
   const [intentError, setIntentError] = useState("");
   const selectedSlotRef = useRef(0);
-  const initialSlot = useMemo(() => {
-    try {
-      deleteObsoleteSaves(localStorage);
-    } catch {
-      // Unreadable storage is reported by readSlot below.
-    }
-    return readSlot(localStorage, 0);
-  }, []);
+  const initialSlot = useMemo(() => readSlot(localStorage, 0), []);
   const [historyCount, setHistoryCount] = useState(() => initialSlot.history?.length ?? 0);
   const [saveMsg, setSaveMsg] = useState(() => initialSlot.error ?? initialSlot.notice ?? "");
   const [slotRecovery, setSlotRecovery] = useState<SlotRecovery | null>(() => initialSlot.recovery);
