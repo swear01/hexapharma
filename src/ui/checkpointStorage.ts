@@ -32,8 +32,21 @@ export interface SlotWrite {
   readonly replacedTimeline: boolean;
 }
 
+const SAVE_KEY_PREFIX = "hexapharma.save.";
+const CURRENT_SAVE_KEY_PREFIX = `${SAVE_KEY_PREFIX}v${SAVE_VERSION}.`;
+
 function checkpointKey(slot: number): string {
-  return `hexapharma.save.v${SAVE_VERSION}.checkpoint.${slot}`;
+  return `${CURRENT_SAVE_KEY_PREFIX}checkpoint.${slot}`;
+}
+
+/** Deletes saves written by other save versions; alpha saves are never migrated. */
+export function deleteObsoleteSaves(storage: Storage): void {
+  const obsolete: string[] = [];
+  for (let index = 0; index < storage.length; index++) {
+    const key = storage.key(index);
+    if (key !== null && key.startsWith(SAVE_KEY_PREFIX) && !key.startsWith(CURRENT_SAVE_KEY_PREFIX)) obsolete.push(key);
+  }
+  for (const key of obsolete) storage.removeItem(key);
 }
 
 function message(error: unknown): string {

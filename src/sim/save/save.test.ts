@@ -96,12 +96,12 @@ function wire(game = baseGame()): { version: number; game: Record<string, any> }
 }
 
 describe("serializeGame / deserializeGame", () => {
-  it("uses only the breaking v15 one-base trial/unit/product schema", () => {
-    expect(SAVE_VERSION).toBe(15);
+  it("uses only the breaking v16 schema", () => {
+    expect(SAVE_VERSION).toBe(16);
     const serialized = serializeGame(baseGame());
     const parsed = JSON.parse(serialized) as { version: number; game: Record<string, any> };
 
-    expect(parsed.version).toBe(15);
+    expect(parsed.version).toBe(16);
     expect(parsed.game).toHaveProperty("research");
     expect(parsed.game).toHaveProperty("pilot");
     expect(parsed.game).toHaveProperty("production");
@@ -274,14 +274,14 @@ describe("serializeGame / deserializeGame", () => {
 describe("deserializeGame schema validation", () => {
   it("rejects v14 envelopes before interpreting their payloads", () => {
     expect(() => deserializeGame(JSON.stringify({ version: 14, game: null })))
-      .toThrow(/incompatible version 14.*expected 15/i);
+      .toThrow(/incompatible version 14.*expected 16/i);
     expect(() => deserializeSnapshot(JSON.stringify({ version: 14, authority: null })))
-      .toThrow(/incompatible version 14.*expected 15/i);
+      .toThrow(/incompatible version 14.*expected 16/i);
     expect(() => deserializeSlots(JSON.stringify({ version: 14, slots: null })))
-      .toThrow(/incompatible version 14.*expected 15/i);
+      .toThrow(/incompatible version 14.*expected 16/i);
   });
 
-  it.each([14, 13, 12, 11, 10, 9, 8, 7, 6, 2])(
+  it.each([15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 2])(
     "explicitly rejects legacy v%s full saves, snapshots, and slots without migration",
     (legacyVersion) => {
       const game = baseGame();

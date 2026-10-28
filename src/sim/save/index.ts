@@ -60,7 +60,7 @@ import { DEFAULT_CATALOG, DEFAULT_SHAPES } from "../phase0_interfaces";
 // blob field-by-field and rebuilding a structurally-equal GameState — never
 // defaulting silently on missing/wrong fields.
 
-export const SAVE_VERSION = 15;
+export const SAVE_VERSION = 16;
 export const SAVE_CONTENT_BUILD = fnv1a32Hex(canonical({
   rules: 6,
   catalog: DEFAULT_CATALOG,

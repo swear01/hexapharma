@@ -9,7 +9,7 @@ import { compileEntitledPrototype, compilePrototype } from "../sim/recipe";
 import { SAVE_VERSION, serializeGame, serializeSnapshot } from "../sim/save";
 import {
   SLOT_CHECKPOINT_CHARACTER_LIMIT, SLOT_HISTORY_LIMIT,
-  readSlot, saveSlot, rewindSlot, recoverSlot,
+  deleteObsoleteSaves, readSlot, saveSlot, rewindSlot, recoverSlot,
 } from "./checkpointStorage";
 
 const key = `hexapharma.save.v${SAVE_VERSION}.checkpoint.0`;
@@ -120,9 +120,20 @@ describe("open snapshot checkpoint storage", () => {
     expect(readSlot(storage, 0).head!.economy.cash).toBe(123);
   });
 
-  it("replaces a different map when saving and preserves old namespaces without migration", () => {
+  it("deletes saves from other versions and keeps the current version and Blueprint Library", () => {
     const storage = new MemoryStorage();
-    storage.setItem("hexapharma.save.v10.checkpoint.0", "old alpha save");
+    storage.setItem("hexapharma.save.v15.checkpoint.0", "old alpha save");
+    storage.setItem("hexapharma.save.v10.checkpoint.2", "older alpha save");
+    storage.setItem("hexapharma.save.slot.0", "obsolete namespace");
+    storage.setItem(key, "current save");
+    storage.setItem("hexapharma.blueprint-library.v4", "library");
+    deleteObsoleteSaves(storage);
+    expect([...Array(storage.length).keys()].map((index) => storage.key(index)).sort())
+      .toEqual(["hexapharma.blueprint-library.v4", key].sort());
+  });
+
+  it("replaces a different map when saving", () => {
+    const storage = new MemoryStorage();
     expect(readSlot(storage, 0).head).toBeNull();
     const first = createGameState(options, 200);
     const second = createGameState({ ...options, seed: 15 }, 200);
@@ -130,7 +141,6 @@ describe("open snapshot checkpoint storage", () => {
     expect(saved.replacedTimeline).toBe(true);
     expect(saved.pruned).toBe(1);
     expect(readSlot(storage, 0).history).toEqual([second]);
-    expect(storage.getItem("hexapharma.save.v10.checkpoint.0")).toBe("old alpha save");
   });
 
   it("rejects mixed-map stored history and offers the current map's valid suffix", () => {

@@ -30,7 +30,7 @@ npm run dev -- --host 0.0.0.0 --port 53346 --strictPort
 
 Blueprint Library 與 save slot 分離；New Game、Load、Rewind、換 slot 都不會移除藍圖。New Game 只取代目前未保存狀態，既有 save checkpoints 仍可 Load 回來。
 
-目前 [Save v15](save.md) 是開放、可編輯的 plain JSON。獨立 checkpoint/history 外層仍是 v2，內層使用 Save v15；舊開發版（含 v14）不會自動升級。
+目前 [Save v16](save.md) 是開放、可編輯的 plain JSON。獨立 checkpoint/history 外層仍是 v2，內層使用 Save v16；舊開發版（含 v15）的存檔在遊戲啟動時刪除，不會升級。
 
 正常新局從 $1000 cash開始，只有一張 Atlas，上面共6種疾病。全新 origin 的 Blueprint Library 為空；之後換 seed 會保留既有藍圖。URL query注入的cash／research只供開發驗證，不是正常玩法。
 

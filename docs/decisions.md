@@ -51,6 +51,7 @@
 | D45 | 規格未明處的 D43 選擇：（a）切換 Research base 時保留規劃路線（只是機器序列，預覽在新 base 重算），Run 當下的預估只在同 base 顯示；（b）存檔中 `lastTrial` 的 base 之後被關閉仍可讀（只驗 base 在範圍內），但新試驗會被拒絕；（c）Objective 的「Turn on <Base>」只在該 base 關閉且尚無可出售庫存時出現；（d）base 選擇器只在關卡有多個 base 時出現，單 base 測試關卡的 UI 與文案不變；（e）白箱 progression 每病額外打開該病的 base 開關；（f）`researchTrialWork` 的 replay work 估算保留舊的 ×nMaps 上界（保守）；（g）Load 後 Research 顯示最近試驗所在的 base，New Game 回到 Saline；（h）Source 的 base 標記是 DOM 疊字（與機器編號同層），不進 Pixi renderer；用全名而非首字母，因為 O 在 Barlow 字型裡像 0。 | 都選最簡單、確定且可測的選項。 |
 | D46 | （2026-10-27 使用者 playtest）Research 地圖可讀性：（a）改動規劃（新增／Undo／Clear）就隱藏最近試驗的實線與結果，讀檔後未改動前仍顯示；（b）終點不再是圓圈，改為指向 heading 的實心尖頭（規劃與實際終點相同），每台機器終點是小節點、每段 leg 一個兩筆 chevron，拿掉地圖上的編號；（c）霧下也畫同樣淡的 minor 格線；（d）hotbar token 的 footprint 隨 heading 與 path 一起旋轉；（e）拿掉羅盤，目標是 Research 時 Research 不顯示目標卡（目標卡仍在其他場域導引）；（f）左下 Center 改為方向盤（上下左右＋中央置中，窄螢幕只留中央）；（g）點 step 清單把該 step 終點置中。base 概念重做與多起始點列入 roadmap Later。 | 朝向已直接畫在地圖上，羅盤與編號變成重複資訊；純滑鼠玩家需要不用拖曳的平移。 |
 | D47 | （2026-10-28 使用者 playtest）（a）新試驗的實線以每段 90 ms 等速走出（上限 4 s），讓 Run 有「走」的感覺；（b）等高線改在已揭露地面之下，只在霧裡看得到；（c）偏離點只畫紅圈、不寫 Wall／Swamp／Abyss 字；（d）起點改為與終點同形的空心尖頭，指向關卡起始 heading；（e）什麼都沒碰到的試驗不顯示右上 readout；（f）左鍵單擊已揭露的效果／地形格顯示其作用，文字與 Guide legend 共用 `TERRAIN_NOTES`；（g）拿掉地圖的 `Drag map` tooltip。 | 地圖自己說明自己：方向、作用都在格子上，readout 與文字標籤只在有事發生時出現。 |
+| D49 | （2026-10-28 使用者：「你直接幫我把舊存檔刪了吧。」）Save 升 v16（格式不變，只換版本以分出 D48 前的多 base 存檔）；遊戲啟動時刪除所有不是目前版本的 `hexapharma.save.*` key，Blueprint Library 不動。取代「舊 alpha key 保留不覆寫」。 | 舊存檔不能載入卻留在瀏覽器裡，只佔 storage 配額（每 slot 最多 1.25M characters）。 |
 | D48 | （2026-10-28 使用者 playtest）（a）正常新局只有一個 base（`nMaps: 1`）：6 種疾病都在同一張 Atlas，Research 沒有 base 選擇器，Technology 不列出該關卡沒有的 base 開關；多 base 的 sim、mapgen 與 save 支援保留，等基底概念重做（roadmap Later）；（b）地圖平移鍵改為直接印在地圖上的四個實心三角與中央定位圈，沒有底板，focus 只在鍵盤操作時畫圓環；（c）Run 偏離預估後的第一次編輯先刪掉偏離那步與其後各步；（d）點治療格只寫疾病與等級（`Disease 1 · Tier 2 ★`，帶副作用時加 `· Side effect`）。 | Saline／Oil／Ethanol 的溶劑概念不對（D43 被取代為暫不使用）；保留 base 選擇器會把錯的概念放在每個畫面上，且疾病分散在鎖住的圖上。 |
 
 ## Current authority summary
@@ -63,5 +64,5 @@
 - Production：direct paid construction、live runtime、actual inventory/waste/economy。
 - Economy：$1000 bootstrap、依到達難度的分區價格（D38）、per-disease demand decay to zero、profitable clean-first shipping、quota-3 contracts與machine patent gates（D37）。
 - Blueprint：v4 codec（ruleset 6）保留ResearchProgram文件，但UI只create/apply generic FactoryLayout；Library跨存檔。
-- Save：v15 plain、開放、可編輯的同 build cold state；checkpoint history/recovery 保持獨立外層 v2。
+- Save：v16 plain、開放、可編輯的同 build cold state；checkpoint history/recovery 保持獨立外層 v2。
 - Geometry／visual：Atlas 與 Factory 都使用pointy-top axial true hex與六方向／六rotation contract，但payload／validator分離；世界維持俯視2D vector 地圖（定向越野語言），不做3D migration。
