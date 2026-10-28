@@ -654,10 +654,10 @@ export function Game() {
     readonly deviation: ResearchPlanDeviation | null;
   } | null>(null);
   const shownEstimate = runEstimate !== null && runEstimate.plan === researchPlan && runEstimate.base === researchBase ? runEstimate : null;
-  /** The first edit after a Run that left its estimate drops the deviating step and the rest: they were planned blind. */
+  /** The first edit after a Run that left its estimate drops the steps after the deviation (and the deviating step itself on Abyss, which ends the drug): they were planned blind. */
   const editablePlan = useCallback((plan: readonly Machine[]) => (
     shownEstimate?.plan === plan && shownEstimate.deviation !== null
-      ? plan.slice(0, shownEstimate.deviation.step)
+      ? plan.slice(0, shownEstimate.deviation.step + (shownEstimate.deviation.reason === "Abyss" ? 0 : 1))
       : plan
   ), [shownEstimate]);
   const appendResearchStep = useCallback((typeId: string) => {
