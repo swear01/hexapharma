@@ -53,6 +53,7 @@
 .research-dpad-down { grid-area: down; }
 @media (pointer: coarse) {
   .research-dpad { grid-template-columns: repeat(3, 44px); grid-template-rows: repeat(3, 44px); }
+  /* The pad (3 × 44px + 12px offset) plus an 8px gap. */
   .research-program-strip { --dpad-reserve: 152px; }
 }
 .research-bases { position: absolute; z-index: 3; bottom: 12px; right: 12px; display: flex; align-items: center; gap: 8px; pointer-events: auto; }
