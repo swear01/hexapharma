@@ -503,6 +503,8 @@ export function App({
   const [endpointHovered, setEndpointHovered] = useState(false);
   /** The revealed cell the player clicked and what it does. */
   const [cellNote, setCellNote] = useState<{ readonly cell: Vec2; readonly text: string } | null>(null);
+  // A note belongs to the map it was read on: another base or a new reveal drops it.
+  useEffect(() => setCellNote(null), [renderMap]);
   useEffect(() => {
     setEndpointHovered(false);
   }, [activeMap, camera.x, camera.y, camera.zoom, planned?.pos]);
