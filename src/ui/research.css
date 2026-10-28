@@ -17,7 +17,7 @@
 .research-overlay { position: relative; z-index: 3; grid-row: 1; grid-column: 1 / -1; min-height: 0; pointer-events: none; }
 .research-program-strip, .research-result, .research-cell-note { border: 1px solid var(--rule-strong); border-radius: 3px; background: var(--paper-raised); }
 
-.research-program-strip { --strip-top: 12px; position: absolute; top: var(--strip-top); left: 12px; width: 232px; max-height: calc(100% - var(--strip-top) - 136px); display: flex; pointer-events: auto; }
+.research-program-strip { --strip-top: 12px; position: absolute; top: var(--strip-top); left: 12px; width: 232px; max-height: calc(100% - var(--strip-top) - var(--dpad-reserve, 136px)); display: flex; pointer-events: auto; }
 .goal-card:not([hidden]) ~ .view-layer .research-program-strip { --strip-top: 80px; }
 .research-program-strip ol, .research-path-hotbar { scrollbar-width: thin; scrollbar-color: var(--rule-strong) transparent; }
 .research-program-strip ol { position: relative; flex: 1; min-height: 0; max-height: 100%; margin: 0; padding: 4px 0; overflow: auto; list-style: none; }
@@ -51,7 +51,10 @@
 .research-dpad-center { grid-area: center; }
 .research-dpad-right { grid-area: right; }
 .research-dpad-down { grid-area: down; }
-@media (pointer: coarse) { .research-dpad { grid-template-columns: repeat(3, 44px); grid-template-rows: repeat(3, 44px); } }
+@media (pointer: coarse) {
+  .research-dpad { grid-template-columns: repeat(3, 44px); grid-template-rows: repeat(3, 44px); }
+  .research-program-strip { --dpad-reserve: 152px; }
+}
 .research-bases { position: absolute; z-index: 3; bottom: 12px; right: 12px; display: flex; align-items: center; gap: 8px; pointer-events: auto; }
 .research-bases .base-picker { padding: 2px; border: 1px solid var(--rule-strong); border-radius: 3px; background: var(--paper-raised); }
 .research-bases .base-picker button { padding: 0 10px; border-color: transparent; background: transparent; color: var(--ink-2); font-size: 13px; }

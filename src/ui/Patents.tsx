@@ -26,7 +26,11 @@ export const PATENT_TREE: readonly (readonly string[])[] = [
 export function visiblePatentTree(baseCount: number): readonly (readonly (typeof DEFAULT_PATENTS)[number][])[] {
   return PATENT_TREE
     .map((branch) => branch
-      .map((id) => DEFAULT_PATENTS.find((node) => node.id === id)!)
+      .map((id) => {
+        const node = DEFAULT_PATENTS.find((candidate) => candidate.id === id);
+        if (node === undefined) throw new Error(`Technology tree lists unknown node "${id}"`);
+        return node;
+      })
       .filter((node) => node.effect.kind !== "unlockBase" || node.effect.base < baseCount))
     .filter((branch) => branch.length > 0);
 }
