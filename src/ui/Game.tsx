@@ -186,12 +186,12 @@ export function researchPlanningTrails(
   return researchPlanningPreview(mm, fog, start, program).trails;
 }
 
-/** First place a Run left the estimate planned on `known`, and the true terrain that moved it. */
-/** Where a Run first left its estimate, and the index of the step it happened in. */
 export interface ResearchPlanDeviation extends ResearchDeviation {
+  /** Index into `program.steps` of the step that left the estimate. */
   readonly step: number;
 }
 
+/** First place a Run left the estimate planned on `known`, and the true terrain that moved it. */
 export function researchDeviation(
   mm: MultiMap,
   known: MultiMap,
