@@ -1457,7 +1457,7 @@ export function Factory({
       gestureRef.current = { ...gesture, rot: turn(gesture.rot) };
       repaintGesture();
     } else if (heldRef.current !== null) setHeld(turn(heldRef.current));
-    else if (selectionRef.current.length > 0) {
+    else if (itemCells(layoutRef.current, selectionRef.current).length > 0) {
       // A gesture commits from its own base layout; turning under it would be overwritten.
       if (gesture !== null) return;
       const turned = rotateSelection(layoutRef.current, selectionRef.current, step);

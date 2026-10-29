@@ -221,5 +221,7 @@ export function rotateSelection(layout: FactoryLayout, cells: readonly HexCoord[
   const covered = itemCells(layout, cells);
   if (covered.length === 0) return { fragment: { tiles: [], machines: [] }, layout: null, cells: [] };
   const pivot = centreCell(covered);
-  return moveSelection(layout, covered, pivot, pivot, rot);
+  const turned = moveSelection(layout, covered, pivot, pivot, rot);
+  // A turn that changes nothing (a lone Sink) must not commit a no-op undo step.
+  return turned.layout !== null && JSON.stringify(turned.layout) === JSON.stringify(layout) ? { ...turned, layout } : turned;
 }

@@ -143,5 +143,7 @@ describe("paste transform", () => {
     expect(full.tiles).toEqual(layout.tiles);
     const edge = withTile(withTile(floor(), 2, 0, { kind: "belt", dir: 0 }), 4, 0, { kind: "belt", dir: 0 });
     expect(rotateSelection(edge, [{ q: 2, r: 0 }, { q: 4, r: 0 }], 1).layout).toBeNull();
+    const sink = withTile(floor(), 3, 3, { kind: "sink" });
+    expect(rotateSelection(sink, [{ q: 3, r: 3 }], 1).layout).toBe(sink);
   });
 });

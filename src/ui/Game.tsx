@@ -562,6 +562,8 @@ export function Game() {
     setResearchPlan(NO_RESEARCH_PLAN);
     setTrialPlan(NO_RESEARCH_PLAN);
     setResearchBase(next.research.lastTrial?.base ?? 0);
+    // A clipboard from another run can hold machines this one has not unlocked.
+    setFactoryClipboard(null);
     setIntentError("");
   }, []);
   const openNewGameConfirmation = useCallback(() => {

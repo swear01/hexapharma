@@ -732,10 +732,9 @@ export function factoryPortInScope(
   port: { readonly q: number; readonly r: number; readonly side: Dir },
   scope: Uint8Array | null,
 ): boolean {
-  if (scope === null || scope[hexIndex(layout.width, port.q, port.r)] === 1) return true;
-  const q = port.q + HEX_DQ[port.side]!;
-  const r = port.r + HEX_DR[port.side]!;
-  return hexInBounds(layout.width, layout.height, q, r) && scope[hexIndex(layout.width, q, r)] === 1;
+  if (scope === null) return true;
+  const scoped = (q: number, r: number) => hexInBounds(layout.width, layout.height, q, r) && scope[hexIndex(layout.width, q, r)] === 1;
+  return scoped(port.q, port.r) || scoped(port.q + HEX_DQ[port.side]!, port.r + HEX_DR[port.side]!);
 }
 
 /**
