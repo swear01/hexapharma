@@ -1629,10 +1629,10 @@ export function Factory({
     : undefined;
   // A refused fragment keeps the current layout as its candidate.
   const fragmentCandidate = fragmentPreview === null ? null : fragmentPreview.candidate ?? layout;
-  const paints = moveCandidate === null && beltGestureCandidate === null && fragmentCandidate === null &&
-    boxGesture === null && idleDirectMachine === undefined && hoverCell !== null;
+  const hoverOverride = moveCandidate ?? beltGestureCandidate ?? fragmentCandidate;
+  const paints = hoverOverride === null && boxGesture === null && idleDirectMachine === undefined && hoverCell !== null;
   const idleCandidate = paints ? paint(layout, hoverCell.q, hoverCell.r, brush, brushDir, footRot, sourceBase) : layout;
-  const hoverCandidate = moveCandidate ?? beltGestureCandidate ?? fragmentCandidate ?? idleCandidate;
+  const hoverCandidate = hoverOverride ?? idleCandidate;
   const moveUnchanged = moveMachine !== undefined && moveAnchor !== null &&
     moveMachine.anchor.q === moveAnchor.q && moveMachine.anchor.r === moveAnchor.r;
   const hoverPlacementValid = moveBase !== null
