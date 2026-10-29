@@ -670,6 +670,19 @@ test("a copy in Plan pastes into Production at the build quote", async ({ page }
   const raw = await page.evaluate((key) => localStorage.getItem(key), checkpointKey);
   const production = deserializeSnapshot((JSON.parse(raw!) as { readonly head: string }).head).production.layout;
   expect(savedTile(production, sourceTile!.cell)).toEqual(sourceTile!.tile);
+
+  // Loading another game state clears the clipboard, so nothing stays in hand.
+  await page.getByTestId("view-menu").click();
+  await page.keyboard.press("Control+v");
+  const again = await factoryCellPoint(frame, source, { q: sourceTile!.cell.q, r: sourceTile!.cell.r + 2 });
+  await page.mouse.click(again.x, again.y);
+  await expect(workspace.getByTestId("brush-selected")).toHaveAccessibleName("Paste");
+  await openMenu(page);
+  await page.getByTestId("load").click();
+  await page.getByRole("alertdialog", { name: "Load saved game?" }).getByRole("button", { name: "Load saved game" }).click();
+  await page.getByTestId("view-production").click();
+  await expect(workspace.getByTestId("brush-selected")).toHaveAccessibleName("belt");
+  await expect(workspace.getByTestId("factory-paste")).toHaveCount(0);
 });
 
 test("a held paste over an installed machine shows a refused ghost", async ({ page }) => {
