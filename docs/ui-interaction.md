@@ -79,7 +79,7 @@ F1 一次顯示一個 base 的大型 Atlas：
 - Factory clipboard精確保存tile payload；Source period與base、Splitter outputs與Merger inputs不可在paste時重設。
 - 多 base 關卡選 Source 工具時，底部狀態列在 Direction 後顯示 base 選擇器（`source-base`），鎖住的 base 用與鎖住機器相同的提示列說明；已放置的 Source 上方印 base 名稱（`source-base-mark`），Cursor 讀數為 `source · <Base>`。
 - tile與machine移除不退款；只有接受的edit才停止播放並令runtime歸零，累積waste保留。no-op、invalid與insufficient-cash rejection不暫停也不改history。
-- Details 按需顯示 tick、sink outcomes、waste、十進位 units/tick 與 bottleneck；空 inspector 預設關閉。底部操作區：左邊是目前工具圖示＋方向箭頭（機器為 footprint 旋轉；Erase 無箭頭）與報價，Rotate／Undo／Redo；右邊 Play／Pause（同一顆，圖示即 run state，Blocked 才加字）、1×／2×／10× 速度（每 80 ms 前進 8／16／80 tick）、Step、Center、Details。全部是圖示鈕，名稱與熱鍵在 tooltip。沒有 Plan／Production 角標或 zoom 百分比。選取機器顯示名稱、input/output 數量、ticks/unit、processing cost、rotation；blocked 狀態仍直接顯示在 world。
+- Details 按需顯示 tick、sink outcomes、waste、十進位 units/tick 與 bottleneck；空 inspector 預設關閉。底部操作區：左邊是目前工具圖示＋方向箭頭（機器為 footprint 旋轉；Erase 無箭頭）與報價，Rotate／Undo／Redo；右邊 Play／Pause（同一顆，圖示即 run state，Blocked 才加字；Blocked 時 Step 停用，任何編輯重新開始產線）、1×／2×／10× 速度（每 80 ms 前進 8／16／80 tick）、Step、Center、Details。全部是圖示鈕，名稱與熱鍵在 tooltip。沒有 Plan／Production 角標或 zoom 百分比。選取機器顯示名稱、input/output 數量、ticks/unit、processing cost、rotation；blocked 狀態仍直接顯示在 world。
 - machine hotbar tooltip同時顯示ticks/unit與每件processing cost；不要把一次性建造費和持續生產成本混成同一數字。
 - no-cure／failed產品進waste；side effects跟實體產品進市場計價，UI不先過濾成「合法配方」。
 - 正常new game顯示$1000；fresh Research後的有效first line必須可支付，insufficient-cash錯誤不能是正常bootstrap必經狀態。

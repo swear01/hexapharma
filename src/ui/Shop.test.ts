@@ -93,12 +93,10 @@ describe("Market product choice", () => {
 
     expect(quote).toEqual({
       productId: 2,
-      regionPrice: 50,
       gross: 50,
       premium: false,
       productionCost: 0,
       sideEffectCount: 1,
-      sideEffectPenaltyEach: 25,
       sideEffectPenalty: 25,
       net: 25,
     });
@@ -106,7 +104,7 @@ describe("Market product choice", () => {
 
   it("prices each unit by the cure region it ended on", () => {
     const quote = bestMarketQuote([product(1, [0], [], 10, [], 2)], disease(0, 50), 1)!;
-    expect(quote).toMatchObject({ regionPrice: 100, gross: nextUnitPrice(100, 1), net: nextUnitPrice(100, 1) - 10 });
+    expect(quote).toMatchObject({ gross: nextUnitPrice(100, 1), net: nextUnitPrice(100, 1) - 10 });
     expect(bestMarketQuote([product(1, [0], [], 10, [0], 2)], disease(0, 50), 0)).toMatchObject({ premium: true, gross: 150 });
   });
 
@@ -120,23 +118,19 @@ describe("Market product choice", () => {
     expect(marketDisabledReason(0, null)).toBe("No curative stock.");
     expect(marketDisabledReason(2, {
       productId: 1,
-      regionPrice: 24,
       gross: 24,
       premium: false,
       productionCost: 26,
       sideEffectCount: 0,
-      sideEffectPenaltyEach: 25,
       sideEffectPenalty: 0,
       net: -2,
     })).toBe("No profitable stock at next price.");
     expect(marketDisabledReason(2, {
       productId: 1,
-      regionPrice: 27,
       gross: 27,
       premium: false,
       productionCost: 26,
       sideEffectCount: 0,
-      sideEffectPenaltyEach: 25,
       sideEffectPenalty: 0,
       net: 1,
     })).toBeNull();
@@ -156,6 +150,8 @@ it("puts the next unit's sum in the net tooltip, naming side effects only when p
     .toBe("$50 price − $5 cost. Each unit shipped lowers the next price.");
   expect(marketQuoteBreakdown(bestMarketQuote([product(1, [0], [9, 10], 0)], disease(0, 80), 0)!))
     .toBe("$80 price − $0 cost − $50 side effects. Each unit shipped lowers the next price.");
+  expect(marketQuoteBreakdown(bestMarketQuote([product(1, [0], [], 10, [0])], disease(0, 51), 0)!))
+    .toBe("$76 ★ price − $10 cost. Each unit shipped lowers the next price.");
 });
 
 it("formats negative money with a leading minus sign", () => {

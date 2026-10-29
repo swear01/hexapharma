@@ -59,14 +59,11 @@ export function profitableMarketProducts(
 
 export interface MarketQuote {
   readonly productId: number;
-  /** Price of the cure region the product ended on, before demand decay. */
-  readonly regionPrice: number;
   /** Demand price of that region, plus half again when the product hit a ★ (tier-2) cure. */
   readonly gross: number;
   readonly premium: boolean;
   readonly productionCost: number;
   readonly sideEffectCount: number;
-  readonly sideEffectPenaltyEach: number;
   readonly sideEffectPenalty: number;
   readonly net: number;
 }
@@ -75,17 +72,14 @@ function quoteMarketProduct(product: InventoryProduct, disease: DiseaseSpec, alr
   const sideEffectCount = product.outcome.sideEffects.length;
   const sideEffectPenalty = sideEffectCount * SIDE_EFFECT_PENALTY;
   const premium = product.outcome.premium.includes(disease.id);
-  const regionPrice = cureRegionPrice(disease, product.outcome);
-  const demand = nextUnitPrice(regionPrice, alreadySold);
+  const demand = nextUnitPrice(cureRegionPrice(disease, product.outcome), alreadySold);
   const gross = premium ? premiumGross(demand) : demand;
   return {
     productId: product.inventoryId,
-    regionPrice,
     gross,
     premium,
     productionCost: product.productionCost,
     sideEffectCount,
-    sideEffectPenaltyEach: SIDE_EFFECT_PENALTY,
     sideEffectPenalty,
     net: gross - product.productionCost - sideEffectPenalty,
   };
@@ -185,13 +179,14 @@ export function Shop({ level, economy, inventory, onSell }: ShopProps) {
                   {cardTitle}
                   <span className="market-net" title={marketQuoteBreakdown(quote)}>
                     Net <strong data-testid={`shop-net-${disease.id}`}>{formatMoney(quote.net)}</strong>
+                    <span className="sr-only">{marketQuoteBreakdown(quote)}</span>
                   </span>
                 </div>
                 <div className="market-card-body">
                   <span className="market-stock" title="Units in stock">
                     <span className="is-clean"><strong data-testid={`shop-clean-${disease.id}`}>{clean}</strong> clean</span>
                     {tainted > 0 && <span className="is-tainted"><strong data-testid={`shop-tainted-${disease.id}`}>{tainted}</strong> tainted</span>}
-                    {premium > 0 && <span className="is-premium" title="★ pays ×1.5"><strong data-testid={`shop-premium-${disease.id}`}>{premium}</strong> ★</span>}
+                    {premium > 0 && <span className="is-premium"><strong data-testid={`shop-premium-${disease.id}`}>{premium}</strong> ★</span>}
                   </span>
                   <div className="market-actions">
                     <button

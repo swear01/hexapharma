@@ -76,7 +76,7 @@ hotbar 圖示會轉到規劃路線終點的朝向。
 
 ## Factory共同操作
 
-Production Plan與Production使用相同editor，但一眼可分：Plan 以紫色虛線 overprint 繪製，底部是 `Commission $N`；Production 以黑墨實印，底部有報價與 Play，Play 左側圖示表示執行中／暫停，卡住時顯示 Blocked。Details 預設收起，按下才顯示診斷；底部提供工具、報價、旋轉與播放。工具列是圖例：機器以「footprint＋path」token 與全名顯示（與 Research 相同），未解鎖機器顯示鎖頭與解鎖條件。起步只有 Belt、Source、Sink、Erase 與機器；Splitter／Merger 要先在 Technology 解鎖 `Split / Merge`。Source 是空心三角。Sink 是雙圈；input port 是方形、output port 是圓形，空心代表尚未連接；belt 是藍色帶狀線，箭頭表方向。
+Production Plan與Production使用相同editor，但一眼可分：Plan 以紫色虛線 overprint 繪製，底部是 `Commission $N`；Production 以黑墨實印，底部有報價與 Play，Play 左側圖示表示執行中／暫停，卡住時顯示 Blocked，任何編輯會重新開始產線。Details 預設收起，按下才顯示診斷；底部提供工具、報價、旋轉與播放。工具列是圖例：機器以「footprint＋path」token 與全名顯示（與 Research 相同），未解鎖機器顯示鎖頭與解鎖條件。起步只有 Belt、Source、Sink、Erase 與機器；Splitter／Merger 要先在 Technology 解鎖 `Split / Merge`。Source 是空心三角。Sink 是雙圈；input port 是方形、output port 是圓形，空心代表尚未連接；belt 是藍色帶狀線，箭頭表方向。
 
 ### Camera與工具
 

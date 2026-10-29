@@ -21,7 +21,7 @@
 .market-net { margin-left: auto; }
 .market-net strong { margin-left: 4px; color: var(--ink); font: 600 23px/1 var(--font-display); font-variant-numeric: tabular-nums; }
 .market-card-body { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-top: 10px; }
-.market-stock { display: flex; gap: 12px; color: var(--ink-2); font-size: 13px; }
+.market-stock { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--ink-2); font-size: 13px; }
 .market-stock strong { margin-right: 3px; font: 600 19px/1 var(--font-display); color: var(--ink); }
 .market-stock .is-clean strong, .market-stock .is-premium strong { color: var(--cure-ink); }
 .market-stock .is-tainted strong { color: var(--effect-ink); }

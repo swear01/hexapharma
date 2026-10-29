@@ -1494,7 +1494,7 @@ export function Factory({
       } else if (event.key === ".") {
         if (mode === "production") {
           event.preventDefault();
-          if (!playing) stepOnce();
+          if (!playing && !state.deadlocked) stepOnce();
         }
       }
     };
@@ -1622,7 +1622,9 @@ export function Factory({
           <div className="transport-bar factory-controls" aria-label={`${facilityName} controls`}>
             {mode === "production" && (
               <div className="control-group">
-                {state.deadlocked && <span className="run-state" data-testid="factory-run-state" role="status">Blocked</span>}
+                {state.deadlocked
+                  ? <span className="run-state" data-testid="factory-run-state" role="status" title="Any edit restarts the line">Blocked<span className="sr-only">: any edit restarts the line</span></span>
+                  : <span className="sr-only" data-testid="factory-run-state" role="status">{playing ? "Running" : "Paused"}</span>}
                 {playing
                   ? <button type="button" onClick={() => setPlaying(false)} className="is-active" data-testid="factory-pause" aria-label="Pause Production" title="Pause (Space)"><CommandGlyph kind="pause" /></button>
                   : <button type="button" onClick={() => setPlaying(true)} disabled={state.deadlocked} data-testid="factory-play" aria-label="Play Production" title="Play (Space)"><CommandGlyph kind="play" /></button>}
@@ -1631,7 +1633,7 @@ export function Factory({
                     <button key={option} type="button" onClick={() => setSpeed(option)} aria-pressed={speed === option} data-testid={`factory-speed-${option}`} aria-label={`Speed ${option}×`} title={`Speed ${option}×`}>{option}×</button>
                   ))}
                 </div>
-                <button type="button" onClick={stepOnce} disabled={playing} data-testid="factory-step" aria-label="Step Production one tick" title="Step one tick (.)"><CommandGlyph kind="step" /></button>
+                <button type="button" onClick={stepOnce} disabled={playing || state.deadlocked} data-testid="factory-step" aria-label="Step Production one tick" title="Step one tick (.)"><CommandGlyph kind="step" /></button>
               </div>
             )}
             <div className="control-group view-group">

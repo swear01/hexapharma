@@ -239,9 +239,11 @@ test("Production runs continuous time, produces sink outcomes, and scales its sp
   await page.getByTestId("factory-step").click();
   await expect(tick).toHaveText("1");
   await page.getByTestId("factory-play").click();
+  await expect(page.getByTestId("factory-run-state")).toHaveText("Running");
   await expect(page.getByTestId("factory-produced")).not.toHaveText("0", { timeout: 10_000 });
   await page.getByTestId("factory-pause").click();
   await expect(page.getByTestId("factory-pause")).toHaveCount(0);
+  await expect(page.getByTestId("factory-run-state")).toHaveText("Paused");
 
   // 10× advances ten 1× batches (80 ticks) per interval.
   const paused = Number(await tick.textContent());
