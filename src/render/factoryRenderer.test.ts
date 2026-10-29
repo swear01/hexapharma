@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { FactoryLayout, PlacedMachine } from "../sim/phase0_interfaces";
+import type { FactoryLayout, PlacedMachine, Rotation } from "../sim/phase0_interfaces";
 import { buildFactoryTransportTopology } from "./factoryTransportTopology";
 import { DEFAULT_CATALOG, DEFAULT_SHAPES, SHAPE_1x1 } from "../sim/phase0_interfaces";
 import { HEX_DIRS, HEX_DQ, HEX_DR } from "../sim/hex";
@@ -13,9 +13,11 @@ import {
   factoryUnitBlocked,
   factoryTransportArmGeometry,
   factoryTransportFlowPoint,
+  machineIconCell,
   machinePathGlyph,
   placedMachinePathGlyph,
 } from "./factoryRenderer";
+import { worldCells } from "../sim/factory-geom";
 
 describe("printed factory map", () => {
   it("prints Plan as a dashed purple overprint and Production as solid black print", () => {
@@ -71,23 +73,43 @@ describe("factory machine visual language", () => {
     expect(glyph.points[3]!.x).toBeLessThan(glyph.points[2]!.x);
   });
 
-  it("never rotates the chemical path when the physical footprint rotates", () => {
-    const entry = DEFAULT_CATALOG[0]!;
-    const placed = (footRot: 0 | 1): PlacedMachine => ({
-      id: footRot,
-      def: {
-        typeId: entry.typeId,
-        path: entry.path,
-        turn: entry.turn,
-        cost: entry.cost,
-        speed: entry.speed,
-      },
+  it("turns the icon with its footprint", () => {
+    const entry = DEFAULT_CATALOG.find((candidate) => candidate.typeId === "straight")!;
+    const placed = (footRot: Rotation): PlacedMachine => ({
+      id: 0,
+      def: { typeId: entry.typeId, path: entry.path, turn: entry.turn, cost: entry.cost, speed: entry.speed },
       anchor: { q: 1, r: 1 },
       footRot,
       shape: SHAPE_1x1,
     });
+    const upright = placedMachinePathGlyph(placed(0)).points;
+    const turned = placedMachinePathGlyph(placed(1)).points;
+    for (let index = 0; index < upright.length; index++) {
+      const angle = Math.PI / 3;
+      expect(turned[index]!.x).toBeCloseTo(upright[index]!.x * Math.cos(angle) - upright[index]!.y * Math.sin(angle));
+      expect(turned[index]!.y).toBeCloseTo(upright[index]!.x * Math.sin(angle) + upright[index]!.y * Math.cos(angle));
+    }
+  });
 
-    expect(placedMachinePathGlyph(placed(0))).toEqual(placedMachinePathGlyph(placed(1)));
+  it("keeps every machine icon inside one of its own cells at every rotation", () => {
+    // Inradius of a hex minus the end circle (r 3) and half its stroke.
+    const limit = Math.sqrt(3) * FACTORY_HEX_SIZE / 2 - 3.8;
+    for (const entry of DEFAULT_CATALOG) {
+      for (const footRot of [0, 1, 2, 3, 4, 5] as const) {
+        const machine: PlacedMachine = {
+          id: 0,
+          def: { typeId: entry.typeId, path: entry.path, turn: entry.turn, cost: entry.cost, speed: entry.speed },
+          anchor: { q: 6, r: 6 },
+          footRot,
+          shape: DEFAULT_SHAPES[entry.typeId]!,
+        };
+        const cell = machineIconCell(machine);
+        expect(worldCells(machine)).toContainEqual(cell);
+        for (const point of placedMachinePathGlyph(machine).points) {
+          expect(Math.hypot(point.x, point.y)).toBeLessThanOrEqual(limit);
+        }
+      }
+    }
   });
 });
 

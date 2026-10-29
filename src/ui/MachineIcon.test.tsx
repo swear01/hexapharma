@@ -41,9 +41,9 @@ describe("MachineIcon", () => {
     for (const entry of DEFAULT_CATALOG) {
       const shape = DEFAULT_SHAPES[entry.typeId]!;
       const markup = renderToStaticMarkup(<MachineIcon typeId={entry.typeId} path={entry.path} variant="footprint" />);
-      expect(markup.match(/<polygon/g)).toHaveLength(shape.cells.length);
-      expect(markup.match(/<rect/g)).toHaveLength(shape.inPorts.length);
-      expect(markup.match(/<circle/g)).toHaveLength(shape.outPorts.length);
+      expect(markup.match(/<polygon/g)).toHaveLength(shape.cells.length + shape.inPorts.length + shape.outPorts.length);
+      expect(markup.match(/data-port="input"/g) ?? []).toHaveLength(shape.inPorts.length);
+      expect(markup.match(/data-port="output"/g) ?? []).toHaveLength(shape.outPorts.length);
       expect(markup).not.toContain("NaN");
     }
   });

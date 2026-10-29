@@ -18,7 +18,7 @@
  * auto-packed or committed: the player builds geometry directly, and Production
  * sends edits to the game reducer.
  */
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import { MachineIcon } from "./MachineIcon";
 import { blockingDialogOpen } from "./blockingDialog";
 import { machineName } from "./machineLabels";
@@ -47,11 +47,11 @@ import { initFactory, analyzeThroughput } from "../sim/factory-sim";
 import { factoryOutcome } from "../sim/recipe";
 import { quoteProductionBuild } from "../sim/construction";
 import { worldCells } from "../sim/factory-geom";
-import { hexInBounds, hexIndex, rotateHexCoord } from "../sim/hex";
+import { hexInBounds, hexIndex } from "../sim/hex";
 import { buildFactoryTransportTopology, type FactoryTransportEdge } from "../render/factoryTransportTopology";
 import { inkJitter } from "../render/ink";
 import { hexBoardBounds, hexPolygon, hexToPixel } from "../render/hexProjection";
-import type { FactoryRenderer } from "../render/factoryRenderer";
+import type { FactoryGhost, FactoryGhostTile, FactoryRenderer } from "../render/factoryRenderer";
 import { BasePicker, LockGlyph } from "./BasePicker";
 import {
   appendUniqueCells,
@@ -168,6 +168,9 @@ export function machineLockReason(typeId: MachineTypeId): string {
 
 export const ROUTING_LOCK_REASON = "Splitter and Merger off · turn on Split / Merge in Technology";
 
+/** Id of a rejected machine ghost: it is in no layout, so no real machine (ids ≥ 0) can share it. */
+const UNPLACED_MACHINE_ID = -1;
+
 function machineDef(typeId: MachineTypeId): FactoryMachineDef {
   const entry = entryOf(typeId);
   return {
@@ -233,54 +236,6 @@ export function factoryStartPoint(layout: FactoryLayout): { readonly x: number; 
 function factoryFloorBounds(layout: FactoryLayout): PixelBounds {
   const bounds = hexBoardBounds(layout.width, layout.height, FACTORY_HEX_SIZE);
   return { minX: PAD, minY: PAD, maxX: PAD + bounds.maxX - bounds.minX, maxY: PAD + bounds.maxY - bounds.minY };
-}
-
-/** Control numbers: machines in the order flow reaches them from the Sources (matches a formula's step order on a straight line). */
-export function factoryMachineFlowOrder(layout: FactoryLayout): ReadonlyMap<number, number> {
-  const topology = buildFactoryTransportTopology(layout);
-  const area = layout.width * layout.height;
-  const owner = new Int32Array(area).fill(-1);
-  const byId = new Map<number, PlacedMachine>();
-  for (const machine of layout.machines) {
-    byId.set(machine.id, machine);
-    for (const cell of worldCells(machine)) owner[hexIndex(layout.width, cell.q, cell.r)] = machine.id;
-  }
-  const next: number[][] = Array.from({ length: area }, () => []);
-  for (const edge of topology.edges) {
-    next[hexIndex(layout.width, edge.from.q, edge.from.r)]!.push(hexIndex(layout.width, edge.to.q, edge.to.r));
-  }
-  const order = new Map<number, number>();
-  const seen = new Uint8Array(area);
-  const queue: number[] = [];
-  for (let index = 0; index < area; index++) {
-    if (layout.tiles[index]?.kind === "source") {
-      seen[index] = 1;
-      queue.push(index);
-    }
-  }
-  for (let head = 0; head < queue.length; head++) {
-    for (const to of next[queue[head]!]!) {
-      if (seen[to] === 1) continue;
-      const id = owner[to]!;
-      const machine = id >= 0 ? byId.get(id) : undefined;
-      if (machine === undefined) {
-        seen[to] = 1;
-        queue.push(to);
-        continue;
-      }
-      if (!order.has(id)) order.set(id, order.size + 1);
-      for (const cell of worldCells(machine)) {
-        const index = hexIndex(layout.width, cell.q, cell.r);
-        if (seen[index] === 1) continue;
-        seen[index] = 1;
-        queue.push(index);
-      }
-    }
-  }
-  for (const machine of layout.machines) {
-    if (!order.has(machine.id)) order.set(machine.id, order.size + 1);
-  }
-  return order;
 }
 
 /** Machines the first unit from the first Source passes through on its way to a Sink (a Splitter sends it out its first connected output, as the sim does), and that Source's base. */
@@ -654,17 +609,19 @@ function paint(
   return placeFactoryTile(layout, q, r, tile);
 }
 
+/** The belts a drag along `cells` places; commit and the ghost both use this orientation. */
+export function beltRouteTiles(cells: readonly GridCell[], fallbackDirection: Dir): readonly FactoryGhostTile[] {
+  const directions = orientBeltGesture(cells, fallbackDirection);
+  return cells.map((cell, index) => ({ q: cell.q, r: cell.r, tile: { kind: "belt", dir: directions[index] ?? fallbackDirection } }));
+}
+
 export function paintBeltRoute(
   layout: FactoryLayout,
   cells: readonly GridCell[],
   fallbackDirection: Dir,
 ): FactoryLayout {
-  const directions = orientBeltGesture(cells, fallbackDirection);
   let next = layout;
-  for (let index = 0; index < cells.length; index++) {
-    const cell = cells[index]!;
-    next = paint(next, cell.q, cell.r, { kind: "belt" }, directions[index] ?? fallbackDirection, 0);
-  }
+  for (const { q, r, tile } of beltRouteTiles(cells, fallbackDirection)) next = placeFactoryTile(next, q, r, tile);
   return next;
 }
 
@@ -673,7 +630,7 @@ const FACTORY_HEX_SIZE = CELL / 2;
 const FACTORY_HEX_WIDTH = Math.sqrt(3) * FACTORY_HEX_SIZE;
 const PAD = 12;
 const MIN_ZOOM = 0.35;
-/** On a phone a built line opens no smaller than this, so ports and step numbers stay legible. */
+/** On a phone a built line opens no smaller than this, so ports and icons stay legible. */
 const MIN_PHONE_FIT_ZOOM = 0.6;
 const MAX_ZOOM = 2.25;
 const MARK_BAND = 36;
@@ -823,6 +780,8 @@ export function Factory({
   const mountRef = useRef<HTMLDivElement | null>(null);
   const frameRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<FactoryRenderer | null>(null);
+  /** The live renderer as state, so the ghost repaints when a renderer is (re)created. */
+  const [liveRenderer, setLiveRenderer] = useState<FactoryRenderer | null>(null);
   const [rendererError, setRendererError] = useState<string | null>(null);
 
   const { mm, start } = level;
@@ -860,6 +819,8 @@ export function Factory({
   const pendingCommittedKeysRef = useRef<string[]>([]);
   const clipboardRef = useRef<ClipboardBrush | null>(null);
   const gestureRef = useRef<CanvasGesture | null>(null);
+  // The gesture lives in a ref; ending one bumps this so the render (and its ghost) catches up.
+  const [, endGesture] = useReducer((count: number) => count + 1, 0);
   const panGestureRef = useRef<{
     readonly pointerId: number;
     readonly clientX: number;
@@ -894,21 +855,6 @@ export function Factory({
     }
   }, [authoritativeLayout, layout, mm]);
   const throughput = throughputAnalysis.report;
-  const machineOrder = useMemo(() => factoryMachineFlowOrder(layout), [layout]);
-  const machineControls = useMemo(() => layout.machines.map((machine) => {
-    let minX = Infinity;
-    let minY = Infinity;
-    let maxX = -Infinity;
-    let maxY = -Infinity;
-    for (const cell of worldCells(machine)) {
-      const center = factoryCellCenter(cell);
-      minX = Math.min(minX, center.x);
-      minY = Math.min(minY, center.y);
-      maxX = Math.max(maxX, center.x);
-      maxY = Math.max(maxY, center.y);
-    }
-    return { id: machine.id, number: machineOrder.get(machine.id) ?? 0, x: (minX + maxX) / 2 - 16, y: (minY + maxY) / 2 - 14 };
-  }), [layout, machineOrder]);
   const sourceMarks = useMemo(() => baseLocks.length < 2 ? [] : layout.tiles.flatMap((tile, index) => {
     if (tile.kind !== "source") return [];
     const center = factoryCellCenter({ q: index % layout.width, r: Math.floor(index / layout.width) });
@@ -1039,6 +985,7 @@ export function Factory({
         }
         local = r;
         rendererRef.current = r;
+        setLiveRenderer(r);
         if (mountRef.current) mountRef.current.appendChild(r.canvas);
         r.render(layoutRef.current, stateRef.current, bottleneckRef.current);
         focusRequest = window.requestAnimationFrame(() => {
@@ -1049,8 +996,10 @@ export function Factory({
           local.destroy();
           local = null;
         }
-        rendererRef.current = null;
+        // A superseded init must not clear the newer renderer's handle; its cleanup already did.
         if (!disposed) {
+          rendererRef.current = null;
+          setLiveRenderer(null);
           const detail = error instanceof Error ? error.message : String(error);
           setRendererError(`Could not start the Factory renderer: ${detail}`);
         }
@@ -1060,6 +1009,7 @@ export function Factory({
       disposed = true;
       if (focusRequest !== 0) window.cancelAnimationFrame(focusRequest);
       rendererRef.current = null;
+      setLiveRenderer(null);
       if (local) local.destroy();
     };
   }, [focusLayoutInViewport, layout.width, layout.height, mode]);
@@ -1205,6 +1155,7 @@ export function Factory({
         activeTouchPointerRef.current !== event.pointerId
       ) {
         gestureRef.current = null;
+        endGesture();
         activeTouchPointerRef.current = event.pointerId;
         panGestureRef.current = {
           pointerId: event.pointerId,
@@ -1331,6 +1282,8 @@ export function Factory({
     const gesture = gestureRef.current;
     if (gesture?.pointerId !== event.pointerId) return;
     gestureRef.current = null;
+    // A rejected commit sets no state; re-render anyway so the gesture's ghost clears.
+    endGesture();
     if (gesture.mode === "move") {
       commitLayout(transformPlacedMachine(
         gesture.base,
@@ -1511,7 +1464,6 @@ export function Factory({
     ? "not runnable"
     : formatFacilityOutcome(sampleAnalysis.outcome);
   const hoveredMachine = hoverCell === null ? undefined : machineAt(layout, hoverCell.q, hoverCell.r);
-  const hoveredControl = hoveredMachine === undefined ? undefined : machineOrder.get(hoveredMachine.id);
   const hoveredTile = hoverCell === null
     ? undefined
     : layout.tiles[hexIndex(layout.width, hoverCell.q, hoverCell.r)];
@@ -1556,22 +1508,45 @@ export function Factory({
     (brush.kind === "erase" || activeGesture?.mode === "erase")
     ? factoryErasePreviewCells(layout, hoverCell.q, hoverCell.r)
     : null;
-  const ghostCells = moveMachine !== undefined && moveAnchor !== null
-    ? worldCells({ ...moveMachine, anchor: moveAnchor })
-    : beltGestureCandidate !== null && activeGesture !== null
-    ? activeGesture.cells
-    : erasePreviewCells !== null
-    ? erasePreviewCells
-    : idleDirectMachine !== undefined
-    ? worldCells(idleDirectMachine)
-    : hoverCell === null
-    ? []
-    : brush.kind === "machine"
-      ? DEFAULT_SHAPES[brush.typeId]!.cells.map((cell) => {
-          const rotated = rotateHexCoord(cell, footRot);
-          return { q: hoverCell.q + rotated.q, r: hoverCell.r + rotated.r };
-        })
-      : [hoverCell];
+  // The SVG outline layer only carries the erase preview and the grabbed-machine outline.
+  let ghostCells: readonly HexCoord[] = [];
+  if (erasePreviewCells !== null) ghostCells = erasePreviewCells;
+  else if (idleDirectMachine !== undefined) ghostCells = worldCells(idleDirectMachine);
+  // Any other placement previews the real thing in Pixi. Memoized on its inputs so a Production
+  // tick re-render keeps the same ghost and does not repaint it.
+  const placementGhost = useMemo((): FactoryGhost | null => {
+    if (ghostCells.length > 0) return null;
+    const invalid = !hoverPlacementValid;
+    const ghostLayout = invalid ? layout : hoverCandidate;
+    if (moveMachine !== undefined && moveAnchor !== null) {
+      return { layout: ghostLayout, invalid, tiles: [], machine: { ...moveMachine, anchor: moveAnchor } };
+    }
+    if (beltGestureCandidate !== null && activeGesture !== null) {
+      return { layout: ghostLayout, invalid, tiles: beltRouteTiles(activeGesture.cells, brushDir), machine: null };
+    }
+    if (hoverCell === null) return null;
+    if (brush.kind === "machine") {
+      const shape = DEFAULT_SHAPES[brush.typeId]!;
+      return {
+        layout: ghostLayout,
+        invalid,
+        tiles: [],
+        machine: invalid
+          ? { id: UNPLACED_MACHINE_ID, def: machineDef(brush.typeId), anchor: hoverCell, footRot, shape }
+          : hoverCandidate.machines.at(-1) ?? null,
+      };
+    }
+    const tile = makeTile(brush, brushDir, sourceBase);
+    return tile === null ? null : { layout: ghostLayout, invalid, tiles: [{ q: hoverCell.q, r: hoverCell.r, tile }], machine: null };
+  // Every value read above derives from these inputs; a new input to those derivations belongs here too.
+  }, [layout, hoverCell, brush, brushDir, footRot, sourceBase, activeGesture]);
+  useEffect(() => {
+    // The mount effect nulls rendererRef before destroying; skip a stale handle in that window.
+    if (liveRenderer === null || liveRenderer !== rendererRef.current) return;
+    liveRenderer.renderGhost(placementGhost);
+  }, [liveRenderer, placementGhost]);
+  let ghostState: "valid" | "invalid" | undefined;
+  if (placementGhost !== null) ghostState = placementGhost.invalid ? "invalid" : "valid";
 
   const tileBrushBtn = (kind: TileBrushKind, label: string, hotkey: string) => {
     const locked = !routing && (kind === "splitter" || kind === "merger");
@@ -1612,7 +1587,7 @@ export function Factory({
   const overlayHeight = Math.ceil(PAD * 2 + canvasBounds.maxY - canvasBounds.minY);
   const ghostErase = gestureRef.current?.mode === "erase" || brush.kind === "erase";
   const controlScale = Math.max(1, 0.75 / camera.zoom);
-  const ghostClass = `factory-ghost${ghostErase ? " is-erase" : ""}${hoverPlacementValid ? "" : " is-invalid"}`;
+  const ghostClass = `factory-ghost${ghostErase ? " is-erase" : ""}`;
 
   return (
     <div className={`game-view factory-workspace facility-${mode}`} data-testid={`${mode}-facility-workspace`}>
@@ -1679,7 +1654,7 @@ export function Factory({
           {hoveredMachine !== undefined && <div className="machine-selection" data-testid="machine-selection">
             <MachineIcon typeId={hoveredMachine.def.typeId} path={hoveredMachine.def.path} size={40} variant="token" />
             <div>
-              <strong>{hoveredControl !== undefined && <span className="machine-control is-inline">{hoveredControl}</span>}{machineName(hoveredMachine.def.typeId)}</strong>
+              <strong>{machineName(hoveredMachine.def.typeId)}</strong>
               <dl>
                 <dt>Ports</dt><dd>{hoveredMachine.shape.inPorts.length} in · {hoveredMachine.shape.outPorts.length} out</dd>
                 <dt>Process</dt><dd>{hoveredMachine.def.speed} ticks · ${hoveredMachine.def.cost}/unit</dd>
@@ -1694,11 +1669,15 @@ export function Factory({
             ref={frameRef}
             data-testid="factory-canvas"
             data-camera-zoom={camera.zoom}
+            data-ghost={ghostState}
             onPointerDown={onCanvasPointerDown}
             onPointerMove={onCanvasPointerMove}
             onPointerUp={finishCanvasGesture}
             onPointerCancel={(event) => {
-              if (gestureRef.current?.pointerId === event.pointerId) gestureRef.current = null;
+              if (gestureRef.current?.pointerId === event.pointerId) {
+                gestureRef.current = null;
+                endGesture();
+              }
               if (panGestureRef.current?.pointerId === event.pointerId) panGestureRef.current = null;
               if (activeTouchPointerRef.current === event.pointerId) activeTouchPointerRef.current = null;
             }}
@@ -1708,15 +1687,6 @@ export function Factory({
             <div className="factory-canvas-transform" style={{ transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})` }}>
               <div className="factory-paper" style={{ backgroundImage: factoryPaperTexture() }} aria-hidden="true" />
               <div ref={mountRef} className="factory-canvas-mount" />
-              {machineControls.map((control) => (
-                <span
-                  key={control.id}
-                  className="machine-control"
-                  data-testid="machine-control"
-                  aria-hidden="true"
-                  style={{ left: control.x, top: control.y, transform: `translate(-50%, -50%) scale(${controlScale})` }}
-                >{control.number}</span>
-              ))}
               {sourceMarks.map((mark) => (
                 <span
                   key={mark.index}

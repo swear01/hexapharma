@@ -173,14 +173,7 @@ test("Pilot spatial editing supports palette, rotate, drag paint, erase, undo, r
   const x = beltStart.x;
   const y = beltStart.y;
   await page.mouse.move(x, y);
-  const ghostBox = await frame.locator(".factory-ghost").first().boundingBox();
-  if (ghostBox === null) throw new Error("Factory placement preview has no bounds");
-  const canvasBox = await canvas.boundingBox();
-  const logicalWidth = await canvas.evaluate((element) => element.clientWidth);
-  if (canvasBox === null) throw new Error("Factory canvas has no bounds");
-  const zoom = canvasBox.width / logicalWidth;
-  expect(ghostBox.width).toBeCloseTo(Math.sqrt(3) * 21 * zoom, 0);
-  expect(ghostBox.height).toBeCloseTo(42 * zoom, 0);
+  await expect(frame).toHaveAttribute("data-ghost", "valid");
   await page.mouse.down();
   await page.mouse.move(beltEnd.x, beltEnd.y, { steps: 5 });
   await page.mouse.up();

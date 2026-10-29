@@ -25,8 +25,8 @@ import type {
   FactoryRuntime,
   PathStamp,
 } from "../sim/phase0_interfaces";
-import { worldCells, worldOutPorts } from "../sim/factory-geom";
-import { HEX_DIRS, HEX_DQ, HEX_DR, hexInBounds, hexIndex } from "../sim/hex";
+import { worldCells, worldInPorts, worldOutPorts } from "../sim/factory-geom";
+import { HEX_DIRS, HEX_DQ, HEX_DR, hexInBounds, hexIndex, oppositeHexDir } from "../sim/hex";
 import {
   hexBoardBounds,
   hexPolygon,
@@ -57,6 +57,11 @@ const MAX_RESOLUTION = 4;
 export const FACTORY_SCHEMATIC_STYLE = Object.freeze({
   ...SHARED_SCHEMATIC_STYLE,
   neatline: 0xb9ae97,
+  /** Opaque machine bodies, so the floor grid never shows through. */
+  machineProduction: 0xe4e2de,
+  machinePlan: 0xf2e8f2,
+  /** Body of a rejected placement ghost. */
+  ghostInvalid: 0xf6dcd9,
 });
 
 export type FactoryRenderMode = "plan" | "production";
@@ -68,7 +73,7 @@ export interface FactoryPrintStyle {
   /** Belt channel. */
   readonly channel: number;
   readonly channelAlpha: number;
-  /** Machine footprint fill. */
+  /** Machine body fill: opaque, so the floor grid never shows through a machine. */
   readonly fill: number;
   readonly fillAlpha: number;
   /** Plan outlines are dashed overprint; Production is solid print. */
@@ -86,8 +91,8 @@ export function factoryPrintStyle(mode: FactoryRenderMode): FactoryPrintStyle {
         inkAlpha: 0.85,
         channel: s.course,
         channelAlpha: 0.4,
-        fill: s.course,
-        fillAlpha: 0.06,
+        fill: FACTORY_SCHEMATIC_STYLE.machinePlan,
+        fillAlpha: 1,
         dashed: true,
         wobble: 0,
       }
@@ -96,7 +101,7 @@ export function factoryPrintStyle(mode: FactoryRenderMode): FactoryPrintStyle {
         inkAlpha: 1,
         channel: s.flow,
         channelAlpha: 1,
-        fill: s.deck,
+        fill: FACTORY_SCHEMATIC_STYLE.machineProduction,
         fillAlpha: 1,
         dashed: false,
         wobble: 0.6,
@@ -107,7 +112,29 @@ const CHANNEL_WIDTH = 8;
 /** Outer machine outline vs. the seam between two touching machines. */
 export const MACHINE_OUTLINE_WIDTH = 1.6;
 export const SEAM_WIDTH = 4;
-const PORT_HALF = 3.6;
+/** Port arrowhead size (drawTriangle radius). */
+const PORT_ARROW = 7;
+/** Gap between an arrowhead and its footprint edge. */
+const PORT_EDGE_GAP = 1;
+/** Triangle centre to the midpoint of its back edge, as a share of PORT_ARROW (cos 60° ≈ 0.5, plus stroke). */
+const PORT_BACK_RATIO = 0.6;
+/** A stuck port's stop bar sits this far past the footprint edge, clear of the output arrow tip. */
+const STOP_BAR_OFFSET = PORT_EDGE_GAP + 3;
+/** Farthest icon point from its cell centre; with the end circle (r 3 + stroke) it stays inside one hex. */
+export const MACHINE_ICON_RADIUS = 13;
+
+/** Rejected placement: the ghost prints in failure red. */
+const INVALID_GHOST_STYLE: FactoryPrintStyle = Object.freeze({
+  ink: FACTORY_SCHEMATIC_STYLE.failure,
+  inkAlpha: 1,
+  channel: FACTORY_SCHEMATIC_STYLE.failure,
+  channelAlpha: 0.55,
+  fill: FACTORY_SCHEMATIC_STYLE.ghostInvalid,
+  fillAlpha: 1,
+  dashed: false,
+  wobble: 0,
+});
+const GHOST_ALPHA = 0.8;
 
 export interface FactoryTransportArmGeometry {
   readonly side: Dir;
@@ -403,8 +430,54 @@ export function machinePathGlyph(path: PathStamp, span = 22): MachinePathGlyph {
   };
 }
 
+/**
+ * The machine's path icon, centred on (0,0), scaled so its farthest point is MACHINE_ICON_RADIUS
+ * (so any turn still fits one hex) and turned with its footprint (sixth-turns clockwise).
+ */
 export function placedMachinePathGlyph(machine: PlacedMachine): MachinePathGlyph {
-  return machinePathGlyph(machine.def.path, machine.shape.cells.length > 1 ? 22 : 16);
+  const glyph = machinePathGlyph(machine.def.path, 1);
+  let reach = 0;
+  for (const point of glyph.points) reach = Math.max(reach, Math.hypot(point.x, point.y));
+  const angle = machine.footRot * Math.PI / 3;
+  const scale = MACHINE_ICON_RADIUS / reach;
+  const cos = Math.cos(angle) * scale;
+  const sin = Math.sin(angle) * scale;
+  return {
+    points: glyph.points.map((point) => ({
+      x: point.x * cos - point.y * sin,
+      y: point.x * sin + point.y * cos,
+    })),
+  };
+}
+
+/**
+ * The footprint cell nearest the footprint's centroid (ties: one without a port arrow, then shape
+ * order): the icon sits there, always inside the body.
+ */
+export function machineIconCell(machine: PlacedMachine): { readonly q: number; readonly r: number } {
+  const cells = worldCells(machine);
+  if (cells.length === 0) throw new Error("Factory renderer machine has no footprint");
+  const ports = [...worldInPorts(machine), ...worldOutPorts(machine)];
+  let sumX = 0;
+  let sumY = 0;
+  for (const cell of cells) {
+    sumX += cellX(cell.q, cell.r);
+    sumY += cellY(cell.r);
+  }
+  const meanX = sumX / cells.length;
+  const meanY = sumY / cells.length;
+  let best = cells[0]!;
+  let bestScore = Infinity;
+  for (const cell of cells) {
+    // Whole-pixel distance so float noise cannot break a tie; a port cell loses the tie.
+    const distance = Math.round(Math.hypot(cellX(cell.q, cell.r) - meanX, cellY(cell.r) - meanY));
+    const score = distance * 2 + (ports.some((port) => port.q === cell.q && port.r === cell.r) ? 1 : 0);
+    if (score < bestScore) {
+      best = cell;
+      bestScore = score;
+    }
+  }
+  return best;
 }
 
 /** Atlas path in ink, matching MachineIcon: filled start dot, hollow end circle. */
@@ -421,29 +494,38 @@ function drawMachineGlyph(g: Graphics, machine: PlacedMachine, cx: number, cy: n
   }
   g.stroke({ ...ink, width: 2.2, cap: "round", join: "round" });
   g.circle(cx + first.x, cy + first.y, 2.4).fill(ink);
-  g.circle(cx + end.x, cy + end.y, 3).fill({ color: FACTORY_SCHEMATIC_STYLE.deck })
+  g.circle(cx + end.x, cy + end.y, 3).fill({ color: style.fill })
     .stroke({ ...ink, width: 1.6 });
 }
 
-/** Ports sit just inside the footprint edge, where an incoming belt channel ends. */
-const PORT_INSET = PORT_HALF + 1;
-
-function portCenterX(q: number, r: number, side: Dir): number {
-  return cellX(q, r) + DIR_UX[side]! * (EDGE - PORT_INSET);
+/**
+ * Distance from a port's cell centre to its arrowhead's centre. The output's tip and the input's
+ * back edge stop PORT_EDGE_GAP short of the footprint edge, so two facing ports stay two arrows;
+ * the input's back corners may graze the edge.
+ */
+function portArrowReach(role: "input" | "output"): number {
+  return role === "output" ? EDGE - PORT_EDGE_GAP - PORT_ARROW : EDGE - PORT_EDGE_GAP - PORT_BACK_RATIO * PORT_ARROW;
 }
 
-function portCenterY(r: number, side: Dir): number {
-  return cellY(r) + DIR_UY[side]! * (EDGE - PORT_INSET);
+function portArrowX(q: number, r: number, side: Dir, role: "input" | "output"): number {
+  return cellX(q, r) + DIR_UX[side]! * portArrowReach(role);
 }
 
-/** Machine output feeding the next machine's input directly: a short channel across the shared edge. */
-function drawMachineLinks(layout: FactoryLayout, topology: FactoryTransportTopology, g: Graphics, style: FactoryPrintStyle): void {
+function portArrowY(r: number, side: Dir, role: "input" | "output"): number {
+  return cellY(r) + DIR_UY[side]! * portArrowReach(role);
+}
+
+/** Machine output feeding the next machine's input directly: a channel between the two arrowheads. */
+function drawMachineLinks(layout: FactoryLayout, topology: FactoryTransportTopology, g: Graphics, style: FactoryPrintStyle, scope: Uint8Array | null): void {
   let any = false;
   for (const edge of topology.edges) {
-    if (topology.cells[hexIndex(layout.width, edge.from.q, edge.from.r)]?.kind !== "machine") continue;
-    if (topology.cells[hexIndex(layout.width, edge.to.q, edge.to.r)]?.kind !== "machine") continue;
-    g.moveTo(portCenterX(edge.from.q, edge.from.r, edge.dir), portCenterY(edge.from.r, edge.dir))
-      .lineTo(portCenterX(edge.to.q, edge.to.r, ((edge.dir + 3) % 6) as Dir), portCenterY(edge.to.r, ((edge.dir + 3) % 6) as Dir));
+    const from = hexIndex(layout.width, edge.from.q, edge.from.r);
+    const to = hexIndex(layout.width, edge.to.q, edge.to.r);
+    if (topology.cells[from]?.kind !== "machine" || topology.cells[to]?.kind !== "machine") continue;
+    if (scope !== null && scope[from] !== 1 && scope[to] !== 1) continue;
+    const back = oppositeHexDir(edge.dir);
+    g.moveTo(portArrowX(edge.from.q, edge.from.r, edge.dir, "output"), portArrowY(edge.from.r, edge.dir, "output"))
+      .lineTo(portArrowX(edge.to.q, edge.to.r, back, "input"), portArrowY(edge.to.r, back, "input"));
     any = true;
   }
   if (any) g.stroke({ color: style.channel, alpha: style.channelAlpha, width: CHANNEL_WIDTH });
@@ -475,34 +557,40 @@ export function factoryMachineSeams(layout: FactoryLayout): readonly { readonly 
 }
 
 /** Where two machines touch, the dividing line prints heavier than a line's outer outline. */
-function drawMachineSeams(layout: FactoryLayout, g: Graphics, style: FactoryPrintStyle): void {
-  const seams = factoryMachineSeams(layout);
-  for (const seam of seams) {
+function drawMachineSeams(layout: FactoryLayout, g: Graphics, style: FactoryPrintStyle, scope: Uint8Array | null): void {
+  let any = false;
+  for (const seam of factoryMachineSeams(layout)) {
+    if (scope !== null && scope[hexIndex(layout.width, seam.q, seam.r)] !== 1 &&
+      scope[hexIndex(layout.width, seam.q + HEX_DQ[seam.side]!, seam.r + HEX_DR[seam.side]!)] !== 1) continue;
+    any = true;
     const polygon = hexPolygon(cellX(seam.q, seam.r), cellY(seam.r), FACTORY_HEX_SIZE);
     const a = polygon[(seam.side + 1) % 6]!;
     const b = polygon[(seam.side + 2) % 6]!;
     g.moveTo(a.x, a.y).lineTo(b.x, b.y);
   }
-  if (seams.length > 0) g.stroke({ color: style.ink, alpha: style.inkAlpha, width: SEAM_WIDTH, cap: "round" });
+  if (any) g.stroke({ color: style.ink, alpha: style.inkAlpha, width: SEAM_WIDTH, cap: "round" });
 }
 
-/** Inputs are square notches, outputs circles; connected = solid, open = hollow. */
+/**
+ * Ports are arrowheads on the footprint edge: inputs point into the machine, outputs out of it.
+ * Connected = solid ink, open = hollow.
+ */
 function drawPort(
   g: Graphics,
-  x: number,
-  y: number,
+  q: number,
+  r: number,
+  side: Dir,
   role: "input" | "output",
   connected: boolean,
   style: FactoryPrintStyle,
 ): void {
   const ink = { color: style.ink, alpha: style.inkAlpha };
-  if (role === "input") g.rect(x - PORT_HALF, y - PORT_HALF, PORT_HALF * 2, PORT_HALF * 2);
-  else g.circle(x, y, PORT_HALF + 0.4);
+  drawTriangle(g, portArrowX(q, r, side, role), portArrowY(r, side, role), role === "output" ? side : oppositeHexDir(side), PORT_ARROW);
   if (connected) g.fill(ink);
-  else g.fill({ color: FACTORY_SCHEMATIC_STYLE.deck }).stroke({ ...ink, width: 1.5 });
+  else g.fill({ color: style.fill }).stroke({ ...ink, width: 1.5, join: "round" });
 }
 
-/** Draw a placed multi-cell machine: ink footprint, Atlas path glyph and port notches. */
+/** Draw a placed multi-cell machine: one filled body with a single outer outline, and its icon. */
 function drawMachine(m: PlacedMachine, isBottleneck: boolean, ctx: DrawCtx): void {
   const { cells, style } = ctx;
   const occupied = worldCells(m);
@@ -512,14 +600,11 @@ function drawMachine(m: PlacedMachine, isBottleneck: boolean, ctx: DrawCtx): voi
   }
   cells.fill({ color: style.fill, alpha: style.fillAlpha });
 
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
+  const outlineWidth = isBottleneck ? 3 : MACHINE_OUTLINE_WIDTH;
   for (const wc of occupied) {
-    const cx = cellX(wc.q, wc.r);
-    const cy = cellY(wc.r);
-    const body = hexPolygon(cx, cy, FACTORY_HEX_SIZE - 1);
+    // Shrink the circumradius so the stroke's outer half stays inside the footprint
+    // (half the width over cos 30° ≈ 0.6 × width); round caps close the corners.
+    const body = hexPolygon(cellX(wc.q, wc.r), cellY(wc.r), FACTORY_HEX_SIZE - outlineWidth * 0.6);
     for (const side of HEX_DIRS) {
       if (occupied.some((n) => n.q === wc.q + HEX_DQ[side]! && n.r === wc.r + HEX_DR[side]!)) continue;
       const a = body[(side + 1) % 6]!;
@@ -531,21 +616,16 @@ function drawMachine(m: PlacedMachine, isBottleneck: boolean, ctx: DrawCtx): voi
           .lineTo(b.x + wobbleOffset(b.x, b.y, 0, style.wobble), b.y + wobbleOffset(b.x, b.y, 1, style.wobble));
       }
     }
-    if (cx < minX) minX = cx;
-    if (cy < minY) minY = cy;
-    if (cx > maxX) maxX = cx;
-    if (cy > maxY) maxY = cy;
   }
-  cells.stroke({ color: style.ink, alpha: style.inkAlpha, width: isBottleneck ? 3 : MACHINE_OUTLINE_WIDTH, cap: "round", join: "round" });
+  cells.stroke({ color: style.ink, alpha: style.inkAlpha, width: outlineWidth, cap: "round", join: "round" });
 
-  if (minX !== Infinity) {
-    const cx = (minX + maxX) / 2;
-    const cy = (minY + maxY) / 2;
-    drawMachineGlyph(cells, m, cx, cy, style);
-    if (isBottleneck) {
-      // Bottleneck tag: a solid ink square at the glyph's shoulder (shape, not colour).
-      cells.rect(cx + 12, cy - 17, 6, 6).fill({ color: style.ink, alpha: style.inkAlpha });
-    }
+  const icon = machineIconCell(m);
+  const cx = cellX(icon.q, icon.r);
+  const cy = cellY(icon.r);
+  drawMachineGlyph(cells, m, cx, cy, style);
+  if (isBottleneck) {
+    // Bottleneck tag: a solid ink square at the icon's shoulder (shape, not colour).
+    cells.rect(cx + 9, cy - 13, 6, 6).fill({ color: style.ink, alpha: style.inkAlpha });
   }
 }
 
@@ -631,10 +711,133 @@ function drawTransportFlow(
   flow.stroke({ color: FACTORY_SCHEMATIC_STYLE.deck, alpha: style.channelAlpha === 1 ? 0.95 : 0.9, width: 1.6, cap: "round", join: "round" });
 }
 
+export interface FactoryGhostTile {
+  readonly q: number;
+  readonly r: number;
+  readonly tile: FactoryTile;
+}
+
+/** What a placement would build, drawn like the real thing at reduced opacity. */
+export interface FactoryGhost {
+  /** Valid: the layout with the edit applied (the ghost joins the line as built). Invalid: the current layout. */
+  readonly layout: FactoryLayout;
+  readonly invalid: boolean;
+  readonly tiles: readonly FactoryGhostTile[];
+  readonly machine: PlacedMachine | null;
+}
+
+/**
+ * Paint transport, machines, seams, machine links, ports and tile symbols, in that order.
+ * `scope` (a per-cell mask) limits the paint to the ghost's own cells; null paints everything.
+ */
+function paintLayout(
+  layout: FactoryLayout,
+  topology: FactoryTransportTopology,
+  ctx: DrawCtx,
+  bottleneckId: number | null,
+  scope: Uint8Array | null,
+): void {
+  const { cells: g, style } = ctx;
+  const inScope = (index: number) => scope === null || scope[index] === 1;
+  for (let r = 0; r < layout.height; r++) {
+    for (let q = 0; q < layout.width; q++) {
+      const index = hexIndex(layout.width, q, r);
+      const tile = layout.tiles[index];
+      const visual = topology.cells[index];
+      if (tile === undefined || visual === undefined || !inScope(index)) continue;
+      drawTransportBase(visual, tile, q, r, ctx);
+    }
+  }
+  for (const m of layout.machines) {
+    if (scope !== null && !worldCells(m).some((cell) => scope[hexIndex(layout.width, cell.q, cell.r)] === 1)) continue;
+    drawMachine(m, bottleneckId !== null && m.id === bottleneckId, ctx);
+  }
+  drawMachineSeams(layout, g, style, scope);
+  drawMachineLinks(layout, topology, g, style, scope);
+  for (const port of topology.machinePorts) {
+    if (!inScope(hexIndex(layout.width, port.q, port.r))) continue;
+    drawPort(g, port.q, port.r, port.side, port.role, port.connected, style);
+  }
+  for (let r = 0; r < layout.height; r++) {
+    for (let q = 0; q < layout.width; q++) {
+      const index = hexIndex(layout.width, q, r);
+      const tile = layout.tiles[index];
+      const visual = topology.cells[index];
+      if (tile === undefined || visual === undefined || !inScope(index)) continue;
+      drawTileBody(tile, visual, q, r, ctx);
+    }
+  }
+}
+
+/** Cold path: runs only when the hovered placement changes. */
+function drawGhost(ghost: FactoryGhost, g: Graphics, modeStyle: FactoryPrintStyle): void {
+  // Solid outline: a Plan ghost must read against the dashed overprint it previews.
+  const style = ghost.invalid ? INVALID_GHOST_STYLE : { ...modeStyle, dashed: false, wobble: 0 };
+  const base = ghost.layout;
+  const area = base.width * base.height;
+  const underMachine = new Uint8Array(area);
+  for (const machine of base.machines) {
+    for (const cell of worldCells(machine)) {
+      if (hexInBounds(base.width, base.height, cell.q, cell.r)) underMachine[hexIndex(base.width, cell.q, cell.r)] = 1;
+    }
+  }
+  // Cells the edit skips (under a machine) show nothing; the topology forbids tiles there anyway.
+  const scope = new Uint8Array(area);
+  for (const { q, r } of ghost.tiles) {
+    if (!hexInBounds(base.width, base.height, q, r)) continue;
+    const index = hexIndex(base.width, q, r);
+    if (underMachine[index] !== 1) scope[index] = 1;
+  }
+  let layout = base;
+  if (ghost.invalid) {
+    // A rejected edit has no proposed layout: overlay its tiles on the committed one so neighbours still join.
+    const tiles = base.tiles.slice();
+    for (const { q, r, tile } of ghost.tiles) {
+      if (hexInBounds(base.width, base.height, q, r) && scope[hexIndex(base.width, q, r)] === 1) tiles[hexIndex(base.width, q, r)] = tile;
+    }
+    layout = { ...base, tiles };
+  } else if (ghost.machine !== null) {
+    for (const cell of worldCells(ghost.machine)) {
+      if (hexInBounds(base.width, base.height, cell.q, cell.r)) scope[hexIndex(base.width, cell.q, cell.r)] = 1;
+    }
+  }
+  const ctx: DrawCtx = { cells: g, style };
+  // A rejected machine scopes no cell: skip the topology and layout pass, which would paint nothing.
+  if (scope.includes(1)) {
+    const topology = buildFactoryTransportTopology(layout);
+    paintLayout(layout, topology, ctx, null, scope);
+    for (const { q, r, tile } of ghost.tiles) {
+      if (tile.kind !== "belt" || !hexInBounds(base.width, base.height, q, r)) continue;
+      const index = hexIndex(base.width, q, r);
+      // A connected belt shows its heading at the centre (an open end already prints one).
+      if (scope[index] !== 1 || (topology.cells[index]?.outMask ?? 0) === 0) continue;
+      drawChevron(g, cellX(q, r), cellY(r), tile.dir, 5.5);
+      g.stroke({ color: style.ink, alpha: style.inkAlpha, width: 2.4, cap: "round", join: "round" });
+    }
+  }
+  if (ghost.invalid) {
+    // A rejected tile over a machine cannot join the layout; mark its cell so the refusal shows.
+    for (const { q, r } of ghost.tiles) {
+      if (!hexInBounds(base.width, base.height, q, r) || underMachine[hexIndex(base.width, q, r)] !== 1) continue;
+      g.poly([...hexPolygon(cellX(q, r), cellY(r), FACTORY_HEX_SIZE - 2)], true);
+    }
+    g.stroke({ color: style.ink, alpha: style.inkAlpha, width: 2.4, join: "round" });
+  }
+  if (ghost.invalid && ghost.machine !== null) {
+    // A rejected machine is not in any layout: draw it alone with open ports.
+    const machine = ghost.machine;
+    drawMachine(machine, false, ctx);
+    for (const port of worldInPorts(machine)) drawPort(g, port.q, port.r, port.side, "input", false, style);
+    for (const port of worldOutPorts(machine)) drawPort(g, port.q, port.r, port.side, "output", false, style);
+  }
+}
+
 export interface FactoryRenderer {
   readonly canvas: HTMLCanvasElement;
   /** Repaint the given layout + mutable sim runtime. Pure draw; no sim logic. */
   render(layout: FactoryLayout, runtime: FactoryRuntime, bottleneckId: number | null): void;
+  /** Repaint only the placement preview (null clears it). */
+  renderGhost(ghost: FactoryGhost | null): void;
   destroy(): void;
 }
 
@@ -665,9 +868,11 @@ export async function createFactoryRenderer(
 
   const cells = new Graphics();
   const flow = new Graphics();
+  const ghost = new Graphics();
+  ghost.alpha = GHOST_ALPHA;
   const tokens = new Graphics();
   const alerts = new Graphics();
-  app.stage.addChild(cells, flow, tokens, alerts);
+  app.stage.addChild(cells, flow, ghost, tokens, alerts);
   let destroyed = false;
   let renderedLayout: FactoryLayout | null = null;
   let renderedBottleneck: number | null = null;
@@ -688,32 +893,8 @@ export async function createFactoryRenderer(
       renderedTopology = buildFactoryTransportTopology(curr);
       blockIndex = buildBlockIndex(curr, renderedTopology);
       cells.clear();
-      const ctx: DrawCtx = { cells, style };
       drawFloor(curr, cells);
-      for (let r = 0; r < curr.height; r++) {
-        for (let q = 0; q < curr.width; q++) {
-          const tile = curr.tiles[hexIndex(curr.width, q, r)];
-          const visual = renderedTopology.cells[hexIndex(curr.width, q, r)];
-          if (tile === undefined || visual === undefined) continue;
-          drawTransportBase(visual, tile, q, r, ctx);
-        }
-      }
-      for (const m of curr.machines) {
-        drawMachine(m, bottleneckId !== null && m.id === bottleneckId, ctx);
-      }
-      drawMachineSeams(curr, cells, style);
-      drawMachineLinks(curr, renderedTopology, cells, style);
-      for (const port of renderedTopology.machinePorts) {
-        drawPort(cells, portCenterX(port.q, port.r, port.side), portCenterY(port.r, port.side), port.role, port.connected, style);
-      }
-      for (let r = 0; r < curr.height; r++) {
-        for (let q = 0; q < curr.width; q++) {
-          const tile = curr.tiles[hexIndex(curr.width, q, r)];
-          const visual = renderedTopology.cells[hexIndex(curr.width, q, r)];
-          if (tile === undefined || visual === undefined) continue;
-          drawTileBody(tile, visual, q, r, ctx);
-        }
-      }
+      paintLayout(curr, renderedTopology, { cells, style }, bottleneckId, null);
     }
     if (renderedTopology === null || blockIndex === null) {
       throw new Error("Factory renderer transport topology was not initialized");
@@ -750,7 +931,9 @@ export async function createFactoryRenderer(
           const stuck = blockIndex.stuckMachines.get(machineId);
           if (stuck !== undefined) {
             for (const port of stuck.ports) {
-              drawStopBar(alerts, portCenterX(port.q, port.r, port.side) + DIR_UX[port.side]! * 4, portCenterY(port.r, port.side) + DIR_UY[port.side]! * 4, port.side);
+              // Just outside the edge, past the output arrowhead's tip.
+              const reach = EDGE + STOP_BAR_OFFSET;
+              drawStopBar(alerts, cellX(port.q, port.r) + DIR_UX[port.side]! * reach, cellY(port.r) + DIR_UY[port.side]! * reach, port.side);
             }
           }
         } else {
@@ -766,15 +949,23 @@ export async function createFactoryRenderer(
     app.render();
   }
 
+  function renderGhost(next: FactoryGhost | null): void {
+    ghost.clear();
+    if (next !== null) drawGhost(next, ghost, style);
+    app.render();
+  }
+
   return {
     canvas: app.canvas,
     render,
+    renderGhost,
     destroy: () => {
       if (destroyed) return;
       destroyed = true;
       app.stage.removeChildren();
       cells.destroy();
       flow.destroy();
+      ghost.destroy();
       tokens.destroy();
       alerts.destroy();
       app.destroy({ removeView: true });
