@@ -67,6 +67,22 @@ export function MachineIcon({
     const turned = (side + rotation) % 6;
     return hexToPixel(HEX_DQ[turned]!, HEX_DR[turned]!, 4);
   };
+  // Same language as the floor: an arrowhead on the edge, pointing in for input, out for output.
+  const portArrow = (port: { readonly cell: { readonly q: number; readonly r: number }; readonly side: number }, role: "input" | "output") => {
+    const p = cellPixel(port.cell);
+    const offset = portOffset(port.side);
+    const length = Math.hypot(offset.x, offset.y);
+    const sign = role === "output" ? 1 : -1;
+    const ux = sign * offset.x / length;
+    const uy = sign * offset.y / length;
+    const cx = 24 + p.x - centerX + offset.x;
+    const cy = 24 + p.y - centerY + offset.y;
+    return pointList([
+      { x: cx + ux * 2.5, y: cy + uy * 2.5 },
+      { x: cx - ux * 1.25 - uy * 2.2, y: cy - uy * 1.25 + ux * 2.2 },
+      { x: cx - ux * 1.25 + uy * 2.2, y: cy - uy * 1.25 - ux * 2.2 },
+    ]);
+  };
   const centers = shape?.cells.map(cellPixel) ?? [];
   const centerX = centers.length === 0 ? 0 : (Math.min(...centers.map((p) => p.x)) + Math.max(...centers.map((p) => p.x))) / 2;
   const centerY = centers.length === 0 ? 0 : (Math.min(...centers.map((p) => p.y)) + Math.max(...centers.map((p) => p.y))) / 2;
@@ -96,16 +112,8 @@ export function MachineIcon({
       {labelled && <title>{title}</title>}
       {shape !== undefined && <g data-icon-shape="footprint" className="machine-icon-footprint" strokeWidth="1" transform={`translate(24 24) scale(${footprintScale}) translate(-24 -24)`}>
         {centers.map((p, index) => <polygon key={index} points={pointList(hexPolygon(24 + p.x - centerX, 24 + p.y - centerY, 7.7))} fill="currentColor" fillOpacity=".12" />)}
-        {shape.inPorts.map((port, index) => {
-          const p = cellPixel(port.cell);
-          const offset = portOffset(port.side);
-          return <rect key={index} x={22 + p.x - centerX + offset.x} y={22 + p.y - centerY + offset.y} width="4" height="4" fill="currentColor" />;
-        })}
-        {shape.outPorts.map((port, index) => {
-          const p = cellPixel(port.cell);
-          const offset = portOffset(port.side);
-          return <circle key={index} cx={24 + p.x - centerX + offset.x} cy={24 + p.y - centerY + offset.y} r="2" />;
-        })}
+        {shape.inPorts.map((port, index) => <polygon key={`in${index}`} points={portArrow(port, "input")} fill="currentColor" data-port="input" />)}
+        {shape.outPorts.map((port, index) => <polygon key={`out${index}`} points={portArrow(port, "output")} fill="currentColor" data-port="output" />)}
       </g>}
       {variant !== "footprint" && <g className="machine-icon-path" transform={variant === "token" ? "translate(24 24) scale(.62) translate(-24 -24)" : undefined}>
       <polyline points={pointList(points)} data-icon-shape="path" />

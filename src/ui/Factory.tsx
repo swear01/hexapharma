@@ -18,7 +18,7 @@
  * auto-packed or committed: the player builds geometry directly, and Production
  * sends edits to the game reducer.
  */
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import { MachineIcon } from "./MachineIcon";
 import { blockingDialogOpen } from "./blockingDialog";
 import { machineName } from "./machineLabels";
@@ -819,6 +819,8 @@ export function Factory({
   const pendingCommittedKeysRef = useRef<string[]>([]);
   const clipboardRef = useRef<ClipboardBrush | null>(null);
   const gestureRef = useRef<CanvasGesture | null>(null);
+  // The gesture lives in a ref; ending one bumps this so the render (and its ghost) catches up.
+  const [, endGesture] = useReducer((count: number) => count + 1, 0);
   const panGestureRef = useRef<{
     readonly pointerId: number;
     readonly clientX: number;
@@ -1279,6 +1281,8 @@ export function Factory({
     const gesture = gestureRef.current;
     if (gesture?.pointerId !== event.pointerId) return;
     gestureRef.current = null;
+    // A rejected commit sets no state; re-render anyway so the gesture's ghost clears.
+    endGesture();
     if (gesture.mode === "move") {
       commitLayout(transformPlacedMachine(
         gesture.base,
@@ -1669,7 +1673,10 @@ export function Factory({
             onPointerMove={onCanvasPointerMove}
             onPointerUp={finishCanvasGesture}
             onPointerCancel={(event) => {
-              if (gestureRef.current?.pointerId === event.pointerId) gestureRef.current = null;
+              if (gestureRef.current?.pointerId === event.pointerId) {
+                gestureRef.current = null;
+                endGesture();
+              }
               if (panGestureRef.current?.pointerId === event.pointerId) panGestureRef.current = null;
               if (activeTouchPointerRef.current === event.pointerId) activeTouchPointerRef.current = null;
             }}

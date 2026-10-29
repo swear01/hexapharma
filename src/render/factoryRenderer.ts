@@ -801,9 +801,20 @@ function drawGhost(ghost: FactoryGhost, g: Graphics, modeStyle: FactoryPrintStyl
       if (hexInBounds(base.width, base.height, cell.q, cell.r)) scope[hexIndex(base.width, cell.q, cell.r)] = 1;
     }
   }
-  const topology = buildFactoryTransportTopology(layout);
   const ctx: DrawCtx = { cells: g, style };
-  paintLayout(layout, topology, ctx, null, scope);
+  // A rejected machine scopes no cell: skip the topology and layout pass, which would paint nothing.
+  if (scope.includes(1)) {
+    const topology = buildFactoryTransportTopology(layout);
+    paintLayout(layout, topology, ctx, null, scope);
+    for (const { q, r, tile } of ghost.tiles) {
+      if (tile.kind !== "belt" || !hexInBounds(base.width, base.height, q, r)) continue;
+      const index = hexIndex(base.width, q, r);
+      // A connected belt shows its heading at the centre (an open end already prints one).
+      if (scope[index] !== 1 || (topology.cells[index]?.outMask ?? 0) === 0) continue;
+      drawChevron(g, cellX(q, r), cellY(r), tile.dir, 5.5);
+      g.stroke({ color: style.ink, alpha: style.inkAlpha, width: 2.4, cap: "round", join: "round" });
+    }
+  }
   if (ghost.invalid) {
     // A rejected tile over a machine cannot join the layout; mark its cell so the refusal shows.
     for (const { q, r } of ghost.tiles) {
@@ -818,14 +829,6 @@ function drawGhost(ghost: FactoryGhost, g: Graphics, modeStyle: FactoryPrintStyl
     drawMachine(machine, false, ctx);
     for (const port of worldInPorts(machine)) drawPort(g, port.q, port.r, port.side, "input", false, style);
     for (const port of worldOutPorts(machine)) drawPort(g, port.q, port.r, port.side, "output", false, style);
-  }
-  for (const { q, r, tile } of ghost.tiles) {
-    if (tile.kind !== "belt" || !hexInBounds(base.width, base.height, q, r)) continue;
-    const index = hexIndex(base.width, q, r);
-    // A connected belt shows its heading at the centre (an open end already prints one).
-    if (scope[index] !== 1 || (topology.cells[index]?.outMask ?? 0) === 0) continue;
-    drawChevron(g, cellX(q, r), cellY(r), tile.dir, 5.5);
-    g.stroke({ color: style.ink, alpha: style.inkAlpha, width: 2.4, cap: "round", join: "round" });
   }
 }
 
