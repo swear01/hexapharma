@@ -91,11 +91,11 @@ Production Plan與Production使用相同editor，但一眼可分：Plan 以紫�
 | 縮放 | 滾輪；camera reset按鈕回到100% |
 | Belt / Split / Merge / Source / Sink | `1`–`5` |
 | Machine slots | `7`–`0` |
-| 旋轉 | `R`順時針、`Shift+R`逆時針：brush、游標下既有machine、手上的Paste或拖曳中的選取 |
+| 旋轉 | `R`順時針、`Shift+R`逆時針：brush、游標下既有machine、選取（原地繞中心）、手上的Paste或拖曳中的選取 |
 | Pipette游標下內容 | `Q` |
 | Undo / Redo | `Ctrl+Z` / `Ctrl+Y`或`Ctrl+Shift+Z` |
 | Copy / Cut | `Ctrl+C` / `Ctrl+X`：有選取時處理選取，否則處理游標下項目 |
-| Paste | `Ctrl+V`拿起Paste ghost，click放下（可連放） |
+| Paste | `Ctrl+V`拿起Paste ghost，click放下（可連放）；Plan與Production共用剪貼簿 |
 | 取消 | `Esc`或RMB：先放掉手上的Paste，再清除選取 |
 | Production播放／單步 | `Space` / `.` |
 

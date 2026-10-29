@@ -92,13 +92,18 @@ export function copySelection(layout: FactoryLayout, cells: readonly HexCoord[])
   const covered = itemCells(layout, cells);
   if (covered.length === 0) return null;
   const captured = materializeFactoryLayout(blueprintFromFactoryLayout("Selection", selectionLayout(layout, covered)));
+  return { layout: captured, pivot: centreCell(covered) };
+}
+
+/** The cell nearest the mean of non-empty `cells`. */
+function centreCell(cells: readonly HexCoord[]): HexCoord {
   let q = 0;
   let r = 0;
-  for (const cell of covered) {
+  for (const cell of cells) {
     q += cell.q;
     r += cell.r;
   }
-  return { layout: captured, pivot: { q: Math.round(q / covered.length), r: Math.round(r / covered.length) } };
+  return { q: Math.round(q / cells.length), r: Math.round(r / cells.length) };
 }
 
 /** Remove every item `cells` touch; the same layout when there is nothing to remove. */
@@ -209,4 +214,12 @@ export function moveSelection(
   if (from.q === to.q && from.r === to.r && rot === 0) return { fragment, layout, cells: itemCells(layout, cells) };
   const moved = placeFragment(eraseItems(layout, cells), fragment, false);
   return { fragment, layout: moved, cells: moved === null ? [] : itemCells(moved, fragmentCells(fragment)) };
+}
+
+/** Turn the selected items `rot` sixth-turns clockwise in place, about the selection's centre cell. */
+export function rotateSelection(layout: FactoryLayout, cells: readonly HexCoord[], rot: Rotation): ReturnType<typeof moveSelection> {
+  const covered = itemCells(layout, cells);
+  if (covered.length === 0) return { fragment: { tiles: [], machines: [] }, layout: null, cells: [] };
+  const pivot = centreCell(covered);
+  return moveSelection(layout, covered, pivot, pivot, rot);
 }

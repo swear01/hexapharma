@@ -726,9 +726,22 @@ export interface FactoryGhost {
   readonly machines: readonly PlacedMachine[];
 }
 
+/** A machine port belongs to a scoped paint when its own cell or the cell it faces is in scope. */
+export function factoryPortInScope(
+  layout: FactoryLayout,
+  port: { readonly q: number; readonly r: number; readonly side: Dir },
+  scope: Uint8Array | null,
+): boolean {
+  if (scope === null || scope[hexIndex(layout.width, port.q, port.r)] === 1) return true;
+  const q = port.q + HEX_DQ[port.side]!;
+  const r = port.r + HEX_DR[port.side]!;
+  return hexInBounds(layout.width, layout.height, q, r) && scope[hexIndex(layout.width, q, r)] === 1;
+}
+
 /**
  * Paint transport, machines, seams, machine links, ports and tile symbols, in that order.
- * `scope` (a per-cell mask) limits the paint to the ghost's own cells; null paints everything.
+ * `scope` (a per-cell mask) limits the paint to the ghost's own cells and the machine ports facing
+ * them, so a neighbour the ghost connects shows as connected; null paints everything.
  */
 function paintLayout(
   layout: FactoryLayout,
@@ -755,7 +768,7 @@ function paintLayout(
   drawMachineSeams(layout, g, style, scope);
   drawMachineLinks(layout, topology, g, style, scope);
   for (const port of topology.machinePorts) {
-    if (!inScope(hexIndex(layout.width, port.q, port.r))) continue;
+    if (!factoryPortInScope(layout, port, scope)) continue;
     drawPort(g, port.q, port.r, port.side, port.role, port.connected, style);
   }
   for (let r = 0; r < layout.height; r++) {

@@ -36,6 +36,7 @@ import { activeEffects, DEFAULT_PATENTS } from "../sim/patent";
 import { quoteProductionBuild } from "../sim/construction";
 import { BlueprintLibrary } from "./BlueprintLibrary";
 import { Factory, factoryLineProgram } from "./Factory";
+import type { FactoryClipboard } from "./factorySelection";
 import { Patents } from "./Patents";
 import { Shop } from "./Shop";
 import { blockingDialogOpen } from "./blockingDialog";
@@ -544,6 +545,7 @@ export function Game() {
   const [researchPlan, setResearchPlan] = useState<readonly Machine[]>(NO_RESEARCH_PLAN);
   /** The plan the shown trial belongs to; editing the plan hides the last trial. */
   const [trialPlan, setTrialPlan] = useState<readonly Machine[]>(NO_RESEARCH_PLAN);
+  const [factoryClipboard, setFactoryClipboard] = useState<FactoryClipboard | null>(null);
   const patentEffects = useMemo(
     () => activeEffects(DEFAULT_PATENTS, game.patents),
     [game.patents],
@@ -973,6 +975,8 @@ export function Game() {
               catalog={catalog}
               routing={patentEffects.routing}
               onLayoutChange={changePilot}
+              clipboard={factoryClipboard}
+              onClipboardChange={setFactoryClipboard}
               commandLabel={`Commission $${quoteProductionBuild(game.production.layout, game.pilot.layout ?? game.production.layout)}`}
               commandDisabled={game.pilot.layout === null}
               onCommand={buildPilotInProduction}
@@ -995,6 +999,8 @@ export function Game() {
               catalog={catalog}
               routing={patentEffects.routing}
               onLayoutChange={changeProduction}
+              clipboard={factoryClipboard}
+              onClipboardChange={setFactoryClipboard}
               onAdvance={advanceProduction}
             />
           )}
