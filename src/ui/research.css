@@ -70,6 +70,9 @@
 
 .research-commandbar { grid-row: 2; grid-column: 2; display: flex; align-items: center; justify-content: flex-end; gap: 14px; min-width: 0; padding: 8px 16px; border-top: 2px solid var(--ink); font-size: 14px; }
 .research-run-readout { color: var(--ink-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.research-undo, .research-clear { display: grid; place-items: center; min-width: 44px; min-height: 44px; padding: 0; border-color: transparent; background: transparent; color: var(--ink-2); }
+.research-undo:hover:not(:disabled), .research-clear:hover:not(:disabled) { color: var(--ink); border-color: var(--rule-strong); }
+.research-undo:disabled, .research-clear:disabled { border-color: transparent; color: var(--ink-3); opacity: .7; }
 .research-block-reason { max-width: 220px; color: var(--failure-ink); font-size: 13px; }
 .research-run { min-width: 132px; min-height: 48px; border-color: var(--course); background: var(--course); color: var(--paper-raised); font: 600 19px/1 var(--font-display); letter-spacing: .05em; text-transform: uppercase; font-variant-numeric: tabular-nums; }
 .research-run:hover:not(:disabled) { border-color: var(--course-ink); background: var(--course-ink); }

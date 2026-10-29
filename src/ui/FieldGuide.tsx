@@ -65,7 +65,7 @@ export function FieldGuide() {
       <p>Click machines (or press 1–9) to plan a route; each machine turns the drug, so later paths rotate. <strong>Run · $N</strong> (Enter) pays once and runs the whole route on the real map, which can differ under fog. The solid line is what happened; only that land is revealed.</p>
       <p>Backspace or <kbd>Ctrl</kbd>+<kbd>Z</kbd> removes the last step; <strong>Clear</strong> empties the plan. Click a revealed cell to see what it does.</p>
       <h2>Build and ship</h2>
-      <p><strong>Plan</strong> is free and has no clock. <strong>Production</strong> is paid and runs; <strong>Commission $N</strong> builds your Plan there. Lay Source → your route’s machines in order → Sink, with belts from each output port to the next input port.</p>
+      <p><strong>Production Plan</strong> is free and has no clock. <strong>Production</strong> is paid and runs; <strong>Commission $N</strong> builds your plan there. Lay Source → your route’s machines in order → Sink, with belts from each output port to the next input port.</p>
       <p>Ship stock in Market for cash; each unit lowers that disease’s next price.</p>
       <h2>Legend</h2>
       {LEGEND.map(({ group, items }) => (
@@ -83,17 +83,19 @@ export function FieldGuide() {
       ))}
       <h2>Controls</h2>
       <dl className="legend-keys">
-        <div><dt><kbd>F1</kbd>–<kbd>F3</kbd></dt><dd>Research · Plan · Production</dd></div>
+        <div><dt><kbd>F1</kbd>–<kbd>F3</kbd></dt><dd>Research · Production Plan · Production</dd></div>
         <div><dt><kbd>M</kbd> <kbd>T</kbd> <kbd>B</kbd></dt><dd>Market · Technology · Blueprints</dd></div>
         <div><dt><kbd>Enter</kbd></dt><dd>Run the planned route</dd></div>
         <div><dt><kbd>F</kbd></dt><dd>Center the route’s end</dd></div>
-        <div><dt><kbd>R</kbd> <kbd>Q</kbd></dt><dd>Rotate · pick a tool</dd></div>
+        <div><dt><kbd>R</kbd> <kbd>Shift</kbd>+<kbd>R</kbd> <kbd>Q</kbd></dt><dd>Rotate · rotate back · pick a tool</dd></div>
+        <div><dt><kbd>X</kbd> <kbd>V</kbd> <kbd>Del</kbd></dt><dd>Erase · select · delete selection</dd></div>
+        <div><dt><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd></dt><dd>Pan the factory</dd></div>
         <div><dt><kbd>Space</kbd> <kbd>.</kbd></dt><dd>Play/pause · single tick</dd></div>
         <div><dt><kbd>Ctrl</kbd>+<kbd>Z</kbd>/<kbd>Y</kbd></dt><dd>Undo · redo</dd></div>
         <div><dt><kbd>Ctrl</kbd>+<kbd>C</kbd>/<kbd>X</kbd>/<kbd>V</kbd></dt><dd>Copy · cut · paste</dd></div>
-        <div><dt><kbd>Ctrl</kbd>+<kbd>S</kbd> · <kbd>Esc</kbd></dt><dd>Save · close</dd></div>
+        <div><dt><kbd>Ctrl</kbd>+<kbd>S</kbd> · <kbd>Esc</kbd></dt><dd>Save · close or cancel</dd></div>
       </dl>
-      <p>Drag to pan, scroll to zoom, right-click to erase. Touch: one finger builds or moves; two fingers pan.</p>
+      <p>Drag the map or middle-drag the factory to pan, scroll to zoom, right-click to erase or cancel. Touch: one finger builds or moves; two fingers pan.</p>
     </section>
   );
 }

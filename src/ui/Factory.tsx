@@ -20,6 +20,7 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import { MachineIcon } from "./MachineIcon";
+import { CommandGlyph } from "./CommandGlyph";
 import { blockingDialogOpen } from "./blockingDialog";
 import { machineName } from "./machineLabels";
 import { outcomeEffectText } from "./effectLabels";
@@ -53,6 +54,16 @@ import { inkJitter } from "../render/ink";
 import { hexBoardBounds, hexPolygon, hexToPixel } from "../render/hexProjection";
 import type { FactoryGhost, FactoryGhostTile, FactoryRenderer } from "../render/factoryRenderer";
 import { BasePicker, LockGlyph } from "./BasePicker";
+import {
+  boxCells,
+  copySelection,
+  eraseItems,
+  itemCells,
+  moveSelection,
+  placeFragment,
+  transformFragment,
+  type FactoryClipboard,
+} from "./factorySelection";
 import {
   appendUniqueCells,
   clampCamera,
@@ -357,14 +368,14 @@ type Brush =
   | { kind: "source" }
   | { kind: "sink" }
   | { kind: "erase" }
+  | { kind: "select" }
   | { kind: "machine"; typeId: MachineTypeId };
 
-interface ClipboardBrush {
+interface PickedBrush {
   readonly brush: Brush;
   readonly dir: Dir;
   readonly base: number;
   readonly footRot: Rotation;
-  readonly tile: FactoryTile | null;
 }
 
 type CanvasGesture =
@@ -384,6 +395,32 @@ type CanvasGesture =
       readonly machineId: number;
       readonly anchorOffset: HexCoord;
       readonly footRot: Rotation;
+    }
+  | {
+      /** Erase or select every item in the box from `start` to `last`. */
+      readonly pointerId: number;
+      readonly mode: "box";
+      readonly base: FactoryLayout;
+      readonly start: GridCell;
+      readonly last: GridCell;
+      readonly erase: boolean;
+      readonly additive: boolean;
+    }
+  | {
+      /** Move the selection so `start` lands on `last`, turned `rot`. */
+      readonly pointerId: number;
+      readonly mode: "drag";
+      readonly base: FactoryLayout;
+      readonly start: GridCell;
+      readonly last: GridCell;
+      readonly rot: Rotation;
+    }
+  | {
+      /** Place the held paste at `last` on release. */
+      readonly pointerId: number;
+      readonly mode: "paste";
+      readonly base: FactoryLayout;
+      readonly last: GridCell;
     };
 
 const DIR_LABEL: Record<Dir, string> = {
@@ -395,7 +432,7 @@ const DIR_LABEL: Record<Dir, string> = {
   5: "NE",
 };
 
-type TileBrushKind = Brush["kind"] & ("belt" | "splitter" | "merger" | "source" | "sink" | "erase");
+type TileBrushKind = Exclude<Brush["kind"], "machine">;
 
 /** Legend glyphs for transport tools; they match the symbols printed on the floor. */
 function ToolGlyph({ kind }: { readonly kind: TileBrushKind }) {
@@ -413,6 +450,8 @@ function ToolGlyph({ kind }: { readonly kind: TileBrushKind }) {
       return <svg {...common}><circle cx="15" cy="15" r="10" stroke="currentColor" strokeWidth="2" /><circle cx="15" cy="15" r="5.5" stroke="currentColor" strokeWidth="2" /></svg>;
     case "erase":
       return <svg {...common}><path d="M15 4l9.5 5.5v11L15 26l-9.5-5.5v-11z" stroke="currentColor" strokeWidth="1.5" strokeDasharray="3 2.5" /><path d="M10.5 10.5l9 9M19.5 10.5l-9 9" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" /></svg>;
+    case "select":
+      return <svg {...common}><path d="M4 5h18v13H4z" stroke="var(--course)" strokeWidth="1.5" strokeDasharray="3 2.5" /><path d="M14 12l11 4.5-4.6 1.4 3.4 4.4-2 1.5-3.4-4.4-2.6 4z" fill="var(--paper-raised)" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" /></svg>;
   }
 }
 
@@ -443,24 +482,6 @@ function CloseGlyph() {
   );
 }
 
-type CommandKind = "rotate" | "undo" | "redo" | "play" | "pause" | "step" | "center" | "details";
-
-/** Bottom-bar command icons, in the same legend ink as the top bar. */
-function CommandGlyph({ kind }: { readonly kind: CommandKind }) {
-  return (
-    <svg className="command-glyph" viewBox="0 0 18 18" width="18" height="18" aria-hidden="true" focusable="false">
-      {kind === "rotate" && <path d="M14.5 9A5.5 5.5 0 1 1 12.4 4.7M12.8 1.8v3.3H9.5" />}
-      {kind === "undo" && <path d="M4.5 7.5h7a4 4 0 0 1 0 8H8M7.5 4.5l-3 3 3 3" />}
-      {kind === "redo" && <path d="M13.5 7.5h-7a4 4 0 0 0 0 8H10M10.5 4.5l3 3-3 3" />}
-      {kind === "play" && <path d="M5 3.5 14 9l-9 5.5z" className="is-filled" />}
-      {kind === "pause" && <path d="M5 3.5h2.5v11H5zM10.5 3.5H13v11h-2.5z" className="is-filled" />}
-      {kind === "step" && <><path d="M3.5 3.5 11 9l-7.5 5.5z" className="is-filled" /><path d="M14 3.5v11" /></>}
-      {kind === "center" && <><circle cx="9" cy="9" r="2" /><path d="M2 6V2h4M12 2h4v4M16 12v4h-4M6 16H2v-4" /></>}
-      {kind === "details" && <path d="M2 2.5h14v13H2zM11 2.5v13M13 6h1M13 9h1M13 12h1" />}
-    </svg>
-  );
-}
-
 /** Production playback rates: each interval advances `TICKS_PER_INTERVAL × speed` ticks (1× = 8 ticks per 80 ms). */
 const PLAY_SPEEDS = [1, 2, 10] as const;
 type PlaySpeed = (typeof PLAY_SPEEDS)[number];
@@ -482,6 +503,7 @@ function makeTile(brush: Brush, dir: Dir, base: number): FactoryTile | null {
       return { kind: "sink" };
     case "erase":
       return { kind: "empty" };
+    case "select":
     case "machine":
       return null; // machines are placed into layout.machines, not tiles
   }
@@ -536,7 +558,7 @@ export function placeFactoryTile(
   return { ...layout, tiles };
 }
 
-function brushAt(layout: FactoryLayout, cell: GridCell): ClipboardBrush | null {
+function brushAt(layout: FactoryLayout, cell: GridCell): PickedBrush | null {
   const machine = machineAt(layout, cell.q, cell.r);
   if (machine !== undefined) {
     return {
@@ -544,7 +566,6 @@ function brushAt(layout: FactoryLayout, cell: GridCell): ClipboardBrush | null {
       dir: E,
       base: 0,
       footRot: machine.footRot,
-      tile: null,
     };
   }
   const tile = copyFactoryTile(layout, cell.q, cell.r);
@@ -560,7 +581,6 @@ function brushAt(layout: FactoryLayout, cell: GridCell): ClipboardBrush | null {
     dir,
     base: tile.kind === "source" ? tile.base : 0,
     footRot: 0,
-    tile,
   };
 }
 
@@ -713,6 +733,20 @@ export function requestFactoryLayoutChange(
 
 type FactoryHotkeyTargetKind = "text" | "control" | "world";
 
+function factoryHotkeyTarget(target: EventTarget | null): FactoryHotkeyTargetKind {
+  if (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLSelectElement ||
+    target instanceof HTMLTextAreaElement ||
+    (target instanceof HTMLElement && target.isContentEditable)
+  ) return "text";
+  return target instanceof Element && target.closest("button, a, [role]") !== null ? "control" : "world";
+}
+
+/** WASD pan speed, in screen pixels per millisecond. */
+const PAN_KEY_SPEED = 0.6;
+const PAN_KEYS = new Set(["KeyW", "KeyA", "KeyS", "KeyD"]);
+
 export function factoryHotkeyTargetConsumesKey(
   targetKind: FactoryHotkeyTargetKind,
   key: string,
@@ -798,13 +832,38 @@ export function Factory({
   // editing brush + parameters.
   const [brush, setBrush] = useState<Brush>({ kind: "belt" });
   const [lockedHint, setLockedHint] = useState<string | null>(null);
-  // Any new tool choice (click, hotkey, pipette) retires a stale locked-machine hint.
-  useEffect(() => setLockedHint(null), [brush]);
+  /** Box-selected item cells, and the held paste's rotation (null: nothing held). */
+  // Event handlers read the refs: a key or click can land before the render that follows a set.
+  const [selection, setSelectionState] = useState<readonly HexCoord[]>([]);
+  const selectionRef = useRef(selection);
+  const setSelection = useCallback((next: readonly HexCoord[]) => {
+    selectionRef.current = next;
+    setSelectionState(next);
+  }, []);
+  const [clipboard, setClipboardState] = useState<FactoryClipboard | null>(null);
+  const clipboardRef = useRef(clipboard);
+  const [held, setHeldState] = useState<Rotation | null>(null);
+  const heldRef = useRef(held);
+  const setHeld = useCallback((next: Rotation | null) => {
+    heldRef.current = next;
+    setHeldState(next);
+  }, []);
+  // Any new tool choice (click, hotkey, pipette) retires a stale locked-machine hint and drops
+  // the held paste; leaving Select drops the selection.
+  useEffect(() => {
+    setLockedHint(null);
+    setHeld(null);
+    if (brush.kind !== "select") setSelection([]);
+  }, [brush, setHeld, setSelection]);
   const [brushDir, setBrushDir] = useState<Dir>(E);
   const [sourceBase, setSourceBase] = useState(0);
   const [footRot, setFootRot] = useState<Rotation>(0);
-  const [clipboardLabel, setClipboardLabel] = useState("empty");
-  const [hoverCell, setHoverCell] = useState<GridCell | null>(null);
+  const [hoverCell, setHoverCellState] = useState<GridCell | null>(null);
+  const hoverRef = useRef(hoverCell);
+  const setHoverCell = useCallback((cell: GridCell | null) => {
+    hoverRef.current = cell;
+    setHoverCellState(cell);
+  }, []);
   const [camera, setCamera] = useState<Camera>({ x: 0, y: 0, zoom: 1 });
   const cameraRef = useRef(camera);
   cameraRef.current = camera;
@@ -817,10 +876,9 @@ export function Factory({
   activeRef.current = active;
   const pendingViewportFocusRef = useRef(true);
   const pendingCommittedKeysRef = useRef<string[]>([]);
-  const clipboardRef = useRef<ClipboardBrush | null>(null);
   const gestureRef = useRef<CanvasGesture | null>(null);
   // The gesture lives in a ref; ending one bumps this so the render (and its ghost) catches up.
-  const [, endGesture] = useReducer((count: number) => count + 1, 0);
+  const [, repaintGesture] = useReducer((count: number) => count + 1, 0);
   const panGestureRef = useRef<{
     readonly pointerId: number;
     readonly clientX: number;
@@ -896,6 +954,7 @@ export function Factory({
     if (!reconciliation.applyIncoming) return;
     if (reconciliation.resetHistory) {
       pendingViewportFocusRef.current = true;
+      setSelection([]);
       const resetHistory = createEditorHistory(next);
       historyRef.current = resetHistory;
       setHistory(resetHistory);
@@ -938,11 +997,6 @@ export function Factory({
   const redoLayout = useCallback(() => {
     restoreHistory(redoEditorHistory(historyRef.current));
   }, [restoreHistory]);
-
-  const rotateActiveBrush = useCallback(() => {
-    if (brush.kind === "machine") setFootRot((value) => ((value + 1) % 6) as Rotation);
-    else setBrushDir((value) => ((value + 1) % 6) as Dir);
-  }, [brush.kind]);
 
   // ── mount / unmount the Pixi renderer ──
   const stateRef = useRef(state);
@@ -1146,6 +1200,44 @@ export function Factory({
       : cell;
   }, []);
 
+  const selectedCells = useMemo(() => itemCells(layout, selection), [layout, selection]);
+
+  /** The gesture a primary press at `cell` starts with the current tool. */
+  const startGesture = useCallback((pointerId: number, cell: GridCell, additive: boolean): CanvasGesture => {
+    const base = layoutRef.current;
+    if (heldRef.current !== null) return { pointerId, mode: "paste", base, last: cell };
+    if (brush.kind === "erase" || brush.kind === "select") {
+      const onSelection = itemCells(base, selectionRef.current).some(({ q, r }) => q === cell.q && r === cell.r);
+      return !additive && brush.kind === "select" && onSelection
+        ? { pointerId, mode: "drag", base, start: cell, last: cell, rot: 0 }
+        : { pointerId, mode: "box", base, start: cell, last: cell, erase: brush.kind === "erase", additive };
+    }
+    const machine = directGestureMachineAt(base, cell.q, cell.r, false);
+    return machine === undefined
+      ? { pointerId, mode: "paint", base, cells: [cell], last: cell }
+      : {
+          pointerId,
+          mode: "move",
+          base,
+          cells: [cell],
+          last: cell,
+          machineId: machine.id,
+          anchorOffset: { q: machine.anchor.q - cell.q, r: machine.anchor.r - cell.r },
+          footRot: machine.footRot,
+        };
+  }, [brush.kind]);
+
+  /** Esc / right-click: cancel the gesture, else drop the held paste, else the selection. */
+  const cancelHeld = useCallback(() => {
+    if (gestureRef.current !== null) {
+      gestureRef.current = null;
+      repaintGesture();
+    } else if (heldRef.current !== null) setHeld(null);
+    else if (selectionRef.current.length > 0) setSelection([]);
+    else return false;
+    return true;
+  }, [setHeld, setSelection]);
+
   const onCanvasPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (event.pointerType === "touch" && event.button === 0) {
       event.preventDefault();
@@ -1155,7 +1247,7 @@ export function Factory({
         activeTouchPointerRef.current !== event.pointerId
       ) {
         gestureRef.current = null;
-        endGesture();
+        repaintGesture();
         activeTouchPointerRef.current = event.pointerId;
         panGestureRef.current = {
           pointerId: event.pointerId,
@@ -1179,29 +1271,10 @@ export function Factory({
         };
         return;
       }
-      const base = layoutRef.current;
-      const machine = directGestureMachineAt(base, cell.q, cell.r, brush.kind === "erase");
-      gestureRef.current = machine === undefined
-        ? {
-            pointerId: event.pointerId,
-            mode: "paint",
-            base,
-            cells: [cell],
-            last: cell,
-          }
-        : {
-            pointerId: event.pointerId,
-            mode: "move",
-            base,
-            cells: [cell],
-            last: cell,
-            machineId: machine.id,
-            anchorOffset: { q: machine.anchor.q - cell.q, r: machine.anchor.r - cell.r },
-            footRot: machine.footRot,
-          };
+      gestureRef.current = startGesture(event.pointerId, cell, false);
       return;
     }
-    if (event.button === 1 || (event.button === 0 && event.shiftKey)) {
+    if (event.button === 1) {
       event.preventDefault();
       event.currentTarget.setPointerCapture(event.pointerId);
       panGestureRef.current = {
@@ -1213,35 +1286,18 @@ export function Factory({
       };
       return;
     }
+    if (event.button === 2 && cancelHeld()) return;
     if (event.button !== 0 && event.button !== 2) return;
     const cell = pointerCell(event.clientX, event.clientY);
     if (cell === null) return;
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
     setHoverCell(cell);
-    const base = layoutRef.current;
-    const machine = event.button === 0
-      ? directGestureMachineAt(base, cell.q, cell.r, brush.kind === "erase")
-      : undefined;
-    gestureRef.current = machine === undefined
-      ? {
-          pointerId: event.pointerId,
-          mode: event.button === 2 ? "erase" : "paint",
-          base,
-          cells: [cell],
-          last: cell,
-        }
-      : {
-          pointerId: event.pointerId,
-          mode: "move",
-          base,
-          cells: [cell],
-          last: cell,
-          machineId: machine.id,
-          anchorOffset: { q: machine.anchor.q - cell.q, r: machine.anchor.r - cell.r },
-          footRot: machine.footRot,
-        };
-  }, [brush.kind, camera.x, camera.y, pointerCell]);
+    gestureRef.current = event.button === 2
+      ? { pointerId: event.pointerId, mode: "erase", base: layoutRef.current, cells: [cell], last: cell }
+      : startGesture(event.pointerId, cell, event.shiftKey);
+    repaintGesture();
+  }, [camera.x, camera.y, cancelHeld, pointerCell, startGesture]);
 
   const onCanvasPointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     const panGesture = panGestureRef.current;
@@ -1256,7 +1312,7 @@ export function Factory({
     setHoverCell(cell);
     const gesture = gestureRef.current;
     if (cell === null || gesture?.pointerId !== event.pointerId) return;
-    if (gesture.mode === "move") {
+    if (gesture.mode !== "paint" && gesture.mode !== "erase") {
       gestureRef.current = { ...gesture, last: cell };
       return;
     }
@@ -1268,7 +1324,7 @@ export function Factory({
       cells,
       last: cell,
     };
-  }, [brush.kind, brushDir, pointerCell, updateCamera]);
+  }, [brush.kind, pointerCell, updateCamera]);
 
   const finishCanvasGesture = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (event.pointerType === "touch" && activeTouchPointerRef.current === event.pointerId) {
@@ -1283,18 +1339,38 @@ export function Factory({
     if (gesture?.pointerId !== event.pointerId) return;
     gestureRef.current = null;
     // A rejected commit sets no state; re-render anyway so the gesture's ghost clears.
-    endGesture();
-    if (gesture.mode === "move") {
-      commitLayout(transformPlacedMachine(
-        gesture.base,
-        gesture.machineId,
-        {
-          q: gesture.last.q + gesture.anchorOffset.q,
-          r: gesture.last.r + gesture.anchorOffset.r,
-        },
-        gesture.footRot,
-      ));
-      return;
+    repaintGesture();
+    switch (gesture.mode) {
+      case "move":
+        commitLayout(transformPlacedMachine(
+          gesture.base,
+          gesture.machineId,
+          {
+            q: gesture.last.q + gesture.anchorOffset.q,
+            r: gesture.last.r + gesture.anchorOffset.r,
+          },
+          gesture.footRot,
+        ));
+        return;
+      case "paste": {
+        const clipboard = clipboardRef.current;
+        const held = heldRef.current;
+        if (clipboard === null || held === null) return;
+        const placed = placeFragment(gesture.base, transformFragment(clipboard.layout, clipboard.pivot, gesture.last, held), true);
+        if (placed !== null) commitLayout(placed);
+        return;
+      }
+      case "drag": {
+        const moved = moveSelection(gesture.base, selectionRef.current, gesture.start, gesture.last, gesture.rot);
+        if (moved.layout !== null && commitLayout(moved.layout)) setSelection(moved.cells);
+        return;
+      }
+      case "box": {
+        const boxed = itemCells(gesture.base, boxCells(gesture.base.width, gesture.base.height, gesture.start, gesture.last));
+        if (gesture.erase) commitLayout(eraseItems(gesture.base, boxed));
+        else setSelection(gesture.additive ? itemCells(gesture.base, [...selectionRef.current, ...boxed]) : boxed);
+        return;
+      }
     }
     const activeBrush: Brush = gesture.mode === "erase" ? { kind: "erase" } : brush;
     let next = activeBrush.kind === "belt"
@@ -1306,7 +1382,7 @@ export function Factory({
       }
     }
     commitLayout(next);
-  }, [brush, brushDir, commitLayout, footRot, sourceBase]);
+  }, [brush, brushDir, commitLayout, footRot, setSelection, sourceBase]);
 
   const onCanvasWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -1325,6 +1401,7 @@ export function Factory({
   }, [updateCamera]);
 
   const pickHovered = useCallback(() => {
+    const hoverCell = hoverRef.current;
     if (hoverCell === null) return;
     const picked = brushAt(layout, hoverCell);
     if (picked === null) return;
@@ -1332,37 +1409,27 @@ export function Factory({
     setBrushDir(picked.dir);
     if (picked.brush.kind === "source") setSourceBase(picked.base);
     setFootRot(picked.footRot);
-  }, [hoverCell, layout]);
+  }, [layout]);
 
-  const copyHovered = useCallback((cut: boolean) => {
-    if (hoverCell === null) return;
-    const copied = brushAt(layoutRef.current, hoverCell);
+  /** Copy the selection, or the hovered item when nothing is selected; a cut also removes it. */
+  const copyItems = useCallback((cut: boolean) => {
+    const hoverCell = hoverRef.current;
+    const hovered = hoverCell === null ? [] : [hoverCell];
+    const cells = selectionRef.current.length > 0 ? selectionRef.current : hovered;
+    const copied = copySelection(layoutRef.current, cells);
     if (copied === null) return;
     clipboardRef.current = copied;
-    setClipboardLabel(copied.brush.kind === "machine"
-      ? machineName(copied.brush.typeId)
-      : copied.brush.kind);
-    if (cut) {
-      commitLayout(paint(layoutRef.current, hoverCell.q, hoverCell.r, { kind: "erase" }, E, 0));
-    }
-  }, [commitLayout, hoverCell]);
+    setClipboardState(copied);
+    if (cut && commitLayout(eraseItems(layoutRef.current, cells))) setSelection([]);
+  }, [commitLayout, setSelection]);
 
-  const pasteHovered = useCallback(() => {
-    const copied = clipboardRef.current;
-    if (copied === null || hoverCell === null) return;
-    commitLayout(copied.tile === null
-      ? paint(
-          layoutRef.current,
-          hoverCell.q,
-          hoverCell.r,
-          copied.brush,
-          copied.dir,
-          copied.footRot,
-        )
-      : placeFactoryTile(layoutRef.current, hoverCell.q, hoverCell.r, copied.tile));
-  }, [commitLayout, hoverCell]);
+  const deleteSelection = useCallback(() => {
+    const selected = selectionRef.current;
+    if (selected.length > 0 && commitLayout(eraseItems(layoutRef.current, selected))) setSelection([]);
+  }, [commitLayout, setSelection]);
 
-  const rotateHoveredMachine = useCallback(() => {
+  const rotateHoveredMachine = useCallback((step: Rotation) => {
+    const hoverCell = hoverRef.current;
     if (hoverCell === null) return false;
     const current = layoutRef.current;
     const machine = machineAt(current, hoverCell.q, hoverCell.r);
@@ -1371,14 +1438,23 @@ export function Factory({
       current,
       machine.id,
       machine.anchor,
-      ((machine.footRot + 1) % 6) as Rotation,
+      ((machine.footRot + step) % 6) as Rotation,
     ));
     return true;
-  }, [commitLayout, hoverCell]);
+  }, [commitLayout]);
 
-  const rotateHoveredOrActive = useCallback(() => {
-    if (!rotateHoveredMachine()) rotateActiveBrush();
-  }, [rotateActiveBrush, rotateHoveredMachine]);
+  /** R turns what is in hand: a dragged selection, the held paste, the hovered machine, else the brush. Shift+R turns back. */
+  const rotate = useCallback((step: Rotation) => {
+    const turn = (value: number) => ((value + step) % 6) as Rotation;
+    const gesture = gestureRef.current;
+    if (gesture?.mode === "drag") {
+      gestureRef.current = { ...gesture, rot: turn(gesture.rot) };
+      repaintGesture();
+    } else if (heldRef.current !== null) setHeld(turn(heldRef.current));
+    else if (rotateHoveredMachine(step)) return;
+    else if (brush.kind === "machine") setFootRot(turn);
+    else setBrushDir((value) => turn(value) as Dir);
+  }, [brush.kind, rotateHoveredMachine, setHeld]);
 
   useEffect(() => {
     if (!active) return;
@@ -1392,34 +1468,31 @@ export function Factory({
     ];
     const onKeyDown = (event: KeyboardEvent) => {
       if (blockingDialogOpen()) return;
-      const target = event.target;
-      const textTarget = target instanceof HTMLInputElement ||
-        target instanceof HTMLSelectElement ||
-        target instanceof HTMLTextAreaElement ||
-        (target instanceof HTMLElement && target.isContentEditable);
-      const controlTarget = target instanceof Element &&
-        target.closest("button, a, [role]") !== null;
-      const targetKind: FactoryHotkeyTargetKind = textTarget
-        ? "text"
-        : controlTarget ? "control" : "world";
-      if (factoryHotkeyTargetConsumesKey(targetKind, event.key)) return;
+      if (factoryHotkeyTargetConsumesKey(factoryHotkeyTarget(event.target), event.key)) return;
       const lower = event.key.toLowerCase();
-      if ((event.ctrlKey || event.metaKey) && lower === "z") {
+      const command = event.ctrlKey || event.metaKey;
+      if (command && lower === "z") {
         event.preventDefault();
         if (event.shiftKey) redoLayout();
         else undoLayout();
-      } else if ((event.ctrlKey || event.metaKey) && lower === "y") {
+      } else if (command && lower === "y") {
         event.preventDefault();
         redoLayout();
-      } else if ((event.ctrlKey || event.metaKey) && lower === "c") {
+      } else if (command && (lower === "c" || lower === "x")) {
         event.preventDefault();
-        copyHovered(false);
-      } else if ((event.ctrlKey || event.metaKey) && lower === "x") {
+        copyItems(lower === "x");
+      } else if (command && lower === "v") {
         event.preventDefault();
-        copyHovered(true);
-      } else if ((event.ctrlKey || event.metaKey) && lower === "v") {
-        event.preventDefault();
-        pasteHovered();
+        if (clipboardRef.current !== null) setHeld(0);
+      } else if (command || event.altKey) {
+        return;
+      } else if (event.key === "Delete" || event.key === "Backspace") {
+        if (selectionRef.current.length > 0) {
+          event.preventDefault();
+          deleteSelection();
+        }
+      } else if (event.key === "Escape") {
+        if (cancelHeld()) event.preventDefault();
       } else if (/^Digit[1-6]$/.test(event.code)) {
         event.preventDefault();
         const next = tileBrushes[Number(event.code.slice(5)) - 1];
@@ -1435,10 +1508,16 @@ export function Factory({
         }
       } else if (lower === "r") {
         event.preventDefault();
-        rotateHoveredOrActive();
+        rotate(event.shiftKey ? 5 : 1);
       } else if (lower === "q") {
         event.preventDefault();
         pickHovered();
+      } else if (lower === "x") {
+        event.preventDefault();
+        setBrush({ kind: "erase" });
+      } else if (lower === "v") {
+        event.preventDefault();
+        setBrush({ kind: "select" });
       } else if (event.code === "Space") {
         if (mode === "production") {
           event.preventDefault();
@@ -1453,10 +1532,48 @@ export function Factory({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [active, catalog, routing, copyHovered, mode, pasteHovered, pickHovered, playing, redoLayout, rotateHoveredOrActive, state.deadlocked, stepOnce, undoLayout]);
+  }, [active, cancelHeld, catalog, copyItems, deleteSelection, mode, pickHovered, playing, redoLayout, rotate, routing, setHeld, state.deadlocked, stepOnce, undoLayout]);
+
+  // WASD pans while held, at a steady screen speed.
+  useEffect(() => {
+    if (!active) return;
+    const pressed = new Set<string>();
+    let frame = 0;
+    let last = 0;
+    const tick = (now: number) => {
+      const elapsed = last === 0 ? 16 : Math.min(50, now - last);
+      last = now;
+      const distance = PAN_KEY_SPEED * elapsed;
+      const dx = (pressed.has("KeyA") ? 1 : 0) - (pressed.has("KeyD") ? 1 : 0);
+      const dy = (pressed.has("KeyW") ? 1 : 0) - (pressed.has("KeyS") ? 1 : 0);
+      if (dx !== 0 || dy !== 0) updateCamera((current) => panCamera(current, { x: dx * distance, y: dy * distance }));
+      frame = pressed.size === 0 ? 0 : window.requestAnimationFrame(tick);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!PAN_KEYS.has(event.code) || event.ctrlKey || event.metaKey || event.altKey || blockingDialogOpen()) return;
+      if (factoryHotkeyTargetConsumesKey(factoryHotkeyTarget(event.target), event.key)) return;
+      event.preventDefault();
+      pressed.add(event.code);
+      if (frame === 0) {
+        last = 0;
+        frame = window.requestAnimationFrame(tick);
+      }
+    };
+    const onKeyUp = (event: KeyboardEvent) => pressed.delete(event.code);
+    const release = () => pressed.clear();
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", release);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", release);
+    };
+  }, [active, updateCamera]);
 
   const brushIsMachine = brush.kind === "machine";
-  const brushLabel = brush.kind === "machine" ? machineName(brush.typeId) : brush.kind;
+  const brushLabel = held !== null ? "Paste" : brush.kind === "machine" ? machineName(brush.typeId) : brush.kind;
   const rate = throughput === null
     ? "unavailable"
     : throughput.rateDen === 0 ? "0" : (throughput.rateNum / throughput.rateDen).toLocaleString(undefined, { maximumSignificantDigits: 3 });
@@ -1490,56 +1607,85 @@ export function Factory({
   const beltGestureCandidate = activeGesture?.mode === "paint" && brush.kind === "belt"
     ? paintBeltRoute(activeGesture.base, activeGesture.cells, brushDir)
     : null;
-  const idleDirectMachine = activeGesture === null && hoverCell !== null
-    ? directGestureMachineAt(layout, hoverCell.q, hoverCell.r, brush.kind === "erase")
+  const boxGesture = activeGesture?.mode === "box" ? activeGesture : null;
+  const boxedCells = useMemo(
+    () => boxGesture === null ? [] : itemCells(boxGesture.base, boxCells(boxGesture.base.width, boxGesture.base.height, boxGesture.start, boxGesture.last)),
+    [boxGesture],
+  );
+  const dragGesture = activeGesture?.mode === "drag" ? activeGesture : null;
+  const pasteCell = held === null ? null : activeGesture?.mode === "paste" ? activeGesture.last : hoverCell;
+  // A dragged selection or the held paste: the moved items, and the layout they make (null: refused).
+  const fragmentPreview = useMemo(() => {
+    if (dragGesture !== null) {
+      const moved = moveSelection(dragGesture.base, selection, dragGesture.start, dragGesture.last, dragGesture.rot);
+      return { fragment: moved.fragment, candidate: moved.layout };
+    }
+    if (clipboard === null || held === null || pasteCell === null) return null;
+    const fragment = transformFragment(clipboard.layout, clipboard.pivot, pasteCell, held);
+    return { fragment, candidate: placeFragment(layout, fragment, true) };
+  }, [clipboard, dragGesture, held, layout, pasteCell, selection]);
+  const idleDirectMachine = activeGesture === null && hoverCell !== null && held === null
+    ? directGestureMachineAt(layout, hoverCell.q, hoverCell.r, brush.kind === "erase" || brush.kind === "select")
     : undefined;
-  const hoverCandidate = moveCandidate ?? beltGestureCandidate ?? (idleDirectMachine !== undefined
-    ? layout
-    : hoverCell === null
-    ? layout
-    : paint(layout, hoverCell.q, hoverCell.r, brush, brushDir, footRot, sourceBase));
+  // A refused fragment keeps the current layout as its candidate.
+  const fragmentCandidate = fragmentPreview === null ? null : fragmentPreview.candidate ?? layout;
+  const hoverOverride = moveCandidate ?? beltGestureCandidate ?? fragmentCandidate;
+  const paints = hoverOverride === null && boxGesture === null && idleDirectMachine === undefined && hoverCell !== null;
+  const idleCandidate = paints ? paint(layout, hoverCell.q, hoverCell.r, brush, brushDir, footRot, sourceBase) : layout;
+  const hoverCandidate = hoverOverride ?? idleCandidate;
   const moveUnchanged = moveMachine !== undefined && moveAnchor !== null &&
     moveMachine.anchor.q === moveAnchor.q && moveMachine.anchor.r === moveAnchor.r;
   const hoverPlacementValid = moveBase !== null
     ? moveUnchanged || moveCandidate !== moveBase
+    : fragmentPreview !== null
+    ? fragmentPreview.candidate !== null
     : idleDirectMachine !== undefined || hoverCell === null || brush.kind === "erase" || hoverCandidate !== layout;
   const hoverBuildCost = previewProductionBuildCost(mode, layout, hoverCandidate);
-  const erasePreviewCells = hoverCell !== null &&
-    (brush.kind === "erase" || activeGesture?.mode === "erase")
+  const erasePreviewCells = boxGesture?.erase === true
+    ? boxedCells
+    : held === null && boxGesture === null && hoverCell !== null &&
+      (brush.kind === "erase" || activeGesture?.mode === "erase")
     ? factoryErasePreviewCells(layout, hoverCell.q, hoverCell.r)
     : null;
-  // The SVG outline layer only carries the erase preview and the grabbed-machine outline.
+  // The SVG outline layer carries the erase preview, the grabbed-machine outline and the selection.
   let ghostCells: readonly HexCoord[] = [];
   if (erasePreviewCells !== null) ghostCells = erasePreviewCells;
   else if (idleDirectMachine !== undefined) ghostCells = worldCells(idleDirectMachine);
+  const outlinedSelection = boxGesture !== null && !boxGesture.erase
+    ? boxGesture.additive ? itemCells(layout, [...selectedCells, ...boxedCells]) : boxedCells
+    : selectedCells;
   // Any other placement previews the real thing in Pixi. Memoized on its inputs so a Production
   // tick re-render keeps the same ghost and does not repaint it.
   const placementGhost = useMemo((): FactoryGhost | null => {
-    if (ghostCells.length > 0) return null;
+    if (boxGesture !== null || ghostCells.length > 0) return null;
     const invalid = !hoverPlacementValid;
     const ghostLayout = invalid ? layout : hoverCandidate;
-    if (moveMachine !== undefined && moveAnchor !== null) {
-      return { layout: ghostLayout, invalid, tiles: [], machine: { ...moveMachine, anchor: moveAnchor } };
+    if (fragmentPreview !== null) {
+      return { layout: ghostLayout, invalid, tiles: fragmentPreview.fragment.tiles, machines: fragmentPreview.fragment.machines };
     }
-    if (beltGestureCandidate !== null && activeGesture !== null) {
-      return { layout: ghostLayout, invalid, tiles: beltRouteTiles(activeGesture.cells, brushDir), machine: null };
+    if (moveMachine !== undefined && moveAnchor !== null) {
+      return { layout: ghostLayout, invalid, tiles: [], machines: [{ ...moveMachine, anchor: moveAnchor }] };
+    }
+    if (beltGestureCandidate !== null && activeGesture?.mode === "paint") {
+      return { layout: ghostLayout, invalid, tiles: beltRouteTiles(activeGesture.cells, brushDir), machines: [] };
     }
     if (hoverCell === null) return null;
     if (brush.kind === "machine") {
       const shape = DEFAULT_SHAPES[brush.typeId]!;
+      const placed = invalid ? undefined : hoverCandidate.machines.at(-1);
       return {
         layout: ghostLayout,
         invalid,
         tiles: [],
-        machine: invalid
-          ? { id: UNPLACED_MACHINE_ID, def: machineDef(brush.typeId), anchor: hoverCell, footRot, shape }
-          : hoverCandidate.machines.at(-1) ?? null,
+        machines: invalid
+          ? [{ id: UNPLACED_MACHINE_ID, def: machineDef(brush.typeId), anchor: hoverCell, footRot, shape }]
+          : placed === undefined ? [] : [placed],
       };
     }
     const tile = makeTile(brush, brushDir, sourceBase);
-    return tile === null ? null : { layout: ghostLayout, invalid, tiles: [{ q: hoverCell.q, r: hoverCell.r, tile }], machine: null };
+    return tile === null ? null : { layout: ghostLayout, invalid, tiles: [{ q: hoverCell.q, r: hoverCell.r, tile }], machines: [] };
   // Every value read above derives from these inputs; a new input to those derivations belongs here too.
-  }, [layout, hoverCell, brush, brushDir, footRot, sourceBase, activeGesture]);
+  }, [layout, hoverCell, brush, brushDir, footRot, sourceBase, activeGesture, fragmentPreview, held]);
   useEffect(() => {
     // The mount effect nulls rendererRef before destroying; skip a stale handle in that window.
     if (liveRenderer === null || liveRenderer !== rendererRef.current) return;
@@ -1577,17 +1723,28 @@ export function Factory({
   const facilityName = mode === "pilot" ? "Production Plan" : "Production";
   const quote = mode === "pilot"
     ? null
-    : brush.kind === "erase"
+    : held === null && (brush.kind === "erase" || boxGesture?.erase === true)
     ? "No refund"
     : hoverBuildCost === null
     ? null
-    : `${moveCandidate === null ? "Build" : "Move"} $${hoverBuildCost}`;
+    : `${moveCandidate === null && dragGesture === null ? "Build" : "Move"} $${hoverBuildCost}`;
   const canvasBounds = hexBoardBounds(layout.width, layout.height, FACTORY_HEX_SIZE);
   const overlayWidth = Math.ceil(PAD * 2 + canvasBounds.maxX - canvasBounds.minX);
   const overlayHeight = Math.ceil(PAD * 2 + canvasBounds.maxY - canvasBounds.minY);
   const ghostErase = gestureRef.current?.mode === "erase" || brush.kind === "erase";
   const controlScale = Math.max(1, 0.75 / camera.zoom);
   const ghostClass = `factory-ghost${ghostErase ? " is-erase" : ""}`;
+  const marquee = boxGesture === null ? null : (() => {
+    const a = factoryCellCenter(boxGesture.start);
+    const b = factoryCellCenter(boxGesture.last);
+    const x = Math.min(a.x, b.x) - FACTORY_HEX_WIDTH / 2;
+    const y = Math.min(a.y, b.y) - FACTORY_HEX_SIZE;
+    return { x, y, width: Math.abs(a.x - b.x) + FACTORY_HEX_WIDTH, height: Math.abs(a.y - b.y) + 2 * FACTORY_HEX_SIZE };
+  })();
+  const hexPoints = (cell: HexCoord) => {
+    const center = factoryCellCenter(cell);
+    return hexPolygon(center.x, center.y, FACTORY_HEX_SIZE - 1).map((p) => `${p.x},${p.y}`).join(" ");
+  };
 
   return (
     <div className={`game-view factory-workspace facility-${mode}`} data-testid={`${mode}-facility-workspace`}>
@@ -1631,9 +1788,15 @@ export function Factory({
           <div className="factory-build-status" aria-label="Current build tool">
             <div className="build-readout">
               <span className="brush-icon" data-testid="brush-selected" role="img" aria-label={brushLabel} title={brushLabel}>
-                {brush.kind === "machine" ? <MachineIcon typeId={brush.typeId} path={entryOf(brush.typeId).path} size={30} variant="token" /> : <ToolGlyph kind={brush.kind} />}
+                {held !== null
+                  ? <CommandGlyph kind="paste" />
+                  : brush.kind === "machine" ? <MachineIcon typeId={brush.typeId} path={entryOf(brush.typeId).path} size={30} variant="token" /> : <ToolGlyph kind={brush.kind} />}
               </span>
-              {brush.kind !== "erase" && (
+              {held !== null ? (
+                <span className="brush-icon" data-testid="brush-direction" role="img" aria-label={`Paste ${held * 60}°`} title={`Paste ${held * 60}°`}>
+                  <DirectionGlyph dir={held} />
+                </span>
+              ) : brush.kind !== "erase" && brush.kind !== "select" && (
                 <span className="brush-icon" data-testid="brush-direction" role="img" aria-label={brushIsMachine ? `Footprint ${footRot * 60}°` : `Direction ${DIR_LABEL[brushDir]}`} title={brushIsMachine ? `Footprint ${footRot * 60}°` : `Direction ${DIR_LABEL[brushDir]}`}>
                   <DirectionGlyph dir={brushIsMachine ? footRot : brushDir} />
                 </span>
@@ -1646,7 +1809,12 @@ export function Factory({
                 : quote !== null && <output className={`build-quote${hoverBuildCost === null ? "" : " has-cost"}`} data-testid="factory-quote">{quote}</output>}
             </div>
             <div className="build-actions">
-              <button type="button" onClick={rotateHoveredOrActive} data-testid="brush-rotate" aria-label="Rotate" title="Rotate (R)"><CommandGlyph kind="rotate" /></button>
+              {selection.length > 0 && <>
+                <button type="button" onClick={() => copyItems(false)} data-testid="factory-copy" aria-label="Copy" title="Copy (Ctrl+C)"><CommandGlyph kind="copy" /></button>
+                <button type="button" onClick={deleteSelection} data-testid="factory-delete" aria-label="Delete" title="Delete (Del)"><CommandGlyph kind="trash" /></button>
+              </>}
+              {clipboard !== null && <button type="button" onClick={() => setHeld(heldRef.current === null ? 0 : null)} aria-pressed={held !== null} className={held === null ? undefined : "is-active"} data-testid="factory-paste" aria-label="Paste" title="Paste (Ctrl+V)"><CommandGlyph kind="paste" /></button>}
+              <button type="button" onClick={() => rotate(1)} data-testid="brush-rotate" aria-label="Rotate" title="Rotate (R · Shift+R back)"><CommandGlyph kind="rotate" /></button>
               <button type="button" onClick={undoLayout} disabled={history.past.length === 0} data-testid="factory-undo" aria-label="Undo" title="Undo (Ctrl+Z)"><CommandGlyph kind="undo" /></button>
               <button type="button" onClick={redoLayout} disabled={history.future.length === 0} data-testid="factory-redo" aria-label="Redo" title="Redo (Ctrl+Shift+Z)"><CommandGlyph kind="redo" /></button>
             </div>
@@ -1676,7 +1844,7 @@ export function Factory({
             onPointerCancel={(event) => {
               if (gestureRef.current?.pointerId === event.pointerId) {
                 gestureRef.current = null;
-                endGesture();
+                repaintGesture();
               }
               if (panGestureRef.current?.pointerId === event.pointerId) panGestureRef.current = null;
               if (activeTouchPointerRef.current === event.pointerId) activeTouchPointerRef.current = null;
@@ -1697,16 +1865,13 @@ export function Factory({
                 >{BASE_NAMES[mark.base]}</span>
               ))}
               <svg className="factory-ghost-layer" width={overlayWidth} height={overlayHeight} aria-hidden="true" focusable="false">
-                {ghostCells.map((cell) => {
-                  const center = factoryCellCenter(cell);
-                  return (
-                    <polygon
-                      key={`${cell.q},${cell.r}`}
-                      className={ghostClass}
-                      points={hexPolygon(center.x, center.y, FACTORY_HEX_SIZE - 1).map((p) => `${p.x},${p.y}`).join(" ")}
-                    />
-                  );
-                })}
+                {outlinedSelection.map((cell) => (
+                  <polygon key={`s${cell.q},${cell.r}`} className="factory-selected" data-testid="factory-selected" points={hexPoints(cell)} />
+                ))}
+                {ghostCells.map((cell) => (
+                  <polygon key={`${cell.q},${cell.r}`} className={ghostClass} points={hexPoints(cell)} />
+                ))}
+                {marquee !== null && <rect className={`factory-marquee${boxGesture?.erase === true ? " is-erase" : ""}`} data-testid="factory-marquee" {...marquee} />}
               </svg>
               {hoverCell !== null && hoverBuildCost !== null && (
                 <output
@@ -1728,7 +1893,8 @@ export function Factory({
             {tileBrushBtn("merger", "Merger", "3")}
             {tileBrushBtn("source", "Source", "4")}
             {tileBrushBtn("sink", "Sink", "5")}
-            {tileBrushBtn("erase", "Erase", "6")}
+            {tileBrushBtn("erase", "Erase", "X")}
+            {tileBrushBtn("select", "Select", "V")}
             <span className="toolbelt-divider" />
             {DEFAULT_CATALOG.map((entry) => {
               const unlocked = catalog.some((candidate) => candidate.typeId === entry.typeId);
@@ -1789,20 +1955,11 @@ export function Factory({
           )}
 
           <div className="panel-section hover-inspector">
-            <div className="panel-heading"><h2>Cursor</h2><span className="hotkey">Q pick</span></div>
+            <div className="panel-heading"><h2>Cursor</h2></div>
             <div data-testid="factory-hover-cell">{hoverCell === null ? "outside" : `${hoverCell.q}, ${hoverCell.r}`}</div>
             <strong data-testid="factory-hover-kind">{hoverCell === null ? "" : hoverKind}</strong>
           </div>
 
-          <div className="panel-section">
-            <h2>Layout operations</h2>
-            <div className="brush-readout" data-testid="factory-clipboard">Clipboard {clipboardLabel}</div>
-            <div className="panel-actions">
-              <button type="button" onClick={() => copyHovered(false)} disabled={hoverCell === null || brushAt(layout, hoverCell) === null} className="game-control" data-testid="factory-copy">Copy</button>
-              <button type="button" onClick={() => copyHovered(true)} disabled={hoverCell === null || brushAt(layout, hoverCell) === null} className="game-control" data-testid="factory-cut">Cut</button>
-              <button type="button" onClick={pasteHovered} disabled={clipboardLabel === "empty" || hoverCell === null} className="game-control" data-testid="factory-paste">Paste</button>
-            </div>
-          </div>
         </aside>
         <span className="inspector-more" data-testid="inspector-more" aria-hidden="true"><ChevronGlyph down /></span>
       </div>

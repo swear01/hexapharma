@@ -490,14 +490,13 @@ test("Factory copy and paste preserve source, splitter, and merger payloads", as
   const workspace = page.getByTestId("pilot-facility-workspace");
   const frame = workspace.getByTestId("factory-canvas");
 
-  await workspace.getByTestId("factory-diagnostics").click();
   for (const payload of clipboardPayloads) {
     const from = await factoryCellPoint(frame, source, payload.cell);
     const to = await factoryCellPoint(frame, source, payload.destination);
     await page.mouse.move(from.x, from.y);
-    await workspace.getByTestId(payload.tile.kind === "source" ? "factory-copy" : "factory-cut").click();
-    await page.mouse.move(to.x, to.y);
-    await workspace.getByTestId("factory-paste").click();
+    await page.keyboard.press(payload.tile.kind === "source" ? "Control+c" : "Control+x");
+    await page.keyboard.press("Control+v");
+    await page.mouse.click(to.x, to.y);
   }
   await openMenu(page);
   await page.getByTestId("save").click();
@@ -514,6 +513,171 @@ test("Factory copy and paste preserve source, splitter, and merger payloads", as
         .toEqual({ kind: "empty" });
     }
   }
+});
+
+async function savedPilotLayout(page: import("@playwright/test").Page): Promise<FactoryLayout> {
+  await openMenu(page);
+  await page.getByTestId("save").click();
+  await page.getByTestId("view-menu").click();
+  const raw = await page.evaluate((key) => localStorage.getItem(key), checkpointKey);
+  if (raw === null) throw new Error("Pilot checkpoint was not saved");
+  const layout = deserializeSnapshot((JSON.parse(raw) as { readonly head: string }).head).pilot.layout;
+  if (layout === null) throw new Error("saved Pilot layout is missing");
+  return layout;
+}
+
+function savedTile(layout: FactoryLayout, cell: HexCoord): FactoryTile | undefined {
+  return layout.tiles[hexIndex(layout.width, cell.q, cell.r)];
+}
+
+test("X box-erases everything in the dragged box and previews what goes", async ({ page }) => {
+  const serialized = clipboardPayloadSave();
+  const source = deserializeGame(serialized).pilot.layout!;
+  await loadSaveFixture(page, serialized);
+  await page.getByTestId("view-pilot").click();
+  const workspace = page.getByTestId("pilot-facility-workspace");
+  const frame = workspace.getByTestId("factory-canvas");
+  const [sourceTile, splitter, merger] = clipboardPayloads;
+
+  await page.keyboard.press("x");
+  await expect(workspace.getByTestId("brush-erase")).toHaveAttribute("aria-pressed", "true");
+  const from = await factoryCellPoint(frame, source, { q: sourceTile!.cell.q - 1, r: sourceTile!.cell.r });
+  const to = await factoryCellPoint(frame, source, splitter!.cell);
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(to.x, to.y, { steps: 6 });
+  await expect(frame.getByTestId("factory-marquee")).toBeVisible();
+  await expect(frame.locator(".factory-ghost.is-erase")).toHaveCount(2);
+  await page.mouse.up();
+  await expect(frame.getByTestId("factory-marquee")).toHaveCount(0);
+
+  const saved = await savedPilotLayout(page);
+  expect(savedTile(saved, sourceTile!.cell)).toEqual({ kind: "empty" });
+  expect(savedTile(saved, splitter!.cell)).toEqual({ kind: "empty" });
+  expect(savedTile(saved, merger!.cell)).toEqual(merger!.tile);
+});
+
+test("a box selection moves by dragging and Delete removes it", async ({ page }) => {
+  const serialized = clipboardPayloadSave();
+  const source = deserializeGame(serialized).pilot.layout!;
+  await loadSaveFixture(page, serialized);
+  await page.getByTestId("view-pilot").click();
+  const workspace = page.getByTestId("pilot-facility-workspace");
+  const frame = workspace.getByTestId("factory-canvas");
+  const [sourceTile, splitter, merger] = clipboardPayloads;
+  const point = (cell: HexCoord) => factoryCellPoint(frame, source, cell);
+
+  await page.keyboard.press("v");
+  await expect(workspace.getByTestId("brush-select")).toHaveAttribute("aria-pressed", "true");
+  const a = await point(sourceTile!.cell);
+  await page.mouse.click(a.x, a.y);
+  await expect(frame.getByTestId("factory-selected")).toHaveCount(1);
+  const b = await point(splitter!.cell);
+  await page.keyboard.down("Shift");
+  await page.mouse.click(b.x, b.y);
+  await page.keyboard.up("Shift");
+  await expect(frame.getByTestId("factory-selected")).toHaveCount(2);
+
+  const down = { q: sourceTile!.cell.q, r: sourceTile!.cell.r + 1 };
+  const target = await point(down);
+  await page.mouse.move(a.x, a.y);
+  await page.mouse.down();
+  await page.mouse.move(target.x, target.y, { steps: 6 });
+  await expect(frame).toHaveAttribute("data-ghost", "valid");
+  await page.mouse.up();
+  let saved = await savedPilotLayout(page);
+  expect(savedTile(saved, sourceTile!.cell)).toEqual({ kind: "empty" });
+  expect(savedTile(saved, down)).toEqual(sourceTile!.tile);
+  expect(savedTile(saved, { q: splitter!.cell.q, r: splitter!.cell.r + 1 })).toEqual(splitter!.tile);
+
+  await page.keyboard.press("Delete");
+  await expect(frame.getByTestId("factory-selected")).toHaveCount(0);
+  saved = await savedPilotLayout(page);
+  expect(saved.tiles.filter((tile) => tile.kind !== "empty")).toEqual([merger!.tile]);
+});
+
+test("Ctrl+C copies, Ctrl+V holds a paste that Shift+R turns back and a click places", async ({ page }) => {
+  const serialized = clipboardPayloadSave();
+  const source = deserializeGame(serialized).pilot.layout!;
+  await loadSaveFixture(page, serialized);
+  await page.getByTestId("view-pilot").click();
+  const workspace = page.getByTestId("pilot-facility-workspace");
+  const frame = workspace.getByTestId("factory-canvas");
+  const [sourceTile] = clipboardPayloads;
+
+  await page.keyboard.press("1");
+  await page.keyboard.press("Shift+R");
+  await expect(workspace.getByTestId("brush-direction")).toHaveAccessibleName("Direction NE");
+  await page.keyboard.press("r");
+  await expect(workspace.getByTestId("brush-direction")).toHaveAccessibleName("Direction E");
+
+  const from = await factoryCellPoint(frame, source, sourceTile!.cell);
+  await page.mouse.move(from.x, from.y);
+  await page.keyboard.press("Control+c");
+  await page.keyboard.press("Control+v");
+  await expect(workspace.getByTestId("brush-selected")).toHaveAccessibleName("Paste");
+  await page.keyboard.press("Shift+R");
+  await expect(workspace.getByTestId("brush-direction")).toHaveAccessibleName("Paste 300°");
+  const destination = { q: sourceTile!.cell.q, r: sourceTile!.cell.r + 3 };
+  const to = await factoryCellPoint(frame, source, destination);
+  await page.mouse.move(to.x, to.y);
+  await expect(frame).toHaveAttribute("data-ghost", "valid");
+  await page.mouse.click(to.x, to.y);
+  await page.keyboard.press("Escape");
+  await expect(workspace.getByTestId("brush-selected")).toHaveAccessibleName("belt");
+
+  const saved = await savedPilotLayout(page);
+  expect(savedTile(saved, destination)).toEqual({ kind: "source", dir: 1, period: 7, base: 0 });
+  expect(savedTile(saved, sourceTile!.cell)).toEqual(sourceTile!.tile);
+});
+
+test("a held paste over an installed machine shows a refused ghost", async ({ page }) => {
+  const serialized = machineGallerySave();
+  const gallery = deserializeGame(serialized).pilot.layout!;
+  await loadSaveFixture(page, serialized);
+  await page.getByTestId("view-pilot").click();
+  const frame = page.getByTestId("pilot-facility-workspace").getByTestId("factory-canvas");
+  const point = await factoryCellPoint(frame, gallery, worldCells(gallery.machines[0]!)[0]!);
+  await page.mouse.move(point.x, point.y);
+  await page.keyboard.press("Control+c");
+  await page.keyboard.press("Control+v");
+  await page.mouse.move(point.x + 2, point.y);
+  await expect(frame).toHaveAttribute("data-ghost", "invalid");
+  await page.mouse.click(point.x + 2, point.y);
+  await page.mouse.click(point.x + 2, point.y, { button: "right" });
+  expect((await savedPilotLayout(page)).machines).toHaveLength(gallery.machines.length);
+});
+
+test("WASD pans the Factory camera and Shift+drag no longer does", async ({ page }) => {
+  await page.goto("/");
+  await page.getByTestId("view-pilot").click();
+  const frame = page.getByTestId("pilot-facility-workspace").getByTestId("factory-canvas");
+  await expect(frame.locator("canvas")).toBeVisible();
+  const transform = frame.locator(".factory-canvas-transform");
+  const offset = async () => {
+    const match = /translate\((-?[\d.]+)px, (-?[\d.]+)px\)/u.exec(await transform.evaluate((node) => (node as HTMLElement).style.transform));
+    if (match === null) throw new Error("Factory camera transform is unreadable");
+    return { x: Number(match[1]), y: Number(match[2]) };
+  };
+  const start = await offset();
+  await page.keyboard.down("d");
+  await expect.poll(async () => (await offset()).x).toBeLessThan(start.x - 20);
+  await page.keyboard.up("d");
+  const afterD = await offset();
+  await page.keyboard.down("s");
+  await expect.poll(async () => (await offset()).y).toBeLessThan(afterD.y - 20);
+  await page.keyboard.up("s");
+
+  const settled = await offset();
+  const box = await frame.boundingBox();
+  if (box === null) throw new Error("Factory frame has no bounds");
+  await page.keyboard.down("Shift");
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 120, box.y + box.height / 2 + 60, { steps: 6 });
+  await page.mouse.up();
+  await page.keyboard.up("Shift");
+  expect(await offset()).toEqual(settled);
 });
 
 test("focused Factory tool controls still allow R, number, and Q world hotkeys", async ({ page }) => {
@@ -657,7 +821,8 @@ test("compact Pilot controls remain reachable above the construction hotbar", as
   await expect(inspector).toBeHidden();
   await page.getByTestId("pilot-facility-workspace").getByTestId("factory-diagnostics").click();
   await expect(inspector).toBeVisible();
-  expect(await inspector.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+  // Details either fits or scrolls inside its own panel.
+  expect(await inspector.evaluate((element) => element.scrollHeight <= element.clientHeight || getComputedStyle(element).overflowY === "auto")).toBe(true);
   await inspector.getByRole("button", { name: "Close factory details" }).click();
   await expect(page.getByTestId("pilot-facility-workspace").getByTestId("inspector-more"))
     .toBeHidden();
@@ -668,7 +833,8 @@ test("compact Pilot controls remain reachable above the construction hotbar", as
   await expect(inspector).toBeHidden();
   await page.getByTestId("pilot-facility-workspace").getByTestId("factory-diagnostics").click();
   await expect(inspector).toBeVisible();
-  expect(await inspector.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+  // Details either fits or scrolls inside its own panel.
+  expect(await inspector.evaluate((element) => element.scrollHeight <= element.clientHeight || getComputedStyle(element).overflowY === "auto")).toBe(true);
   await inspector.getByRole("button", { name: "Close factory details" }).click();
   await expect(page.getByTestId("pilot-facility-workspace").getByTestId("toolbelt-more"))
     .toBeVisible();

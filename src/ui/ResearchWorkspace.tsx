@@ -14,6 +14,7 @@ import { DEFAULT_CATALOG } from "../sim/phase0_interfaces";
 import type { ResearchDeviation } from "../render/labRenderer";
 import { App, researchOutcomeNoteworthy, researchOutcomeText } from "./App";
 import { BasePicker } from "./BasePicker";
+import { CommandGlyph } from "./CommandGlyph";
 import { MachineIcon } from "./MachineIcon";
 import { machineName } from "./machineLabels";
 
@@ -188,9 +189,10 @@ export function ResearchWorkspace(props: ResearchWorkspaceProps) {
           disabled={plan.steps.length === 0}
           onClick={props.onUndo}
           data-testid="research-undo"
+          aria-label="Undo"
           title="Remove last step (Backspace)"
         >
-          Undo
+          <CommandGlyph kind="undo" />
         </button>
         <button
           type="button"
@@ -198,8 +200,10 @@ export function ResearchWorkspace(props: ResearchWorkspaceProps) {
           disabled={plan.steps.length === 0}
           onClick={props.onClear}
           data-testid="research-clear"
+          aria-label="Clear"
+          title="Clear"
         >
-          Clear
+          <CommandGlyph kind="trash" />
         </button>
         <button
           type="button"
