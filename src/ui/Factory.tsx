@@ -994,9 +994,10 @@ export function Factory({
           local.destroy();
           local = null;
         }
-        rendererRef.current = null;
-        setLiveRenderer(null);
+        // A superseded init must not clear the newer renderer's handle; its cleanup already did.
         if (!disposed) {
+          rendererRef.current = null;
+          setLiveRenderer(null);
           const detail = error instanceof Error ? error.message : String(error);
           setRendererError(`Could not start the Factory renderer: ${detail}`);
         }
