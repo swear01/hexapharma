@@ -1155,6 +1155,7 @@ export function Factory({
         activeTouchPointerRef.current !== event.pointerId
       ) {
         gestureRef.current = null;
+        endGesture();
         activeTouchPointerRef.current = event.pointerId;
         panGestureRef.current = {
           pointerId: event.pointerId,

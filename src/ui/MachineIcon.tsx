@@ -1,5 +1,5 @@
 import { DEFAULT_SHAPES } from "../sim/phase0_interfaces";
-import type { PathStamp } from "../sim/phase0_interfaces";
+import type { MachineShape, PathStamp } from "../sim/phase0_interfaces";
 import { HEX_DQ, HEX_DR, rotateHexCoord, type HexRotation } from "../sim/hex";
 import { hexPolygon, hexToPixel } from "../render/hexProjection";
 
@@ -67,8 +67,15 @@ export function MachineIcon({
     const turned = (side + rotation) % 6;
     return hexToPixel(HEX_DQ[turned]!, HEX_DR[turned]!, 4);
   };
+  const centers = shape?.cells.map(cellPixel) ?? [];
+  const centerX = centers.length === 0 ? 0 : (Math.min(...centers.map((p) => p.x)) + Math.max(...centers.map((p) => p.x))) / 2;
+  const centerY = centers.length === 0 ? 0 : (Math.min(...centers.map((p) => p.y)) + Math.max(...centers.map((p) => p.y))) / 2;
+  const footprintScale = centers.length === 0 ? 1 : 40 / Math.max(
+    Math.max(...centers.map((p) => p.x)) - Math.min(...centers.map((p) => p.x)) + 16,
+    Math.max(...centers.map((p) => p.y)) - Math.min(...centers.map((p) => p.y)) + 16,
+  );
   // Same language as the floor: an arrowhead on the edge, pointing in for input, out for output.
-  const portArrow = (port: { readonly cell: { readonly q: number; readonly r: number }; readonly side: number }, role: "input" | "output") => {
+  const portArrow = (port: MachineShape["inPorts"][number], role: "input" | "output") => {
     const p = cellPixel(port.cell);
     const offset = portOffset(port.side);
     const length = Math.hypot(offset.x, offset.y);
@@ -83,13 +90,6 @@ export function MachineIcon({
       { x: cx - ux * 1.25 + uy * 2.2, y: cy - uy * 1.25 - ux * 2.2 },
     ]);
   };
-  const centers = shape?.cells.map(cellPixel) ?? [];
-  const centerX = centers.length === 0 ? 0 : (Math.min(...centers.map((p) => p.x)) + Math.max(...centers.map((p) => p.x))) / 2;
-  const centerY = centers.length === 0 ? 0 : (Math.min(...centers.map((p) => p.y)) + Math.max(...centers.map((p) => p.y))) / 2;
-  const footprintScale = centers.length === 0 ? 1 : 40 / Math.max(
-    Math.max(...centers.map((p) => p.x)) - Math.min(...centers.map((p) => p.x)) + 16,
-    Math.max(...centers.map((p) => p.y)) - Math.min(...centers.map((p) => p.y)) + 16,
-  );
   const points = iconPoints(path);
   const endpoint = points.at(-1) ?? points[0]!;
   return (
