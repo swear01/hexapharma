@@ -12,11 +12,6 @@ export function diseaseName(disease: DiseaseId): string {
   return `Disease ${disease + 1}`;
 }
 
-export function diseaseEmblem(disease: DiseaseId): string {
-  requireDiseaseId(disease);
-  return `D${disease + 1}`;
-}
-
 export function outcomeEffectText(outcome: Outcome): string {
   const result = outcome.failed
     ? "Failed"

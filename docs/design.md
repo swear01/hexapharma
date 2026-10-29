@@ -16,7 +16,7 @@ HexaPharma 是單人 2D 工廠解謎遊戲。玩家在遠大於 viewport 的程�
 Research Atlas：在已知地圖上規劃整條路線 → Run 付一次費從起點試驗 → 揭露實際路徑 → 依新地圖修改路線
 Production Plan：免費配置 FactoryLayout、觀察即時診斷、保存藍圖（可選）
 Production：直接建造，或把 Plan Commission 到正式產線 → 連續生產 → Market
-Market／Technology：Technology 目前是免費開關（測試期，D42）→ 機器、Split／Merge、探索輔助與場地
+Market／Technology：Technology 目前是免費開關（測試期，D42）→ 機器、Split／Merge（新局預設開，D50）、探索輔助與場地
 ```
 
 - **Research** 擁有單一 Atlas、探索遮罩與最近一次試驗 `lastTrial {program, cost, outcome}`；規劃中的路線是 UI 本地狀態，不是 authority；不持有工廠 layout，也不產生配方。
@@ -54,10 +54,10 @@ Atlas 是半徑 R 的六角形（R = ⌊(min(width,height)−1)/2⌋；正常新
   | 前 | `elbow` | Elbow press | L L F | 3 | −1 | 3 | 3 | 開局 |
   | 前 | `return` | Return coil | B B BL | 3 | +3 | 2 | 3 | 開局 |
   | 前 | `wave` | Wave reactor | F L F R F R F | 6 | 0 | 7 | 7 | 開局 |
-  | 中 | `zigzag` | Zigzag still | R F R F | 4 | +2 | 6 | 4 | `zigzag-unlock` |
-  | 中 | `loop` | Loop vat | F R BR B BL L F | 1（印出 6 格環） | 0 | 5 | 7 | `loop-unlock` |
-  | 後 | `straight` | Straight drive | F F F F | 4 | 0 | 12 | 4 | `straight-unlock` |
-  | 後 | `crane` | Crane arm | F F F L L | 5 | −2 | 11 | 5 | `crane-unlock` |
+  | 中 | `zigzag` | Zigzag still | R F R F | 4 | +2 | 6 | 4 | `zigzag-unlock`（預設開） |
+  | 中 | `loop` | Loop vat | F R BR B BL L F | 1（印出 6 格環） | 0 | 5 | 7 | `loop-unlock`（預設開） |
+  | 後 | `straight` | Straight drive | F F F F | 4 | 0 | 12 | 4 | `straight-unlock`（預設開） |
+  | 後 | `crane` | Crane arm | F F F L L | 5 | −2 | 11 | 5 | `crane-unlock`（預設開） |
 
   前期便宜但彆扭（每台都轉向或扭動；Wave 是唯一不轉的前期機器，但貴且長）；中期較靈活（Zigzag 強 +2 修正，Loop 精準一格但印環、容易碰副作用）；後期方便但貴（Straight 乾淨穿過 1 格窄段與沼澤，Crane 長距離加上和 Zigzag 對稱的 −2）。`machine-catalog.test.ts` 以與地圖無關的淨位移、path 長、turn、每格成本與解鎖期檢查：平均成本逐期不降、後期每步與每台位移最好、同期沒有機器同時在「位移／成本」與「轉向角較小」兩項都嚴格勝過另一台、path 長度都 > 2。前四台是 initial catalog。
 - **Portal A→B**：從入口立即到同圖的配對出口，剩餘 path 從 B 繼續。B 不可反向當入口；trail 必須在跳躍處斷開。
@@ -79,7 +79,7 @@ Research 不使用 FactoryLayout、source／belt／sink、線性 route descripto
 - **試驗**：`runResearchTrial { program, base }` 在指定 base 的 Atlas 上進行（base 必須已開啟），接受 1..`MAX_TEMPLATE_STEPS` 台目前 catalog／patents 允許且 path／turn 與 catalog 一致的 machine；`cost = Σ catalog cost`（safe-integer 檢查），cash < cost 時原子拒絕。authority 一次扣款，從關卡起點在**真實**地圖上跑完整條 program，以 radius 1（加 Technology 的 revealAid）揭露實際 trail 與終點，只更新該 base 的 fog，存 `research.lastTrial = {base, program, cost, outcome}`，可由 replay 重畫實際路線。Atlas 一次只顯示一個 base（右下 base 選擇器，鎖住的 base 顯示原因）；切換時改顯示該 base 的圖、fog 與最近試驗（只在試驗就在該 base 時），規劃路線保留（它只是機器序列），Run 在目前選的 base 付費。失敗於 Abyss 時路線在該格中止。
 - 試驗不產生配方、不建立 formula、不自動建造；同一路線可重跑（每次都付費）。UI 保留規劃，讓玩家依新揭露的地圖修改。
 - 實際路線（實線）由 `lastTrial.program` 在真實地圖重播，連同試驗結果只顯示到玩家改動（含 Undo／Clear）規劃為止。規劃終點與實際終點都是指向目前 heading（下一台機器的前方）的實心尖頭；每台機器的終點是小實心節點，每段 leg 中央一個兩筆 chevron 標出前進方向（不編號）；起點是指向關卡起始 heading 的空心尖頭。Run 當下的預估保留為淡虛線，直到玩家改動規劃；第一個偏離點以紅圈標在地圖上（不寫字；原因 Wall／Swamp／Abyss 取該處真實地形，該處必在本次揭露範圍內，點該格可讀）。兩者都以 pure traversal 計算，renderer 不自行近似、auto-route、修路或呼叫 solver。Swamp 半格以半格點繪製。
-- 結果同時顯示 cure 與已揭露的 side effects；不能只報 Cure 而隱藏同一終點的已知污染。Objective 在當前疾病任一 Cure 格已揭露前為「Find Disease N on <Base> · look <sector>」，之後為「Plan a line to Disease N on <Base>」（指向 Plan）；該 base 關閉時先指向 Technology（「Turn on <Base> in Technology to reach Disease N」）。單 base 的關卡省略「on <Base>」。
+- 結果同時顯示 cure 與已揭露的 side effects；不能只報 Cure 而隱藏同一終點的已知污染。開放世界（D50）：沒有 Objective 或下一步提示。
 
 ## 1.4 程序地圖
 
@@ -103,7 +103,7 @@ Research 不使用 FactoryLayout、source／belt／sink、線性 route descripto
 
 - Production Plan 是獨立 F2 world page，使用與 Production 相同的 Factory editor 與幾何規則；內部 `PilotFacilityState`／`setPilotLayout` 名稱暫不改變玩家語意。
 - 建造、旋轉、移動、刪除、undo／redo、copy／paste 都免費；沒有時間、耗材、inventory 或 waste。
-- source、belt、machine、sink 可以組成任意合法 layout；不要求 Research 結果或特定產品。splitter／merger 需先在 Technology 打開 `Split / Merge`，關閉時 Plan 與 Production 的 layout 驗證都拒絕這兩種 tile。
+- source、belt、machine、sink 可以組成任意合法 layout；不要求 Research 結果或特定產品。splitter／merger 需要 Technology 的 `Split / Merge`（新局預設開），關閉時 Plan 與 Production 的 layout 驗證都拒絕這兩種 tile。
 - Plan 產線的藥效路徑畫在 Research Atlas 上：取第一個 Source 送出的第一個 unit 走到 Sink 經過的機器順序（Splitter 走第一個接得上的 output），在同一張 fog-masked planning map 上以淡紫寬帶呈現；沒有到 Sink 的線不畫。
 - 即時 diagnostics 可顯示 throughput、bottleneck、deadlock 或分析錯誤；sample outcome 只能依 Research fog 遮罩後的 planning map 計算，不能用免費 Production Plan 洩漏未發現的 cure、side effect、portal pairing 或權威終點。
 - Plan 的 layout 可保存為通用 Factory Blueprint，或按 `Commission $N` 依 Production 當前 layout 的差異付費建造。
@@ -131,7 +131,7 @@ Factory 與 Atlas 使用同一 pointy-top axial orientation 與 E／SE／SW／W�
 - 報價必須是 non-negative safe integer；現金不足時 layout、runtime、cash 與 waste 原子不變。
 - 非Erase tile edit不能覆蓋既有machine；Factory copy/cut/paste必須保存Source period、Splitter/Merger branches等完整tile payload。
 - 接受 layout edit 後停止播放，以新 layout重建runtime，清除在途unit與runtime-local counters；**累積 waste 保留**。已進inventory的產品也不因建造消失。no-op、invalid或現金不足的rejection不改history，也不能暫停Production。
-- Reset在已有runtime進度時先以可取消確認列出會清除在途unit／tick／runtime counters，以及會保留inventory／waste；initial runtime的Reset不可用。
+- UI 沒有 Reset（D50）；sim 的 `resetProduction` intent 保留給 replay。Production 播放速度 1×／2×／10× 只改每個 80 ms 間隔送出的 tick 數（8／16／80），不改 sim。
 - 擴廠開關（開或關）是獨立 destructive action；若會清 Production runtime／waste，UI 必須先確認。
 
 Production 是唯一持續推進 factory tick 的場域。source、transport、machine、split／merge、sink 的實際結果決定 inventory、waste、throughput 與 Market 收入；沒有配方正確性前置判斷。每個 unit 在 fixed-capacity typed arrays 中帶 heading 與每張圖的 Swamp offset，machine 依同一 heading-relative stamp＋turn 規則改變藥；進入 Abyss 的 unit 成為廢品。Plan 的 sample 也用同一 pure traversal，但跑在 fog-masked planning map 上。
@@ -150,12 +150,12 @@ Production 是唯一持續推進 factory tick 的場域。source、transport、m
 - Market 只販售 Production 產生且仍在 inventory 的實體 cure；一顆產品只能賣一次。
 - **依到達難度的分區定價**：每個 cure region（easy／hard／fill）有自己的 id（`EffectMap.regionId`，Cure 格 ≥ 1、其他格 0）與價格（`DiseaseSpec.regions`）。生成最後，對每個疾病的 catalog tier 從起點做 bounded 最低成本搜尋（狀態＝格、沼澤半格 offset、heading；邊權＝machine cost；成本上限 `REGION_REACH_COST_BOUND`＝160；真實 traversal，不 import solver），取落在該區任一格的最便宜路線：
   `difficulty = min(120, reachCost + 6 × 穿過的窄段數 + 2 × 路線旁的 Abyss 格數)`，`price = 60 + 2 × difficulty`（`REGION_*` 常數、BigInt safe-integer 檢查）。搜尋上限內到不了的區記為 `capped`，difficulty＝120。同一疾病的 hard 區最高價必須高於 easy 區最高價；不成立時視同無法構造，從衍生 stream 重畫地形（≤4 次，最後一次保留結果）。`DiseaseSpec.basePrice` 是該疾病最便宜的區價，只作公開參考價。不同疾病各有獨立 demand/sold counter。
-- 產品的 demand 價＝`nextUnitPrice(終點所在區的價格, 已售件數)`（`Outcome.regions` 與 `cured` 一一對應）。終點在該疾病 ★（tier 2）Cure 的產品，gross 是 `demand + floor(demand / 2)`；仍只消耗一件 demand。Market 的 Stock 列出 ★ 件數，Next unit 在最佳庫存是 ★ 時顯示加成後的價格與「★ price」。
+- 產品的 demand 價＝`nextUnitPrice(終點所在區的價格, 已售件數)`（`Outcome.regions` 與 `cured` 一一對應）。終點在該疾病 ★（tier 2）Cure 的產品，gross 是 `demand + floor(demand / 2)`；仍只消耗一件 demand。Market 的庫存列出 ★ 件數，net 已含 ★ 加成。
 - 某疾病第 0 件的 gross 是該件所在區的價格；每次出售後下一件是 `floor(previous × 19 / 20)`，持續衰減到 0，沒有永久正值底價。net 再扣實際 production cost 與每個 side effect 的 $25 penalty。
 - Market 對同一疾病先排 side effect 較少、再排 production cost 較低、最後排 inventory ID 較早的產品。`Ship best` 掃描此順序並賣第一件正 net產品；`Ship profitable` 依同一順序掃描全部庫存、略過不賺錢的候選，只讓實際選中的產品消耗後續demand，不得因較前面的昂貴產品而封鎖後面的正net產品，也不得自動虧本出售。
-- Market card必須把最佳庫存的Next gross、production cost、每effect $25 penalty與net直接列出；Clean／Tainted是庫存件數。Ship disabled時顯示「沒有治療庫存」或「沒有正net庫存」的原因；只有authority接受出售後才顯示`Shipped`成功回饋。
-- 每種疾病另有 shipping contract（正常新局 6 份），quota 固定為 3 件；HUD 顯示首個未完成疾病的 `sold / 3`，全部完成後顯示最後一份 completed contract。合約只由 accepted sales 推進，不另行消耗庫存。
-- 測試期（D42）Technology 每個節點都是免費、獨立的開關：沒有成本、前置或合約 gate。可隨時開或關；關閉時若 Plan 或 Production 仍用到該機器、Splitter／Merger 或擴出來的格子，sim 拒絕並說明仍在使用。擴廠開或關都在遠端邊緣增減格子並重建 Production runtime、清 waste。正式的解鎖條件與樹狀圖留待之後（plan §7）。
+- Market card只列庫存件數（clean／tainted／★）、最佳庫存下一件的 net 與 Ship；gross、production cost 與每effect $25 penalty放在 net 的 tooltip。有庫存但 Ship disabled時顯示「沒有正net庫存」的原因；只有authority接受出售後才顯示`Shipped`成功回饋。
+- sim 仍為每種疾病推導 shipping contract（quota 3，只由 accepted sales 推進）；UI 不顯示（D50）。
+- 測試期（D42）Technology 每個節點都是免費、獨立的開關：沒有成本、前置或合約 gate。新局所有機器與 Split／Merge 預設開；擴廠、探索輔助與 base 預設關（D50）。可隨時開或關；關閉時若 Plan 或 Production 仍用到該機器、Splitter／Merger 或擴出來的格子，sim 拒絕並說明仍在使用。擴廠開或關都在遠端邊緣增減格子並重建 Production runtime、清 waste。正式的解鎖條件與樹狀圖留待之後（plan §7）。
 - Oil／Ethanol base 開關（D43）同樣免費；Plan 或 Production 的 Source 仍使用該 base 時拒絕關閉。
 - 白箱 progression 只打開該疾病 reference 實際用到的機器開關與該疾病的 base（不收費），在該 base 跑 Research、建 Source 在該 base 的產線。五個固定 seed 與更廣代表樣本的合法 reference/compiler 白箱路線必須從 $1000 完成六病，且全程保留至少 $100 作為一次合理 assay 重試或小幅改建預算；這只證明可達性，不代表真人探索有趣。
 - Technology 可解鎖 factory machines、場地、Research PathStamps、motifs 或實際路徑的感測半徑；不能以跨層互動作現行進程。
@@ -213,7 +213,7 @@ Blueprint 與 save slot 完全分離，Library envelope version 是 4，使用 `
 - **字**：標題、數字、標籤用自帶 Barlow Condensed 600（`src/ui/fonts/`，OFL），內文系統字；所有數字 tabular。
 - **手繪感**：只來自 `src/render/ink.ts` 的確定性抖動，用於斷崖刻痕、陰影線與路線墨線；不得作用於 port、belt 接點、hit-test 幾何或文字，同一狀態必須逐幀一致。
 - **動態**：每個場域只有一個 authored moment（新試驗的實線以每段 90 ms 等速走出，總長上限 4 s），`prefers-reduced-motion` 時立即完成；Pixi auto-ticker 維持關閉。
-- **Shell**：只有一條頂列（場域分頁；Cash、Stock→Market、Market／Technology／Blueprints、Menu）；Objective 是 stage 左上的釘選目標卡（下一步、合約 n / 3、直接動作；目標本身是 Research 時在 Research 隱藏）；Market／Technology／Blueprints 是右側 legend 式抽屜，Guide 從 Menu 開啟（沒有 Formulas）；Plan／Production 沒有角標，Play 旁只有 run-state 圖示（D44）。
+- **Shell**：只有一條頂列（標誌、圖示場域分頁；Cash、Market＋庫存數、Technology、Blueprints、Menu，全為圖示）；沒有目標卡（D50）；Market／Technology／Blueprints 是右側 legend 式抽屜，Guide 從 Menu 開啟（沒有 Formulas）；Plan／Production 沒有角標，Play／Pause 圖示即 run state（D44、D50）。
 
 ## 1.11 Save v16 — 開放、可編輯的 alpha 存檔
 
@@ -266,7 +266,7 @@ Pure TS sim core  → authoritative deterministic transitions
 
 - TDD：先有能失敗的 behavior/property/E2E test，再改實作。
 - `npm run check`：typecheck、lint、unit/property/integration、headless Playwright 全部通過。
-- `0.0.0.0:53346 --strictPort` 真人 smoke 必須從真正 fresh save 開始，不注入 cash、不讀 mapgen reference、不用 reference compiler 或預製 Blueprint，人工完成 planned-route Research trial → affordable build／Commission → Production → first profitable sale；另覆蓋 optional Production Plan、shipping contracts、patent gates、Blueprint、Save/Load/Rewind 與 responsive reachability。
+- `0.0.0.0:53346 --strictPort` 真人 smoke 必須從真正 fresh save 開始，不注入 cash、不讀 mapgen reference、不用 reference compiler 或預製 Blueprint，人工完成 planned-route Research trial → affordable build／Commission → Production → first profitable sale；另覆蓋 optional Production Plan、Technology 開關、Blueprint、Save/Load/Rewind 與 responsive reachability。
 - 自動 gate 證明 correctness，不宣稱樂趣。真人 fresh-loop 要另外記錄首次理解、嘗試次數、剩餘現金、第一次出售時間、困惑點與主觀是否願意再解下一種疾病。
 - `npm run progression` 保存 34 個 unique seeds（0..31、42、100）的四疾病白箱資金 ledger（research、build、gross/net、sold、剩餘正利潤 demand、最低 cash與第一個不可達動作）；它可使用 dev-only reference/compiler，但不得接入遊戲。
 - balance calibration 覆蓋上述34 seeds。`9/10` demand pacing 在樣本中多次阻擋後段建造，`47/50`仍有7個阻擋樣本；`19/20`配合Settle $700→$670後，全部都完成4份authority shipping contracts、每病正net且最低cash至少$100。v2 Step 4（8 台機器＋分區定價）後 34 seeds 全部完成、每病正 net，最低 cash $574（seed 9）。這是白箱存在性／容錯預算，不是human-fun證據。

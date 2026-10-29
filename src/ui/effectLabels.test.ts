@@ -1,11 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { diseaseEmblem, diseaseName, outcomeEffectText } from "./effectLabels";
+import { diseaseName, outcomeEffectText } from "./effectLabels";
 
 describe("player-facing effect labels", () => {
-  it("uses one-based disease names and emblems", () => {
+  it("uses one-based disease names", () => {
     expect(diseaseName(0)).toBe("Disease 1");
     expect(diseaseName(3)).toBe("Disease 4");
-    expect(diseaseEmblem(0)).toBe("D1");
   });
 
   it("summarizes side effects without exposing global effect ids or coordinates", () => {

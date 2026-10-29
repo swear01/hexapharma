@@ -359,6 +359,10 @@ const lockedByPatent = new Set(
     node.effect.kind === "unlockMachine" ? [node.effect.typeId] : [],
   ),
 );
+/** Open world: a new game starts with every machine and Split / Merge switched on; expansion, reveal aid and bases stay opt-in. */
+const NEW_GAME_PATENTS: readonly string[] = DEFAULT_PATENTS
+  .filter((node) => node.effect.kind === "unlockMachine" || node.effect.kind === "unlockRouting")
+  .map((node) => node.id);
 const levelCache = new WeakMap<GenOptions, GeneratedLevel>();
 
 function levelFor(genOptions: GenOptions): GeneratedLevel {
@@ -713,7 +717,7 @@ export function createGameState(genOptions: GenOptions, cash: number): GameState
   return {
     genOptions: ownedOptions,
     economy: { cash: ownedCash, sold: [] },
-    patents: { unlocked: [] },
+    patents: { unlocked: [...NEW_GAME_PATENTS] },
     research: Object.freeze({ lastTrial: null }),
     pilot: Object.freeze({ layout: null }),
     production: Object.freeze({

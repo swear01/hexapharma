@@ -132,7 +132,7 @@ describe("integration: Atlas → program → factory plus economy, patent, and s
       disease,
     });
     g = applyGameIntent(g, { kind: "setPatent", id: "bench-2", enabled: true });
-    g = applyGameIntent(g, { kind: "setPatent", id: "zigzag-unlock", enabled: true });
+    g = applyGameIntent(g, { kind: "setPatent", id: "zigzag-unlock", enabled: false });
     expect(deserializeGame(serializeGame(g))).toEqual(g);
   });
 

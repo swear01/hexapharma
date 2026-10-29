@@ -46,7 +46,7 @@ HexaPharma 是「程序化藥效 Atlas + 實體工廠」的確定性單人遊戲
 - 正常新局 cash 是 $1000；fresh player 不靠注入資源、hidden reference 或 compiler，必須能完成 Research → 建廠 → first sale。
 - 依到達難度的分區價格：每個 cure region `price = 60 + 2 × difficulty`，`difficulty = min(120, 最便宜路線成本 + 6 × 窄段 + 2 × 路線旁 Abyss)`（D38）；產品依終點所在區計價，`basePrice` 只是最便宜區價。各疾病 demand 獨立；每次出售後 next gross 變成 `floor(previous × 19 / 20)`，直到 0。終點在 ★ 的產品 gross 是 `demand + floor(demand / 2)`。
 - Cure 與 SideEffect 可重疊；Market 先選 side effects 較少、再選 production cost 較低的庫存，只單賣或批量出售仍有正 net 的產品。
-- 每疾病 shipping contract quota 為 3（正常新局 6 份）；首個未完成合約顯示在 HUD。Market 卡片標出疾病所在 base。
+- 開放世界（D50）：沒有目標卡或合約顯示；新局所有機器與 Split／Merge 已開。Market 卡片標出疾病所在 base。
 - Technology 目前是免費開關（測試期，D42）；固定五-seed regression 與較廣代表樣本從 $1000 跑完整合法路線並保留 $100 assay retry／小改建預算。
 
 ## Blueprint 與 Save

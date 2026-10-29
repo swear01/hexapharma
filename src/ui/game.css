@@ -80,41 +80,27 @@ kbd, .hotkey { color: var(--ink-3); font: 600 11px/1 var(--font-display); letter
   z-index: 30; display: flex; align-items: stretch; gap: 24px; padding: 0 12px 0 20px;
   border-bottom: 2px solid var(--ink); background: var(--paper);
 }
-.wordmark { align-self: center; font: 600 24px/1 var(--font-display); letter-spacing: .02em; text-transform: uppercase; color: var(--ink); white-space: nowrap; }
+.wordmark { display: flex; align-self: center; line-height: 0; }
 .nav-rail { display: flex; gap: 2px; flex: 0 0 auto; }
 .nav-button {
-  display: flex; align-items: center; gap: 8px; padding: 0 14px; border: 0; border-radius: 0;
-  border-bottom: 4px solid transparent; margin-bottom: -2px; background: transparent;
-  font: 600 18px/1 var(--font-display); letter-spacing: .03em; text-transform: uppercase; color: var(--ink-2);
+  display: flex; align-items: center; justify-content: center; min-width: 52px; padding: 0 14px; border: 0; border-radius: 0;
+  border-bottom: 4px solid transparent; margin-bottom: -2px; background: transparent; color: var(--ink-2);
 }
+.nav-button .hud-glyph { width: 24px; height: 24px; }
 .nav-button:hover:not(:disabled) { color: var(--ink); border-color: var(--rule-strong); }
 .nav-button.is-active, .nav-button.is-active:hover:not(:disabled) { color: var(--course-ink); background: transparent; border-color: var(--course); }
 .resource-strip { display: flex; flex: 1; justify-content: flex-end; align-items: center; gap: 22px; min-width: 0; }
 .resource-chip { display: inline-flex; align-items: baseline; gap: 6px; white-space: nowrap; font-size: 12px; }
-.resource-label { color: var(--ink-3); font: 600 13px/1 var(--font-display); letter-spacing: .05em; text-transform: uppercase; }
 .resource-chip strong { font: 600 22px/1 var(--font-display); color: var(--ink); }
 .resource-unit { margin-right: 1px; color: var(--ink-3); }
-.stock-chip { min-height: 0; padding: 6px 8px; margin: 0 -8px; border: 0; background: transparent; }
-.stock-chip:hover:not(:disabled) { background: var(--course-tint); }
-.hud-links { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; padding-left: 12px; border-left: 1px solid var(--rule); margin: 10px 0; }
-.hud-links button, .menu-trigger { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 10px; border-color: transparent; background: transparent; color: var(--ink-2); }
+.hud-links { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; padding-left: 12px; border-left: 1px solid var(--rule); margin: 6px 0; }
+.hud-links button, .menu-trigger { display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-width: 44px; min-height: 44px; padding: 0 10px; border-color: transparent; background: transparent; color: var(--ink-2); }
 .hud-links button:hover:not(:disabled), .hud-links button[aria-pressed="true"], .menu-trigger[aria-expanded="true"] { color: var(--course-ink); background: var(--course-tint); border-color: transparent; }
-.hud-links kbd { margin-left: 1px; }
+/* Stock rides on the Market icon; muted when empty. */
+.stock-badge { font: 600 18px/1 var(--font-display); color: var(--ink); font-variant-numeric: tabular-nums; }
+.stock-badge.is-empty { color: var(--ink-3); font-weight: 400; }
 .hud-glyph { flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
 .menu-trigger { align-self: center; border-color: var(--ink); color: var(--ink); }
-
-/* Pinned goal: the next step of the loop and the contract it serves, printed in the map margin. */
-.goal-card {
-  position: absolute; z-index: 20; top: 12px; left: 12px; display: flex; align-items: center; gap: 12px;
-  max-width: calc(100% - 24px); min-height: 48px; padding: 6px 6px 6px 14px;
-  border: 1px solid var(--rule-strong); border-radius: 3px; background: var(--paper-raised); pointer-events: none;
-}
-.goal-step { display: grid; gap: 4px; min-width: 0; margin: 0; line-height: 1; }
-.objective-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 18px/1 var(--font-display); letter-spacing: .02em; text-transform: uppercase; color: var(--ink); }
-.goal-contract { color: var(--ink-3); font: 600 13px/1 var(--font-display); letter-spacing: .06em; text-transform: uppercase; }
-.goal-contract strong { color: var(--cure-ink); font-size: 15px; letter-spacing: .02em; }
-.objective-action { flex: none; pointer-events: auto; min-height: 36px; padding: 0 14px; border-color: var(--ink); background: var(--ink); color: var(--paper-raised); }
-.objective-action:hover:not(:disabled) { background: var(--ink-2); border-color: var(--ink-2); }
 
 .game-stage { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
 .game-view, .view-layer { position: absolute; inset: 0; min-width: 0; min-height: 0; overflow: hidden; }
@@ -148,35 +134,23 @@ kbd, .hotkey { color: var(--ink-3); font: 600 11px/1 var(--font-display); letter
 .sr-only { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden !important; clip: rect(0, 0, 0, 0) !important; white-space: nowrap !important; border: 0 !important; }
 * { scrollbar-color: var(--rule-strong) transparent; scrollbar-width: thin; }
 
-@media (max-width: 1180px) {
-  .wordmark { display: none; }
-  .hud-links kbd { display: none; }
-}
 @media (max-width: 1050px) {
   .top-hud { padding: 0 8px 0 12px; gap: 12px; }
-  .nav-button { padding: 0 8px; font-size: 16px; }
-  .nav-button kbd { display: none; }
+  .nav-button { padding: 0 8px; }
   .resource-strip { gap: 14px; }
   .hud-links { padding-left: 6px; }
-  .hud-link-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
-  .hud-links button, .menu-trigger { justify-content: center; min-width: 44px; min-height: 44px; padding: 0; }
+  .hud-links button, .menu-trigger { padding: 0 6px; }
 }
 @media (max-width: 768px) {
   .game-shell { grid-template-rows: 92px minmax(0, 1fr); }
-  .top-hud { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: 48px 44px; gap: 0; padding: 0 4px 0 10px; }
-  .nav-rail { grid-column: 1; grid-row: 1; }
-  .nav-button { padding: 0 8px; font-size: 15px; }
-  .menu-trigger { grid-column: 2; grid-row: 1; justify-self: end; border-color: transparent; }
-  .resource-strip { grid-column: 1; grid-row: 2; justify-content: flex-start; gap: 18px; }
-  .stock-chip { margin: 0 -8px; }
+  .top-hud { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-rows: 48px 44px; gap: 0; padding: 0 4px 0 10px; }
+  .wordmark { grid-column: 1; grid-row: 1; margin-right: 6px; }
+  .nav-rail { grid-column: 2; grid-row: 1; }
+  .menu-trigger { grid-column: 3; grid-row: 1; justify-self: end; border-color: transparent; }
+  .resource-strip { grid-column: 1 / 3; grid-row: 2; justify-content: flex-start; gap: 18px; }
   .resource-chip { gap: 4px; }
-  .resource-label { font-size: 12px; }
   .resource-chip strong { font-size: 18px; }
-  .hud-links { grid-column: 2; grid-row: 2; margin: 0; padding-left: 4px; border-left: 0; }
-  .goal-card { top: 8px; left: 8px; right: 8px; max-width: none; min-height: 44px; gap: 8px; padding-block: 4px; }
-  .goal-step { flex: 1; }
-  .objective-text { font-size: 15px; }
-  .objective-action { min-height: 44px; padding: 0 12px; font-size: 14px; }
+  .hud-links { grid-column: 3; grid-row: 2; margin: 0; padding-left: 4px; border-left: 0; }
   .game-drawer { width: 100%; }
   .game-modal-backdrop { padding: 12px; }
   .game-modal { padding: 22px; }

@@ -14,16 +14,20 @@
 .factory-canvas-mount { position: relative; line-height: 0; }
 .factory-canvas-mount canvas { display: block; }
 
-/* Run state: a glyph by Play; only Blocked needs a word. */
-.run-state { display: inline-flex; align-items: center; gap: 6px; padding: 0 8px 0 4px; color: var(--ink-3); font: 600 15px/1 var(--font-display); letter-spacing: .05em; text-transform: uppercase; }
-.run-state.is-running { color: var(--ink); }
-.run-state.is-blocked { color: var(--failure-ink); }
+/* Play/Pause carry the run state; only Blocked needs a word. */
+.run-state { padding: 0 8px 0 4px; color: var(--failure-ink); font: 600 15px/1 var(--font-display); letter-spacing: .05em; text-transform: uppercase; }
+.command-glyph { display: block; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.command-glyph .is-filled { fill: currentColor; stroke: none; }
+.speed-control { display: flex; margin: 0 4px; border: 1px solid var(--rule-strong); border-radius: 3px; }
+.factory-controls .speed-control button { min-width: 36px; padding: 0 6px; border-width: 0; border-radius: 0; font-size: 14px; }
+.factory-controls .speed-control button + button { border-left: 1px solid var(--rule); }
+.factory-controls .speed-control button[aria-pressed="true"], .factory-controls .speed-control button[aria-pressed="true"]:hover:not(:disabled) { color: var(--course-ink); background: var(--course-tint); }
 
 .factory-controls { grid-area: controls; display: flex; align-items: center; gap: 14px; padding: 0 16px 0 8px; border-top: 1px solid var(--rule-strong); }
 .factory-controls .control-group { display: flex; align-items: center; gap: 2px; }
 .factory-controls .control-group + .control-group { padding-left: 14px; border-left: 1px solid var(--rule); }
 .factory-controls button, .factory-build-status button {
-  min-height: 40px; padding: 0 10px; border-color: transparent; background: transparent;
+  min-width: 40px; min-height: 40px; padding: 0 10px; border-color: transparent; background: transparent;
   font: 600 15px/1 var(--font-display); letter-spacing: .05em; text-transform: uppercase; color: var(--ink-2);
 }
 .factory-controls button:hover:not(:disabled), .factory-build-status button:hover:not(:disabled) { color: var(--ink); border-color: var(--rule-strong); }
@@ -38,14 +42,12 @@
 
 .factory-build-status { grid-area: status; display: flex; align-items: center; justify-content: space-between; gap: 16px; min-width: 0; padding: 0 12px 0 20px; border-top: 1px solid var(--rule-strong); }
 .build-readout { display: flex; align-items: center; gap: 14px; min-width: 0; white-space: nowrap; font-size: 13px; }
-.build-readout strong { font: 600 17px/1 var(--font-display); letter-spacing: .05em; text-transform: uppercase; }
-.build-readout span { display: inline-flex; align-items: center; gap: 5px; color: var(--ink-2); }
+.brush-icon { display: inline-flex; align-items: center; line-height: 0; color: var(--ink); }
 .direction-glyph { color: var(--ink); }
 .build-quote { color: var(--ink-3); font: 600 15px/1 var(--font-display); letter-spacing: .05em; text-transform: uppercase; }
 .build-quote.has-cost { padding: 5px 8px; border: 1.5px solid var(--ink); color: var(--ink); background: var(--paper-raised); }
 .build-hint { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--ink) !important; }
 .build-actions { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; }
-.build-actions kbd { margin-left: 4px; }
 
 /* Selected machine: a legend entry. */
 .machine-selection {
@@ -118,13 +120,12 @@
   .factory-world { grid-template-rows: minmax(0, 1fr) 48px 84px 54px; }
   .factory-build-status { gap: 4px; padding: 0 0 0 10px; }
   .build-readout { gap: 8px; overflow: hidden; font-size: 12px; }
-  .build-readout strong { font-size: 15px; }
   .factory-build-status button { min-height: 44px; min-width: 44px; padding: 0 8px; }
-  .build-actions kbd { display: none; }
   .factory-controls { gap: 0; padding: 0 4px; justify-content: space-between; }
   .factory-controls .control-group { gap: 0; }
   .factory-controls .control-group + .control-group { padding-left: 4px; }
   .factory-controls button { min-height: 44px; min-width: 44px; padding: 0 8px; font-size: 14px; }
+  .factory-controls .speed-control button { min-width: 44px; padding: 0 4px; }
   .factory-controls .facility-command { padding: 0 12px; font-size: 15px; }
   .toolbelt { padding: 4px 24px 4px 8px; gap: 2px; }
   .tool-slot { flex-basis: 66px; width: 66px; min-height: 72px; }

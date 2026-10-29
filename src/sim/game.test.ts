@@ -26,6 +26,7 @@ import {
 import { generate } from "./mapgen";
 import * as mapgenModule from "./mapgen";
 import { compileEntitledPrototype, withSourceBase } from "./recipe";
+import { DEFAULT_PATENTS, activeEffects } from "./patent";
 import { deserializeGame, serializeGame } from "./save";
 
 const FACTORY_CATALOG = availableCatalog({ unlocked: [] }).filter(
@@ -239,6 +240,8 @@ describe("whole-game deterministic state", () => {
 
   it("switches Technology on and off for free, refusing to turn off what a layout still uses", () => {
     let game = createGameState(opts, 10_000);
+    game = applyGameIntent(game, { kind: "setPatent", id: "crane-unlock", enabled: false });
+    expect(availableCatalog(game.patents).map((entry) => entry.typeId)).not.toContain("crane");
     game = applyGameIntent(game, { kind: "setPatent", id: "crane-unlock", enabled: true });
     expect(availableCatalog(game.patents).map((entry) => entry.typeId)).toContain("crane");
     expect(game.economy).toEqual(createGameState(opts, 10_000).economy);
@@ -348,7 +351,7 @@ describe("whole-game deterministic state", () => {
       steps: [{ typeId: skew.typeId, path: skew.path, turn: skew.turn }],
     };
     const locked = entitledLayout(lockedProgram);
-    const game = createGameState(opts, 500);
+    const game = applyGameIntent(createGameState(opts, 500), { kind: "setPatent", id: "zigzag-unlock", enabled: false });
     expect(() => applyGameIntent(game, {
       kind: "runResearchTrial",
       program: lockedProgram,
@@ -584,10 +587,12 @@ describe("whole-game deterministic state", () => {
     })).toThrow(/tick batch/i);
   });
 
-  it("keeps locked machines out of all facility palettes", () => {
-    const ids = availableCatalog(createGameState(opts, 200).patents).map((entry) => entry.typeId);
+  it("starts every machine on and keeps switched-off machines out of all facility palettes", () => {
+    expect(availableCatalog(createGameState(opts, 200).patents)).toEqual(DEFAULT_CATALOG);
+    expect(activeEffects(DEFAULT_PATENTS, createGameState(opts, 200).patents)).toMatchObject({ routing: true, factoryDw: 0, factoryDh: 0, revealAid: 0, unlockedBases: [] });
+    const ids = availableCatalog({ unlocked: ["loop-unlock"] }).map((entry) => entry.typeId);
     expect(ids).not.toContain("zigzag");
-    expect(ids).not.toContain("loop");
+    expect(ids).toContain("loop");
     expect(ids).toContain("hook");
     expect(Object.isFrozen(DEFAULT_CATALOG)).toBe(true);
     expect(Object.isFrozen(DEFAULT_SHAPES.hook?.cells)).toBe(true);
@@ -596,7 +601,6 @@ describe("whole-game deterministic state", () => {
   it("applies machine unlock and both factory expansion patents without changing Atlas authority", () => {
     let game = buildTemplate(createGameState(opts, 10_000));
     game = shipContract(game, 0, recipe());
-    game = applyGameIntent(game, { kind: "setPatent", id: "zigzag-unlock", enabled: true });
     expect(availableCatalog(game.patents).map((entry) => entry.typeId)).toContain("zigzag");
     game = applyGameIntent(game, { kind: "setPatent", id: "bench-2", enabled: true });
     expect(game.production.layout?.width).toBe(BASE_GAME_FACTORY_WIDTH + 2);
@@ -609,7 +613,7 @@ describe("whole-game deterministic state", () => {
   });
 
   it("keeps a save valid after the last trial's machine is switched off", () => {
-    let game = applyGameIntent(createGameState(opts, 10_000), { kind: "setPatent", id: "zigzag-unlock", enabled: true });
+    let game = createGameState(opts, 10_000);
     const { typeId, path, turn } = availableCatalog(game.patents).find((entry) => entry.typeId === "zigzag")!;
     game = applyGameIntent(game, { kind: "runResearchTrial", program: { steps: [{ typeId, path, turn }] }, base: 0 });
     game = applyGameIntent(game, { kind: "setPatent", id: "zigzag-unlock", enabled: false });

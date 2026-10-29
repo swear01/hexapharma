@@ -21,7 +21,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { MachineIcon } from "./MachineIcon";
 import { blockingDialogOpen } from "./blockingDialog";
-import { createPortal } from "react-dom";
 import { machineName } from "./machineLabels";
 import { outcomeEffectText } from "./effectLabels";
 import type {
@@ -489,17 +488,27 @@ function CloseGlyph() {
   );
 }
 
-type RunState = "running" | "paused" | "blocked";
+type CommandKind = "rotate" | "undo" | "redo" | "play" | "pause" | "step" | "center" | "details";
 
-function RunStateGlyph({ state }: { readonly state: RunState }) {
+/** Bottom-bar command icons, in the same legend ink as the top bar. */
+function CommandGlyph({ kind }: { readonly kind: CommandKind }) {
   return (
-    <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" focusable="false">
-      {state === "running" && <path d="M2.5 1.5l8 4.5-8 4.5z" fill="currentColor" />}
-      {state === "paused" && <path d="M2.5 1.5h2.5v9H2.5zM7 1.5h2.5v9H7z" fill="currentColor" />}
-      {state === "blocked" && <path d="M1.5 6h9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />}
+    <svg className="command-glyph" viewBox="0 0 18 18" width="18" height="18" aria-hidden="true" focusable="false">
+      {kind === "rotate" && <path d="M14.5 9A5.5 5.5 0 1 1 12.4 4.7M12.8 1.8v3.3H9.5" />}
+      {kind === "undo" && <path d="M4.5 7.5h7a4 4 0 0 1 0 8H8M7.5 4.5l-3 3 3 3" />}
+      {kind === "redo" && <path d="M13.5 7.5h-7a4 4 0 0 0 0 8H10M10.5 4.5l3 3-3 3" />}
+      {kind === "play" && <path d="M5 3.5 14 9l-9 5.5z" className="is-filled" />}
+      {kind === "pause" && <path d="M5 3.5h2.5v11H5zM10.5 3.5H13v11h-2.5z" className="is-filled" />}
+      {kind === "step" && <><path d="M3.5 3.5 11 9l-7.5 5.5z" className="is-filled" /><path d="M14 3.5v11" /></>}
+      {kind === "center" && <><circle cx="9" cy="9" r="2" /><path d="M2 6V2h4M12 2h4v4M16 12v4h-4M6 16H2v-4" /></>}
+      {kind === "details" && <path d="M2 2.5h14v13H2zM11 2.5v13M13 6h1M13 9h1M13 12h1" />}
     </svg>
   );
 }
+
+/** Production playback rates: each interval advances `TICKS_PER_INTERVAL × speed` ticks (1× = 8 ticks per 80 ms). */
+const PLAY_SPEEDS = [1, 2, 10] as const;
+type PlaySpeed = (typeof PLAY_SPEEDS)[number];
 
 /** A belt-grid tile for the current brush + direction (machines handled separately). */
 function makeTile(brush: Brush, dir: Dir, base: number): FactoryTile | null {
@@ -724,6 +733,7 @@ function factoryCellCenter(cell: HexCoord): { readonly x: number; readonly y: nu
 // ───────────────────────────── component ─────────────────────────────
 
 const TICK_MS = 80;
+const TICKS_PER_INTERVAL = 8;
 
 type FacilityMode = "pilot" | "production";
 
@@ -742,26 +752,6 @@ export function requestFactoryLayoutChange(
   onLayoutChange: (layout: FactoryLayout) => boolean,
 ): boolean {
   return proposed !== current && onLayoutChange(proposed);
-}
-
-export function factoryRuntimeMayReset(runtime: FactoryRuntime): boolean {
-  return runtime.tick !== 0 ||
-    runtime.unitCount !== 0 ||
-    runtime.nextUnitId !== 0 ||
-    runtime.producedTotal !== 0 ||
-    runtime.producedEvents.count !== 0 ||
-    runtime.deadlocked ||
-    runtime.splitterCursors.some((cursor) => cursor !== 0);
-}
-
-type FactoryResetCloseOutcome = "cancel" | "accepted" | "rejected";
-
-export function factoryResetPlaybackAfterClose(
-  wasPlaying: boolean,
-  outcome: FactoryResetCloseOutcome,
-  deadlocked: boolean,
-): boolean {
-  return wasPlaying && outcome !== "accepted" && !deadlocked;
 }
 
 type FactoryHotkeyTargetKind = "text" | "control" | "world";
@@ -806,7 +796,6 @@ interface FactoryProps {
   readonly routing: boolean;
   readonly onLayoutChange: (layout: FactoryLayout) => boolean;
   readonly onAdvance?: (ticks: number) => boolean;
-  readonly onReset?: () => boolean;
   readonly commandLabel?: string;
   readonly commandDisabled?: boolean;
   readonly onCommand?: (layout: FactoryLayout) => void;
@@ -827,7 +816,6 @@ export function Factory({
   routing,
   onLayoutChange,
   onAdvance,
-  onReset,
   commandLabel,
   commandDisabled = false,
   onCommand,
@@ -844,7 +832,7 @@ export function Factory({
   );
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [playing, setPlaying] = useState<boolean>(false);
-  const [resetPending, setResetPending] = useState(false);
+  const [speed, setSpeed] = useState<PlaySpeed>(1);
   const playingRef = useRef(playing);
   playingRef.current = playing;
 
@@ -871,10 +859,6 @@ export function Factory({
   const pendingViewportFocusRef = useRef(true);
   const pendingCommittedKeysRef = useRef<string[]>([]);
   const clipboardRef = useRef<ClipboardBrush | null>(null);
-  const resetTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const resetConfirmRef = useRef<HTMLButtonElement | null>(null);
-  const resetCancelRef = useRef<HTMLButtonElement | null>(null);
-  const resetWasPlayingRef = useRef(false);
   const gestureRef = useRef<CanvasGesture | null>(null);
   const panGestureRef = useRef<{
     readonly pointerId: number;
@@ -1120,18 +1104,19 @@ export function Factory({
     return () => window.cancelAnimationFrame(request);
   }, [active, focusLayoutInViewport, layout]);
 
-  // ── play timer: advance the sim by one tick per interval ──
+  // ── play timer: advance the sim by one batch per interval; speed scales the batch ──
   useEffect(() => {
     if (!playing || mode !== "production" || onAdvance === undefined) return;
+    const ticks = TICKS_PER_INTERVAL * speed;
     const id = window.setInterval(() => {
       if (!playingRef.current || blockingDialogOpen()) return;
-      if (!onAdvance(8)) {
+      if (!onAdvance(ticks)) {
         playingRef.current = false;
         setPlaying(false);
       }
     }, TICK_MS);
     return () => window.clearInterval(id);
-  }, [mode, onAdvance, playing]);
+  }, [mode, onAdvance, playing, speed]);
 
   // stop playing automatically on deadlock.
   useEffect(() => {
@@ -1145,59 +1130,6 @@ export function Factory({
   const stepOnce = useCallback(() => {
     onAdvance?.(1);
   }, [onAdvance]);
-
-  const openResetConfirmation = useCallback(() => {
-    resetWasPlayingRef.current = playingRef.current;
-    if (playingRef.current) {
-      playingRef.current = false;
-      setPlaying(false);
-    }
-    setResetPending(true);
-  }, []);
-
-  const closeResetConfirmation = useCallback((
-    restoreFocus = true,
-    outcome: FactoryResetCloseOutcome = "cancel",
-  ) => {
-    const resume = factoryResetPlaybackAfterClose(
-      resetWasPlayingRef.current,
-      outcome,
-      stateRef.current.deadlocked,
-    );
-    resetWasPlayingRef.current = false;
-    setResetPending(false);
-    if (resume) {
-      playingRef.current = true;
-      setPlaying(true);
-    }
-    if (restoreFocus) window.requestAnimationFrame(() => resetTriggerRef.current?.focus());
-  }, []);
-
-  useEffect(() => {
-    if (!resetPending) return;
-    resetConfirmRef.current?.focus();
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        closeResetConfirmation();
-      } else if (event.key === "Tab") {
-        event.preventDefault();
-        if (document.activeElement === resetConfirmRef.current) resetCancelRef.current?.focus();
-        else resetConfirmRef.current?.focus();
-      }
-    };
-    window.addEventListener("keydown", onKeyDown, true);
-    return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [closeResetConfirmation, resetPending]);
-
-  const confirmReset = useCallback(() => {
-    const accepted = onReset?.() === true;
-    closeResetConfirmation(false, accepted ? "accepted" : "rejected");
-    if (!accepted) return;
-    playingRef.current = false;
-    setPlaying(false);
-  }, [closeResetConfirmation, onReset]);
 
   const updateCamera = useCallback((change: (current: Camera) => Camera) => {
     setCamera((current) => {
@@ -1562,7 +1494,7 @@ export function Factory({
       } else if (event.key === ".") {
         if (mode === "production") {
           event.preventDefault();
-          if (!playing) stepOnce();
+          if (!playing && !state.deadlocked) stepOnce();
         }
       }
     };
@@ -1578,7 +1510,6 @@ export function Factory({
   const sampleSummary = sampleAnalysis.outcome === null
     ? "not runnable"
     : formatFacilityOutcome(sampleAnalysis.outcome);
-  const resetAvailable = mode === "production" && onReset !== undefined && factoryRuntimeMayReset(state);
   const hoveredMachine = hoverCell === null ? undefined : machineAt(layout, hoverCell.q, hoverCell.r);
   const hoveredControl = hoveredMachine === undefined ? undefined : machineOrder.get(hoveredMachine.id);
   const hoveredTile = hoverCell === null
@@ -1669,7 +1600,6 @@ export function Factory({
   };
 
   const facilityName = mode === "pilot" ? "Production Plan" : "Production";
-  const runState: RunState = state.deadlocked ? "blocked" : playing ? "running" : "paused";
   const quote = mode === "pilot"
     ? null
     : brush.kind === "erase"
@@ -1692,26 +1622,23 @@ export function Factory({
           <div className="transport-bar factory-controls" aria-label={`${facilityName} controls`}>
             {mode === "production" && (
               <div className="control-group">
-                <span className={`run-state is-${runState}`} data-testid="factory-run-state" role="status" aria-label={`Production ${runState}`}>
-                  <RunStateGlyph state={runState} />{runState === "blocked" && "Blocked"}
-                </span>
-                <button type="button" onClick={() => setPlaying(true)} disabled={playing || state.deadlocked} className={playing ? "is-active" : ""} data-testid="factory-play" aria-label="Play Production" title="Play (Space)">Play</button>
-                <button type="button" onClick={() => setPlaying(false)} disabled={!playing} data-testid="factory-pause" aria-label="Pause Production" title="Pause (Space)">Pause</button>
-                <button type="button" onClick={stepOnce} disabled={playing} data-testid="factory-step" aria-label="Step Production one tick" title="Step one tick (.)">Step</button>
-                <button
-                  ref={resetTriggerRef}
-                  type="button"
-                  onClick={openResetConfirmation}
-                  disabled={!resetAvailable}
-                  data-testid="factory-reset"
-                  aria-label="Reset Production"
-                  title="Reset Production"
-                >Reset</button>
+                {state.deadlocked
+                  ? <span className="run-state" data-testid="factory-run-state" role="status" title="Any edit restarts the line">Blocked<span className="sr-only">: any edit restarts the line</span></span>
+                  : <span className="sr-only" data-testid="factory-run-state" role="status">{playing ? "Running" : "Paused"}</span>}
+                {playing
+                  ? <button type="button" onClick={() => setPlaying(false)} className="is-active" data-testid="factory-pause" aria-label="Pause Production" title="Pause (Space)"><CommandGlyph kind="pause" /></button>
+                  : <button type="button" onClick={() => setPlaying(true)} disabled={state.deadlocked} data-testid="factory-play" aria-label="Play Production" title="Play (Space)"><CommandGlyph kind="play" /></button>}
+                <div className="speed-control" role="group" aria-label="Production speed">
+                  {PLAY_SPEEDS.map((option) => (
+                    <button key={option} type="button" onClick={() => setSpeed(option)} aria-pressed={speed === option} data-testid={`factory-speed-${option}`} aria-label={`Speed ${option}×`} title={`Speed ${option}×`}>{option}×</button>
+                  ))}
+                </div>
+                <button type="button" onClick={stepOnce} disabled={playing || state.deadlocked} data-testid="factory-step" aria-label="Step Production one tick" title="Step one tick (.)"><CommandGlyph kind="step" /></button>
               </div>
             )}
             <div className="control-group view-group">
-              <button type="button" onClick={() => { const fitted = fitCamera(); cameraRef.current = fitted; setCamera(fitted); }} data-testid="factory-camera-reset" aria-label={`Reset ${facilityName} camera`}>Center</button>
-              <button type="button" data-testid="factory-diagnostics" aria-expanded={diagnosticsOpen} onClick={() => setDiagnosticsOpen((open) => !open)}>Details</button>
+              <button type="button" onClick={() => { const fitted = fitCamera(); cameraRef.current = fitted; setCamera(fitted); }} data-testid="factory-camera-reset" aria-label={`Center ${facilityName}`} title="Center"><CommandGlyph kind="center" /></button>
+              <button type="button" data-testid="factory-diagnostics" aria-expanded={diagnosticsOpen} onClick={() => setDiagnosticsOpen((open) => !open)} aria-label="Details" title="Details"><CommandGlyph kind="details" /></button>
             </div>
             {onCommand !== undefined && commandLabel !== undefined && (
               <button
@@ -1728,8 +1655,14 @@ export function Factory({
           </div>
           <div className="factory-build-status" aria-label="Current build tool">
             <div className="build-readout">
-              <strong data-testid="brush-selected" className={brushIsMachine ? "" : "is-transport"}>{brushLabel}</strong>
-              <span data-testid="brush-direction">{brushIsMachine ? `Footprint ${footRot * 60}°` : <><DirectionGlyph dir={brushDir} />Direction {DIR_LABEL[brushDir]}</>}</span>
+              <span className="brush-icon" data-testid="brush-selected" role="img" aria-label={brushLabel} title={brushLabel}>
+                {brush.kind === "machine" ? <MachineIcon typeId={brush.typeId} path={entryOf(brush.typeId).path} size={30} variant="token" /> : <ToolGlyph kind={brush.kind} />}
+              </span>
+              {brush.kind !== "erase" && (
+                <span className="brush-icon" data-testid="brush-direction" role="img" aria-label={brushIsMachine ? `Footprint ${footRot * 60}°` : `Direction ${DIR_LABEL[brushDir]}`} title={brushIsMachine ? `Footprint ${footRot * 60}°` : `Direction ${DIR_LABEL[brushDir]}`}>
+                  <DirectionGlyph dir={brushIsMachine ? footRot : brushDir} />
+                </span>
+              )}
               {brush.kind === "source" && baseLocks.length > 1 && (
                 <BasePicker value={sourceBase} locks={baseLocks} onChange={setSourceBase} onHint={setLockedHint} testId="source-base" />
               )}
@@ -1738,9 +1671,9 @@ export function Factory({
                 : quote !== null && <output className={`build-quote${hoverBuildCost === null ? "" : " has-cost"}`} data-testid="factory-quote">{quote}</output>}
             </div>
             <div className="build-actions">
-              <button type="button" onClick={rotateHoveredOrActive} data-testid="brush-rotate">Rotate <kbd>R</kbd></button>
-              <button type="button" onClick={undoLayout} disabled={history.past.length === 0} data-testid="factory-undo">Undo</button>
-              <button type="button" onClick={redoLayout} disabled={history.future.length === 0} data-testid="factory-redo">Redo</button>
+              <button type="button" onClick={rotateHoveredOrActive} data-testid="brush-rotate" aria-label="Rotate" title="Rotate (R)"><CommandGlyph kind="rotate" /></button>
+              <button type="button" onClick={undoLayout} disabled={history.past.length === 0} data-testid="factory-undo" aria-label="Undo" title="Undo (Ctrl+Z)"><CommandGlyph kind="undo" /></button>
+              <button type="button" onClick={redoLayout} disabled={history.future.length === 0} data-testid="factory-redo" aria-label="Redo" title="Redo (Ctrl+Shift+Z)"><CommandGlyph kind="redo" /></button>
             </div>
           </div>
           {hoveredMachine !== undefined && <div className="machine-selection" data-testid="machine-selection">
@@ -1903,39 +1836,6 @@ export function Factory({
         </aside>
         <span className="inspector-more" data-testid="inspector-more" aria-hidden="true"><ChevronGlyph down /></span>
       </div>
-      {resetPending && createPortal(
-        <div
-          className="game-modal-backdrop"
-          onPointerDown={(event) => {
-            if (event.target === event.currentTarget) closeResetConfirmation();
-          }}
-        >
-          <section
-            className="game-modal"
-            role="alertdialog"
-            aria-modal="true"
-            aria-labelledby="factory-reset-title"
-            aria-describedby="factory-reset-warning factory-reset-preserved"
-            data-testid="factory-reset-confirm"
-          >
-            <h2 id="factory-reset-title">Reset Production?</h2>
-            <p id="factory-reset-warning">Runtime and in-flight units will be cleared.</p>
-            <p id="factory-reset-preserved">Inventory and waste will stay.</p>
-            <div className="modal-actions">
-              <button ref={resetCancelRef} type="button" onClick={() => closeResetConfirmation()}>Cancel</button>
-              <button
-                ref={resetConfirmRef}
-                type="button"
-                className="danger-action"
-                onClick={confirmReset}
-              >
-                Reset runtime
-              </button>
-            </div>
-          </section>
-        </div>,
-        document.body,
-      )}
     </div>
   );
 }
