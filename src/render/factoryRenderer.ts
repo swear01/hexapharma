@@ -114,6 +114,12 @@ export const MACHINE_OUTLINE_WIDTH = 1.6;
 export const SEAM_WIDTH = 4;
 /** Port arrowhead size (drawTriangle radius). */
 const PORT_ARROW = 7;
+/** Gap between an arrowhead and its footprint edge. */
+const PORT_EDGE_GAP = 1;
+/** Triangle centre to the midpoint of its back edge, as a share of PORT_ARROW (cos 60° ≈ 0.5, plus stroke). */
+const PORT_BACK_RATIO = 0.6;
+/** A stuck port's stop bar sits this far past the footprint edge, clear of the output arrow tip. */
+const STOP_BAR_OFFSET = PORT_EDGE_GAP + 3;
 /** Farthest icon point from its cell centre; with the end circle (r 3 + stroke) it stays inside one hex. */
 export const MACHINE_ICON_RADIUS = 13;
 
@@ -493,11 +499,12 @@ function drawMachineGlyph(g: Graphics, machine: PlacedMachine, cx: number, cy: n
 }
 
 /**
- * Distance from a port's cell centre to its arrowhead's centre. Both heads sit inside their own
- * body touching the edge (output tip / input back), so two facing ports stay two arrows.
+ * Distance from a port's cell centre to its arrowhead's centre. The output's tip and the input's
+ * back edge stop PORT_EDGE_GAP short of the footprint edge, so two facing ports stay two arrows;
+ * the input's back corners may graze the edge.
  */
 function portArrowReach(role: "input" | "output"): number {
-  return role === "output" ? EDGE - 1 - PORT_ARROW : EDGE - 1 - 0.6 * PORT_ARROW;
+  return role === "output" ? EDGE - PORT_EDGE_GAP - PORT_ARROW : EDGE - PORT_EDGE_GAP - PORT_BACK_RATIO * PORT_ARROW;
 }
 
 function portArrowX(q: number, r: number, side: Dir, role: "input" | "output"): number {
@@ -595,7 +602,8 @@ function drawMachine(m: PlacedMachine, isBottleneck: boolean, ctx: DrawCtx): voi
 
   const outlineWidth = isBottleneck ? 3 : MACHINE_OUTLINE_WIDTH;
   for (const wc of occupied) {
-    // Inset by half the stroke so the outline stays inside the footprint; round caps close the corners.
+    // Shrink the circumradius so the stroke's outer half stays inside the footprint
+    // (half the width over cos 30° ≈ 0.6 × width); round caps close the corners.
     const body = hexPolygon(cellX(wc.q, wc.r), cellY(wc.r), FACTORY_HEX_SIZE - outlineWidth * 0.6);
     for (const side of HEX_DIRS) {
       if (occupied.some((n) => n.q === wc.q + HEX_DQ[side]! && n.r === wc.r + HEX_DR[side]!)) continue;
@@ -796,6 +804,14 @@ function drawGhost(ghost: FactoryGhost, g: Graphics, modeStyle: FactoryPrintStyl
   const topology = buildFactoryTransportTopology(layout);
   const ctx: DrawCtx = { cells: g, style };
   paintLayout(layout, topology, ctx, null, scope);
+  if (ghost.invalid) {
+    // A rejected tile over a machine cannot join the layout; mark its cell so the refusal shows.
+    for (const { q, r } of ghost.tiles) {
+      if (!hexInBounds(base.width, base.height, q, r) || underMachine[hexIndex(base.width, q, r)] !== 1) continue;
+      g.poly([...hexPolygon(cellX(q, r), cellY(r), FACTORY_HEX_SIZE - 2)], true);
+    }
+    g.stroke({ color: style.ink, alpha: style.inkAlpha, width: 2.4, join: "round" });
+  }
   if (ghost.invalid && ghost.machine !== null) {
     // A rejected machine is not in any layout: draw it alone with open ports.
     const machine = ghost.machine;
@@ -913,7 +929,8 @@ export async function createFactoryRenderer(
           if (stuck !== undefined) {
             for (const port of stuck.ports) {
               // Just outside the edge, past the output arrowhead's tip.
-              drawStopBar(alerts, cellX(port.q, port.r) + DIR_UX[port.side]! * (EDGE + 4), cellY(port.r) + DIR_UY[port.side]! * (EDGE + 4), port.side);
+              const reach = EDGE + STOP_BAR_OFFSET;
+              drawStopBar(alerts, cellX(port.q, port.r) + DIR_UX[port.side]! * reach, cellY(port.r) + DIR_UY[port.side]! * reach, port.side);
             }
           }
         } else {

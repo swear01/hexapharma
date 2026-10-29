@@ -995,6 +995,7 @@ export function Factory({
           local = null;
         }
         rendererRef.current = null;
+        setLiveRenderer(null);
         if (!disposed) {
           const detail = error instanceof Error ? error.message : String(error);
           setRendererError(`Could not start the Factory renderer: ${detail}`);
@@ -1531,10 +1532,12 @@ export function Factory({
     }
     const tile = makeTile(brush, brushDir, sourceBase);
     return tile === null ? null : { layout: ghostLayout, invalid, tiles: [{ q: hoverCell.q, r: hoverCell.r, tile }], machine: null };
-  // Every value read above derives from these inputs.
+  // Every value read above derives from these inputs; a new input to those derivations belongs here too.
   }, [layout, hoverCell, brush, brushDir, footRot, sourceBase, activeGesture]);
   useEffect(() => {
-    liveRenderer?.renderGhost(placementGhost);
+    // The mount effect nulls rendererRef before destroying; skip a stale handle in that window.
+    if (liveRenderer === null || liveRenderer !== rendererRef.current) return;
+    liveRenderer.renderGhost(placementGhost);
   }, [liveRenderer, placementGhost]);
   let ghostState: "valid" | "invalid" | undefined;
   if (placementGhost !== null) ghostState = placementGhost.invalid ? "invalid" : "valid";
