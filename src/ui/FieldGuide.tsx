@@ -89,7 +89,7 @@ export function FieldGuide() {
         <div><dt><kbd>F</kbd></dt><dd>Center the route’s end</dd></div>
         <div><dt><kbd>R</kbd> <kbd>Shift</kbd>+<kbd>R</kbd> <kbd>Q</kbd></dt><dd>Rotate · rotate back · pick a tool</dd></div>
         <div><dt><kbd>X</kbd> <kbd>V</kbd> <kbd>Del</kbd></dt><dd>Erase · select · delete selection</dd></div>
-        <div><dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dt><dd>Pan the factory</dd></div>
+        <div><dt><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd></dt><dd>Pan the factory</dd></div>
         <div><dt><kbd>Space</kbd> <kbd>.</kbd></dt><dd>Play/pause · single tick</dd></div>
         <div><dt><kbd>Ctrl</kbd>+<kbd>Z</kbd>/<kbd>Y</kbd></dt><dd>Undo · redo</dd></div>
         <div><dt><kbd>Ctrl</kbd>+<kbd>C</kbd>/<kbd>X</kbd>/<kbd>V</kbd></dt><dd>Copy · cut · paste</dd></div>

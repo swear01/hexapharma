@@ -194,7 +194,10 @@ export function placeFragment(layout: FactoryLayout, fragment: FactoryFragment, 
   return changed ? { ...layout, tiles, machines } : layout;
 }
 
-/** Move the selected items so the `from` cell lands on `to`, turned `rot`; `layout` is null when refused. */
+/**
+ * Move the selected items so the `from` cell lands on `to`, turned `rot`. The moved `fragment`
+ * always comes back (it previews a refused move too); `layout` is null and `cells` empty when refused.
+ */
 export function moveSelection(
   layout: FactoryLayout,
   cells: readonly HexCoord[],
