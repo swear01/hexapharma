@@ -94,13 +94,12 @@
 .inspector h1 { font-size: 24px; padding-right: 36px; }
 .factory-metrics { display: grid; gap: 14px; }
 .factory-metrics > div { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; font-size: 13px; }
-.factory-metrics span, .brush-readout { color: var(--ink-2); }
+.factory-metrics span { color: var(--ink-2); }
 .factory-metrics strong { text-align: right; font: 600 18px/1 var(--font-display); letter-spacing: .02em; color: var(--ink); }
 .factory-metrics strong span { color: inherit; }
 .factory-blocked-note { margin: 0; padding: 10px 12px; border: 1px solid var(--failure-border); background: var(--failure-surface); color: var(--failure-ink); font-size: 13px; }
 .hover-inspector { font-size: 12px; }
 .hover-inspector strong { display: block; margin-top: 8px; }
-.brush-readout { font-size: 12px; }
 .factory-render-alert { position: absolute; top: 72px; left: 12px; z-index: 21; }
 
 @media (max-width: 1100px) {

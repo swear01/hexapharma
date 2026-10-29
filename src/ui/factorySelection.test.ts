@@ -118,10 +118,11 @@ describe("paste transform", () => {
     const layout = withTile({ ...floor(), machines: [machine(3, 2, 4)] }, 1, 1, { kind: "belt", dir: 0 });
     const cells = itemCells(layout, [{ q: 1, r: 1 }, { q: 2, r: 4 }]);
     const moved = moveSelection(layout, cells, { q: 1, r: 1 }, { q: 2, r: 1 }, 0);
-    expect(moved?.layout.tiles[1 * W + 2]).toEqual({ kind: "belt", dir: 0 });
-    expect(moved?.layout.tiles[1 * W + 1]).toEqual({ kind: "empty" });
-    expect(moved?.layout.machines.map((placed) => [placed.id, placed.anchor])).toEqual([[3, { q: 3, r: 4 }]]);
-    expect(moved?.cells).toHaveLength(cells.length);
-    expect(moveSelection(layout, cells, { q: 1, r: 1 }, { q: 1, r: 1 }, 0)?.layout).toBe(layout);
+    expect(moved.layout?.tiles[1 * W + 2]).toEqual({ kind: "belt", dir: 0 });
+    expect(moved.layout?.tiles[1 * W + 1]).toEqual({ kind: "empty" });
+    expect(moved.layout?.machines.map((placed) => [placed.id, placed.anchor])).toEqual([[3, { q: 3, r: 4 }]]);
+    expect(moved.cells).toHaveLength(cells.length);
+    expect(moveSelection(layout, cells, { q: 1, r: 1 }, { q: 1, r: 1 }, 0).layout).toBe(layout);
+    expect(moveSelection(layout, cells, { q: 1, r: 1 }, { q: W, r: 1 }, 0).layout).toBeNull();
   });
 });

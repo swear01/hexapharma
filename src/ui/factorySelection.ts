@@ -45,17 +45,25 @@ export function boxCells(width: number, height: number, a: HexCoord, b: HexCoord
   return cells;
 }
 
+/** Whether an in-bounds `cell` is set in a per-cell mask of `layout`. */
+function marked(layout: FactoryLayout, mask: Uint8Array, cell: HexCoord): boolean {
+  return hexInBounds(layout.width, layout.height, cell.q, cell.r) && mask[hexIndex(layout.width, cell.q, cell.r)] === 1;
+}
+
 /** Every cell of the items `cells` touch: a machine counts whole, an empty cell not at all. */
 export function itemCells(layout: FactoryLayout, cells: readonly HexCoord[]): HexCoord[] {
   const touched = new Uint8Array(layout.tiles.length);
+  const isTouched = (cell: HexCoord) => marked(layout, touched, cell);
   for (const cell of cells) {
     if (hexInBounds(layout.width, layout.height, cell.q, cell.r)) touched[hexIndex(layout.width, cell.q, cell.r)] = 1;
   }
   const picked = new Uint8Array(layout.tiles.length);
   for (const machine of layout.machines) {
     const footprint = worldCells(machine);
-    if (!footprint.some((cell) => touched[hexIndex(layout.width, cell.q, cell.r)] === 1)) continue;
-    for (const cell of footprint) picked[hexIndex(layout.width, cell.q, cell.r)] = 1;
+    if (!footprint.some(isTouched)) continue;
+    for (const cell of footprint) {
+      if (hexInBounds(layout.width, layout.height, cell.q, cell.r)) picked[hexIndex(layout.width, cell.q, cell.r)] = 1;
+    }
   }
   for (let index = 0; index < layout.tiles.length; index++) {
     if (touched[index] === 1 && layout.tiles[index]?.kind !== "empty") picked[index] = 1;
@@ -75,8 +83,7 @@ export function selectionLayout(layout: FactoryLayout, cells: readonly HexCoord[
     width: layout.width,
     height: layout.height,
     tiles: layout.tiles.map((tile, index) => picked[index] === 1 ? tile : { kind: "empty" }),
-    machines: layout.machines.filter((machine) =>
-      worldCells(machine).some((cell) => picked[hexIndex(layout.width, cell.q, cell.r)] === 1)),
+    machines: layout.machines.filter((machine) => worldCells(machine).some((cell) => marked(layout, picked, cell))),
   };
 }
 
@@ -103,8 +110,7 @@ export function eraseItems(layout: FactoryLayout, cells: readonly HexCoord[]): F
   return {
     ...layout,
     tiles: layout.tiles.map((tile, index) => picked[index] === 1 ? { kind: "empty" } : tile),
-    machines: layout.machines.filter((machine) =>
-      !worldCells(machine).some((cell) => picked[hexIndex(layout.width, cell.q, cell.r)] === 1)),
+    machines: layout.machines.filter((machine) => !worldCells(machine).some((cell) => marked(layout, picked, cell))),
   };
 }
 
@@ -188,16 +194,16 @@ export function placeFragment(layout: FactoryLayout, fragment: FactoryFragment, 
   return changed ? { ...layout, tiles, machines } : layout;
 }
 
-/** Move the selected items so the `from` cell lands on `to`, turned `rot`; null when refused. */
+/** Move the selected items so the `from` cell lands on `to`, turned `rot`; `layout` is null when refused. */
 export function moveSelection(
   layout: FactoryLayout,
   cells: readonly HexCoord[],
   from: HexCoord,
   to: HexCoord,
   rot: Rotation,
-): { readonly layout: FactoryLayout; readonly cells: HexCoord[] } | null {
-  if (from.q === to.q && from.r === to.r && rot === 0) return { layout, cells: itemCells(layout, cells) };
+): { readonly fragment: FactoryFragment; readonly layout: FactoryLayout | null; readonly cells: HexCoord[] } {
   const fragment = transformFragment(selectionLayout(layout, cells), from, to, rot);
+  if (from.q === to.q && from.r === to.r && rot === 0) return { fragment, layout, cells: itemCells(layout, cells) };
   const moved = placeFragment(eraseItems(layout, cells), fragment, false);
-  return moved === null ? null : { layout: moved, cells: itemCells(moved, fragmentCells(fragment)) };
+  return { fragment, layout: moved, cells: moved === null ? [] : itemCells(moved, fragmentCells(fragment)) };
 }

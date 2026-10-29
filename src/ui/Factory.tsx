@@ -61,7 +61,6 @@ import {
   itemCells,
   moveSelection,
   placeFragment,
-  selectionLayout,
   transformFragment,
   type FactoryClipboard,
 } from "./factorySelection";
@@ -1363,7 +1362,7 @@ export function Factory({
       }
       case "drag": {
         const moved = moveSelection(gesture.base, selectionRef.current, gesture.start, gesture.last, gesture.rot);
-        if (moved !== null && commitLayout(moved.layout)) setSelection(moved.cells);
+        if (moved.layout !== null && commitLayout(moved.layout)) setSelection(moved.cells);
         return;
       }
       case "box": {
@@ -1415,7 +1414,8 @@ export function Factory({
   /** Copy the selection, or the hovered item when nothing is selected; a cut also removes it. */
   const copyItems = useCallback((cut: boolean) => {
     const hoverCell = hoverRef.current;
-    const cells = selectionRef.current.length > 0 ? selectionRef.current : hoverCell === null ? [] : [hoverCell];
+    const hovered = hoverCell === null ? [] : [hoverCell];
+    const cells = selectionRef.current.length > 0 ? selectionRef.current : hovered;
     const copied = copySelection(layoutRef.current, cells);
     if (copied === null) return;
     clipboardRef.current = copied;
@@ -1617,11 +1617,8 @@ export function Factory({
   // A dragged selection or the held paste: the moved items, and the layout they make (null: refused).
   const fragmentPreview = useMemo(() => {
     if (dragGesture !== null) {
-      const { base, start, last, rot } = dragGesture;
-      return {
-        fragment: transformFragment(selectionLayout(base, selection), start, last, rot),
-        candidate: moveSelection(base, selection, start, last, rot)?.layout ?? null,
-      };
+      const moved = moveSelection(dragGesture.base, selection, dragGesture.start, dragGesture.last, dragGesture.rot);
+      return { fragment: moved.fragment, candidate: moved.layout };
     }
     if (clipboard === null || held === null || pasteCell === null) return null;
     const fragment = transformFragment(clipboard.layout, clipboard.pivot, pasteCell, held);
@@ -1630,11 +1627,11 @@ export function Factory({
   const idleDirectMachine = activeGesture === null && hoverCell !== null && held === null
     ? directGestureMachineAt(layout, hoverCell.q, hoverCell.r, brush.kind === "erase" || brush.kind === "select")
     : undefined;
-  const hoverCandidate = moveCandidate ?? beltGestureCandidate ?? (fragmentPreview === null
-    ? null
-    : fragmentPreview.candidate ?? layout) ?? (boxGesture !== null || idleDirectMachine !== undefined || hoverCell === null
-    ? layout
-    : paint(layout, hoverCell.q, hoverCell.r, brush, brushDir, footRot, sourceBase));
+  // A refused fragment keeps the current layout as its candidate.
+  const fragmentCandidate = fragmentPreview === null ? null : fragmentPreview.candidate ?? layout;
+  const paints = boxGesture === null && idleDirectMachine === undefined && hoverCell !== null;
+  const idleCandidate = paints ? paint(layout, hoverCell.q, hoverCell.r, brush, brushDir, footRot, sourceBase) : layout;
+  const hoverCandidate = moveCandidate ?? beltGestureCandidate ?? fragmentCandidate ?? idleCandidate;
   const moveUnchanged = moveMachine !== undefined && moveAnchor !== null &&
     moveMachine.anchor.q === moveAnchor.q && moveMachine.anchor.r === moveAnchor.r;
   const hoverPlacementValid = moveBase !== null
