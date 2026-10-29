@@ -854,6 +854,10 @@ export function Factory({
   const clipboardRef = useRef(clipboard);
   clipboardRef.current = clipboard;
   const [held, heldRef, setHeld] = useLatestState<Rotation | null>(null);
+  // Loading a game clears the shared clipboard; nothing is left to hold.
+  useEffect(() => {
+    if (clipboard === null) setHeld(null);
+  }, [clipboard, setHeld]);
   // Any new tool choice (click, hotkey, pipette) retires a stale locked-machine hint and drops
   // the held paste; leaving Select drops the selection.
   const setBrush = useCallback((next: Brush) => {

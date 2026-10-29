@@ -145,5 +145,6 @@ describe("paste transform", () => {
     expect(rotateSelection(edge, [{ q: 2, r: 0 }, { q: 4, r: 0 }], 1).layout).toBeNull();
     const sink = withTile(floor(), 3, 3, { kind: "sink" });
     expect(rotateSelection(sink, [{ q: 3, r: 3 }], 1).layout).toBe(sink);
+    expect(moveSelection(sink, [{ q: 3, r: 3 }], { q: 3, r: 3 }, { q: 3, r: 3 }, 2).layout).toBe(sink);
   });
 });

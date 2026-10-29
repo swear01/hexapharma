@@ -212,7 +212,9 @@ export function moveSelection(
 ): { readonly fragment: FactoryFragment; readonly layout: FactoryLayout | null; readonly cells: HexCoord[] } {
   const fragment = transformFragment(selectionLayout(layout, cells), from, to, rot);
   if (from.q === to.q && from.r === to.r && rot === 0) return { fragment, layout, cells: itemCells(layout, cells) };
-  const moved = placeFragment(eraseItems(layout, cells), fragment, false);
+  const placed = placeFragment(eraseItems(layout, cells), fragment, false);
+  // A move or turn that changes nothing (a lone Sink turned in place) must not commit a no-op undo step.
+  const moved = placed !== null && JSON.stringify(placed) === JSON.stringify(layout) ? layout : placed;
   return { fragment, layout: moved, cells: moved === null ? [] : itemCells(moved, fragmentCells(fragment)) };
 }
 
@@ -221,7 +223,5 @@ export function rotateSelection(layout: FactoryLayout, cells: readonly HexCoord[
   const covered = itemCells(layout, cells);
   if (covered.length === 0) return { fragment: { tiles: [], machines: [] }, layout: null, cells: [] };
   const pivot = centreCell(covered);
-  const turned = moveSelection(layout, covered, pivot, pivot, rot);
-  // A turn that changes nothing (a lone Sink) must not commit a no-op undo step.
-  return turned.layout !== null && JSON.stringify(turned.layout) === JSON.stringify(layout) ? { ...turned, layout } : turned;
+  return moveSelection(layout, covered, pivot, pivot, rot);
 }
