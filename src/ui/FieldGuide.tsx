@@ -65,7 +65,7 @@ export function FieldGuide() {
       <p>Click machines (or press 1–9) to plan a route; each machine turns the drug, so later paths rotate. <strong>Run · $N</strong> (Enter) pays once and runs the whole route on the real map, which can differ under fog. The solid line is what happened; only that land is revealed.</p>
       <p>Backspace or <kbd>Ctrl</kbd>+<kbd>Z</kbd> removes the last step; <strong>Clear</strong> empties the plan. Click a revealed cell to see what it does.</p>
       <h2>Build and ship</h2>
-      <p><strong>Plan</strong> is free and has no clock. <strong>Production</strong> is paid and runs; <strong>Commission $N</strong> builds your Plan there. Lay Source → your route’s machines in order → Sink, with belts from each output port to the next input port.</p>
+      <p><strong>Production Plan</strong> is free and has no clock. <strong>Production</strong> is paid and runs; <strong>Commission $N</strong> builds your plan there. Lay Source → your route’s machines in order → Sink, with belts from each output port to the next input port.</p>
       <p>Ship stock in Market for cash; each unit lowers that disease’s next price.</p>
       <h2>Legend</h2>
       {LEGEND.map(({ group, items }) => (

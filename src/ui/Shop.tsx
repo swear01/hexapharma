@@ -158,13 +158,11 @@ export function Shop({ level, economy, inventory, onSell }: ShopProps) {
             const premium = eligible.filter((product) => product.outcome.premium.includes(disease.id)).length;
             const tainted = have - clean;
             const sold = soldSoFar(economy, disease.id);
-            const quote = bestMarketQuote(inventory, disease, sold);
-            const disabledReason = marketDisabledReason(have, quote);
             const disabledReasonId = `shop-disabled-reason-${disease.id}`;
             const cardTitle = (
               <h2>{diseaseName(disease.id)}{level.mm.maps.length > 1 && ` · ${BASE_NAMES[disease.map]}`}</h2>
             );
-            if (have === 0 || quote === null) {
+            if (have === 0) {
               return (
                 <article key={disease.id} className="market-card is-quiet" data-testid={`shop-row-${disease.id}`}>
                   {cardTitle}
@@ -172,6 +170,9 @@ export function Shop({ level, economy, inventory, onSell }: ShopProps) {
                 </article>
               );
             }
+            // Stock always has a next-unit quote.
+            const quote = bestMarketQuote(inventory, disease, sold)!;
+            const disabledReason = marketDisabledReason(have, quote);
             const describedBy = disabledReason === null ? undefined : disabledReasonId;
             return (
               <article key={disease.id} className="market-card is-active" data-testid={`shop-row-${disease.id}`}>
@@ -184,7 +185,7 @@ export function Shop({ level, economy, inventory, onSell }: ShopProps) {
                 </div>
                 <div className="market-card-body">
                   <span className="market-stock" title="Units in stock">
-                    <span className="is-clean"><strong data-testid={`shop-clean-${disease.id}`}>{clean}</strong> clean</span>
+                    {clean > 0 && <span className="is-clean"><strong data-testid={`shop-clean-${disease.id}`}>{clean}</strong> clean</span>}
                     {tainted > 0 && <span className="is-tainted"><strong data-testid={`shop-tainted-${disease.id}`}>{tainted}</strong> tainted</span>}
                     {premium > 0 && <span className="is-premium"><strong data-testid={`shop-premium-${disease.id}`}>{premium}</strong> ★</span>}
                   </span>

@@ -35,11 +35,13 @@
 
 ## 4. Shared language, separate authority
 
-- LMB click／drag place；RMB erase；一個 gesture 一筆 history。
-- Shift+LMB 或 MMB pan；wheel cursor-anchor zoom；camera 不改 sim authority。
+- LMB click／drag place；RMB erase；一個 gesture 一筆 history。手上有 Paste 或有選取時，RMB／Esc 先取消它們（D51）。
+- WASD（按住連續平移）或 MMB pan；wheel cursor-anchor zoom；camera 不改 sim authority。Shift+LMB 不 pan。
 - touch 單指在格內 click／drag 使用目前工具，從既有 machine 開始則搬動整台；兩指 drag 或從格外開始才 pan。點既有 machine 後，畫面 Rotate control 必須旋轉該 machine，不能要求實體鍵盤。
-- `R` 在游標覆蓋既有machine時直接將該footprint／ports順時針旋轉60°；否則旋轉目前Factory brush。六次rotation回到原向，Research path geometry不受通用 rotate 操作影響。
-- `Q` pipette、copy／cut／paste、undo／redo只處理 Factory domain payload。
+- `R` 順時針、`Shift+R` 逆時針 60°，依序作用於：拖曳中的選取、手上的 Paste、游標覆蓋的既有machine、目前Factory brush。六次rotation回到原向，Research path geometry不受通用 rotate 操作影響。
+- `X` Erase：drag 拉框（螢幕對齊，click 即一格），放開刪除框內碰到的所有 machine 與 tile，框內將刪的格以紅框預覽。`V` Select：空地 drag 拉框選取，Shift+drag 加選；拖曳已選項目整組搬動；Delete／Backspace 刪除。選取以紫色格標示，拉框時畫虛線矩形。切換工具清除選取。
+- `Q` pipette、copy／cut／paste、undo／redo只處理 Factory domain payload。剪貼簿是 Blueprint capture 的 `factory-layout`（只含選取或游標下項目），不另立格式；`Ctrl+V` 拿起 Paste ghost，click 放下並保留在手上，切換工具或 Esc 放掉。Paste／搬動照手放規則：machine 需空地，tile 可覆蓋 tile 但不可壓 machine，任一項不合法則整個 ghost 紅色且不提交。
+- 輸入框、textarea、contenteditable 有焦點時不觸發 world hotkeys。
 - held placement 的 ghost 半透明地畫出將建成的實物（machine body、icon、port 箭頭；belt／splitter／merger／source／sink 的 tile），invalid 改為紅色；Belt drag 每格依 commit 相同的方向規則顯示 belt 與方向箭頭（含轉折）。Erase 與「拖曳此 machine」維持外框。Production ghost同時顯示該次新增 cost。
 - bottom hotbar 是 cursor tool belt，不是表單。
 
@@ -49,14 +51,14 @@ F1 一次顯示一個 base 的大型 Atlas：
 
 - 正常新局只有一個 base，不顯示選擇器（D48）。多 base 關卡（`nMaps > 1`）在地圖右下有 base 選擇器（`research-base`，每個 base 一個 `aria-pressed` 按鈕：Saline／Oil／Ethanol）。鎖住的 base 帶鎖頭、`aria-disabled`，點擊／hover／focus 只在選擇器旁顯示「Oil off · turn it on in Technology」，不切換。切換只改顯示的圖、fog 與最近試驗（試驗在該 base 時才顯示），規劃路線保留，Run 在選中的 base 付費；Load 顯示最近試驗的 base，New Game 回到 Saline。單 base 關卡不顯示選擇器。
 
-- Research拖曳任一滑鼠鍵都可pan，與Factory的Shift+LMB／MMB手勢分開；pointer cancel只取消gesture，不得commit或erase。camera開局聚焦世界中心的generator start；fresh fog只揭露中心radius-two 19-cell hex disk，平常只看見大地圖的一小部分。地圖左下直接印著四個實心三角與中央定位圈，沒有底板（墨色＋紙色暈邊，focus 只在鍵盤操作時畫圓環）：三角各平移三分之一可見地圖（純滑鼠可操作），定位圈（`F`）在有規劃時聚焦規劃終點，否則聚焦最近試驗的實際終點；窄螢幕（觸控拖曳）只留中央點。點左上 step 清單的一項把該 step 的終點置中。不顯示揭露格數、zoom或Cure計數。每次Run在單一intent中resolve，UI不顯示timed Dose phase或自動camera follow；唯一例外是剛resolve出Cure的試驗會以≤220 ms（reduced motion即時、任何pointer／wheel／focus可中斷）把camera fit到整條實際路線，避開結果readout與step清單；建築往返不因舊outcome重設手動camera。
+- Research拖曳任一滑鼠鍵都可pan，與Factory的MMB／WASD分開；pointer cancel只取消gesture，不得commit或erase。camera開局聚焦世界中心的generator start；fresh fog只揭露中心radius-two 19-cell hex disk，平常只看見大地圖的一小部分。地圖左下直接印著四個實心三角與中央定位圈，沒有底板（墨色＋紙色暈邊，focus 只在鍵盤操作時畫圓環）：三角各平移三分之一可見地圖（純滑鼠可操作），定位圈（`F`）在有規劃時聚焦規劃終點，否則聚焦最近試驗的實際終點；窄螢幕（觸控拖曳）只留中央點。點左上 step 清單的一項把該 step 的終點置中。不顯示揭露格數、zoom或Cure計數。每次Run在單一intent中resolve，UI不顯示timed Dose phase或自動camera follow；唯一例外是剛resolve出Cure的試驗會以≤220 ms（reduced motion即時、任何pointer／wheel／focus可中斷）把camera fit到整條實際路線，避開結果readout與step清單；建築往返不因舊outcome重設手動camera。
 - Research 沒有羅盤：heading 由地圖上的終點尖頭表示；不顯示疾病方位、座標、距離、reference或region大小。
 - 霧是未印的紙：只有與seed／座標有關、與隱藏地形無關的淡等高線；Wall在霧下仍可讀，已揭露格與霧下都畫同樣淡的格線（霧下只有 minor）。
 - Abyss、Swamp、Portal A+B、Cure與SideEffect未揭露前不能有 motif、sprite、region edge、preview差異或 outcome洩漏。只揭露單一 Portal 端點時可顯示未配對端點，但配對標記、方向、目的座標與 preview jump 必須等兩端都揭露。
 - palette是map legend：每個machine以footprint＋完整path的token、全名、價格與hotkey辨識；沒有 path-length control。
 - 起點是指向關卡起始 heading 的紫色空心尖頭；**規劃路線**是虛線紫色leg、每台機器終點的小實心節點與每段 leg 中央的兩筆 chevron（不編號），在 fog-masked planning map 上走完整條（霧當平地、Wall 照算）；**最近一次試驗的實際路線**是實線紫色leg，由 `lastTrial.program` 在真實地圖重播；規劃終點與實際終點都是指向 heading 的紫色實心尖頭（Failure 為紅色X）。Run 後、改動規劃前，虛線改為該次 Run 當下的預估並淡化；第一個偏離點只畫紅圈（地圖上不寫字；點該格可看原因）。Swamp 半步畫在半格點。新試驗的實線以每段 90 ms 等速走出（總長上限 4 s，reduced motion時立即完成）。
 - hotbar／數字鍵把 machine 接到規劃末端；hotbar 圖示（path 與 footprint）依規劃終點的 heading 旋轉。Backspace、Ctrl／⌘+Z、右鍵，或 LMB 單擊最後一個控制點（hover 時游標轉 pointer、tooltip `Remove last step`；其餘地圖 `Drag map`）或 `Undo` 移除最後一步；`Clear` 清空。Run 偏離預估（紅圈）後，第一次接機器或 Undo 先刪掉偏離那步之後的各步（Abyss 連偏離那步也刪；Undo 只做這件事）。blank map click 不改規劃。
-- 指令列只有剩餘現金讀數（`$M left`＝現金−N）、`Undo`、`Clear` 與 `Run · $N`（Enter）；N 是規劃的 catalog 總價。規劃為空或現金不足時 Run disabled、隱藏讀數並以短句說明。Run 以單一 `runResearchTrial` 一次付款、跑完整條、揭露實際路徑並保留規劃。
+- 指令列只有剩餘現金讀數（`$M left`＝現金−N）、`Undo`、`Clear`（圖示鈕）與 `Run · $N`（Enter）；N 是規劃的 catalog 總價。規劃為空或現金不足時 Run disabled、隱藏讀數並以短句說明。Run 以單一 `runResearchTrial` 一次付款、跑完整條、揭露實際路徑並保留規劃。
 - planning／hover不改 fog；只有試驗實際走過的格被揭露。Portal jump trail斷開。
 - Cure使用綠色十字與區域邊界，SideEffect是琥珀色點網；兩者可在同一cell疊加，不能互相遮掉或用互斥terrain kind呈現。Failure以紅色X標記。
 - 試驗結果在地圖右上（mobile為下方）以單行readout呈現（`Cure Disease N · …` 或 `Failed · …`，或碰到副作用時 `No cure · N side effects`）；什麼都沒碰到的試驗不顯示readout。左鍵單擊（不拖曳）已揭露的 Cure／★ Cure／Side effect／Mountain／Water／Black ground 格，在該格上方顯示它的作用（文字與 Guide legend 同源），下一次按下時消失；霧下、空地與 Portal 不顯示。地圖本身沒有 `Drag map` tooltip。不暴露 raw effect IDs、權威座標或工廠流程提示。沒有配方卡或 Formulas 面板。
@@ -79,7 +81,7 @@ F1 一次顯示一個 base 的大型 Atlas：
 - Factory clipboard精確保存tile payload；Source period與base、Splitter outputs與Merger inputs不可在paste時重設。
 - 多 base 關卡選 Source 工具時，底部狀態列在 Direction 後顯示 base 選擇器（`source-base`），鎖住的 base 用與鎖住機器相同的提示列說明；已放置的 Source 上方印 base 名稱（`source-base-mark`），Cursor 讀數為 `source · <Base>`。
 - tile與machine移除不退款；只有接受的edit才停止播放並令runtime歸零，累積waste保留。no-op、invalid與insufficient-cash rejection不暫停也不改history。
-- Details 按需顯示 tick、sink outcomes、waste、十進位 units/tick 與 bottleneck；空 inspector 預設關閉。底部操作區：左邊是目前工具圖示＋方向箭頭（機器為 footprint 旋轉；Erase 無箭頭）與報價，Rotate／Undo／Redo；右邊 Play／Pause（同一顆，圖示即 run state，Blocked 才加字；Blocked 時 Step 停用，任何編輯重新開始產線）、1×／2×／10× 速度（每 80 ms 前進 8／16／80 tick）、Step、Center、Details。全部是圖示鈕，名稱與熱鍵在 tooltip。沒有 Plan／Production 角標或 zoom 百分比。選取機器顯示名稱、input/output 數量、ticks/unit、processing cost、rotation；blocked 狀態仍直接顯示在 world。
+- Details 按需顯示 tick、sink outcomes、waste、十進位 units/tick 與 bottleneck；空 inspector 預設關閉。底部操作區：左邊是目前工具圖示＋方向箭頭（機器為 footprint 旋轉；Erase／Select 無箭頭；手上有 Paste 時是 Paste 圖示＋旋轉）與報價，有選取時 Copy／Delete、剪貼簿非空時 Paste，再來 Rotate／Undo／Redo；右邊 Play／Pause（同一顆，圖示即 run state，Blocked 才加字；Blocked 時 Step 停用，任何編輯重新開始產線）、1×／2×／10× 速度（每 80 ms 前進 8／16／80 tick）、Step、Center、Details。全部是圖示鈕，名稱與熱鍵在 tooltip。沒有 Plan／Production 角標或 zoom 百分比。選取機器顯示名稱、input/output 數量、ticks/unit、processing cost、rotation；blocked 狀態仍直接顯示在 world。
 - machine hotbar tooltip同時顯示ticks/unit與每件processing cost；不要把一次性建造費和持續生產成本混成同一數字。
 - no-cure／failed產品進waste；side effects跟實體產品進市場計價，UI不先過濾成「合法配方」。
 - 正常new game顯示$1000；fresh Research後的有效first line必須可支付，insufficient-cash錯誤不能是正常bootstrap必經狀態。

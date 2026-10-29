@@ -723,7 +723,7 @@ export interface FactoryGhost {
   readonly layout: FactoryLayout;
   readonly invalid: boolean;
   readonly tiles: readonly FactoryGhostTile[];
-  readonly machine: PlacedMachine | null;
+  readonly machines: readonly PlacedMachine[];
 }
 
 /**
@@ -796,9 +796,11 @@ function drawGhost(ghost: FactoryGhost, g: Graphics, modeStyle: FactoryPrintStyl
       if (hexInBounds(base.width, base.height, q, r) && scope[hexIndex(base.width, q, r)] === 1) tiles[hexIndex(base.width, q, r)] = tile;
     }
     layout = { ...base, tiles };
-  } else if (ghost.machine !== null) {
-    for (const cell of worldCells(ghost.machine)) {
-      if (hexInBounds(base.width, base.height, cell.q, cell.r)) scope[hexIndex(base.width, cell.q, cell.r)] = 1;
+  } else {
+    for (const machine of ghost.machines) {
+      for (const cell of worldCells(machine)) {
+        if (hexInBounds(base.width, base.height, cell.q, cell.r)) scope[hexIndex(base.width, cell.q, cell.r)] = 1;
+      }
     }
   }
   const ctx: DrawCtx = { cells: g, style };
@@ -823,9 +825,8 @@ function drawGhost(ghost: FactoryGhost, g: Graphics, modeStyle: FactoryPrintStyl
     }
     g.stroke({ color: style.ink, alpha: style.inkAlpha, width: 2.4, join: "round" });
   }
-  if (ghost.invalid && ghost.machine !== null) {
-    // A rejected machine is not in any layout: draw it alone with open ports.
-    const machine = ghost.machine;
+  // A rejected machine is not in any layout: draw it alone with open ports.
+  for (const machine of ghost.invalid ? ghost.machines : []) {
     drawMachine(machine, false, ctx);
     for (const port of worldInPorts(machine)) drawPort(g, port.q, port.r, port.side, "input", false, style);
     for (const port of worldOutPorts(machine)) drawPort(g, port.q, port.r, port.side, "output", false, style);

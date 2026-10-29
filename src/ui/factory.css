@@ -77,11 +77,14 @@
 .toolbelt-divider { flex: 0 0 1px; height: 40px; background: var(--rule-strong); margin: 0 8px; }
 .toolbelt-more, .inspector-more { display: none; }
 
-/* Erase and move-target outlines (placement ghosts are drawn by the Factory renderer). */
+/* Erase, selection and move-target outlines (placement ghosts are drawn by the Factory renderer). */
 .factory-ghost-layer { position: absolute; z-index: 5; top: 0; left: 0; overflow: visible; pointer-events: none; }
 .factory-ghost { fill: var(--ink); fill-opacity: .08; stroke: var(--ink); stroke-width: 2; stroke-linejoin: round; }
 .facility-pilot .factory-ghost { fill: var(--course); fill-opacity: .12; stroke: var(--course); }
 .factory-ghost.is-erase { fill: var(--failure-border); fill-opacity: .14; stroke: var(--failure-border); }
+.factory-selected { fill: var(--course); fill-opacity: .14; stroke: var(--course); stroke-width: 2; stroke-linejoin: round; }
+.factory-marquee { fill: none; stroke: var(--course); stroke-width: 1.5; stroke-dasharray: 5 4; }
+.factory-marquee.is-erase { stroke: var(--failure-border); }
 .factory-ghost-cost {
   position: absolute; z-index: 6; transform-origin: 0 0; padding: 4px 7px; border: 1.5px solid var(--ink); background: var(--paper-raised);
   font: 600 16px/1 var(--font-display); letter-spacing: .03em; pointer-events: none; white-space: nowrap;

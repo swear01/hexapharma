@@ -83,23 +83,30 @@ Production Plan與Production使用相同editor，但一眼可分：Plan 以紫�
 | 動作 | 操作 |
 |---|---|
 | 放置／畫線 | LMB click或drag |
-| 擦除 | RMB click或drag，或選Erase工具 |
-| 平移 | Shift+LMB drag或MMB drag |
+| 擦除 | `X`（或`6`）選Erase：drag拉框，放開刪除框內全部，click刪一項；任何工具下RMB click或drag也會擦 |
+| 選取 | `V`選Select：在空地drag拉框，Shift+drag加選；拖曳已選項目整組搬動 |
+| 刪除選取 | `Delete`／`Backspace` |
+| 平移 | `W` `A` `S` `D`或MMB drag |
 | Touch 平移 | 兩指drag，或從場地格外開始drag |
 | 縮放 | 滾輪；camera reset按鈕回到100% |
-| Belt / Split / Merge / Source / Sink / Erase | `1`–`6` |
+| Belt / Split / Merge / Source / Sink | `1`–`5` |
 | Machine slots | `7`–`0` |
-| 旋轉brush／游標下既有machine | `R` |
+| 旋轉 | `R`順時針、`Shift+R`逆時針：brush、游標下既有machine、手上的Paste或拖曳中的選取 |
 | Pipette游標下內容 | `Q` |
 | Undo / Redo | `Ctrl+Z` / `Ctrl+Y`或`Ctrl+Shift+Z` |
-| Copy / Cut / Paste | `Ctrl+C` / `Ctrl+X` / `Ctrl+V` |
+| Copy / Cut | `Ctrl+C` / `Ctrl+X`：有選取時處理選取，否則處理游標下項目 |
+| Paste | `Ctrl+V`拿起Paste ghost，click放下（可連放） |
+| 取消 | `Esc`或RMB：先放掉手上的Paste，再清除選取 |
+| Production播放／單步 | `Space` / `.` |
+
+輸入框有焦點時這些按鍵不作用。
 
 - Belt一次drag會從起點到游標形成六鄰接連續hex route。每格方向跟著下一格，轉折會用connected texture顯示。
 - connected transport只在方向與接收面真的相容時接上。斷口或unconnected machine port代表sim也不會通過。
 - machine的`R`每次只把footprint、ports與icon順時針旋轉60°；六次回到原向，不改其chemical path。
-- 從既有machine上直接拖曳即可搬動整台machine；越界或碰撞時不會破壞原layout。Touch單指在格內使用目前工具，因此可連續畫Belt、直接拖動machine，或用Erase刪除；兩指drag負責camera。Touch點一下既有machine後再按`R · Rotate`可直接旋轉它。
+- 從既有machine上直接拖曳即可搬動整台machine；越界或碰撞時不會破壞原layout。Touch單指在格內使用目前工具，因此可連續畫Belt、直接拖動machine，或用Erase／Select拉框；有選取時底部出現Copy與Delete，剪貼簿有內容時出現Paste；兩指drag負責camera。Touch點一下既有machine後再按`R · Rotate`可直接旋轉它。
 - 非Erase工具畫過machine footprint會略過該格，不會暗中拆機。hover既有machine時預覽其現有footprint，不顯示不存在的建造或刪除費。
-- Copy／Cut／Paste保留tile的完整方向與參數，包括Source period及Splitter／Merger branches；`Q`只把游標內容選成目前brush。
+- Copy／Cut／Paste保留tile的完整方向與參數，包括Source period及Splitter／Merger branches；剪貼簿與Blueprint是同一份factory-layout。Paste與搬動選取照手放規則：machine要空地，tile可蓋過tile但不能壓在machine上，有一項放不下整個ghost變紅；Production照常收建造費，移除不退款。`Q`只把游標內容選成目前brush。
 - invalid ghost代表碰撞、越界或其他geometry錯誤；放開滑鼠不會偷偷修正。
 
 ### Transport方向
