@@ -38,9 +38,9 @@
 - LMB click／drag place；RMB erase；一個 gesture 一筆 history。手上有 Paste 或有選取時，RMB／Esc 先取消它們（D51）。
 - WASD（按住連續平移）或 MMB pan；wheel cursor-anchor zoom；camera 不改 sim authority。Shift+LMB 不 pan。
 - touch 單指在格內 click／drag 使用目前工具，從既有 machine 開始則搬動整台；兩指 drag 或從格外開始才 pan。點既有 machine 後，畫面 Rotate control 必須旋轉該 machine，不能要求實體鍵盤。
-- `R` 順時針、`Shift+R` 逆時針 60°，依序作用於：拖曳中的選取、手上的 Paste、游標覆蓋的既有machine、目前Factory brush。六次rotation回到原向，Research path geometry不受通用 rotate 操作影響。
+- `R` 順時針、`Shift+R` 逆時針 60°，依序作用於：拖曳中的選取、手上的 Paste、選取（繞選取中心格原地旋轉，一筆 history，放不下則拒絕）、游標覆蓋的既有machine、目前Factory brush。六次rotation回到原向，Research path geometry不受通用 rotate 操作影響。
 - `X` Erase：drag 拉框（螢幕對齊，click 即一格），放開刪除框內碰到的所有 machine 與 tile，框內將刪的格以紅框預覽。`V` Select：空地 drag 拉框選取，Shift+drag 加選；拖曳已選項目整組搬動；Delete／Backspace 刪除。選取以紫色格標示，拉框時畫虛線矩形。切換工具清除選取。
-- `Q` pipette、copy／cut／paste、undo／redo只處理 Factory domain payload。剪貼簿是 Blueprint capture 的 `factory-layout`（只含選取或游標下項目），不另立格式；`Ctrl+V` 拿起 Paste ghost，click 放下並保留在手上，切換工具或 Esc 放掉。Paste／搬動照手放規則：machine 需空地，tile 可覆蓋 tile 但不可壓 machine，任一項不合法則整個 ghost 紅色且不提交。
+- `Q` pipette、copy／cut／paste、undo／redo只處理 Factory domain payload。剪貼簿是 Blueprint capture 的 `factory-layout`（只含選取或游標下項目），不另立格式，Plan 與 Production 共用一份（D52）；`Ctrl+V` 拿起 Paste ghost，click 放下並保留在手上，切換工具或 Esc 放掉。Paste／搬動照手放規則：machine 需空地，tile 可覆蓋 tile 但不可壓 machine，任一項不合法則整個 ghost 紅色且不提交。
 - 輸入框、textarea、contenteditable 有焦點時不觸發 world hotkeys。
 - held placement 的 ghost 半透明地畫出將建成的實物（machine body、icon、port 箭頭；belt／splitter／merger／source／sink 的 tile），invalid 改為紅色；Belt drag 每格依 commit 相同的方向規則顯示 belt 與方向箭頭（含轉折）。Erase 與「拖曳此 machine」維持外框。Production ghost同時顯示該次新增 cost。
 - bottom hotbar 是 cursor tool belt，不是表單。

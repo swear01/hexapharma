@@ -590,6 +590,14 @@ test("a box selection moves by dragging and Delete removes it", async ({ page })
   expect(savedTile(saved, down)).toEqual(sourceTile!.tile);
   expect(savedTile(saved, { q: splitter!.cell.q, r: splitter!.cell.r + 1 })).toEqual(splitter!.tile);
 
+  // R turns the selection in place about its centre cell, and the selection follows.
+  await page.keyboard.press("r");
+  saved = await savedPilotLayout(page);
+  const centre = { q: (sourceTile!.cell.q + splitter!.cell.q) / 2, r: down.r };
+  expect(savedTile(saved, down)).toEqual({ kind: "empty" });
+  expect(savedTile(saved, { q: centre.q, r: centre.r - 1 })).toEqual({ ...sourceTile!.tile, dir: 3 });
+  expect(savedTile(saved, { q: centre.q, r: centre.r + 1 })).toEqual({ kind: "splitter", inDir: 4, outDirs: [1, 2, 3] });
+
   await page.keyboard.press("Delete");
   await expect(frame.getByTestId("factory-selected")).toHaveCount(0);
   saved = await savedPilotLayout(page);
@@ -629,6 +637,52 @@ test("Ctrl+C copies, Ctrl+V holds a paste that Shift+R turns back and a click pl
   const saved = await savedPilotLayout(page);
   expect(savedTile(saved, destination)).toEqual({ kind: "source", dir: 1, period: 7, base: 0 });
   expect(savedTile(saved, sourceTile!.cell)).toEqual(sourceTile!.tile);
+});
+
+test("a copy in Plan pastes into Production at the build quote", async ({ page }) => {
+  const serialized = clipboardPayloadSave();
+  const source = deserializeGame(serialized).pilot.layout!;
+  await loadSaveFixture(page, serialized);
+  await page.getByTestId("view-pilot").click();
+  const pilotFrame = page.getByTestId("pilot-facility-workspace").getByTestId("factory-canvas");
+  const [sourceTile] = clipboardPayloads;
+  const from = await factoryCellPoint(pilotFrame, source, sourceTile!.cell);
+  await page.mouse.move(from.x, from.y);
+  await page.keyboard.press("Control+c");
+
+  await page.getByTestId("view-production").click();
+  const workspace = page.getByTestId("production-facility-workspace");
+  const frame = workspace.getByTestId("factory-canvas");
+  await expect(frame.locator("canvas")).toBeVisible({ timeout: 15_000 });
+  const cash = Number(await page.getByTestId("cash").textContent());
+  await page.keyboard.press("Control+v");
+  await expect(workspace.getByTestId("brush-selected")).toHaveAccessibleName("Paste");
+  const to = await factoryCellPoint(frame, source, sourceTile!.cell);
+  await page.mouse.move(to.x, to.y);
+  await expect(frame).toHaveAttribute("data-ghost", "valid");
+  const cost = Number((await page.getByTestId("factory-ghost-cost").textContent())!.slice(1));
+  expect(cost).toBeGreaterThan(0);
+  await page.mouse.click(to.x, to.y);
+  await expect(page.getByTestId("cash")).toHaveText(String(cash - cost));
+
+  await openMenu(page);
+  await page.getByTestId("save").click();
+  const raw = await page.evaluate((key) => localStorage.getItem(key), checkpointKey);
+  const production = deserializeSnapshot((JSON.parse(raw!) as { readonly head: string }).head).production.layout;
+  expect(savedTile(production, sourceTile!.cell)).toEqual(sourceTile!.tile);
+
+  // Loading another game state clears the clipboard, so nothing stays in hand.
+  await page.getByTestId("view-menu").click();
+  await page.keyboard.press("Control+v");
+  const again = await factoryCellPoint(frame, source, { q: sourceTile!.cell.q, r: sourceTile!.cell.r + 2 });
+  await page.mouse.click(again.x, again.y);
+  await expect(workspace.getByTestId("brush-selected")).toHaveAccessibleName("Paste");
+  await openMenu(page);
+  await page.getByTestId("load").click();
+  await page.getByRole("alertdialog", { name: "Load saved game?" }).getByRole("button", { name: "Load saved game" }).click();
+  await page.getByTestId("view-production").click();
+  await expect(workspace.getByTestId("brush-selected")).toHaveAccessibleName("belt");
+  await expect(workspace.getByTestId("factory-paste")).toHaveCount(0);
 });
 
 test("a held paste over an installed machine shows a refused ghost", async ({ page }) => {

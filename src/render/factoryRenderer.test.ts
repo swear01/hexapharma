@@ -2,13 +2,14 @@ import { describe, expect, it } from "vitest";
 import type { FactoryLayout, PlacedMachine, Rotation } from "../sim/phase0_interfaces";
 import { buildFactoryTransportTopology } from "./factoryTransportTopology";
 import { DEFAULT_CATALOG, DEFAULT_SHAPES, SHAPE_1x1 } from "../sim/phase0_interfaces";
-import { HEX_DIRS, HEX_DQ, HEX_DR } from "../sim/hex";
+import { HEX_DIRS, HEX_DQ, HEX_DR, hexIndex } from "../sim/hex";
 import { hexToPixel } from "./hexProjection";
 import {
   FACTORY_HEX_SIZE,
   FACTORY_SCHEMATIC_STYLE,
   dashSegments,
   factoryCellCenter,
+  factoryPortInScope,
   factoryPrintStyle,
   factoryUnitBlocked,
   factoryTransportArmGeometry,
@@ -177,5 +178,23 @@ describe("factory blocked units", () => {
     const topology = buildFactoryTransportTopology(layout);
     expect(factoryUnitBlocked(layout, topology, { q: 2, r: 2, machineId: 3, proc: entry.speed })).toBe(true);
     expect(factoryUnitBlocked(layout, topology, { q: 2, r: 2, machineId: 3, proc: 0 })).toBe(false);
+  });
+});
+
+describe("factory placement preview", () => {
+  it("repaints a neighbour's port that faces a ghost cell, so the ghost shows it connected", () => {
+    const layout: FactoryLayout = {
+      width: 6,
+      height: 4,
+      tiles: Array.from({ length: 24 }, () => ({ kind: "empty" as const })),
+      machines: [],
+    };
+    const scope = new Uint8Array(24);
+    scope[hexIndex(6, 3, 1)] = 1;
+    expect(factoryPortInScope(layout, { q: 2, r: 1, side: 0 }, scope)).toBe(true);
+    expect(factoryPortInScope(layout, { q: 3, r: 1, side: 3 }, scope)).toBe(true);
+    expect(factoryPortInScope(layout, { q: 2, r: 1, side: 3 }, scope)).toBe(false);
+    expect(factoryPortInScope(layout, { q: 0, r: 0, side: 3 }, scope)).toBe(false);
+    expect(factoryPortInScope(layout, { q: 0, r: 0, side: 3 }, null)).toBe(true);
   });
 });

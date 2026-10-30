@@ -61,6 +61,7 @@ import {
   itemCells,
   moveSelection,
   placeFragment,
+  rotateSelection,
   transformFragment,
   type FactoryClipboard,
 } from "./factorySelection";
@@ -790,6 +791,20 @@ interface FactoryProps {
   readonly commandLabel?: string;
   readonly commandDisabled?: boolean;
   readonly onCommand?: (layout: FactoryLayout) => void;
+  /** Shared by Plan and Production, so a copy in one pastes in the other. */
+  readonly clipboard: FactoryClipboard | null;
+  readonly onClipboardChange: (clipboard: FactoryClipboard) => void;
+}
+
+/** State event handlers read through the ref: a key or click can land before the render that follows a set. */
+function useLatestState<T>(initial: T): [T, { readonly current: T }, (next: T) => void] {
+  const [value, setValue] = useState(initial);
+  const ref = useRef(value);
+  const set = useCallback((next: T) => {
+    ref.current = next;
+    setValue(next);
+  }, []);
+  return [value, ref, set];
 }
 
 export function Factory({
@@ -810,6 +825,8 @@ export function Factory({
   commandLabel,
   commandDisabled = false,
   onCommand,
+  clipboard,
+  onClipboardChange,
 }: FactoryProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const frameRef = useRef<HTMLDivElement | null>(null);
@@ -830,40 +847,29 @@ export function Factory({
   playingRef.current = playing;
 
   // editing brush + parameters.
-  const [brush, setBrush] = useState<Brush>({ kind: "belt" });
+  const [brush, brushRef, setBrushState] = useLatestState<Brush>({ kind: "belt" });
   const [lockedHint, setLockedHint] = useState<string | null>(null);
   /** Box-selected item cells, and the held paste's rotation (null: nothing held). */
-  // Event handlers read the refs: a key or click can land before the render that follows a set.
-  const [selection, setSelectionState] = useState<readonly HexCoord[]>([]);
-  const selectionRef = useRef(selection);
-  const setSelection = useCallback((next: readonly HexCoord[]) => {
-    selectionRef.current = next;
-    setSelectionState(next);
-  }, []);
-  const [clipboard, setClipboardState] = useState<FactoryClipboard | null>(null);
+  const [selection, selectionRef, setSelection] = useLatestState<readonly HexCoord[]>([]);
   const clipboardRef = useRef(clipboard);
-  const [held, setHeldState] = useState<Rotation | null>(null);
-  const heldRef = useRef(held);
-  const setHeld = useCallback((next: Rotation | null) => {
-    heldRef.current = next;
-    setHeldState(next);
-  }, []);
+  clipboardRef.current = clipboard;
+  const [held, heldRef, setHeld] = useLatestState<Rotation | null>(null);
+  // Loading a game clears the shared clipboard; nothing is left to hold.
+  useEffect(() => {
+    if (clipboard === null) setHeld(null);
+  }, [clipboard, setHeld]);
   // Any new tool choice (click, hotkey, pipette) retires a stale locked-machine hint and drops
   // the held paste; leaving Select drops the selection.
-  useEffect(() => {
+  const setBrush = useCallback((next: Brush) => {
+    setBrushState(next);
     setLockedHint(null);
     setHeld(null);
-    if (brush.kind !== "select") setSelection([]);
-  }, [brush, setHeld, setSelection]);
-  const [brushDir, setBrushDir] = useState<Dir>(E);
-  const [sourceBase, setSourceBase] = useState(0);
-  const [footRot, setFootRot] = useState<Rotation>(0);
-  const [hoverCell, setHoverCellState] = useState<GridCell | null>(null);
-  const hoverRef = useRef(hoverCell);
-  const setHoverCell = useCallback((cell: GridCell | null) => {
-    hoverRef.current = cell;
-    setHoverCellState(cell);
-  }, []);
+    if (next.kind !== "select") setSelection([]);
+  }, [setBrushState, setHeld, setSelection]);
+  const [brushDir, brushDirRef, setBrushDir] = useLatestState<Dir>(E);
+  const [sourceBase, sourceBaseRef, setSourceBase] = useLatestState(0);
+  const [footRot, footRotRef, setFootRot] = useLatestState<Rotation>(0);
+  const [hoverCell, hoverRef, setHoverCell] = useLatestState<GridCell | null>(null);
   const [camera, setCamera] = useState<Camera>({ x: 0, y: 0, zoom: 1 });
   const cameraRef = useRef(camera);
   cameraRef.current = camera;
@@ -1205,6 +1211,7 @@ export function Factory({
   /** The gesture a primary press at `cell` starts with the current tool. */
   const startGesture = useCallback((pointerId: number, cell: GridCell, additive: boolean): CanvasGesture => {
     const base = layoutRef.current;
+    const brush = brushRef.current;
     if (heldRef.current !== null) return { pointerId, mode: "paste", base, last: cell };
     if (brush.kind === "erase" || brush.kind === "select") {
       const onSelection = itemCells(base, selectionRef.current).some(({ q, r }) => q === cell.q && r === cell.r);
@@ -1225,7 +1232,7 @@ export function Factory({
           anchorOffset: { q: machine.anchor.q - cell.q, r: machine.anchor.r - cell.r },
           footRot: machine.footRot,
         };
-  }, [brush.kind]);
+  }, []);
 
   /** Esc / right-click: cancel the gesture, else drop the held paste, else the selection. */
   const cancelHeld = useCallback(() => {
@@ -1316,7 +1323,7 @@ export function Factory({
       gestureRef.current = { ...gesture, last: cell };
       return;
     }
-    const cells = gesture.mode === "paint" && brush.kind === "belt"
+    const cells = gesture.mode === "paint" && brushRef.current.kind === "belt"
       ? routeBeltGesture(gesture.cells, cell)
       : appendUniqueCells(gesture.cells, rasterizeGridLine(gesture.last, cell));
     gestureRef.current = {
@@ -1324,7 +1331,7 @@ export function Factory({
       cells,
       last: cell,
     };
-  }, [brush.kind, pointerCell, updateCamera]);
+  }, [pointerCell, updateCamera]);
 
   const finishCanvasGesture = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (event.pointerType === "touch" && activeTouchPointerRef.current === event.pointerId) {
@@ -1372,17 +1379,17 @@ export function Factory({
         return;
       }
     }
-    const activeBrush: Brush = gesture.mode === "erase" ? { kind: "erase" } : brush;
+    const activeBrush: Brush = gesture.mode === "erase" ? { kind: "erase" } : brushRef.current;
     let next = activeBrush.kind === "belt"
-      ? paintBeltRoute(gesture.base, gesture.cells, brushDir)
+      ? paintBeltRoute(gesture.base, gesture.cells, brushDirRef.current)
       : gesture.base;
     if (activeBrush.kind !== "belt") {
       for (const cell of gesture.cells) {
-        next = paint(next, cell.q, cell.r, activeBrush, brushDir, footRot, sourceBase);
+        next = paint(next, cell.q, cell.r, activeBrush, brushDirRef.current, footRotRef.current, sourceBaseRef.current);
       }
     }
     commitLayout(next);
-  }, [brush, brushDir, commitLayout, footRot, setSelection, sourceBase]);
+  }, [commitLayout, setSelection]);
 
   const onCanvasWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -1403,13 +1410,13 @@ export function Factory({
   const pickHovered = useCallback(() => {
     const hoverCell = hoverRef.current;
     if (hoverCell === null) return;
-    const picked = brushAt(layout, hoverCell);
+    const picked = brushAt(layoutRef.current, hoverCell);
     if (picked === null) return;
     setBrush(picked.brush);
     setBrushDir(picked.dir);
     if (picked.brush.kind === "source") setSourceBase(picked.base);
     setFootRot(picked.footRot);
-  }, [layout]);
+  }, [setBrush, setBrushDir, setFootRot, setSourceBase]);
 
   /** Copy the selection, or the hovered item when nothing is selected; a cut also removes it. */
   const copyItems = useCallback((cut: boolean) => {
@@ -1419,9 +1426,9 @@ export function Factory({
     const copied = copySelection(layoutRef.current, cells);
     if (copied === null) return;
     clipboardRef.current = copied;
-    setClipboardState(copied);
+    onClipboardChange(copied);
     if (cut && commitLayout(eraseItems(layoutRef.current, cells))) setSelection([]);
-  }, [commitLayout, setSelection]);
+  }, [commitLayout, onClipboardChange, setSelection]);
 
   const deleteSelection = useCallback(() => {
     const selected = selectionRef.current;
@@ -1443,7 +1450,10 @@ export function Factory({
     return true;
   }, [commitLayout]);
 
-  /** R turns what is in hand: a dragged selection, the held paste, the hovered machine, else the brush. Shift+R turns back. */
+  /**
+   * R turns what is in hand: a dragged selection, the held paste, the selection in place, the
+   * hovered machine, else the brush. Shift+R turns back.
+   */
   const rotate = useCallback((step: Rotation) => {
     const turn = (value: number) => ((value + step) % 6) as Rotation;
     const gesture = gestureRef.current;
@@ -1451,10 +1461,15 @@ export function Factory({
       gestureRef.current = { ...gesture, rot: turn(gesture.rot) };
       repaintGesture();
     } else if (heldRef.current !== null) setHeld(turn(heldRef.current));
-    else if (rotateHoveredMachine(step)) return;
-    else if (brush.kind === "machine") setFootRot(turn);
-    else setBrushDir((value) => turn(value) as Dir);
-  }, [brush.kind, rotateHoveredMachine, setHeld]);
+    else if (itemCells(layoutRef.current, selectionRef.current).length > 0) {
+      // A gesture commits from its own base layout; turning under it would be overwritten.
+      if (gesture !== null) return;
+      const turned = rotateSelection(layoutRef.current, selectionRef.current, step);
+      if (turned.layout !== null && commitLayout(turned.layout)) setSelection(turned.cells);
+    } else if (rotateHoveredMachine(step)) return;
+    else if (brushRef.current.kind === "machine") setFootRot(turn(footRotRef.current));
+    else setBrushDir(turn(brushDirRef.current) as Dir);
+  }, [commitLayout, rotateHoveredMachine, setBrushDir, setFootRot, setHeld, setSelection]);
 
   useEffect(() => {
     if (!active) return;
@@ -1532,7 +1547,7 @@ export function Factory({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [active, cancelHeld, catalog, copyItems, deleteSelection, mode, pickHovered, playing, redoLayout, rotate, routing, setHeld, state.deadlocked, stepOnce, undoLayout]);
+  }, [active, cancelHeld, catalog, copyItems, deleteSelection, mode, pickHovered, playing, redoLayout, rotate, routing, setBrush, setHeld, state.deadlocked, stepOnce, undoLayout]);
 
   // WASD pans while held, at a steady screen speed.
   useEffect(() => {

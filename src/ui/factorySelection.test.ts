@@ -8,6 +8,7 @@ import {
   itemCells,
   moveSelection,
   placeFragment,
+  rotateSelection,
   transformFragment,
 } from "./factorySelection";
 
@@ -124,5 +125,26 @@ describe("paste transform", () => {
     expect(moved.cells).toHaveLength(cells.length);
     expect(moveSelection(layout, cells, { q: 1, r: 1 }, { q: 1, r: 1 }, 0).layout).toBe(layout);
     expect(moveSelection(layout, cells, { q: 1, r: 1 }, { q: W, r: 1 }, 0).layout).toBeNull();
+  });
+
+  it("turns a selection in place about its centre cell, refusing a turn off the floor", () => {
+    const layout = withTile(withTile(floor(), 2, 3, { kind: "belt", dir: 0 }), 4, 3, { kind: "belt", dir: 0 });
+    const turned = rotateSelection(layout, [{ q: 2, r: 3 }, { q: 4, r: 3 }], 1);
+    expect(turned.layout?.tiles.flatMap((tile, index) => tile.kind === "empty" ? [] : [[index % W, Math.floor(index / W), tile]]))
+      .toEqual([[3, 2, { kind: "belt", dir: 1 }], [3, 4, { kind: "belt", dir: 1 }]]);
+    expect(turned.cells).toEqual([{ q: 3, r: 2 }, { q: 3, r: 4 }]);
+    let full = layout;
+    let cells = itemCells(layout, [{ q: 2, r: 3 }, { q: 4, r: 3 }]);
+    for (let turn = 0; turn < 6; turn++) {
+      const next = rotateSelection(full, cells, 1);
+      full = next.layout!;
+      cells = next.cells;
+    }
+    expect(full.tiles).toEqual(layout.tiles);
+    const edge = withTile(withTile(floor(), 2, 0, { kind: "belt", dir: 0 }), 4, 0, { kind: "belt", dir: 0 });
+    expect(rotateSelection(edge, [{ q: 2, r: 0 }, { q: 4, r: 0 }], 1).layout).toBeNull();
+    const sink = withTile(floor(), 3, 3, { kind: "sink" });
+    expect(rotateSelection(sink, [{ q: 3, r: 3 }], 1).layout).toBe(sink);
+    expect(moveSelection(sink, [{ q: 3, r: 3 }], { q: 3, r: 3 }, { q: 3, r: 3 }, 2).layout).toBe(sink);
   });
 });
