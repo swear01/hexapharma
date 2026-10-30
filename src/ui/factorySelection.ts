@@ -213,9 +213,9 @@ export function moveSelection(
   const fragment = transformFragment(selectionLayout(layout, cells), from, to, rot);
   if (from.q === to.q && from.r === to.r && rot === 0) return { fragment, layout, cells: itemCells(layout, cells) };
   const placed = placeFragment(eraseItems(layout, cells), fragment, false);
-  // A turn in place that changes nothing (a lone Sink) must not commit a no-op undo step. Only
-  // turns in place are compared, so a drag preview does not serialize the floor on every move.
-  const unchanged = placed !== null && from.q === to.q && from.r === to.r && JSON.stringify(placed) === JSON.stringify(layout);
+  // A turn that maps the items onto themselves (a lone Sink) must not commit a no-op undo step.
+  // A pure shift never does, so a plain drag preview skips serializing the floor.
+  const unchanged = placed !== null && rot !== 0 && JSON.stringify(placed) === JSON.stringify(layout);
   const moved = unchanged ? layout : placed;
   return { fragment, layout: moved, cells: moved === null ? [] : itemCells(moved, fragmentCells(fragment)) };
 }
